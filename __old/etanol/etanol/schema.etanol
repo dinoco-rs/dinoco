@@ -1,0 +1,11 @@
+    config {
+        database = env("DATABASE")
+        database_url = env("DATABASE_URL")
+    }
+
+    table User {
+        id String @id
+        name String
+        age Integer? 
+        isAdmin Boolean? @default(false)
+    }
