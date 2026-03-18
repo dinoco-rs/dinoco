@@ -1,8 +1,9 @@
+
 # etanol-rs
 
-⚠️ **Project Status: Early Development**
+⚠️ **Project Status: in development**
 
-**etanol-rs** is currently in the **early development stage**.
+**etanol-rs** is currently in the **development stage**.
 The API is unstable and features may change frequently.
 
 The goal of this project is to build a **high-performance,
