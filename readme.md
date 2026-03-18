@@ -1,87 +1,180 @@
-# Etanol-rs
+# etanol-rs
 
-### this crate is still under development!
+⚠️ **Project Status: Early Development**
 
+**etanol-rs** is currently in the **early development stage**.
+The API is unstable and features may change frequently.
 
+The goal of this project is to build a **high-performance,
+distributed-first ORM for Rust**, inspired by modern developer tools but
+designed for **scalable architectures with sharding and replication
+built in**.
 
-### Usage:
+> ⚡ Fueling distributed databases in Rust.
 
-#### in etanol/schema.etanol
+---
 
+⭐ **If you like this project or want to support its development,
+consider sponsoring it.**
+
+❤️ GitHub Sponsors
+https://github.com/sponsors/theuszastro
+
+<a href="https://www.buymeacoffee.com/theuszastro" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
+Your support helps maintain the project and accelerate development.
+
+---
+
+# Vision
+
+Most ORMs are designed for **single database instances**.
+
+**etanol-rs** aims to provide a **modern data layer designed for
+distributed systems**, including:
+
+- native sharding
+- replica routing
+- distributed ID generation
+- multi-database support
+- type-safe queries
+
+---
+
+# Planned Features
+
+## Type-Safe ORM
+
+Define your schema and generate a type-safe Rust client.
+
+Example schema concept:
+
+```prisma
+table User {
+	id String @id @default(snowflake())
+
+	name String @default("Anonymous")
+	age Integer? @default(10)
+
+	reference String
+
+	isAdmin Boolean @default(false)
+}
 ```
-    config {
-        database = env("DATABASE")
-        database_url = env("DATABASE_URL")
-    }
 
-    table User {
-        id String @id
-        name String
-        age Integer? 
-        isAdmin Boolean? @default(false)
-    }
+Example query concept:
+
+```rust
+let users = client
+    .user()
+    .find_many(user::email::equals("user@email.com"))
+    .await?;
 ```
 
-#### in .env
+---
 
-```
-    DATABASE="sqlite"
-    DATABASE_URL="testing.sqlite"
-```
+## Native Sharding
 
-#### execute this commands
+etanol-rs will support **automatic shard routing**.
 
-```
-    // for install etanol command line interface
-    $ cargo install etanol
-
-    // for generate migration and models
-    $ etanol migrate dev --name [name of migration]
+```prisma
+IN DEVELLOPMENT
 ```
 
-#### in src/main.rs
+Queries will automatically route to the correct shard.
 
-```
-    use etanol::{ModelWhere, QueryValue};
+---
 
-    mod database;
+## Replica Routing
 
-    use database::{create_connection, user::User};
+Automatic **read/write split**:
 
-    fn main() {
-        create_connection();
+    write → primary
+    read  → replicas
 
-        // Insert
-        let user = User {
-            id: "5".to_string(),
-            age: Some(5),
-            name: "Teste".to_string(),
-            ..User::default()
-        };
+Benefits:
 
-        user.insert().execute();
+- improved performance
+- horizontal scaling
+- high availability
 
-        // FindOne
-        let _user = User::find()
-            .field(ModelWhere::Equal("name", "Random"))
-            .load()
-            .unwrap();
+---
 
-        // FindMany
-        let _users = User::find()
-            .field(ModelWhere::Equal("name", "Random"))
-            .many()
-            .load()
-            .unwrap();
+## Distributed ID Generation
 
-        // Update
-        User::update()
-            .field(ModelWhere::Equal("id", "1"))
-            .value(QueryValue("name", "Matheus"))
-            .execute()
-            .unwrap();
+etanol-rs will include a distributed ID generator similar to Snowflake.
 
-        // delete
-        User::delete().field(ModelWhere::Equal("id", "1")).execute();
-    }
-```
+Example ID structure:
+
+    timestamp | node | sequence
+
+Advantages:
+
+- globally unique IDs
+- time sortable
+- no database roundtrip
+
+---
+
+## Multi-Database Support (planned)
+
+Initial targets:
+
+- PostgreSQL
+- SQLite
+
+Later expansions:
+
+- MySQL
+- ScyllaDB
+- Cassandra
+- MongoDB
+
+# Contributing
+
+This project is still early, but contributions and ideas are welcome.
+
+You can help by:
+
+- discussing architecture
+- opening issues
+- suggesting features
+- sharing use cases
+
+---
+
+# Support the Project
+
+Open-source infrastructure takes time to build and maintain.
+
+If you want to support the development of **etanol-rs**, you can
+contribute here:
+
+❤️ GitHub Sponsors
+https://github.com/sponsors/theuszastro
+
+<a href="https://www.buymeacoffee.com/theuszastro" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-violet.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
+Your support helps:
+
+- accelerate development
+- improve documentation
+- maintain the project long-term
+
+---
+
+# License
+
+MIT License.
+
+---
+
+# ⭐ If you like the project
+
+Consider:
+
+- starring the repository
+- sharing it with others
+- sponsoring development
+
+Even small support helps keep open source sustainable ❤️

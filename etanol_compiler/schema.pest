@@ -1,0 +1,23 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
+
+ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+inner_string = @{ (!"\"" ~ ANY)* }
+
+number_literal = @{ ASCII_ALPHANUMERIC* }
+string_literal = ${ "\"" ~ inner_string ~ "\"" }
+boolean_literal = { "true" | "false" }
+
+param = { function | string_literal | boolean_literal | number_literal }
+
+function = { ident ~ "(" ~ param? ~ ")" }
+decorator = { "@" ~ ident ~ ("(" ~ param? ~ ")")? }
+
+field_optional = { "?" }
+field_type = @{ ASCII_ALPHA* }
+field = { ident ~ field_type ~ field_optional? ~ decorator* }
+table_block = { "table" ~ ident ~ "{" ~ field* ~ "}"  }
+
+enum_block = { "enum" ~ ident ~ "{" ~ ident* ~ "}"  }
+
+schema = { SOI ~ (table_block | enum_block)* ~ EOI }
