@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 pest = "2.8.6"
 pest_derive = "2.8.6"
+ariadne = "0.4"

@@ -1,0 +1,47 @@
+{
+	"name": "etanol-vscode",
+	"displayName": "Etanol Language",
+	"version": "1.0.0",
+	"engines": {
+		"vscode": "^1.75.0"
+	},
+	"main": "./out/extension.js",
+	"activationEvents": [
+		"onLanguage:etanol"
+	],
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "tsc -p ./",
+		"watch": "tsc -watch -p ./"
+	},
+	"contributes": {
+		"languages": [
+			{
+				"id": "etanol",
+				"aliases": [
+					"Etanol",
+					"etanol"
+				],
+				"extensions": [
+					".etanol"
+				],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "etanol",
+				"scopeName": "source.etanol",
+				"path": "./syntaxes/etanol.tmLanguage.json"
+			}
+		]
+	},
+	"dependencies": {
+		"vscode-languageclient": "^9.0.1"
+	},
+	"devDependencies": {
+		"@types/node": "^25.5.0",
+		"@types/vscode": "^1.110.0",
+		"typescript": "^5.9.3"
+	}
+}
