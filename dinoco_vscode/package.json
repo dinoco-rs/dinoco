@@ -1,13 +1,15 @@
 {
-	"name": "etanol-vscode",
-	"displayName": "Etanol Language",
-	"version": "1.0.0",
+	"name": "dinoco-vscode",
+	"displayName": "",
+	"version": "0.0.1",
+	"icon": "images/icon.png",
+	"publisher": "dinoco-rs",
 	"engines": {
 		"vscode": "^1.75.0"
 	},
 	"main": "./out/extension.js",
 	"activationEvents": [
-		"onLanguage:etanol"
+		"onLanguage:dinoco"
 	],
 	"scripts": {
 		"vscode:prepublish": "npm run compile",
@@ -17,22 +19,22 @@
 	"contributes": {
 		"languages": [
 			{
-				"id": "etanol",
+				"id": "dinoco",
 				"aliases": [
-					"Etanol",
-					"etanol"
+					"Dinoco",
+					"dinoco"
 				],
 				"extensions": [
-					".etanol"
+					".dinoco"
 				],
-				"configuration": "./language-configuration.json"
+				"configuration": "./configs/language-configuration.json"
 			}
 		],
 		"grammars": [
 			{
-				"language": "etanol",
-				"scopeName": "source.etanol",
-				"path": "./syntaxes/etanol.tmLanguage.json"
+				"language": "dinoco",
+				"scopeName": "source.dinoco",
+				"path": "./configs/dinoco.tmLanguage.json"
 			}
 		]
 	},

@@ -7,7 +7,7 @@ use crate::{
     parser::{format_span_error, format_span_errors},
 };
 
-pub fn validate_schema(schema: &Schema) -> EtanolResult<ParsedSchema> {
+pub fn validate_schema(schema: &Schema) -> dinocoResult<ParsedSchema> {
     let mut names = HashSet::new();
 
     let config = validate_configs(&schema.configs, schema.span)?;
@@ -19,7 +19,7 @@ pub fn validate_schema(schema: &Schema) -> EtanolResult<ParsedSchema> {
     Ok(ParsedSchema { enums, config, tables })
 }
 
-fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> EtanolResult<ParsedConfig> {
+fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> dinocoResult<ParsedConfig> {
     if configs.is_empty() {
         return Err(format_span_error("Your schema must define a 'config { ... }' block.".to_string(), schema_span));
     }
@@ -28,7 +28,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> EtanolResult<Pa
         return Err(format_span_error("Your schema must define only one 'config { ... }' block.".to_string(), schema_span));
     }
 
-    fn parse_function(x: &Vec<ConfigValue<'_>>, span: Span) -> EtanolResult<ConnectionUrl> {
+    fn parse_function(x: &Vec<ConfigValue<'_>>, span: Span) -> dinocoResult<ConnectionUrl> {
         let var = x
             .first()
             .and_then(|v| if let ConfigValue::String(s) = v { Some(s.clone()) } else { None })
@@ -130,7 +130,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> EtanolResult<Pa
     })
 }
 
-fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> EtanolResult<Vec<ParsedEnum>> {
+fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> dinocoResult<Vec<ParsedEnum>> {
     let mut parsed_enums = vec![];
 
     for _enum in enums {
@@ -158,7 +158,7 @@ fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> Eta
     Ok(parsed_enums)
 }
 
-fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names: &mut HashSet<&'a str>) -> EtanolResult<Vec<ParsedTable>> {
+fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names: &mut HashSet<&'a str>) -> dinocoResult<Vec<ParsedTable>> {
     let mut parsed_tables = vec![];
 
     for table in tables {
@@ -337,7 +337,7 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
     Ok(parsed_tables)
 }
 
-fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Table]) -> EtanolResult<()> {
+fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Table]) -> dinocoResult<()> {
     fn get_relation_name(field: &Field<'_>) -> Option<String> {
         if let Some(rel) = &field.relation {
             if let Some(v) = rel.named_params.get("name") {
@@ -362,7 +362,7 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
         !f.is_empty() || !r.is_empty()
     }
 
-    fn validate_types_and_keys(ast_field: &Field<'_>, ast_table: &Table, target_ast_table: &Table) -> EtanolResult<()> {
+    fn validate_types_and_keys(ast_field: &Field<'_>, ast_table: &Table, target_ast_table: &Table) -> dinocoResult<()> {
         let (fields, references) = get_relation_fields_and_references(ast_field);
 
         if fields.len() != references.len() {
@@ -405,8 +405,8 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
         Ok(())
     }
 
-    fn get_referential_actions(field: &Field<'_>) -> EtanolResult<(Option<ReferentialAction>, Option<ReferentialAction>)> {
-        fn parse_action(action_value: Option<&String>, action_name: &str, span: pest::Span) -> EtanolResult<Option<ReferentialAction>> {
+    fn get_referential_actions(field: &Field<'_>) -> dinocoResult<(Option<ReferentialAction>, Option<ReferentialAction>)> {
+        fn parse_action(action_value: Option<&String>, action_name: &str, span: pest::Span) -> dinocoResult<Option<ReferentialAction>> {
             match action_value {
                 Some(val) => match val.as_str() {
                     "Cascade" => Ok(Some(ReferentialAction::Cascade)),

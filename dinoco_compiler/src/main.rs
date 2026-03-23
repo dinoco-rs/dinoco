@@ -1,7 +1,7 @@
-use etanol_compiler::{compile, render_error};
+use dinoco_compiler::{compile, render_error};
 
 fn main() {
-    let raw_input = std::fs::read_to_string("schema.etanol").unwrap();
+    let raw_input = std::fs::read_to_string("schema.dinoco").unwrap();
 
     match compile(&raw_input) {
         Ok(schema) => {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use pest::Span;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct EtanolError {
+pub struct dinocoError {
     pub message: String,
 
     pub start_line: usize,
@@ -13,7 +13,7 @@ pub struct EtanolError {
     pub end_column: usize,
 }
 
-impl Default for EtanolError {
+impl Default for dinocoError {
     fn default() -> Self {
         Self {
             message: "".to_string(),
@@ -26,7 +26,7 @@ impl Default for EtanolError {
     }
 }
 
-pub type EtanolResult<T> = Result<T, Vec<EtanolError>>;
+pub type dinocoResult<T> = Result<T, Vec<dinocoError>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schema<'a> {
@@ -130,7 +130,7 @@ impl FunctionCall {
         }
     }
 
-    pub fn from_string(data: &str) -> EtanolResult<Self> {
+    pub fn from_string(data: &str) -> dinocoResult<Self> {
         if let Some((name, params_with_paren)) = data.split_once('(') {
             if let Some(params) = params_with_paren.strip_suffix(')') {
                 match name {
@@ -138,13 +138,13 @@ impl FunctionCall {
                     "uuid" => Ok(Self::Uuid),
                     "snowflake" => Ok(Self::Snowflake),
                     "autoincrement" => Ok(Self::AutoIncrement),
-                    _ => Err(vec![EtanolError::default()]),
+                    _ => Err(vec![dinocoError::default()]),
                 }
             } else {
-                Err(vec![EtanolError::default()])
+                Err(vec![dinocoError::default()])
             }
         } else {
-            Err(vec![EtanolError::default()])
+            Err(vec![dinocoError::default()])
         }
     }
 }

@@ -2,9 +2,9 @@
 
 .env
 
-etanol/src/main.rs
-etanol/etanol
-etanol_*/etanol
+dinoco/src/main.rs
+dinoco/dinoco
+dinoco_*/dinoco
 
 */src/database
-!etanol_databases/src/database
+!dinoco_databases/src/database

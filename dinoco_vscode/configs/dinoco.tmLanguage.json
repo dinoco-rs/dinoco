@@ -1,7 +1,7 @@
 {
 	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-	"name": "Etanol",
-	"scopeName": "source.etanol",
+	"name": "Dinoco",
+	"scopeName": "source.dinoco",
 	"patterns": [
 		{ "include": "#comments" },
 		{ "include": "#strings" },
@@ -18,50 +18,50 @@
 	"repository": {
 		"comments": {
 			"match": "#.*$",
-			"name": "comment.line.number-sign.etanol"
+			"name": "comment.line.number-sign.dinoco"
 		},
 		"strings": {
 			"begin": "\"",
 			"end": "\"",
-			"name": "string.quoted.double.etanol"
+			"name": "string.quoted.double.dinoco"
 		},
 		"model_declaration": {
 			"match": "^\\s*(model)(\\s+([A-Za-z][a-zA-Z0-9_]*))?",
 			"captures": {
-				"1": { "name": "keyword.control.model.etanol" },
-				"2": { "name": "entity.name.type.class.etanol" }
+				"1": { "name": "keyword.control.model.dinoco" },
+				"2": { "name": "entity.name.type.class.dinoco" }
 			}
 		},
 		"enum_declaration": {
 			"match": "^\\s*(enum)(\\s+([A-Za-z][a-zA-Z_]*))?",
 			"captures": {
-				"1": { "name": "keyword.control.enum.etanol" },
-				"2": { "name": "entity.name.type.class.etanol" }
+				"1": { "name": "keyword.control.enum.dinoco" },
+				"2": { "name": "entity.name.type.class.dinoco" }
 			}
 		},
 		"config_declaration": {
 			"match": "^\\s*(config)\\b",
-			"name": "keyword.control.config.etanol"
+			"name": "keyword.control.config.dinoco"
 		},
 		"primitive_fields": {
 			"match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+(String|Integer|Boolean|Float|DateTime)\\b(\\[\\]|\\?)?",
 			"captures": {
-				"1": { "name": "variable.other.property.etanol" },
-				"2": { "name": "support.type.primitive.etanol" },
-				"3": { "name": "keyword.operator.modifier.etanol" }
+				"1": { "name": "variable.other.property.dinoco" },
+				"2": { "name": "support.type.primitive.dinoco" },
+				"3": { "name": "keyword.operator.modifier.dinoco" }
 			}
 		},
 		"custom_fields": {
 			"match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+([A-Za-z][a-zA-Z0-9_]*)\\b(\\[\\]|\\?)?",
 			"captures": {
-				"1": { "name": "variable.other.property.etanol" },
-				"2": { "name": "constant.language.etanol" },
-				"3": { "name": "keyword.operator.modifier.etanol" }
+				"1": { "name": "variable.other.property.dinoco" },
+				"2": { "name": "constant.language.dinoco" },
+				"3": { "name": "keyword.operator.modifier.dinoco" }
 			}
 		},
 		"decorators": {
 			"match": "@[a-zA-Z_][a-zA-Z0-9_]*",
-			"name": "entity.name.function.decorator.etanol"
+			"name": "entity.name.function.decorator.dinoco"
 		},
 		"named_parameters": {
 			"match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=:)",
@@ -69,7 +69,7 @@
 		},
 		"functions": {
 			"match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
-			"name": "support.function.etanol"
+			"name": "support.function.dinoco"
 		},
 		"constants": {
 			"patterns": [
