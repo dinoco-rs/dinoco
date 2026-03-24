@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_vscode"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 [dependencies]
@@ -9,3 +9,4 @@ tower-lsp = "0.20"
 tokio = { version = "1.50.0", features = ["full", "rt-multi-thread"] }
 
 dinoco_compiler = { path = "../dinoco_compiler" }
+dinoco_formatter = { path = "../dinoco_formatter" }

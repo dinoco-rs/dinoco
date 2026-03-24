@@ -7,7 +7,7 @@ use crate::{
     parser::{format_span_error, format_span_errors},
 };
 
-pub fn validate_schema(schema: &Schema) -> dinocoResult<ParsedSchema> {
+pub fn validate_schema(schema: &Schema) -> DinocoResult<ParsedSchema> {
     let mut names = HashSet::new();
 
     let config = validate_configs(&schema.configs, schema.span)?;
@@ -19,7 +19,7 @@ pub fn validate_schema(schema: &Schema) -> dinocoResult<ParsedSchema> {
     Ok(ParsedSchema { enums, config, tables })
 }
 
-fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> dinocoResult<ParsedConfig> {
+fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<ParsedConfig> {
     if configs.is_empty() {
         return Err(format_span_error("Your schema must define a 'config { ... }' block.".to_string(), schema_span));
     }
@@ -28,7 +28,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> dinocoResult<Pa
         return Err(format_span_error("Your schema must define only one 'config { ... }' block.".to_string(), schema_span));
     }
 
-    fn parse_function(x: &Vec<ConfigValue<'_>>, span: Span) -> dinocoResult<ConnectionUrl> {
+    fn parse_function(x: &Vec<ConfigValue<'_>>, span: Span) -> DinocoResult<ConnectionUrl> {
         let var = x
             .first()
             .and_then(|v| if let ConfigValue::String(s) = v { Some(s.clone()) } else { None })
@@ -130,7 +130,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> dinocoResult<Pa
     })
 }
 
-fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> dinocoResult<Vec<ParsedEnum>> {
+fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> DinocoResult<Vec<ParsedEnum>> {
     let mut parsed_enums = vec![];
 
     for _enum in enums {
@@ -141,12 +141,14 @@ fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> din
         let mut enum_values = HashSet::new();
         let mut parsed_values = Vec::new();
 
-        for v in &_enum.values {
-            if !enum_values.insert(v) {
-                return Err(format_span_error(format!("Duplicate value '{}' in enum '{}'.", v, _enum.name), _enum.span));
+        for (_, v) in &_enum.values {
+            let value = v.as_str();
+
+            if !enum_values.insert(value) {
+                return Err(format_span_error(format!("Duplicate value '{}' in enum '{}'.", value, _enum.name), _enum.span));
             }
 
-            parsed_values.push(v.to_string());
+            parsed_values.push(value.to_string());
         }
 
         parsed_enums.push(ParsedEnum {
@@ -158,7 +160,7 @@ fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> din
     Ok(parsed_enums)
 }
 
-fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names: &mut HashSet<&'a str>) -> dinocoResult<Vec<ParsedTable>> {
+fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names: &mut HashSet<&'a str>) -> DinocoResult<Vec<ParsedTable>> {
     let mut parsed_tables = vec![];
 
     for table in tables {
@@ -337,7 +339,7 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
     Ok(parsed_tables)
 }
 
-fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Table]) -> dinocoResult<()> {
+fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Table]) -> DinocoResult<()> {
     fn get_relation_name(field: &Field<'_>) -> Option<String> {
         if let Some(rel) = &field.relation {
             if let Some(v) = rel.named_params.get("name") {
@@ -362,7 +364,7 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
         !f.is_empty() || !r.is_empty()
     }
 
-    fn validate_types_and_keys(ast_field: &Field<'_>, ast_table: &Table, target_ast_table: &Table) -> dinocoResult<()> {
+    fn validate_types_and_keys(ast_field: &Field<'_>, ast_table: &Table, target_ast_table: &Table) -> DinocoResult<()> {
         let (fields, references) = get_relation_fields_and_references(ast_field);
 
         if fields.len() != references.len() {
@@ -405,8 +407,8 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
         Ok(())
     }
 
-    fn get_referential_actions(field: &Field<'_>) -> dinocoResult<(Option<ReferentialAction>, Option<ReferentialAction>)> {
-        fn parse_action(action_value: Option<&String>, action_name: &str, span: pest::Span) -> dinocoResult<Option<ReferentialAction>> {
+    fn get_referential_actions(field: &Field<'_>) -> DinocoResult<(Option<ReferentialAction>, Option<ReferentialAction>)> {
+        fn parse_action(action_value: Option<&String>, action_name: &str, span: pest::Span) -> DinocoResult<Option<ReferentialAction>> {
             match action_value {
                 Some(val) => match val.as_str() {
                     "Cascade" => Ok(Some(ReferentialAction::Cascade)),

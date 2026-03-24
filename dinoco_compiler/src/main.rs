@@ -4,8 +4,10 @@ fn main() {
     let raw_input = std::fs::read_to_string("schema.dinoco").unwrap();
 
     match compile(&raw_input) {
-        Ok(schema) => {
-            println!("SUCCESS: {:?}", schema);
+        Ok((schema, parsed)) => {
+            // println!("SUCCESS: {:?}", parsed);
+
+            println!("OK: True")
         }
         Err(errs) => {
             // println!("ERR: {:#?}", errs);

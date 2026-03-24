@@ -12,11 +12,13 @@ use pest_derive::Parser;
 pub use ast::*;
 pub use parsed_ast::*;
 
+pub use pest::Span;
+
 #[derive(Parser)]
 #[grammar = "schema.pest"]
-pub struct dinocoParser;
+pub struct DinocoParser;
 
-pub fn render_error(error: &dinocoError, source: &str) -> String {
+pub fn render_error(error: &DinocoError, source: &str) -> String {
     fn get_offset(source: &str, line: usize, col: usize) -> usize {
         source.lines().take(line - 1).map(|l| l.len() + 1).sum::<usize>() + (col - 1)
     }
@@ -37,9 +39,15 @@ pub fn render_error(error: &dinocoError, source: &str) -> String {
     String::from_utf8_lossy(&out).to_string()
 }
 
-pub fn compile<'a>(raw_input: &'a str) -> Result<ParsedSchema, Vec<dinocoError>> {
+pub fn compile<'a>(raw_input: &'a str) -> Result<(Schema<'a>, ParsedSchema), Vec<DinocoError>> {
     let schema = parser::parse_schema(raw_input)?;
     let parsed = validator::validate_schema(&schema)?;
 
-    Ok(parsed)
+    Ok((schema, parsed))
+}
+
+pub fn compile_only_ast<'a>(raw_input: &'a str) -> Result<Schema<'a>, Vec<DinocoError>> {
+    let schema = parser::parse_schema(raw_input)?;
+
+    Ok(schema)
 }

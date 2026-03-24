@@ -1,7 +1,8 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 INLINE_WHITESPACE = _{ " " | "\t" }
-COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
-NEWLINE = _{ "\n" | "\r\n" | "\r" }
+
+NEWLINE = { "\n" | "\r\n" | "\r" }
+COMMENT = { "#" ~ (!NEWLINE ~ ANY)* }
 
 model_keyword = { "model" }
 enum_keyword = { "enum" }
@@ -29,14 +30,14 @@ boolean_literal = { "true" | "false" }
 function = { ident ~ paren_open ~ param? ~ paren_close }
 decorator = { 
     decorator_prefix ~ ident ~ 
-    (paren_open ~ INLINE_WHITESPACE* ~ ((named_param | param) ~ (array_separator ~ INLINE_WHITESPACE*  ~ (named_param | param))*)? ~ INLINE_WHITESPACE* ~ paren_close)? 
+    (paren_open ~ INLINE_WHITESPACE* ~ ((named_param | param) ~ (array_separator ~ INLINE_WHITESPACE*  ~ (named_param | param))*)? ~ INLINE_WHITESPACE* ~ paren_close)? ~ INLINE_WHITESPACE*
 }
 
-named_array = { array_open ~ ident ~ (array_separator ~ ident)* ~ array_close }
+named_array = { array_open ~ INLINE_WHITESPACE* ~ ident ~ INLINE_WHITESPACE* ~  (array_separator ~ INLINE_WHITESPACE* ~ ident)* ~ array_close }
 named_value = { named_array | ident | string_literal }
 named_param = { ident ~ named_separator ~ INLINE_WHITESPACE* ~ named_value }
 
-param = { function | string_literal | boolean_literal | number_literal | ident }
+param = { function | string_literal | boolean_literal | number_literal | ident | COMMENT }
 
 config_array_value = { string_literal | function | config_object | config_field }
 config_object = { block_open ~ config_field* ~ block_close }
@@ -47,10 +48,10 @@ config_field = { ident ~ config_separator ~ config_param }
 field_type = @{ ident }
 // field = { ident ~ field_type ~ (array_open ~ array_close)? ~ field_optional? ~ decorator* }
 
-field = ${ ident ~ INLINE_WHITESPACE* ~ field_type ~ (array_open ~ array_close)? ~ field_optional? ~ (INLINE_WHITESPACE* ~ decorator)* }
+field = ${ ident ~ INLINE_WHITESPACE* ~ field_type ~ (array_open ~ array_close)? ~ field_optional? ~ (INLINE_WHITESPACE* ~ decorator)* ~ COMMENT* ~ NEWLINE* }
 
-model_block = { model_keyword ~ ident ~ block_open ~ field* ~ block_close }
-enum_block = ${ enum_keyword ~ INLINE_WHITESPACE* ~ ident ~ INLINE_WHITESPACE* ~ block_open ~ WHITESPACE* ~ ident* ~ WHITESPACE* ~ block_close }
-config_block = { config_keyword ~ block_open ~ config_field* ~ block_close }
+model_block = { model_keyword ~ ident ~ block_open ~ (field | COMMENT)* ~ block_close }
+enum_block = ${ enum_keyword ~ INLINE_WHITESPACE* ~ ident ~ INLINE_WHITESPACE* ~ block_open ~ WHITESPACE* ~ (ident | COMMENT | WHITESPACE)* ~ WHITESPACE* ~ block_close }
+config_block = { config_keyword ~ block_open ~ (config_field | COMMENT)* ~ block_close }
 
-schema = { SOI ~ (model_block | enum_block | config_block)* ~ EOI }
+schema = { SOI ~ (model_block | enum_block | config_block | COMMENT)* ~ EOI }

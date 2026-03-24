@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use pest::Span;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct dinocoError {
+pub struct DinocoError {
     pub message: String,
 
     pub start_line: usize,
@@ -13,7 +13,7 @@ pub struct dinocoError {
     pub end_column: usize,
 }
 
-impl Default for dinocoError {
+impl Default for DinocoError {
     fn default() -> Self {
         Self {
             message: "".to_string(),
@@ -26,27 +26,39 @@ impl Default for dinocoError {
     }
 }
 
-pub type dinocoResult<T> = Result<T, Vec<dinocoError>>;
+pub type DinocoResult<T> = Result<T, Vec<DinocoError>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schema<'a> {
     pub tables: Vec<Table<'a>>,
     pub enums: Vec<Enum<'a>>,
     pub configs: Vec<Config<'a>>,
-    pub span: pest::Span<'a>,
+    pub span: Span<'a>,
+
+    pub total_blocks: usize,
+    pub comments: Vec<(usize, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config<'a> {
+    pub position: usize,
+    pub total_fields: usize,
+
+    pub comments: Vec<(usize, Span<'a>)>,
+
     pub fields: Vec<ConfigField<'a>>,
-    pub span: pest::Span<'a>,
+    pub span: Span<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigField<'a> {
     pub name: String,
+    pub position: usize,
+
+    pub comments: Vec<Span<'a>>,
+
     pub value: Option<ConfigValue<'a>>,
-    pub span: pest::Span<'a>,
+    pub span: Span<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,12 +74,22 @@ pub struct Table<'a> {
     pub name: String,
     pub fields: Vec<Field<'a>>,
     pub span: Span<'a>,
+
+    pub position: usize,
+    pub total_fields: usize,
+
+    pub comments: Vec<(usize, Span<'a>)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Enum<'a> {
+    pub position: usize,
+    pub total_blocks: usize,
+    pub comments: Vec<(usize, Span<'a>)>,
+
     pub name: String,
-    pub values: Vec<String>,
+    pub values: Vec<(usize, Span<'a>)>,
+
     pub span: Span<'a>,
 }
 
@@ -89,6 +111,10 @@ pub struct Field<'a> {
     pub is_list: bool,
 
     pub relation: Option<Relation<'a>>,
+
+    pub newlines: usize,
+    pub position: usize,
+    pub comments: Vec<String>,
 
     pub span: Span<'a>,
 }
@@ -130,7 +156,7 @@ impl FunctionCall {
         }
     }
 
-    pub fn from_string(data: &str) -> dinocoResult<Self> {
+    pub fn from_string(data: &str) -> DinocoResult<Self> {
         if let Some((name, params_with_paren)) = data.split_once('(') {
             if let Some(params) = params_with_paren.strip_suffix(')') {
                 match name {
@@ -138,13 +164,13 @@ impl FunctionCall {
                     "uuid" => Ok(Self::Uuid),
                     "snowflake" => Ok(Self::Snowflake),
                     "autoincrement" => Ok(Self::AutoIncrement),
-                    _ => Err(vec![dinocoError::default()]),
+                    _ => Err(vec![DinocoError::default()]),
                 }
             } else {
-                Err(vec![dinocoError::default()])
+                Err(vec![DinocoError::default()])
             }
         } else {
-            Err(vec![dinocoError::default()])
+            Err(vec![DinocoError::default()])
         }
     }
 }

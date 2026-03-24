@@ -8,6 +8,12 @@ config {
     ]
 }
 
+
+enum Name {
+	one two three
+	# teste
+}
+
 model User {
     id          Integer @id @default(autoincrement())
     name        String  @default("Anonimo")
@@ -27,11 +33,18 @@ model Post {
     id          String  @id @default(uuid())
     title       String  @default("Novo Post")
 
-    authors     User[] @relation(name: "UserPosts")
+    authors     User[] @relation(name: "UserPosts") # this is comment
     likedBy     User[] @relation(name: "UserLikedPosts")
 
     ownerId     Integer?
     owner       User?    @relation(name: "UserOwnedPosts", fields: [ownerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+	# office String
+
+
+
+
+	
 }
 
 model Profile {
@@ -41,3 +54,12 @@ model Profile {
     userId      Integer @unique
     user        User    @relation(fields: [userId], references: [id])
 }
+
+
+# model Profile {
+#     id          String  @id @default(uuid())
+#     bio         String  @default("")
+# 
+#     userId      Integer @unique
+#     user        User    @relation(fields: [userId], references: [id])
+# }

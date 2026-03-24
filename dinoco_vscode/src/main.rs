@@ -4,7 +4,8 @@ use tower_lsp::jsonrpc::Result as LspResult;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-use dinoco_compiler::compile;
+use dinoco_compiler::{compile, compile_only_ast};
+use dinoco_formatter::{format_schema, FormatterConfig};
 
 #[derive(Debug)]
 struct LspServer {
@@ -64,8 +65,10 @@ impl LanguageServer for LspServer {
                     trigger_characters: Some(vec!["@".to_string(), " ".to_string()]),
                     ..Default::default()
                 }),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
+
             ..Default::default()
         })
     }
@@ -96,6 +99,37 @@ impl LanguageServer for LspServer {
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         self.documents.remove(&params.text_document.uri);
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> LspResult<Option<Vec<TextEdit>>> {
+        let uri = params.text_document.uri;
+
+        let Some(doc) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+
+        let text = doc.value().clone();
+        let formatted = match compile_only_ast(&text) {
+            Ok(schema) => {
+                let config = FormatterConfig::default();
+
+                format_schema(&schema, &config)
+            }
+            Err(_) => {
+                return Ok(None);
+            }
+        };
+
+        let line_count = text.lines().count() as u32;
+        let full_range = Range {
+            start: Position { line: 0, character: 0 },
+            end: Position { line: line_count, character: 0 },
+        };
+
+        Ok(Some(vec![TextEdit {
+            range: full_range,
+            new_text: formatted,
+        }]))
     }
 
     async fn completion(&self, params: CompletionParams) -> LspResult<Option<CompletionResponse>> {

@@ -1,0 +1,67 @@
+config {
+    database = "postgres" # databasep
+    database_url = env("DATABASE_URL") # testing
+
+    read_replicas = [
+        env("DATABASE_URL_REPLICA_1"),
+        env("DATABASE_URL_REPLICA_2")
+    ]
+}
+
+enum Name {
+    one
+    two
+    three
+    # teste
+
+    # teste
+}
+
+model User {
+    id          Integer   @id @default(autoincrement())
+    name        String    @default("Anonimo")
+    age         Integer?  @default(10)
+    reference   String? 
+    isAdmin     Boolean   @default(false)
+
+    myPosts     Post[]    @relation(name: "UserPosts")
+    likedPosts  Post[]    @relation(name: "UserLikedPosts")
+
+    ownedPosts  Post[]    @relation(name: "UserOwnedPosts")
+
+    profile     Profile?
+}
+
+model Post {
+    # adlkawlod office String
+
+    id       String    @id @default(uuid())
+
+    # adlkawlod office String
+    title    String    @default("Novo Post")
+
+    authors  User[]    @relation(name: "UserPosts") # this is comment
+
+    likedBy  User[]    @relation(name: "UserLikedPosts")
+
+    ownerId  Integer?
+    owner    User?     @relation(name: "UserOwnedPosts", fields: [ownerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+    # office String
+}
+
+model Profile {
+    id      String   @id @default(uuid())
+    bio     String   @default("")
+
+    userId  Integer  @unique
+    user    User     @relation(fields: [userId], references: [id])
+}
+
+# model Profile {
+# id          String  @id @default(uuid())
+# bio         String  @default("")
+# 
+# userId      Integer @unique
+# user        User    @relation(fields: [userId], references: [id])
+# }

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use pest::iterators::Pair;
 use pest::Parser;
+use pest::iterators::Pair;
 
 use crate::ast::*;
-use crate::{dinocoParser, Rule};
+use crate::{DinocoParser, Rule};
 
 fn is_keyword(value: &str) -> bool {
     let keywords = vec!["config", "model", "enum"];
@@ -42,7 +42,7 @@ fn parse_field_type(data: &str) -> FieldType {
     }
 }
 
-fn parse_field<'a>(field_pair: Pair<'a, Rule>) -> dinocoResult<Field<'a>> {
+fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoResult<Field<'a>> {
     let span = field_pair.as_span();
     let mut f_inner = field_pair.into_inner();
 
@@ -56,9 +56,15 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>) -> dinocoResult<Field<'a>> {
     let mut is_list = false;
     let mut default_value = FieldDefaultValue::NotDefined;
     let mut relation = None;
+    let mut newlines = 0;
+    let mut comments = vec![];
 
     for token in f_inner {
         match token.as_rule() {
+            Rule::COMMENT => comments.push(token.as_str().to_string()),
+            Rule::NEWLINE => {
+                newlines += 1;
+            }
             Rule::field_optional => is_optional = true,
             Rule::array_open => is_list = true,
 
@@ -183,17 +189,31 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>) -> dinocoResult<Field<'a>> {
         default_value,
         relation,
         span,
+
+        newlines,
+
+        position,
+        comments,
     })
 }
 
-fn parse_table<'a>(table_record: Pair<'a, Rule>) -> dinocoResult<Table<'a>> {
+fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoResult<Table<'a>> {
     let span = table_record.as_span();
 
     let mut name = String::new();
     let mut fields = vec![];
 
-    for pair in table_record.into_inner() {
+    let mut comments = vec![];
+
+    let inner = table_record.into_inner();
+    let total_fields = inner.len();
+
+    for (i, pair) in inner.enumerate() {
         match pair.as_rule() {
+            Rule::COMMENT => {
+                comments.push((i, pair.as_span()));
+            }
+
             Rule::ident => {
                 name = pair.as_str().to_string();
 
@@ -204,22 +224,37 @@ fn parse_table<'a>(table_record: Pair<'a, Rule>) -> dinocoResult<Table<'a>> {
                     ));
                 }
             }
-            Rule::field => fields.push(parse_field(pair)?),
+            Rule::field => fields.push(parse_field(pair, i)?),
             _ => {}
         }
     }
 
-    Ok(Table { name, fields, span })
+    Ok(Table {
+        position,
+        total_fields,
+
+        name,
+        fields,
+        span,
+        comments,
+    })
 }
 
-fn parse_enum<'a>(enum_record: Pair<'a, Rule>) -> dinocoResult<Enum<'a>> {
+fn parse_enum<'a>(enum_record: Pair<'a, Rule>, position: usize) -> DinocoResult<Enum<'a>> {
     let span = enum_record.as_span();
 
     let mut name = String::new();
     let mut values = vec![];
+    let mut comments = vec![];
 
-    for pair in enum_record.into_inner() {
+    let inner = enum_record.into_inner();
+    let total_blocks = inner.len();
+
+    for (i, pair) in inner.enumerate() {
         match pair.as_rule() {
+            Rule::COMMENT => {
+                comments.push((i, pair.as_span()));
+            }
             Rule::ident => {
                 if name.is_empty() {
                     name = pair.as_str().to_string();
@@ -231,7 +266,7 @@ fn parse_enum<'a>(enum_record: Pair<'a, Rule>) -> dinocoResult<Enum<'a>> {
                         ));
                     }
                 } else {
-                    values.push(pair.as_str().to_string());
+                    values.push((i, pair.as_span()));
                 }
             }
             _ => {}
@@ -242,32 +277,51 @@ fn parse_enum<'a>(enum_record: Pair<'a, Rule>) -> dinocoResult<Enum<'a>> {
         return Err(format_span_error(format!("Enum '{}' must have at least one value.", name), span));
     }
 
-    Ok(Enum { name, values, span })
+    Ok(Enum {
+        total_blocks,
+        position,
+        comments,
+        name,
+        values,
+        span,
+    })
 }
 
-fn parse_config<'a>(config_record: Pair<'a, Rule>) -> dinocoResult<Config<'a>> {
+fn parse_config<'a>(config_record: Pair<'a, Rule>, position: usize) -> DinocoResult<Config<'a>> {
     let span = config_record.as_span();
     let mut fields = vec![];
 
-    for pair in config_record.into_inner() {
+    let inner = config_record.into_inner();
+    let total_fields = inner.len();
+    let mut comments = vec![];
+
+    for (i, pair) in inner.enumerate() {
         match pair.as_rule() {
-            Rule::config_field => {
-                fields.push(parse_config_field(pair)?);
-            }
+            Rule::config_field => fields.push(parse_config_field(pair, i)?),
+            Rule::COMMENT => comments.push((i, pair.as_span())),
             _ => {}
         }
     }
 
-    Ok(Config { fields, span })
+    Ok(Config {
+        total_fields,
+        position,
+        comments,
+        fields,
+        span,
+    })
 }
 
-fn parse_config_field<'a>(field_record: Pair<'a, Rule>) -> dinocoResult<ConfigField<'a>> {
+fn parse_config_field<'a>(field_record: Pair<'a, Rule>, position: usize) -> DinocoResult<ConfigField<'a>> {
     let span = field_record.as_span();
     let mut name = String::new();
     let mut value = None;
 
+    let mut comments = vec![];
+
     for pair in field_record.into_inner() {
         match pair.as_rule() {
+            Rule::COMMENT => comments.push(pair.as_span()),
             Rule::ident => name = pair.as_str().to_string(),
             Rule::config_param => {
                 let inner = pair.into_inner().next().unwrap();
@@ -278,10 +332,16 @@ fn parse_config_field<'a>(field_record: Pair<'a, Rule>) -> dinocoResult<ConfigFi
         }
     }
 
-    Ok(ConfigField { name, value, span })
+    Ok(ConfigField {
+        position,
+        comments,
+        name,
+        value,
+        span,
+    })
 }
 
-fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> dinocoResult<ConfigValue<'a>> {
+fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoResult<ConfigValue<'a>> {
     match value_record.as_rule() {
         Rule::string_literal => {
             let content = value_record.into_inner().next().unwrap().as_str();
@@ -307,7 +367,7 @@ fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> dinocoResult<ConfigVa
 
             for pair in value_record.into_inner() {
                 if pair.as_rule() == Rule::config_field {
-                    fields.push(parse_config_field(pair)?);
+                    fields.push(parse_config_field(pair, 1)?);
                 }
             }
 
@@ -335,8 +395,8 @@ fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> dinocoResult<ConfigVa
     }
 }
 
-pub fn parse_schema<'a>(raw_input: &'a str) -> dinocoResult<Schema<'a>> {
-    let mut parsed = dinocoParser::parse(Rule::schema, raw_input).map_err(|e| {
+pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoResult<Schema<'a>> {
+    let mut parsed = DinocoParser::parse(Rule::schema, raw_input).map_err(|e| {
         let (start_line, start_column, end_line, end_column) = match e.line_col {
             pest::error::LineColLocation::Pos((line, col)) => (line, col, line, col + 1),
             pest::error::LineColLocation::Span((start_line, start_col), (end_line, end_col)) => (start_line, start_col, end_line, end_col),
@@ -403,7 +463,7 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> dinocoResult<Schema<'a>> {
             .message()
             .to_string();
 
-        vec![dinocoError {
+        vec![DinocoError {
             message: err,
             start_line,
             start_column,
@@ -415,27 +475,40 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> dinocoResult<Schema<'a>> {
     let schema_record = parsed.next().unwrap();
     let span = schema_record.as_span();
 
+    let mut comments = vec![];
     let mut configs = vec![];
     let mut tables = vec![];
     let mut enums = vec![];
 
-    for record in schema_record.into_inner() {
+    let inner = schema_record.into_inner();
+
+    let total_blocks = inner.len();
+
+    for (i, record) in inner.enumerate() {
         match record.as_rule() {
-            Rule::model_block => tables.push(parse_table(record)?),
-            Rule::enum_block => enums.push(parse_enum(record)?),
-            Rule::config_block => configs.push(parse_config(record)?),
+            Rule::model_block => tables.push(parse_table(record, i)?),
+            Rule::enum_block => enums.push(parse_enum(record, i)?),
+            Rule::config_block => configs.push(parse_config(record, i)?),
+            Rule::COMMENT => comments.push((i, record.as_str().to_string())),
             _ => {}
         }
     }
 
-    Ok(Schema { tables, enums, configs, span })
+    Ok(Schema {
+        tables,
+        enums,
+        configs,
+        span,
+        comments,
+        total_blocks,
+    })
 }
 
-pub fn format_span_error(message: String, span: pest::Span) -> Vec<dinocoError> {
+pub fn format_span_error(message: String, span: pest::Span) -> Vec<DinocoError> {
     let (start_line, start_column) = span.start_pos().line_col();
     let (end_line, end_column) = span.end_pos().line_col();
 
-    vec![dinocoError {
+    vec![DinocoError {
         message: format!("{}", message),
 
         start_line,
@@ -446,14 +519,14 @@ pub fn format_span_error(message: String, span: pest::Span) -> Vec<dinocoError> 
     }]
 }
 
-pub fn format_span_errors(data: Vec<(String, pest::Span)>) -> Vec<dinocoError> {
+pub fn format_span_errors(data: Vec<(String, pest::Span)>) -> Vec<DinocoError> {
     let mut errors = vec![];
 
     for (message, span) in data {
         let (start_line, start_column) = span.start_pos().line_col();
         let (end_line, end_column) = span.end_pos().line_col();
 
-        errors.push(dinocoError {
+        errors.push(DinocoError {
             message: format!("{}", message),
 
             start_line,
