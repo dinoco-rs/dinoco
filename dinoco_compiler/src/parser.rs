@@ -341,57 +341,119 @@ fn parse_config_field<'a>(field_record: Pair<'a, Rule>, position: usize) -> Dino
     })
 }
 
+// fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoResult<ConfigValue<'a>> {
+//     match value_record.as_rule() {
+//         Rule::string_literal => {
+//             let content = value_record.into_inner().next().unwrap().as_str();
+
+//             Ok(ConfigValue::String(content.to_string()))
+//         }
+
+//         Rule::config_array => {
+//             let mut items = vec![];
+
+//             for item in value_record.into_inner() {
+//                 match item.as_rule() {
+//                     Rule::config_array_value => {
+//                         let inner = item.into_inner().next().unwrap();
+
+//                         items.push(parse_config_value(inner)?);
+//                     }
+
+//                     _ => {}
+//                 }
+//             }
+
+//             Ok(ConfigValue::Array(items))
+//         }
+//         Rule::config_object => {
+//             let mut fields = vec![];
+
+//             for pair in value_record.into_inner() {
+//                 if pair.as_rule() == Rule::config_field {
+//                     fields.push(parse_config_field(pair, 1)?);
+//                 }
+//             }
+
+//             Ok(ConfigValue::Object(fields))
+//         }
+//         Rule::function => {
+//             let mut inner = value_record.into_inner();
+
+//             let name = inner.next().unwrap().as_str().to_string();
+//             let mut args = vec![];
+
+//             for param_pair in inner {
+//                 match param_pair.as_rule() {
+//                     Rule::paren_open => {}
+//                     Rule::paren_close => {}
+//                     _ => {
+//                         args.push(parse_config_value(param_pair.into_inner().next().unwrap())?);
+//                     }
+//                 }
+//             }
+
+//             Ok(ConfigValue::Function { name, args })
+//         }
+//         _ => Err(format_span_error("Invalid config value".to_string(), value_record.as_span())),
+//     }
+// }
+
 fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoResult<ConfigValue<'a>> {
+    let span = value_record.as_span(); // Captura o span do registro atual
+
     match value_record.as_rule() {
         Rule::string_literal => {
             let content = value_record.into_inner().next().unwrap().as_str();
 
-            Ok(ConfigValue::String(content.to_string()))
+            Ok(ConfigValue::String(content.to_string(), span))
         }
 
         Rule::config_array => {
             let mut items = vec![];
 
             for item in value_record.into_inner() {
-                if item.as_rule() == Rule::config_array_value {
-                    let inner = item.into_inner().next().unwrap();
-
-                    items.push(parse_config_value(inner)?);
+                match item.as_rule() {
+                    Rule::config_array_value => {
+                        let inner = item.into_inner().next().unwrap();
+                        items.push(parse_config_value(inner)?);
+                    }
+                    Rule::COMMENT => items.push(ConfigValue::Comment(item.as_span())),
+                    _ => {}
                 }
             }
 
-            Ok(ConfigValue::Array(items))
+            Ok(ConfigValue::Array(items, span))
         }
+
         Rule::config_object => {
             let mut fields = vec![];
 
             for pair in value_record.into_inner() {
                 if pair.as_rule() == Rule::config_field {
-                    fields.push(parse_config_field(pair, 1)?);
+                    fields.push(parse_config_field(pair, fields.len())?);
                 }
             }
 
-            Ok(ConfigValue::Object(fields))
+            Ok(ConfigValue::Object(fields, span))
         }
+
         Rule::function => {
             let mut inner = value_record.into_inner();
-
             let name = inner.next().unwrap().as_str().to_string();
             let mut args = vec![];
 
             for param_pair in inner {
                 match param_pair.as_rule() {
-                    Rule::paren_open => {}
-                    Rule::paren_close => {}
+                    Rule::paren_open | Rule::paren_close => {}
                     _ => {
                         args.push(parse_config_value(param_pair.into_inner().next().unwrap())?);
                     }
                 }
             }
-
-            Ok(ConfigValue::Function { name, args })
+            Ok(ConfigValue::Function { name, args, span })
         }
-        _ => Err(format_span_error("Invalid config value".to_string(), value_record.as_span())),
+        _ => Err(format_span_error("Invalid config value".to_string(), span)),
     }
 }
 

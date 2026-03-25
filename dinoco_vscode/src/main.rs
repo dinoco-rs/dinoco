@@ -5,7 +5,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use dinoco_compiler::{compile, compile_only_ast};
-use dinoco_formatter::{format_schema, FormatterConfig};
+use dinoco_formatter::{format_from_ast, FormatterConfig};
 
 #[derive(Debug)]
 struct LspServer {
@@ -113,7 +113,7 @@ impl LanguageServer for LspServer {
             Ok(schema) => {
                 let config = FormatterConfig::default();
 
-                format_schema(&schema, &config)
+                format_from_ast(&schema, &config)
             }
             Err(_) => {
                 return Ok(None);

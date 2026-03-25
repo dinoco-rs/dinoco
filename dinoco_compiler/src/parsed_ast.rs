@@ -17,7 +17,7 @@ pub struct ParsedConfig {
 #[derive(Debug, Clone)]
 pub enum Database {
     Mysql,
-    Postgres,
+    Postgresql,
     Sqlite,
 }
 

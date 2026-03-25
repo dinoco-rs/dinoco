@@ -63,10 +63,11 @@ pub struct ConfigField<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConfigValue<'a> {
-    String(String),
-    Function { name: String, args: Vec<ConfigValue<'a>> },
-    Array(Vec<ConfigValue<'a>>),
-    Object(Vec<ConfigField<'a>>),
+    String(String, Span<'a>),
+    Function { name: String, args: Vec<ConfigValue<'a>>, span: Span<'a> },
+    Array(Vec<ConfigValue<'a>>, Span<'a>),
+    Object(Vec<ConfigField<'a>>, Span<'a>),
+    Comment(Span<'a>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -171,6 +172,18 @@ impl FunctionCall {
             }
         } else {
             Err(vec![DinocoError::default()])
+        }
+    }
+}
+
+impl<'a> ConfigValue<'a> {
+    pub fn span(&self) -> Span<'a> {
+        match self {
+            ConfigValue::String(_, s) => s.clone(),
+            ConfigValue::Function { span, .. } => span.clone(),
+            ConfigValue::Array(_, s) => s.clone(),
+            ConfigValue::Object(_, s) => s.clone(),
+            ConfigValue::Comment(s) => s.clone(),
         }
     }
 }

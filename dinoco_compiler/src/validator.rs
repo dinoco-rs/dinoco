@@ -31,7 +31,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<Pa
     fn parse_function(x: &Vec<ConfigValue<'_>>, span: Span) -> DinocoResult<ConnectionUrl> {
         let var = x
             .first()
-            .and_then(|v| if let ConfigValue::String(s) = v { Some(s.clone()) } else { None })
+            .and_then(|v| if let ConfigValue::String(s, _) = v { Some(s.clone()) } else { None })
             .ok_or_else(|| format_span_error("env() inside replicas expects a string.".to_string(), span))?;
 
         Ok(ConnectionUrl::Env(var))
@@ -57,11 +57,11 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<Pa
                     return Err(format_span_error("Duplicate 'database'.".to_string(), field.span));
                 }
 
-                if let ConfigValue::String(db) = value {
+                if let ConfigValue::String(db, _) = value {
                     match db.as_str() {
                         "sqlite" => database = Some(Database::Sqlite),
                         "mysql" => database = Some(Database::Mysql),
-                        "postgres" => database = Some(Database::Postgres),
+                        "postgresql" => database = Some(Database::Postgresql),
                         _ => return Err(format_span_error(format!("Unsupported database '{}'.", db), field.span)),
                     }
                 } else {
@@ -74,7 +74,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<Pa
                 }
 
                 match value {
-                    ConfigValue::String(url_str) => {
+                    ConfigValue::String(url_str, _) => {
                         let conn = ConnectionUrl::Literal(url_str.clone());
                         if !conn.is_valid() {
                             return Err(format_span_error("Database connection URL must start with a valid protocol.".to_string(), field.span));
@@ -83,7 +83,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<Pa
                         database_url = Some(conn);
                     }
 
-                    ConfigValue::Function { name, args } if name == "env" => {
+                    ConfigValue::Function { name, args, .. } if name == "env" => {
                         database_url = Some(parse_function(args, field.span)?);
                     }
 
@@ -95,10 +95,10 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<Pa
                     return Err(format_span_error("Duplicate 'read_replicas'.".to_string(), field.span));
                 }
 
-                if let ConfigValue::Array(items) = value {
+                if let ConfigValue::Array(items, _) = value {
                     for item in items {
                         match item {
-                            ConfigValue::String(s) => {
+                            ConfigValue::String(s, _) => {
                                 let conn = ConnectionUrl::Literal(s.clone());
                                 if !conn.is_valid() {
                                     return Err(format_span_error("Replica connection URLS must start with a valid protocol.".to_string(), field.span));
@@ -106,7 +106,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<Pa
 
                                 read_replicas.push(conn)
                             }
-                            ConfigValue::Function { name, args } if name == "env" => {
+                            ConfigValue::Function { name, args, .. } if name == "env" => {
                                 read_replicas.push(parse_function(args, field.span)?);
                             }
                             _ => return Err(format_span_error("Replicas must be an array of strings or env().".to_string(), field.span)),

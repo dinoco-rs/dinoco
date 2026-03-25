@@ -39,9 +39,10 @@ named_param = { ident ~ named_separator ~ INLINE_WHITESPACE* ~ named_value }
 
 param = { function | string_literal | boolean_literal | number_literal | ident | COMMENT }
 
-config_array_value = { string_literal | function | config_object | config_field }
+config_array = { array_open ~ (config_array_value ~ (array_separator ~ config_array_value?)*)? ~ array_close }
+config_array_value = { string_literal | function | config_object | config_field | COMMENT }
+
 config_object = { block_open ~ config_field* ~ block_close }
-config_array = { array_open ~ (config_array_value ~ (array_separator ~ config_array_value)*)? ~ array_close }
 config_param = { config_array | function | string_literal | config_field } 
 config_field = { ident ~ config_separator ~ config_param }
 

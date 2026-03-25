@@ -27,35 +27,20 @@ impl FormatterConfig {
     }
 }
 
-pub fn format(file_path: &str, config: FormatterConfig) -> bool {
-    let raw_input = match std::fs::read_to_string(file_path) {
-        Ok(content) => content,
-        Err(err) => {
-            eprintln!("Failed to read file: {err}");
-            return false;
-        }
-    };
-
+pub fn format_from_raw(raw_input: &str) -> Option<String> {
     let schema = match compile_only_ast(&raw_input) {
         Ok(result) => result,
         Err(errs) => {
             eprintln!("Compile error:\n{:#?}", errs);
 
-            return false;
+            return None;
         }
     };
 
-    let result = format_schema(&schema, &config);
-
-    if let Err(err) = std::fs::write(file_path, result) {
-        eprintln!("Failed to write file: {err}");
-        return false;
-    }
-
-    true
+    return Some(format_from_ast(&schema, &FormatterConfig::default()));
 }
 
-pub fn format_schema(schema: &Schema, config: &FormatterConfig) -> String {
+pub fn format_from_ast(schema: &Schema, config: &FormatterConfig) -> String {
     let mut out = String::new();
 
     for position in 0..schema.total_blocks {
