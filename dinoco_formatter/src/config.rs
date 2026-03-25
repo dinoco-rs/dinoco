@@ -95,36 +95,82 @@ fn get_next_info(ast_config: &AstConfig, start_search_pos: usize) -> Option<(usi
 }
 
 fn format_config_value(value: &ConfigValue, indent_level: usize, base_indent: &str) -> String {
+    let inner_indent = base_indent.repeat(indent_level + 1);
+    let outer_indent = base_indent.repeat(indent_level);
+
     match value {
-        ConfigValue::String(s) => format!("\"{}\"", s),
+        ConfigValue::String(s, _) => format!("\"{}\"", s),
 
-        ConfigValue::Array(arr) => match arr.len() {
-            0 => "[]".to_string(),
-
-            1 => {
-                let item = format_config_value(&arr[0], indent_level, base_indent);
-                format!("[{}]", item)
-            }
-
-            _ => {
-                let inner_indent = base_indent.repeat(indent_level + 1);
-                let outer_indent = base_indent.repeat(indent_level);
-
-                let items: Vec<String> = arr
-                    .iter()
-                    .map(|v| format!("{}{}", inner_indent, format_config_value(v, indent_level + 1, base_indent)))
-                    .collect();
-
-                format!("[\n{}\n{}]", items.join(",\n"), outer_indent)
-            }
-        },
-
-        ConfigValue::Function { name, args } => {
-            let args_str = args.iter().map(|v| format_config_value(v, indent_level, base_indent)).collect::<Vec<_>>().join(", ");
-
-            format!("{}({})", name, args_str)
+        ConfigValue::Comment(span) => {
+            format!("# {}", span.as_str().replace("#", "").trim())
         }
 
-        ConfigValue::Object(_) => "{ }".to_string(),
+        ConfigValue::Array(arr, _) => {
+            if arr.is_empty() {
+                return "[]".to_string();
+            }
+
+            let mut out = String::from("[\n");
+
+            let last_value_index = arr.iter().rposition(|v| !matches!(v, ConfigValue::Comment(_)));
+
+            for i in 0..arr.len() {
+                let item = &arr[i];
+                let fmt = format_config_value(item, indent_level + 1, base_indent);
+
+                match item {
+                    ConfigValue::Comment(comment_span) => {
+                        let is_inline = if i > 0 {
+                            let prev_line = arr[i - 1].span().end_pos().line_col().0;
+                            let curr_line = comment_span.start_pos().line_col().0;
+                            prev_line == curr_line
+                        } else {
+                            false
+                        };
+
+                        if is_inline {
+                            out.truncate(out.trim_end().len());
+                            out.push_str(&format!(" {}\n", fmt));
+                        } else {
+                            out.push_str(&format!("{}{}\n", inner_indent, fmt));
+                        }
+                    }
+                    _ => {
+                        out.push_str(&format!("{}{}", inner_indent, fmt));
+
+                        if Some(i) != last_value_index {
+                            out.push(',');
+                        }
+
+                        out.push('\n');
+                    }
+                }
+            }
+
+            out.push_str(&format!("{}]", outer_indent));
+            out
+        }
+
+        ConfigValue::Object(fields, _) => {
+            if fields.is_empty() {
+                return "{ }".to_string();
+            }
+
+            let mut parts = vec![];
+            for f in fields {
+                let val_str = if let Some(v) = &f.value {
+                    format!(" = {}", format_config_value(v, indent_level + 1, base_indent))
+                } else {
+                    "".into()
+                };
+                parts.push(format!("{}{}{}", inner_indent, f.name, val_str));
+            }
+            format!("{{\n{}\n{}}}", parts.join("\n"), outer_indent)
+        }
+
+        ConfigValue::Function { name, args, .. } => {
+            let args_str = args.iter().map(|v| format_config_value(v, indent_level, base_indent)).collect::<Vec<_>>().join(", ");
+            format!("{}({})", name, args_str)
+        }
     }
 }

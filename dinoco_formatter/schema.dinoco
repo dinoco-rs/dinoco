@@ -1,6 +1,6 @@
 config {
-    database = "postgres" # databasep
-    database_url = env("DATABASE_URL") # testing
+    database = "postgres"
+    database_url = env("DATABASE_URL")
 
     read_replicas = [
         env("DATABASE_URL_REPLICA_1"),
@@ -12,8 +12,6 @@ enum Name {
     one
     two
     three
-    # teste
-
     # teste
 }
 
@@ -33,15 +31,10 @@ model User {
 }
 
 model Post {
-    # adlkawlod office String
-
     id       String    @id @default(uuid())
-
-    # adlkawlod office String
     title    String    @default("Novo Post")
 
     authors  User[]    @relation(name: "UserPosts") # this is comment
-
     likedBy  User[]    @relation(name: "UserLikedPosts")
 
     ownerId  Integer?
