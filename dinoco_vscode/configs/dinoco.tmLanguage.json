@@ -44,7 +44,7 @@
 			"name": "keyword.control.config.dinoco"
 		},
 		"primitive_fields": {
-			"match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+(String|Integer|Boolean|Float|DateTime)\\b(\\[\\]|\\?)?",
+			"match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+(String|Integer|Boolean|Json|Float|DateTime)\\b(\\[\\]|\\?)?",
 			"captures": {
 				"1": { "name": "variable.other.property.dinoco" },
 				"2": { "name": "support.type.primitive.dinoco" },
