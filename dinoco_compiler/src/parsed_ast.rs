@@ -86,6 +86,8 @@ pub enum ParsedFieldType {
     Boolean,
     Integer,
     Float,
+    Json,
+    DateTime,
     Enum(String),
     Relation(String),
 }
@@ -97,6 +99,8 @@ impl ToString for ParsedFieldType {
             ParsedFieldType::Boolean => "Boolean".to_string(),
             ParsedFieldType::Integer => "Integer".to_string(),
             ParsedFieldType::Float => "Float or Integer".to_string(),
+            ParsedFieldType::Json => "Json object or Array".to_string(),
+            ParsedFieldType::DateTime => "Time in the utc".to_string(),
             ParsedFieldType::Enum(name) => name.clone(),
             ParsedFieldType::Relation(name) => name.clone(),
         }

@@ -137,6 +137,8 @@ pub enum FieldType {
     Boolean,
     Integer,
     Float,
+    Json,
+    DateTime,
     Custom(String),
 }
 
@@ -145,6 +147,7 @@ pub enum FunctionCall {
     Uuid,
     Snowflake,
     AutoIncrement,
+    Now,
     Env(String),
 }
 
@@ -164,6 +167,7 @@ impl FunctionCall {
                     "env" => Ok(Self::Env(params.to_string())),
                     "uuid" => Ok(Self::Uuid),
                     "snowflake" => Ok(Self::Snowflake),
+                    "now" => Ok(Self::Now),
                     "autoincrement" => Ok(Self::AutoIncrement),
                     _ => Err(vec![DinocoError::default()]),
                 }

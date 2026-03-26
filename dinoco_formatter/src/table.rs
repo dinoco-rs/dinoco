@@ -91,6 +91,8 @@ fn get_full_type_string(field: &Field) -> String {
         FieldType::Boolean => "Boolean".to_string(),
         FieldType::Integer => "Integer".to_string(),
         FieldType::Float => "Float".to_string(),
+        FieldType::Json => "Json".to_string(),
+        FieldType::DateTime => "DateTime".to_string(),
         FieldType::Custom(c) => c.clone(),
     };
 
@@ -138,6 +140,7 @@ fn format_default_value(dv: &FieldDefaultValue) -> String {
         FieldDefaultValue::Function(f) => match f {
             FunctionCall::Uuid => "uuid()".to_string(),
             FunctionCall::Snowflake => "snowflake()".to_string(),
+            FunctionCall::Now => "now()".to_string(),
             FunctionCall::AutoIncrement => "autoincrement()".to_string(),
             FunctionCall::Env(p) => format!("env({})", p),
         },

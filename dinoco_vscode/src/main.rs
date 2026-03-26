@@ -146,12 +146,21 @@ impl LanguageServer for LspServer {
 
         let mut completions = vec![];
 
+        if prefix_up_to_cursor.contains("@default(") && !prefix_up_to_cursor.ends_with(')') {
+            completions.extend(vec![
+                create_completion("autoincrement()", CompletionItemKind::FUNCTION, "Sequencial ID", "autoincrement()"),
+                create_completion("uuid()", CompletionItemKind::FUNCTION, "UUID v4", "uuid()"),
+                create_completion("snowflake()", CompletionItemKind::FUNCTION, "Snowflake ID", "snowflake()"),
+                create_completion("now()", CompletionItemKind::FUNCTION, "Current timestamp", "now()"),
+            ]);
+            return Ok(Some(CompletionResponse::Array(completions)));
+        }
+
         if last_word.starts_with('@') || prefix_up_to_cursor.ends_with('@') {
             completions.extend(vec![
                 create_completion("@id", CompletionItemKind::PROPERTY, "Primary Key", "id"),
                 create_completion("@unique", CompletionItemKind::PROPERTY, "Unique constraint", "unique"),
-                create_completion("@updatedAt", CompletionItemKind::PROPERTY, "Auto-update timestamp", "updatedAt"),
-                create_snippet_completion("@default", CompletionItemKind::FUNCTION, "Default value", "default(${1:value})"),
+                create_snippet_completion("@default", CompletionItemKind::FUNCTION, "Default value", "default($0)"),
                 create_snippet_completion(
                     "@relation",
                     CompletionItemKind::FUNCTION,

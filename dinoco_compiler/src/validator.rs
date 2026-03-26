@@ -218,6 +218,8 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
                 FieldType::Integer => parsed_field.field_type = ParsedFieldType::Integer,
                 FieldType::Boolean => parsed_field.field_type = ParsedFieldType::Boolean,
                 FieldType::Float => parsed_field.field_type = ParsedFieldType::Float,
+                FieldType::DateTime => parsed_field.field_type = ParsedFieldType::DateTime,
+                FieldType::Json => parsed_field.field_type = ParsedFieldType::Json,
             }
 
             match field.default_value.clone() {
@@ -296,6 +298,11 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
                         FunctionCall::Uuid => {
                             if !matches!(field.field_type, FieldType::String) {
                                 return Err(format_span_error("UUID is only supported for String fields.".to_string(), field.span));
+                            }
+                        }
+                        FunctionCall::Now => {
+                            if !matches!(field.field_type, FieldType::DateTime) {
+                                return Err(format_span_error("now() is only supported for DateTime fields.".to_string(), field.span));
                             }
                         }
 
