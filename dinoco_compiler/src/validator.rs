@@ -59,7 +59,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<Pa
 
                 if let ConfigValue::String(db, _) = value {
                     match db.as_str() {
-                        "sqlite" => database = Some(Database::Sqlite),
+                        // "sqlite" => database = Some(Database::Sqlite),
                         "mysql" => database = Some(Database::Mysql),
                         "postgresql" => database = Some(Database::Postgresql),
                         _ => return Err(format_span_error(format!("Unsupported database '{}'.", db), field.span)),

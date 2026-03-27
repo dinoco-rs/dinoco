@@ -8,7 +8,6 @@ use inquire::{Confirm, Select, Text};
 
 pub fn init_command() {
     let exists = std::fs::exists("dinoco/schema.dinoco").unwrap_or(false);
-
     if exists {
         let rewrite = Confirm::new("Dinoco environment is already initialized. Do you want to overwrite it?")
             .with_default(false)
@@ -113,6 +112,6 @@ pub fn init_command() {
     println!(
         "{} {}",
         "📚 Next steps: Check out the documentation at".bright_black(),
-        "https://docs.dinoco.io".cyan().underline()
+        "https://dinoco.io/docs".cyan().underline()
     );
 }

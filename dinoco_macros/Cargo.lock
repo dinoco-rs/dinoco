@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "dinoco_query"
+name = "dinoco_macros"
 version = "0.0.1"

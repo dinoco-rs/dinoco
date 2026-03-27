@@ -1,0 +1,16 @@
+[package]
+name = "dinoco_engine"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1.89"
+
+tokio = { version = "1.50.0", features = ["full", "rt-multi-thread"] }
+tokio-postgres = "0.7.16"
+
+mysql_async = "0.36.1"
+rusqlite = "0.39.0"
+futures = "0.3.32"
+async-stream = "0.3.6"
+deadpool-postgres = "0.14.1"

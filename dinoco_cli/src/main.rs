@@ -16,6 +16,15 @@ struct Cli {
 enum Commands {
     #[command(about = "Initialize the Dinoco environment to configure your database")]
     Init {},
+
+    #[command(subcommand)]
+    Database(DbCommands),
+}
+
+#[derive(Subcommand)]
+enum DbCommands {
+    #[command(about = "Import a schema from current database")]
+    Import {},
 }
 
 #[tokio::main]
@@ -29,5 +38,8 @@ async fn main() {
 
     match &cli.command {
         Commands::Init {} => init_command(),
+        Commands::Database(command) => match command {
+            DbCommands::Import {} => database_import_command().await,
+        },
     }
 }
