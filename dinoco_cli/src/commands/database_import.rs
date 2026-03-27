@@ -2,8 +2,6 @@ use dinoco_engine::{DinocoAdapter, DinocoAdapterStream, DinocoDatabaseRow, Dinoc
 use futures::StreamExt;
 
 pub async fn database_import_command() {
-    // postgresql://postgres.etrdhknlijggkswttdpz:CriadorDeBot@aws-1-sa-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true
-
     let adapter = PostgresAdapter::connect("".to_string()).await.unwrap();
 
     let mut stream = adapter
