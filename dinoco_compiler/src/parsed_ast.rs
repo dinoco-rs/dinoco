@@ -1,39 +1,39 @@
 use crate::FunctionCall;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedSchema {
     pub config: ParsedConfig,
     pub enums: Vec<ParsedEnum>,
     pub tables: Vec<ParsedTable>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedConfig {
     pub database: Database,
     pub database_url: ConnectionUrl,
     pub read_replicas: Vec<ConnectionUrl>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Database {
     Mysql,
     Postgresql,
     Sqlite,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionUrl {
     Literal(String),
     Env(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedEnum {
     pub name: String,
     pub values: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedTable {
     pub name: String,
     pub fields: Vec<ParsedField>,
@@ -66,7 +66,7 @@ pub enum ParsedRelation {
     ManyToMany(Option<String>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedField {
     pub name: String,
     pub field_type: ParsedFieldType,
@@ -80,7 +80,7 @@ pub struct ParsedField {
     pub default_value: ParsedFieldDefault,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ParsedFieldType {
     String,
     Boolean,
@@ -107,7 +107,7 @@ impl ToString for ParsedFieldType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ParsedFieldDefault {
     NotDefined,
     String(String),

@@ -5,15 +5,25 @@ use futures::stream::StreamExt;
 
 use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
-use crate::{DinocoAdapter, DinocoAdapterStream, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue};
+use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, QueryDialect};
 
 pub struct MySqlAdapter {
     pub url: String,
     pub client: Arc<Pool>,
 }
 
+pub struct MySqlDialect;
+
+static MYSQL_DIALECT: MySqlDialect = MySqlDialect;
+
 #[async_trait]
 impl DinocoAdapter for MySqlAdapter {
+    type Dialect = MySqlDialect;
+
+    fn dialect(&self) -> &Self::Dialect {
+        &MYSQL_DIALECT
+    }
+
     async fn connect(url: String) -> DinocoResult<Self> {
         Ok(Self {
             client: Arc::new(Pool::new(url.as_str())),
@@ -44,10 +54,7 @@ impl DinocoAdapter for MySqlAdapter {
 
         Ok(results)
     }
-}
 
-#[async_trait]
-impl DinocoAdapterStream for MySqlAdapter {
     async fn stream_as<T: DinocoRow + Send + 'static>(&self, query: &str, params: &[DinocoValue]) -> DinocoStream<T> {
         let client = self.client.clone();
         let query_owned = query.to_string();
@@ -77,6 +84,8 @@ impl From<DinocoValue> for Value {
             DinocoValue::Float(f) => Value::Double(f),
             DinocoValue::String(s) => Value::Bytes(s.into_bytes()),
             DinocoValue::Boolean(b) => Value::Int(if b { 1 } else { 0 }),
+            DinocoValue::Json(v) => Value::Bytes(v.to_string().into_bytes()),
+            DinocoValue::DateTime(dt) => Value::Bytes(dt.format("%Y-%m-%d %H:%M:%S").to_string().into_bytes()),
         }
     }
 }
@@ -115,5 +124,54 @@ impl DinocoDatabaseRow for Row {
 
     fn get<T: DinocoType>(&self, idx: usize) -> DinocoResult<T> {
         T::from_row(self, idx)
+    }
+}
+
+impl QueryDialect for MySqlDialect {
+    fn supports_custom_enum_types(&self) -> bool {
+        false
+    }
+
+    fn bind_param(&self, _index: usize) -> String {
+        "?".to_string()
+    }
+
+    fn identifier(&self, v: &str) -> String {
+        format!("`{}`", v)
+    }
+
+    fn modify_column(&self) -> String {
+        "MODIFY COLUMN".to_string()
+    }
+
+    fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String {
+        let base_type = match t {
+            ColumnType::Integer => "BIGINT".to_string(),
+            ColumnType::Float => "DOUBLE PRECISION".to_string(),
+            ColumnType::Text => "LONGTEXT".to_string(),
+            ColumnType::Boolean => "TINYINT(1)".to_string(),
+            ColumnType::Json => "JSON".to_string(),
+            ColumnType::DateTime => "TIMESTAMP".to_string(),
+            ColumnType::Enum(name) => {
+                // não existe enum global → fallback
+                format!("VARCHAR(255) /* enum {} */", name)
+            }
+
+            ColumnType::EnumInline(values) => {
+                format!("ENUM({})", values.iter().map(|v| format!("'{}'", v)).collect::<Vec<_>>().join(", "))
+            }
+        };
+
+        let mut definition = base_type;
+
+        if auto_increment {
+            definition.push_str(" AUTO_INCREMENT");
+        }
+
+        if is_primary {
+            definition.push_str(" PRIMARY KEY");
+        }
+
+        definition
     }
 }

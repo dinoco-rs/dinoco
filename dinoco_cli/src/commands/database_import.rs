@@ -1,8 +1,10 @@
-use dinoco_engine::{DinocoAdapter, DinocoAdapterStream, DinocoDatabaseRow, DinocoResult, DinocoRow, PostgresAdapter};
+use dinoco_engine::{DinocoAdapter, DinocoDatabaseRow, DinocoResult, DinocoRow, PostgresAdapter};
 use futures::StreamExt;
 
 pub async fn database_import_command() {
-    let adapter = PostgresAdapter::connect("".to_string()).await.unwrap();
+    let adapter = PostgresAdapter::connect("postgresql://postgres.votzhpldwahwltnonmnn:CriadorDeBot@aws-1-sa-east-1.pooler.supabase.com:5432/postgres".to_string())
+        .await
+        .unwrap();
 
     let mut stream = adapter
         .stream_as::<Table>("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'", &[])

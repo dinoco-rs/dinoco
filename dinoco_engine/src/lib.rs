@@ -3,22 +3,22 @@ use std::pin::Pin;
 
 mod databases;
 mod error;
+mod migration;
+mod sql;
 mod traits;
 mod value;
 
 pub use databases::*;
 pub use error::*;
+pub use migration::*;
+pub use sql::*;
 pub use traits::*;
 pub use value::*;
 
 pub type DinocoResult<T> = Result<T, DinocoError>;
 pub type DinocoStream<T> = Pin<Box<dyn Stream<Item = DinocoResult<T>> + Send>>;
 
-pub struct DinocoClient<T>
-where
-    T: DinocoAdapter,
-    T: DinocoAdapterStream,
-{
+pub struct DinocoClient<T: DinocoAdapter> {
     pub adapter: T,
     pub read_replicas: Vec<T>,
 }
@@ -76,5 +76,21 @@ impl DinocoType for bool {
 impl DinocoType for f64 {
     fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
         row.get_f64(idx)
+    }
+}
+
+impl DinocoType for serde_json::Value {
+    fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
+        let s = row.get_string(idx)?;
+
+        serde_json::from_str(&s).map_err(|e| DinocoError::ParseError(e.to_string()))
+    }
+}
+
+impl DinocoType for chrono::DateTime<chrono::Utc> {
+    fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
+        let s = row.get_string(idx)?;
+
+        s.parse().map_err(|e| DinocoError::ParseError(format!("Invalid datetime: {}", e)))
     }
 }

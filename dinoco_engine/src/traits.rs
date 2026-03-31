@@ -1,18 +1,18 @@
 use async_trait::async_trait;
 
+use crate::ColumnType;
 use crate::{DinocoResult, DinocoStream, DinocoValue};
 
 #[async_trait]
 pub trait DinocoAdapter: Sized {
+    type Dialect: QueryDialect;
+
+    fn dialect(&self) -> &Self::Dialect;
+
     async fn connect(url: String) -> DinocoResult<Self>;
-
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()>;
-
     async fn query_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>>;
-}
 
-#[async_trait]
-pub trait DinocoAdapterStream {
     async fn stream_as<T: DinocoRow + Send + 'static>(&self, query: &str, params: &[DinocoValue]) -> DinocoStream<T>;
 }
 
@@ -39,4 +39,12 @@ pub trait DinocoType: Sized {
 
 pub trait DinocoRow: Sized {
     fn from_row<R: DinocoDatabaseRow>(row: &R) -> DinocoResult<Self>;
+}
+
+pub trait QueryDialect {
+    fn bind_param(&self, index: usize) -> String;
+    fn identifier(&self, v: &str) -> String;
+    fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String;
+    fn modify_column(&self) -> String;
+    fn supports_custom_enum_types(&self) -> bool;
 }

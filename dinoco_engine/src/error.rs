@@ -2,7 +2,6 @@
 pub enum DinocoError {
     Postgres(tokio_postgres::Error),
     MySql(mysql_async::Error),
-    Sqlite(rusqlite::Error),
     TaskJoin(tokio::task::JoinError),
     ParseError(String),
     ConnectionError(String),
@@ -15,7 +14,6 @@ impl std::fmt::Display for DinocoError {
         match self {
             Self::Postgres(e) => write!(f, "Postgres error: {}", e),
             Self::MySql(e) => write!(f, "MySQL error: {}", e),
-            Self::Sqlite(e) => write!(f, "SQLite error: {}", e),
             Self::TaskJoin(e) => write!(f, "Async task join error: {}", e),
             Self::ParseError(msg) => write!(f, "Data parse error: {}", msg),
             Self::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
@@ -50,12 +48,6 @@ impl From<deadpool_postgres::BuildError> for DinocoError {
 impl From<mysql_async::Error> for DinocoError {
     fn from(e: mysql_async::Error) -> Self {
         Self::MySql(e)
-    }
-}
-
-impl From<rusqlite::Error> for DinocoError {
-    fn from(e: rusqlite::Error) -> Self {
-        Self::Sqlite(e)
     }
 }
 

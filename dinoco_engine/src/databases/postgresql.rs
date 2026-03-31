@@ -7,25 +7,37 @@ use futures::stream::{self, TryStreamExt};
 
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 
-use tokio_postgres::types::{IsNull, ToSql, Type, private::BytesMut, to_sql_checked};
+use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql_checked};
 use tokio_postgres::{NoTls, Row};
 
-use crate::{DinocoAdapter, DinocoAdapterStream, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue};
+use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, QueryDialect};
 
+pub struct PostgresDialect;
 pub struct PostgresAdapter {
     pub url: String,
     pub client: Arc<Pool>,
 }
 
+static POSTGRES_DIALECT: PostgresDialect = PostgresDialect;
+
 #[async_trait]
 impl DinocoAdapter for PostgresAdapter {
+    type Dialect = PostgresDialect;
+
+    fn dialect(&self) -> &Self::Dialect {
+        &POSTGRES_DIALECT
+    }
+
     async fn connect(url: String) -> DinocoResult<Self> {
         let pg_config = tokio_postgres::Config::from_str(&url).map_err(|e| DinocoError::from(e))?;
 
-        let mgr_config = ManagerConfig {
-            recycling_method: RecyclingMethod::Fast,
-        };
-        let mgr = Manager::from_config(pg_config, NoTls, mgr_config);
+        let mgr = Manager::from_config(
+            pg_config,
+            NoTls,
+            ManagerConfig {
+                recycling_method: RecyclingMethod::Fast,
+            },
+        );
 
         let pool = Pool::builder(mgr).max_size(16).build().map_err(|e| DinocoError::from(e))?;
 
@@ -54,10 +66,7 @@ impl DinocoAdapter for PostgresAdapter {
 
         Ok(results)
     }
-}
 
-#[async_trait]
-impl DinocoAdapterStream for PostgresAdapter {
     async fn stream_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoStream<T> {
         let client = self.client.clone();
 
@@ -66,7 +75,6 @@ impl DinocoAdapterStream for PostgresAdapter {
 
         let stream = stream::once(async move {
             let client = client.get().await.map_err(|e| DinocoError::from(e))?;
-
             let pg_params: Vec<&(dyn ToSql + Sync)> = params_owned.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
 
             let row_stream = client.query_raw(&query_owned, pg_params.iter().copied()).await.map_err(DinocoError::from)?;
@@ -87,8 +95,11 @@ impl ToSql for DinocoValue {
             DinocoValue::Null => Ok(IsNull::Yes),
             DinocoValue::Integer(i) => i.to_sql(ty, out),
             DinocoValue::Float(f) => f.to_sql(ty, out),
-            DinocoValue::String(s) => s.to_sql(ty, out),
             DinocoValue::Boolean(b) => b.to_sql(ty, out),
+            DinocoValue::String(s) => s.to_sql(ty, out),
+            DinocoValue::Json(v) => Json(v).to_sql(ty, out),
+
+            DinocoValue::DateTime(dt) => dt.to_string().to_sql(ty, out),
         }
     }
 
@@ -118,5 +129,49 @@ impl DinocoDatabaseRow for Row {
 
     fn get<T: DinocoType>(&self, idx: usize) -> DinocoResult<T> {
         T::from_row(self, idx)
+    }
+}
+
+impl QueryDialect for PostgresDialect {
+    fn supports_custom_enum_types(&self) -> bool {
+        true
+    }
+
+    fn bind_param(&self, index: usize) -> String {
+        format!("${}", index)
+    }
+
+    fn identifier(&self, v: &str) -> String {
+        format!("\"{}\"", v)
+    }
+
+    fn modify_column(&self) -> String {
+        "ALTER COLUMN".to_string()
+    }
+
+    fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String {
+        let mut base_type = match t {
+            ColumnType::Integer => "BIGINT".to_string(),
+            ColumnType::Float => "DOUBLE PRECISION".to_string(),
+            ColumnType::Text => "TEXT".to_string(),
+            ColumnType::Boolean => "BOOLEAN".to_string(),
+            ColumnType::Json => "JSONB".to_string(),
+            ColumnType::DateTime => "TIMESTAMP".to_string(),
+            ColumnType::Enum(name) => self.identifier(name),
+            ColumnType::EnumInline(_) => {
+                // fallback (não deveria acontecer no PG)
+                "TEXT".into()
+            } // _ => "".to_string(),
+        };
+
+        if auto_increment {
+            base_type.push_str(" GENERATED ALWAYS AS IDENTITY");
+        }
+
+        if is_primary {
+            base_type.push_str(" PRIMARY KEY");
+        }
+
+        base_type
     }
 }

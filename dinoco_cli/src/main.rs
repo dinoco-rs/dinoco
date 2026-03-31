@@ -2,7 +2,10 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 
 mod commands;
+mod utils;
+
 use commands::*;
+use utils::*;
 
 #[derive(Parser)]
 #[command(name = "dinoco")]
@@ -19,6 +22,15 @@ enum Commands {
 
     #[command(subcommand)]
     Database(DbCommands),
+
+    #[command(subcommand)]
+    Migrate(MigrateCommands),
+}
+
+#[derive(Subcommand)]
+enum MigrateCommands {
+    #[command(about = "Generate a migration from schema")]
+    Create {},
 }
 
 #[derive(Subcommand)]
@@ -40,6 +52,10 @@ async fn main() {
         Commands::Init {} => init_command(),
         Commands::Database(command) => match command {
             DbCommands::Import {} => database_import_command().await,
+        },
+
+        Commands::Migrate(command) => match command {
+            &MigrateCommands::Create {} => migrate_create().await,
         },
     }
 }

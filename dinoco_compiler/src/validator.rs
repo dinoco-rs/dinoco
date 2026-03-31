@@ -1,5 +1,5 @@
 use pest::Span;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     ConnectionUrl, Database, ParsedConfig, ParsedEnum, ParsedField, ParsedFieldDefault, ParsedFieldType, ParsedRelation, ParsedSchema, ParsedTable, ReferentialAction,
@@ -451,6 +451,7 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
         let ast_table = schema_tables.iter().find(|t| t.name == current_table_name).unwrap();
 
         let mut used_foreign_keys: HashSet<String> = HashSet::new();
+        let mut used_relations_name: HashMap<String, Vec<String>> = HashMap::new();
 
         for j in 0..parsed_tables[i].fields.len() {
             let parsed_field_name = parsed_tables[i].fields[j].name.clone();
@@ -494,6 +495,28 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                 }
 
                 let target_ast_field = if let Some(ref name) = current_rel_name {
+                    let entry = used_relations_name.entry(name.to_string()).or_default();
+                    entry.push(ast_field.name.clone());
+
+                    if entry.len() > 1 {
+                        let spans = ast_table.fields.iter().filter(|f| entry.contains(&f.name)).collect::<Vec<_>>();
+
+                        let errors = spans
+                            .iter()
+                            .map(|f| {
+                                (
+                                    format!(
+                                        "The relation name {} is used multiple times (conflict on field \"{}\"). Each @relation must have a unique name.",
+                                        name, f.name
+                                    ),
+                                    f.span,
+                                )
+                            })
+                            .collect::<Vec<(String, Span)>>();
+
+                        return Err(format_span_errors(errors));
+                    }
+
                     match back_relation_fields.iter().find(|f| get_relation_name(f).as_ref() == Some(name)) {
                         Some(f) => *f,
                         None => {

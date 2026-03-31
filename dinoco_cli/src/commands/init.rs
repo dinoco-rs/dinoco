@@ -1,13 +1,16 @@
+use crate::ternary;
+
+use std::path::Path;
+
 use dinoco_codegen::dinoco::{DinocoConfig, DinocoDatabase, DinocoDatabaseUrl, DinocoSchema};
 use dinoco_formatter::format_from_raw;
-use dinoco_macros::ternary;
 
 use colored::Colorize;
 use inquire::validator::Validation;
 use inquire::{Confirm, Select, Text};
 
 pub fn init_command() {
-    let exists = std::fs::exists("dinoco/schema.dinoco").unwrap_or(false);
+    let exists = Path::new("dinoco/schema.dinoco").exists();
     if exists {
         let rewrite = Confirm::new("Dinoco environment is already initialized. Do you want to overwrite it?")
             .with_default(false)
@@ -20,7 +23,8 @@ pub fn init_command() {
         }
     }
 
-    let database_prompt = Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL", "SQLite"]).prompt();
+    // let database_prompt = Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL", "SQLite"]).prompt();
+    let database_prompt = Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL"]).prompt();
     let database = match database_prompt {
         Ok(db) => db,
         Err(_) => return println!("{}", "You must select a database!".red()),

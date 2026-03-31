@@ -1,4 +1,5 @@
 use crate::{DinocoError, DinocoResult, FromDinocoValue, RowExt};
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DinocoValue {
@@ -7,6 +8,9 @@ pub enum DinocoValue {
     Float(f64),
     String(String),
     Boolean(bool),
+
+    Json(serde_json::Value),
+    DateTime(DateTime<Utc>),
 }
 
 impl DinocoValue {
@@ -56,5 +60,35 @@ impl FromDinocoValue for f64 {
             DinocoValue::Float(v) => Ok(*v),
             _ => Err(DinocoError::TypeMismatch),
         }
+    }
+}
+
+impl From<&str> for DinocoValue {
+    fn from(value: &str) -> Self {
+        DinocoValue::String(value.to_string())
+    }
+}
+
+impl From<String> for DinocoValue {
+    fn from(value: String) -> Self {
+        DinocoValue::String(value.to_string())
+    }
+}
+
+impl From<i64> for DinocoValue {
+    fn from(value: i64) -> Self {
+        DinocoValue::Integer(value)
+    }
+}
+
+impl From<f64> for DinocoValue {
+    fn from(value: f64) -> Self {
+        DinocoValue::Float(value)
+    }
+}
+
+impl From<bool> for DinocoValue {
+    fn from(value: bool) -> Self {
+        DinocoValue::Boolean(value)
     }
 }

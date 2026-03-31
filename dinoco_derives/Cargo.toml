@@ -1,0 +1,12 @@
+[package]
+name = "dinoco_derives"
+version = "0.0.1"
+edition = "2024"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.106"
+quote = "1.0.45"
+syn = "2.0.117"
