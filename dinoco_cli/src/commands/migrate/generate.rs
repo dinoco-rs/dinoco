@@ -70,9 +70,11 @@ pub async fn generate_migrate() -> DinocoResult<()> {
                 Ok(val) => val,
                 Err(_) => {
                     pb.finish_and_clear();
+
                     println!("\n{} {}\n", "✖".red().bold(), "Missing environment variable.".bold());
                     println!("  {} {}", "→ Variable:".yellow().bold(), var_name.cyan());
                     println!("  {} {}", "Hint:".blue().bold(), format!("Define {} in your environment or .env file.", var_name).white());
+
                     return Ok(());
                 }
             },
