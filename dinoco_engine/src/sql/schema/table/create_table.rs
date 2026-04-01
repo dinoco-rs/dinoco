@@ -1,5 +1,4 @@
-use super::SqlBuilder;
-use crate::{ColumnDefault, ColumnDefinition, ConstraintDefinition, ConstraintType, DinocoValue, QueryDialect};
+use crate::{ColumnDefault, ColumnDefinition, ConstraintDefinition, ConstraintType, DinocoValue, QueryDialect, SqlBuilder};
 
 pub struct CreateTableStatement<'a, D: QueryDialect> {
     pub table_name: &'a str,

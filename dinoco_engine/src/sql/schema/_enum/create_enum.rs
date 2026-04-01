@@ -1,5 +1,4 @@
-use super::SqlBuilder;
-use crate::{DinocoValue, QueryDialect};
+use crate::{DinocoValue, QueryDialect, SqlBuilder};
 use dinoco_compiler::ParsedEnum;
 
 pub struct CreateEnumStatement<'a, D: QueryDialect> {

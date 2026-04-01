@@ -1,5 +1,4 @@
-use super::SqlBuilder;
-use crate::{DinocoValue, QueryDialect};
+use crate::{DinocoValue, QueryDialect, SqlBuilder};
 
 pub struct DropIndexStatement<'a, D: QueryDialect> {
     pub index_name: &'a str,

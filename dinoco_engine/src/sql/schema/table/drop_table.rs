@@ -1,5 +1,4 @@
-use super::SqlBuilder;
-use crate::{DinocoValue, QueryDialect};
+use crate::{DinocoValue, QueryDialect, SqlBuilder};
 
 pub struct DropTableStatement<'a, D: QueryDialect> {
     pub table_name: &'a str,

@@ -1,5 +1,4 @@
-use super::SqlBuilder;
-use crate::{AlterAction, ColumnDefault, ColumnDefinition, ConstraintDefinition, ConstraintType, DinocoValue, QueryDialect};
+use crate::{AlterAction, ColumnDefault, ColumnDefinition, ConstraintDefinition, ConstraintType, DinocoValue, QueryDialect, SqlBuilder};
 
 pub struct AlterTableStatement<'a, D: QueryDialect> {
     pub table_name: &'a str,

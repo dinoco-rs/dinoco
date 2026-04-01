@@ -1,5 +1,4 @@
-use super::{OrderDirection, SqlBuilder};
-use crate::{DinocoValue, Expression, QueryDialect};
+use crate::{DinocoValue, Expression, OrderDirection, QueryDialect, SqlBuilder};
 
 pub struct SelectStatement<'a, D: QueryDialect> {
     pub select: &'a [&'a str],

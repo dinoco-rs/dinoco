@@ -1,26 +1,15 @@
 use crate::{DinocoValue, QueryDialect};
 
-mod alter_table;
-mod create_enum;
-mod create_index;
-mod create_table;
 mod data;
-mod drop_enum;
-mod drop_index;
-mod drop_table;
 mod helpers;
-mod select;
 
-pub use alter_table::*;
-pub use create_enum::*;
-pub use create_index::*;
-pub use create_table::*;
+mod query;
+mod schema;
+
 pub use data::*;
-pub use drop_enum::*;
-pub use drop_index::*;
-pub use drop_table::*;
 pub use helpers::*;
-pub use select::*;
+pub use query::*;
+pub use schema::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderDirection {
