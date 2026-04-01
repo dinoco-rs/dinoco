@@ -24,6 +24,7 @@ pub enum ColumnType {
     Boolean,
     Json,
     DateTime,
+    Bytes,
     Enum(String),
     EnumInline(Vec<String>),
 }

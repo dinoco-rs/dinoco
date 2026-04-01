@@ -1,5 +1,4 @@
 use crate::ternary;
-
 use std::path::Path;
 
 use dinoco_codegen::dinoco::{DinocoConfig, DinocoDatabase, DinocoDatabaseUrl, DinocoSchema};
@@ -11,29 +10,35 @@ use inquire::{Confirm, Select, Text};
 
 pub fn init_command() {
     let exists = Path::new("dinoco/schema.dinoco").exists();
+
     if exists {
-        let rewrite = Confirm::new("Dinoco environment is already initialized. Do you want to overwrite it?")
-            .with_default(false)
-            .prompt();
+        println!("\n{} {}", "⚠".yellow().bold(), "Dinoco project already exists in this directory.".yellow());
+        let rewrite = Confirm::new("Do you want to overwrite the existing configuration?").with_default(false).prompt();
 
         match rewrite {
             Ok(true) => {}
-            Ok(false) => return println!("{}", "Initialization cancelled.".yellow()),
+            Ok(false) => {
+                println!("{} {}", "✗".red().bold(), "Initialization cancelled.".white());
+                return;
+            }
             Err(_) => return,
         }
     }
 
-    // let database_prompt = Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL", "SQLite"]).prompt();
-    let database_prompt = Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL"]).prompt();
-    let database = match database_prompt {
+    let database = match Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL"]).prompt() {
         Ok(db) => db,
-        Err(_) => return println!("{}", "You must select a database!".red()),
+        Err(_) => {
+            println!("\n{} {}", "✖".red().bold(), "Database selection cancelled.".white());
+            return;
+        }
     };
 
-    let connection_type_prompt = Select::new("How do you want to provide the connection string?", vec!["Environment variable", "Static string"]).prompt();
-    let connection_type = match connection_type_prompt {
+    let connection_type = match Select::new("How do you want to provide the connection string?", vec!["Environment variable", "Static string"]).prompt() {
         Ok(ct) => ct,
-        Err(_) => return println!("{}", "You must select a connection type!".red()),
+        Err(_) => {
+            println!("\n{} {}", "✖".red().bold(), "Connection type selection cancelled.".white());
+            return;
+        }
     };
 
     let is_env = connection_type == "Environment variable";
@@ -56,31 +61,36 @@ pub fn init_command() {
     };
 
     let prompt_message = ternary!(is_env, "What is the environment variable name?", "What is the connection string?");
-    let connection_url_prompt = Text::new(prompt_message).with_validator(input_validator).prompt();
-
-    let connection_url = match connection_url_prompt {
+    let connection_url = match Text::new(prompt_message).with_validator(input_validator).prompt() {
         Ok(url) => url,
-        Err(_) => return println!("{}", "You must provide a valid input!".red()),
+        Err(_) => {
+            println!("\n{} {}", "✖".red().bold(), "Input cancelled.".white());
+            return;
+        }
     };
 
-    let with_replicas_prompt = Confirm::new("Do you want to use read replicas?").with_default(false).prompt();
-    let with_replicas = match with_replicas_prompt {
+    let with_replicas = match Confirm::new("Do you want to use read replicas?").with_default(false).prompt() {
         Ok(val) => val,
-        Err(_) => return println!("{}", "We need to know if you want to use read replicas.".red()),
+        Err(_) => {
+            println!("\n{} {}", "✖".red().bold(), "Replica configuration cancelled.".white());
+            return;
+        }
     };
 
     let mut replicas_amount = 0;
 
     if with_replicas {
-        let replica_validator = |input: &str| match input.trim().parse::<i32>() {
+        let replica_validator = |input: &str| match input.trim().parse::<u32>() {
             Ok(val) if val > 0 => Ok(Validation::Valid),
             _ => Ok(Validation::Invalid("Please enter a valid number greater than 0.".into())),
         };
 
-        let amount_prompt = Text::new("How many replicas?").with_validator(replica_validator).prompt();
-        match amount_prompt {
-            Ok(amount) => replicas_amount = amount.trim().parse::<i32>().unwrap(),
-            Err(_) => return println!("{}", "We need to know how many replicas you want to use!".red()),
+        match Text::new("How many replicas?").with_validator(replica_validator).prompt() {
+            Ok(amount) => replicas_amount = amount.trim().parse::<u32>().unwrap_or(0),
+            Err(_) => {
+                println!("\n{} {}", "✖".red().bold(), "Replica amount cancelled.".white());
+                return;
+            }
         };
     }
 
@@ -104,17 +114,40 @@ pub fn init_command() {
     let schema = DinocoSchema::new(config);
 
     if exists {
-        std::fs::remove_dir_all("dinoco").unwrap();
+        if let Err(e) = std::fs::remove_dir_all("dinoco") {
+            println!(
+                "\n{} {}\n  {} {}",
+                "✖".red().bold(),
+                "Failed to remove existing directory.".bold(),
+                "Reason:".yellow().bold(),
+                e
+            );
+            return;
+        }
     }
 
-    std::fs::create_dir_all("dinoco").unwrap();
+    if let Err(e) = std::fs::create_dir_all("dinoco") {
+        println!(
+            "\n{} {}\n  {} {}",
+            "✖".red().bold(),
+            "Failed to create dinoco directory.".bold(),
+            "Reason:".yellow().bold(),
+            e
+        );
+        return;
+    }
 
     let formatted_schema = format_from_raw(&schema.to_string()).unwrap_or(schema.to_string());
-    std::fs::write("dinoco/schema.dinoco", formatted_schema).unwrap();
 
-    println!("\n{} {}", "✔".green().bold(), "Your Dinoco environment was successfully created!".green());
+    if let Err(e) = std::fs::write("dinoco/schema.dinoco", formatted_schema) {
+        println!("\n{} {}\n  {} {}", "✖".red().bold(), "Failed to write schema file.".bold(), "Reason:".yellow().bold(), e);
+        return;
+    }
+
+    println!("\n{} {}", "✔".green().bold(), "Your Dinoco environment was successfully created!".white());
+    println!("  {} Schema created at: {}", "→".cyan().bold(), "dinoco/schema.dinoco".blue());
     println!(
-        "{} {}",
+        "\n{} {}",
         "📚 Next steps: Check out the documentation at".bright_black(),
         "https://dinoco.io/docs".cyan().underline()
     );

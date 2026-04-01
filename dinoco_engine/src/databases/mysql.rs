@@ -85,6 +85,7 @@ impl From<DinocoValue> for Value {
             DinocoValue::String(s) => Value::Bytes(s.into_bytes()),
             DinocoValue::Boolean(b) => Value::Int(if b { 1 } else { 0 }),
             DinocoValue::Json(v) => Value::Bytes(v.to_string().into_bytes()),
+            DinocoValue::Bytes(v) => Value::Bytes(v),
             DinocoValue::DateTime(dt) => Value::Bytes(dt.format("%Y-%m-%d %H:%M:%S").to_string().into_bytes()),
         }
     }
@@ -99,6 +100,11 @@ impl DinocoDatabaseRow for Row {
     fn get_string(&self, idx: usize) -> DinocoResult<String> {
         self.get::<String, _>(idx)
             .ok_or_else(|| DinocoError::ParseError(format!("Failed to get String at column {}", idx)))
+    }
+
+    fn get_bytes(&self, idx: usize) -> DinocoResult<Vec<u8>> {
+        self.get::<Vec<u8>, _>(idx)
+            .ok_or_else(|| DinocoError::ParseError(format!("Failed to get Bytes at column {}", idx)))
     }
 
     fn get_bool(&self, idx: usize) -> DinocoResult<bool> {
@@ -152,6 +158,8 @@ impl QueryDialect for MySqlDialect {
             ColumnType::Boolean => "TINYINT(1)".to_string(),
             ColumnType::Json => "JSON".to_string(),
             ColumnType::DateTime => "TIMESTAMP".to_string(),
+            ColumnType::Bytes => "BLOB".to_string(),
+
             ColumnType::Enum(name) => {
                 // não existe enum global → fallback
                 format!("VARCHAR(255) /* enum {} */", name)

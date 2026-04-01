@@ -138,6 +138,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -467,10 +476,12 @@ dependencies = [
 name = "dinoco_cli"
 version = "0.0.1"
 dependencies = [
+ "bincode",
  "clap",
  "colored",
  "dinoco_codegen",
  "dinoco_compiler",
+ "dinoco_derives",
  "dinoco_engine",
  "dinoco_formatter",
  "dotenvy",
@@ -491,6 +502,16 @@ dependencies = [
  "ariadne",
  "pest",
  "pest_derive",
+ "serde",
+]
+
+[[package]]
+name = "dinoco_derives"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

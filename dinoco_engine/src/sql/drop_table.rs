@@ -30,7 +30,7 @@ impl<'a, D: QueryDialect> DropTableStatement<'a, D> {
         builder.push_identifier(self.table_name);
 
         if self.cascade {
-            builder.push(" CASCADE");
+            builder.push(" CASCADE;");
         }
 
         builder.finish()

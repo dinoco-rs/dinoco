@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 
 use pest::Span;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DinocoError {
@@ -142,7 +143,7 @@ pub enum FieldType {
     Custom(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FunctionCall {
     Uuid,
     Snowflake,

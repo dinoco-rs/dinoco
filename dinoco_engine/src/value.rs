@@ -9,6 +9,8 @@ pub enum DinocoValue {
     String(String),
     Boolean(bool),
 
+    Bytes(Vec<u8>),
+
     Json(serde_json::Value),
     DateTime(DateTime<Utc>),
 }
@@ -63,6 +65,15 @@ impl FromDinocoValue for f64 {
     }
 }
 
+impl FromDinocoValue for Vec<u8> {
+    fn from_value(value: &DinocoValue) -> DinocoResult<Self> {
+        match value {
+            DinocoValue::Bytes(v) => Ok(v.to_vec()),
+            _ => Err(DinocoError::TypeMismatch),
+        }
+    }
+}
+
 impl From<&str> for DinocoValue {
     fn from(value: &str) -> Self {
         DinocoValue::String(value.to_string())
@@ -90,5 +101,11 @@ impl From<f64> for DinocoValue {
 impl From<bool> for DinocoValue {
     fn from(value: bool) -> Self {
         DinocoValue::Boolean(value)
+    }
+}
+
+impl From<Vec<u8>> for DinocoValue {
+    fn from(value: Vec<u8>) -> Self {
+        DinocoValue::Bytes(value)
     }
 }

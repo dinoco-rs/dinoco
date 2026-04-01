@@ -8,7 +8,7 @@ use crate::{
     mapper::map_referential_action,
 };
 
-pub fn generate_up_sql<T: DinocoAdapter>(adapter: &T, changes: Vec<MigrationStep>) -> String {
+pub fn generate_up_sql<'a, T: DinocoAdapter>(adapter: &'a T, changes: Vec<MigrationStep>) -> Vec<String> {
     let mut sql_statements = Vec::new();
     let dialect = adapter.dialect();
 
@@ -124,11 +124,7 @@ pub fn generate_up_sql<T: DinocoAdapter>(adapter: &T, changes: Vec<MigrationStep
         }
     }
 
-    if sql_statements.is_empty() {
-        String::new()
-    } else {
-        format!("{};\n", sql_statements.join(";\n\n"))
-    }
+    sql_statements
 }
 
 pub fn generate_down_sql<T: DinocoAdapter>(adapter: &T, changes: Vec<MigrationStep>) -> String {

@@ -295,6 +295,7 @@ dependencies = [
  "ariadne",
  "pest",
  "pest_derive",
+ "serde",
 ]
 
 [[package]]

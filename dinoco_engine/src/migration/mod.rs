@@ -1,6 +1,6 @@
 pub mod differ;
 pub mod mapper;
-pub mod sql;
+pub mod migration_sql;
 pub mod step;
 
 pub use step::MigrationStep;
@@ -8,22 +8,22 @@ pub use step::MigrationStep;
 use crate::DinocoAdapter;
 use dinoco_compiler::ParsedSchema;
 
-pub struct Migration<T: DinocoAdapter> {
-    pub adapter: T,
+pub struct Migration<'a, T: DinocoAdapter> {
+    pub adapter: &'a T,
     pub old_schema: Option<ParsedSchema>,
     pub new_schema: ParsedSchema,
 }
 
-impl<T> Migration<T>
+impl<'a, T> Migration<'a, T>
 where
     T: DinocoAdapter,
 {
-    pub fn new(adapter: T, old_schema: Option<ParsedSchema>, new_schema: ParsedSchema) -> Self {
+    pub fn new(adapter: &'a T, old_schema: Option<ParsedSchema>, new_schema: ParsedSchema) -> Self {
         Self { adapter, old_schema, new_schema }
     }
 
-    pub fn to_up_sql(&self, changes: Vec<MigrationStep>) -> String {
-        sql::generate_up_sql(&self.adapter, changes)
+    pub fn to_up_sql(&self, changes: Vec<MigrationStep>) -> Vec<String> {
+        migration_sql::generate_up_sql(self.adapter, changes)
     }
 
     pub fn diff(&self) -> Vec<MigrationStep> {

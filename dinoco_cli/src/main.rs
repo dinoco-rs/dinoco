@@ -5,7 +5,6 @@ mod commands;
 mod utils;
 
 use commands::*;
-use utils::*;
 
 #[derive(Parser)]
 #[command(name = "dinoco")]
@@ -30,7 +29,7 @@ enum Commands {
 #[derive(Subcommand)]
 enum MigrateCommands {
     #[command(about = "Generate a migration from schema")]
-    Create {},
+    Generate {},
 }
 
 #[derive(Subcommand)]
@@ -55,7 +54,9 @@ async fn main() {
         },
 
         Commands::Migrate(command) => match command {
-            &MigrateCommands::Create {} => migrate_create().await,
+            &MigrateCommands::Generate {} => {
+                let result = generate_migrate().await;
+            }
         },
     }
 }

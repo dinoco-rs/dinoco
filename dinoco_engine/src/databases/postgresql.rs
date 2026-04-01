@@ -99,6 +99,7 @@ impl ToSql for DinocoValue {
             DinocoValue::String(s) => s.to_sql(ty, out),
             DinocoValue::Json(v) => Json(v).to_sql(ty, out),
 
+            DinocoValue::Bytes(v) => v.to_sql(ty, out),
             DinocoValue::DateTime(dt) => dt.to_string().to_sql(ty, out),
         }
     }
@@ -124,6 +125,10 @@ impl DinocoDatabaseRow for Row {
     }
 
     fn get_f64(&self, idx: usize) -> DinocoResult<f64> {
+        Ok(self.try_get(idx)?)
+    }
+
+    fn get_bytes(&self, idx: usize) -> DinocoResult<Vec<u8>> {
         Ok(self.try_get(idx)?)
     }
 
@@ -157,11 +162,10 @@ impl QueryDialect for PostgresDialect {
             ColumnType::Boolean => "BOOLEAN".to_string(),
             ColumnType::Json => "JSONB".to_string(),
             ColumnType::DateTime => "TIMESTAMP".to_string(),
+            ColumnType::Bytes => "BYTEA".to_string(),
+
             ColumnType::Enum(name) => self.identifier(name),
-            ColumnType::EnumInline(_) => {
-                // fallback (não deveria acontecer no PG)
-                "TEXT".into()
-            } // _ => "".to_string(),
+            ColumnType::EnumInline(_) => "TEXT".into(),
         };
 
         if auto_increment {

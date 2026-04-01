@@ -79,6 +79,48 @@ impl DinocoType for f64 {
     }
 }
 
+impl DinocoType for Vec<u8> {
+    fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
+        row.get_bytes(idx)
+    }
+}
+
+impl DinocoType for Option<i64> {
+    fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
+        match row.get_i64(idx) {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
+    }
+}
+
+impl DinocoType for Option<String> {
+    fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
+        match row.get_string(idx) {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
+    }
+}
+
+impl DinocoType for Option<bool> {
+    fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
+        match row.get_bool(idx) {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
+    }
+}
+
+impl DinocoType for Option<f64> {
+    fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
+        match row.get_f64(idx) {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
+    }
+}
+
 impl DinocoType for serde_json::Value {
     fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self> {
         let s = row.get_string(idx)?;

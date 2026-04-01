@@ -1,52 +1,54 @@
+use serde::{Deserialize, Serialize};
+
 use crate::FunctionCall;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedSchema {
     pub config: ParsedConfig,
     pub enums: Vec<ParsedEnum>,
     pub tables: Vec<ParsedTable>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedConfig {
     pub database: Database,
     pub database_url: ConnectionUrl,
     pub read_replicas: Vec<ConnectionUrl>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Database {
     Mysql,
     Postgresql,
-    Sqlite,
+    // Sqlite,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ConnectionUrl {
     Literal(String),
     Env(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedEnum {
     pub name: String,
     pub values: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedTable {
     pub name: String,
     pub fields: Vec<ParsedField>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ReferentialAction {
     Cascade,
     SetNull,
     SetDefault,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ParsedRelation {
     NotDefined,
 
@@ -66,7 +68,7 @@ pub enum ParsedRelation {
     ManyToMany(Option<String>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedField {
     pub name: String,
     pub field_type: ParsedFieldType,
@@ -80,7 +82,7 @@ pub struct ParsedField {
     pub default_value: ParsedFieldDefault,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ParsedFieldType {
     String,
     Boolean,
@@ -107,7 +109,7 @@ impl ToString for ParsedFieldType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ParsedFieldDefault {
     NotDefined,
     String(String),

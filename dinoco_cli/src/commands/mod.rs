@@ -1,7 +1,11 @@
 mod database_import;
 mod init;
-mod migrate_create;
+mod migrate;
+
+mod helpers;
 
 pub use database_import::*;
+pub use helpers::*;
+
 pub use init::*;
-pub use migrate_create::*;
+pub use migrate::*;

@@ -29,6 +29,7 @@ pub trait DinocoDatabaseRow {
     fn get_string(&self, idx: usize) -> DinocoResult<String>;
     fn get_bool(&self, idx: usize) -> DinocoResult<bool>;
     fn get_f64(&self, idx: usize) -> DinocoResult<f64>;
+    fn get_bytes(&self, idx: usize) -> DinocoResult<Vec<u8>>;
 
     fn get<T: DinocoType>(&self, idx: usize) -> DinocoResult<T>;
 }
