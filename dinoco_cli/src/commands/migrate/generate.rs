@@ -5,13 +5,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use colored::*;
 use indicatif::ProgressBar;
+use inquire::{Confirm, Text};
 
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoResult, Migration, MigrationStep, MySqlAdapter, PostgresAdapter};
-use inquire::Confirm;
+use dinoco_engine::{DinocoAdapter, DinocoResult, Expression, Migration, MigrationStep, MySqlAdapter, PostgresAdapter, SelectStatement, col};
 
-use crate::commands::{encode_schema, insert_migration};
-use crate::{DataCheck, create_migration_table, decode_schema, drop_all_tables, fetch, get_last_migration};
+use crate::DataCheck;
+use crate::{create_migration_table, drop_all_tables, fetch, get_last_migration, insert_migration, to_snake_case};
+use crate::{decode_schema, encode_schema};
 
 pub async fn generate_migrate() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
@@ -87,7 +88,8 @@ pub async fn generate_migrate() -> DinocoResult<()> {
         Database::Postgresql => match PostgresAdapter::connect(url).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-                execute_migrate(adapter, &pb, parsed, &Database::Postgresql).await?;
+
+                execute_migrate(adapter, &pb, parsed).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
@@ -98,10 +100,12 @@ pub async fn generate_migrate() -> DinocoResult<()> {
         Database::Mysql => match MySqlAdapter::connect(url).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-                execute_migrate(adapter, &pb, parsed, &Database::Mysql).await?;
+
+                execute_migrate(adapter, &pb, parsed).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
+
                 println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
@@ -111,10 +115,10 @@ pub async fn generate_migrate() -> DinocoResult<()> {
     Ok(())
 }
 
-pub async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema, db_type: &Database) -> DinocoResult<()> {
+async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()> {
     pb.set_message("Fetching current database state...");
 
-    let tables = fetch(&adapter, db_type).await?;
+    let tables = fetch(&adapter).await?;
     let has_dinoco_migrations = tables.iter().any(|x| x.name == "_dinoco_migrations");
 
     if !tables.is_empty() && !has_dinoco_migrations {
@@ -162,6 +166,8 @@ pub async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, par
         None
     };
 
+    return Ok(());
+
     pb.set_message("Calculating schema diff...");
 
     let migration = Migration::new(&adapter, last_migration, parsed_schema.clone());
@@ -181,15 +187,11 @@ pub async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, par
     let mut has_data_loss = false;
     let mut loss_descriptions = Vec::new();
 
-    let q = match db_type {
-        Database::Postgresql => "\"",
-        Database::Mysql => "`",
-    };
-
     for change in &changes {
         match change {
             MigrationStep::DropTable(table_name) => {
-                let query = format!("SELECT 1 as has_data FROM {q}{table_name}{q} LIMIT 1");
+                let query = SelectStatement::new(adapter.dialect()).select(&["1 as has_data"]).from("User").limit(1).to_sql().0;
+
                 if let Ok(res) = adapter.query_as::<DataCheck>(&query, &[]).await {
                     if !res.is_empty() {
                         has_data_loss = true;
@@ -198,11 +200,15 @@ pub async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, par
                 }
             }
             MigrationStep::DropColumn { table_name, field } => {
-                let query = format!(
-                    "SELECT 1 as has_data FROM {q}{table_name}{q} WHERE {q}{col_name}{q} IS NOT NULL LIMIT 1",
-                    table_name = table_name,
-                    col_name = field.name
-                );
+                let cond = Expression::IsNotNull(Box::new(col(field.name.clone())));
+
+                let query = SelectStatement::new(adapter.dialect())
+                    .select(&["1 as has_data"])
+                    .from(table_name)
+                    .condition(cond)
+                    .limit(1)
+                    .to_sql()
+                    .0;
 
                 if let Ok(res) = adapter.query_as::<DataCheck>(&query, &[]).await {
                     if !res.is_empty() {
@@ -221,6 +227,7 @@ pub async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, par
         for desc in loss_descriptions.iter().take(3) {
             println!("  {} {}", "•".red(), desc.yellow());
         }
+
         if loss_descriptions.len() > 3 {
             println!("  {} ...and {} more items.", "•".red(), loss_descriptions.len() - 3);
         }
@@ -241,31 +248,66 @@ pub async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, par
         }
     }
 
-    let pb_exec = ProgressBar::new_spinner();
-    pb_exec.enable_steady_tick(Duration::from_millis(80));
-    pb_exec.set_message("Applying migration to database...");
+    let mut migration_name = String::new();
+
+    loop {
+        match Text::new("Enter a name for the new migration (e.g., AddedTesting):").prompt() {
+            Ok(input_name) => {
+                let trimmed = input_name.trim();
+
+                if trimmed.is_empty() {
+                    println!("{} {}", "⚠".yellow().bold(), "Migration name cannot be empty. Please try again.".white());
+
+                    continue;
+                }
+
+                let snake_name = to_snake_case(trimmed);
+                let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                let proposed_name = format!("{}_{}", timestamp, snake_name);
+
+                let migration_dir = format!("dinoco/migrations/{}", proposed_name);
+
+                if Path::new(&migration_dir).exists() {
+                    println!(
+                        "{} {}",
+                        "✖".red().bold(),
+                        "A migration with this name/timestamp already exists. Please wait a second or use a different name.".white()
+                    );
+                } else {
+                    migration_name = proposed_name;
+
+                    break;
+                }
+            }
+            Err(_) => {
+                println!("{} {}", "✗".red().bold(), "Prompt error. Migration cancelled.".white());
+                return Ok(());
+            }
+        }
+    }
+
+    pb.set_message("Applying migration to database...");
 
     let sqls = migration.to_up_sql(changes);
-
     for sql in &sqls {
         adapter.execute(&sql, &[]).await?;
     }
 
-    pb_exec.set_message("Saving migration history...");
+    pb.set_message("Saving migration history...");
 
-    let schema_bytes = encode_schema(parsed_schema);
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    let migration_name = format!("{}_migration", timestamp);
-
-    insert_migration(&adapter, &migration_name, schema_bytes).await?;
+    insert_migration(&adapter, &migration_name, encode_schema(parsed_schema)).await?;
 
     std::fs::create_dir_all(format!("dinoco/migrations/{migration_name}")).unwrap();
     std::fs::write(format!("dinoco/migrations/{migration_name}/migration.sql"), sqls.join("\n\n")).unwrap();
 
-    pb_exec.finish_and_clear();
+    pb.finish_and_clear();
+
     println!("{} {}", "✔".green().bold(), "Migration applied successfully!".white());
 
-    println!("{} {}", "→".cyan().bold(), "Generating models...".dimmed());
+    pb.set_message(format!("{} {}", "→".cyan().bold(), "Generating models...".dimmed()));
+
+    pb.finish_and_clear();
+
     println!("{} {}", "✔".green().bold(), "Models generated successfully!".white());
 
     Ok(())

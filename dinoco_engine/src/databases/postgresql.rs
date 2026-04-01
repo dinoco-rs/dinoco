@@ -138,8 +138,12 @@ impl DinocoDatabaseRow for Row {
 }
 
 impl QueryDialect for PostgresDialect {
-    fn supports_custom_enum_types(&self) -> bool {
-        true
+    fn get_public_table(&self) -> String {
+        "public".to_string()
+    }
+
+    fn cast_boolean(&self, column: String) -> String {
+        format!("CAST({} = 'YES' AS BOOLEAN)", column)
     }
 
     fn bind_param(&self, index: usize) -> String {
@@ -148,6 +152,10 @@ impl QueryDialect for PostgresDialect {
 
     fn identifier(&self, v: &str) -> String {
         format!("\"{}\"", v)
+    }
+
+    fn string(&self, v: &str) -> String {
+        format!("'{}'", v)
     }
 
     fn modify_column(&self) -> String {

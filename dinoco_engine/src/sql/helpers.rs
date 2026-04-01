@@ -1,6 +1,6 @@
 use crate::{BinaryOperator, DinocoValue, Expression};
 
-pub fn col(name: &'static str) -> Expression {
+pub fn col(name: String) -> Expression {
     Expression::Column(name)
 }
 

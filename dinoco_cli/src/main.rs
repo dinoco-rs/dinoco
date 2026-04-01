@@ -4,7 +4,10 @@ use colored::Colorize;
 mod commands;
 mod utils;
 
+mod helpers;
+
 use commands::*;
+use helpers::*;
 
 #[derive(Parser)]
 #[command(name = "dinoco")]
@@ -20,9 +23,6 @@ enum Commands {
     Init {},
 
     #[command(subcommand)]
-    Database(DbCommands),
-
-    #[command(subcommand)]
     Migrate(MigrateCommands),
 }
 
@@ -30,12 +30,6 @@ enum Commands {
 enum MigrateCommands {
     #[command(about = "Generate a migration from schema")]
     Generate {},
-}
-
-#[derive(Subcommand)]
-enum DbCommands {
-    #[command(about = "Import a schema from current database")]
-    Import {},
 }
 
 #[tokio::main]
@@ -49,9 +43,6 @@ async fn main() {
 
     match &cli.command {
         Commands::Init {} => init_command(),
-        Commands::Database(command) => match command {
-            DbCommands::Import {} => database_import_command().await,
-        },
 
         Commands::Migrate(command) => match command {
             &MigrateCommands::Generate {} => {

@@ -13,10 +13,10 @@ impl<'a, D: QueryDialect> DropEnumStatement<'a, D> {
     pub fn to_sql(&self) -> (String, Vec<DinocoValue>) {
         let mut builder = SqlBuilder::new(self.dialect, 128);
 
-        if self.dialect.supports_custom_enum_types() {
-            builder.push("DROP TYPE IF EXISTS ");
-            builder.push_identifier(self.name);
-        }
+        // if self.dialect.supports_custom_enum_types() {
+        //     builder.push("DROP TYPE IF EXISTS ");
+        //     builder.push_identifier(self.name);
+        // }
 
         builder.finish()
     }

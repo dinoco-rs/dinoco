@@ -45,7 +45,11 @@ pub trait DinocoRow: Sized {
 pub trait QueryDialect {
     fn bind_param(&self, index: usize) -> String;
     fn identifier(&self, v: &str) -> String;
+    fn string(&self, v: &str) -> String;
+
     fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String;
     fn modify_column(&self) -> String;
-    fn supports_custom_enum_types(&self) -> bool;
+
+    fn get_public_table(&self) -> String;
+    fn cast_boolean(&self, column: String) -> String;
 }

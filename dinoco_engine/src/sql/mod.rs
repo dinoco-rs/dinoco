@@ -22,6 +22,12 @@ pub use drop_table::*;
 pub use helpers::*;
 pub use select::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderDirection {
+    Asc,
+    Desc,
+}
+
 pub enum BinaryOperator {
     Eq,
     Neq,
@@ -33,8 +39,11 @@ pub enum BinaryOperator {
 }
 
 pub enum Expression {
-    Column(&'static str),
+    Column(String),
+    String(String),
     Value(DinocoValue),
+    IsNull(Box<Expression>),
+    IsNotNull(Box<Expression>),
     BinaryOp {
         left: Box<Expression>,
         op: BinaryOperator,
@@ -63,6 +72,10 @@ impl<'a, D: QueryDialect> SqlBuilder<'a, D> {
 
     pub fn push_identifier(&mut self, identifier: &str) {
         self.buffer.push_str(&self.dialect.identifier(identifier));
+    }
+
+    pub fn push_string(&mut self, string: &str) {
+        self.buffer.push_str(&self.dialect.string(string));
     }
 
     pub fn push_bind_param(&mut self, value: DinocoValue) {

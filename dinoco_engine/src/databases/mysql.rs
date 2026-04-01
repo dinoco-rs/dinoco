@@ -134,8 +134,12 @@ impl DinocoDatabaseRow for Row {
 }
 
 impl QueryDialect for MySqlDialect {
-    fn supports_custom_enum_types(&self) -> bool {
-        false
+    fn get_public_table(&self) -> String {
+        "DATABASE()".to_string()
+    }
+
+    fn cast_boolean(&self, column: String) -> String {
+        format!("{} = 'YES'", column)
     }
 
     fn bind_param(&self, _index: usize) -> String {
@@ -144,6 +148,10 @@ impl QueryDialect for MySqlDialect {
 
     fn identifier(&self, v: &str) -> String {
         format!("`{}`", v)
+    }
+
+    fn string(&self, v: &str) -> String {
+        format!("'{}'", v)
     }
 
     fn modify_column(&self) -> String {
