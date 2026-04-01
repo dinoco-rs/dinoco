@@ -1,4 +1,4 @@
-use crate::{DinocoValue, SqlDialect, SqlBuilder};
+use crate::SqlDialect;
 
 pub struct DropTableStatement<'a, D: SqlDialect> {
     pub table_name: &'a str,
@@ -19,19 +19,5 @@ impl<'a, D: SqlDialect> DropTableStatement<'a, D> {
         self.cascade = true;
 
         self
-    }
-
-    pub fn to_sql(&self) -> (String, Vec<DinocoValue>) {
-        let mut builder = SqlBuilder::new(self.dialect, 128);
-
-        builder.push("DROP TABLE ");
-
-        builder.push_identifier(self.table_name);
-
-        if self.cascade {
-            builder.push(" CASCADE;");
-        }
-
-        builder.finish()
     }
 }

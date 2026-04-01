@@ -46,7 +46,7 @@ async fn main() {
 
         Commands::Migrate(command) => match command {
             &MigrateCommands::Generate {} => {
-                let result = generate_migrate().await;
+                let _result = generate_migrate().await;
             }
         },
     }

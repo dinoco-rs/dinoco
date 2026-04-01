@@ -5,7 +5,7 @@ use futures::stream::StreamExt;
 
 use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
-use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, SqlDialect};
+use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, SqlDialect, SqlDialectBuilders};
 
 pub struct MySqlAdapter {
     pub url: String,
@@ -15,6 +15,8 @@ pub struct MySqlAdapter {
 pub struct MySqlDialect;
 
 static MYSQL_DIALECT: MySqlDialect = MySqlDialect;
+
+impl SqlDialectBuilders for MySqlDialect {}
 
 #[async_trait]
 impl DinocoAdapter for MySqlAdapter {
@@ -147,11 +149,13 @@ impl SqlDialect for MySqlDialect {
     }
 
     fn identifier(&self, v: &str) -> String {
-        format!("`{}`", v)
+        let escaped = v.replace('`', "``");
+        format!("`{}`", escaped)
     }
 
     fn literal_string(&self, v: &str) -> String {
-        format!("'{}'", v)
+        let escaped = v.replace('\'', "''");
+        format!("'{}'", escaped)
     }
 
     fn modify_column(&self) -> String {
@@ -169,7 +173,6 @@ impl SqlDialect for MySqlDialect {
             ColumnType::Bytes => "BLOB".to_string(),
 
             ColumnType::Enum(name) => {
-                // não existe enum global → fallback
                 format!("VARCHAR(255) /* enum {} */", name)
             }
 

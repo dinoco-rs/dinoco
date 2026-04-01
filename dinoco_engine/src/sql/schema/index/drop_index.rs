@@ -1,4 +1,4 @@
-use crate::{DinocoValue, SqlBuilder, SqlDialect};
+use crate::SqlDialect;
 
 pub struct DropIndexStatement<'a, D: SqlDialect> {
     pub index_name: &'a str,
@@ -19,19 +19,5 @@ impl<'a, D: SqlDialect> DropIndexStatement<'a, D> {
         self.table_name = Some(table_name);
 
         self
-    }
-
-    pub fn to_sql(&self) -> (String, Vec<DinocoValue>) {
-        let mut builder = SqlBuilder::new(self.dialect, 128);
-
-        builder.push("DROP INDEX ");
-        builder.push_identifier(self.index_name);
-
-        if let Some(table) = self.table_name {
-            builder.push(" ON ");
-            builder.push_identifier(table);
-        }
-
-        builder.finish()
     }
 }

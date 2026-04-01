@@ -1,24 +1,31 @@
 use dinoco_compiler::Database;
 use dinoco_engine::{
     BinaryOperator, ColumnDefault, ColumnDefinition, ColumnType, CreateTableStatement, DinocoAdapter, DinocoResult, DinocoValue, DropTableStatement, Expression, OrderDirection,
-    SelectStatement, SqlDialect,
+    SelectStatement, SqlDialect, SqlDialectBuilders,
 };
 
 use crate::{DatabaseColumn, DatabaseParsedTable, DatabaseTable, DinocoMigration};
 
-pub async fn drop_all_tables<T: DinocoAdapter>(adapter: &T, tables: Vec<DatabaseParsedTable>) -> DinocoResult<()> {
+pub async fn drop_all_tables<T: DinocoAdapter>(adapter: &T, tables: Vec<DatabaseParsedTable>) -> DinocoResult<()>
+where
+    T::Dialect: SqlDialectBuilders,
+{
     let dialect = adapter.dialect();
 
     for table in tables {
-        let query = DropTableStatement::new(dialect, &table.name).cascade().to_sql().0;
+        let stmt = DropTableStatement::new(dialect, &table.name).cascade();
+        let (query, _) = dialect.build_drop_table(&stmt);
 
-        adapter.execute(&query, &[]).await?
+        println!("{:?}", adapter.execute(&query, &[]).await);
     }
 
     Ok(())
 }
 
-pub async fn create_migration_table<T: DinocoAdapter>(adapter: &T) -> DinocoResult<()> {
+pub async fn create_migration_table<T: DinocoAdapter>(adapter: &T) -> DinocoResult<()>
+where
+    T::Dialect: SqlDialectBuilders,
+{
     let dialect = adapter.dialect();
 
     let stmt = CreateTableStatement::new(dialect, "_dinoco_migrations")
@@ -55,7 +62,7 @@ pub async fn create_migration_table<T: DinocoAdapter>(adapter: &T) -> DinocoResu
             default: Some(ColumnDefault::Function("NOW()".to_string())),
         });
 
-    let (sql, _) = stmt.to_sql();
+    let (sql, _) = dialect.build_create_table(&stmt);
 
     adapter.execute(&sql, &[]).await?;
 
@@ -89,7 +96,6 @@ pub async fn insert_migration<T: DinocoAdapter>(adapter: &T, name: &str, schema_
 pub async fn fetch<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<DatabaseParsedTable>> {
     let mut tables = vec![];
 
-    println!("{:?}", fetch_tables(adapter).await);
     let all_tables = fetch_tables(adapter).await?;
 
     for table in all_tables {
@@ -127,8 +133,6 @@ pub async fn fetch_tables<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<Dat
 
 pub async fn fetch_columns<T: DinocoAdapter>(adapter: &T, table_name: &str) -> DinocoResult<Vec<DatabaseColumn>> {
     let dialect = adapter.dialect();
-
-    println!("aaa: {}", table_name);
 
     let nullable = format!("{} AS nullable", dialect.cast_boolean("is_nullable"));
     let fields = &["column_name AS name", "data_type AS db_type", nullable.as_str(), "column_default AS default_value"];

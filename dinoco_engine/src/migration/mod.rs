@@ -5,10 +5,14 @@ pub mod step;
 
 pub use step::MigrationStep;
 
-use crate::DinocoAdapter;
+use crate::{DinocoAdapter, SqlDialectBuilders};
 use dinoco_compiler::ParsedSchema;
 
-pub struct Migration<'a, T: DinocoAdapter> {
+pub struct Migration<'a, T>
+where
+    T: DinocoAdapter,
+    T::Dialect: SqlDialectBuilders,
+{
     pub adapter: &'a T,
     pub old_schema: Option<ParsedSchema>,
     pub new_schema: ParsedSchema,
@@ -17,6 +21,7 @@ pub struct Migration<'a, T: DinocoAdapter> {
 impl<'a, T> Migration<'a, T>
 where
     T: DinocoAdapter,
+    T::Dialect: SqlDialectBuilders,
 {
     pub fn new(adapter: &'a T, old_schema: Option<ParsedSchema>, new_schema: ParsedSchema) -> Self {
         Self { adapter, old_schema, new_schema }

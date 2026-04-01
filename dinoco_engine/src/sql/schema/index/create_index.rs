@@ -1,4 +1,4 @@
-use crate::{DinocoValue, SqlDialect, SqlBuilder};
+use crate::SqlDialect;
 
 pub struct CreateIndexStatement<'a, D: SqlDialect> {
     pub table_name: &'a str,
@@ -35,32 +35,5 @@ impl<'a, D: SqlDialect> CreateIndexStatement<'a, D> {
         self.is_unique = true;
 
         self
-    }
-
-    pub fn to_sql(&self) -> (String, Vec<DinocoValue>) {
-        let mut builder = SqlBuilder::new(self.dialect, 256);
-
-        builder.push("CREATE ");
-
-        if self.is_unique {
-            builder.push("UNIQUE ");
-        }
-
-        builder.push("INDEX ");
-        builder.push_identifier(self.index_name);
-        builder.push(" ON ");
-        builder.push_identifier(self.table_name);
-        builder.push(" (");
-
-        for (i, col) in self.columns.iter().enumerate() {
-            if i > 0 {
-                builder.push(", ");
-            }
-            builder.push_identifier(col);
-        }
-
-        builder.push(")");
-
-        builder.finish()
     }
 }

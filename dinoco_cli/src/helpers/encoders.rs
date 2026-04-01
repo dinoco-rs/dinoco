@@ -10,7 +10,7 @@ pub fn decode_schema(bytes: &[u8]) -> ParsedSchema {
     bincode::deserialize(bytes).expect("failed to decode schema")
 }
 
-fn normalize_schema(schema: &mut ParsedSchema) {
+pub fn normalize_schema(schema: &mut ParsedSchema) {
     schema.tables.sort_by(|a, b| a.name.cmp(&b.name));
 
     for table in &mut schema.tables {

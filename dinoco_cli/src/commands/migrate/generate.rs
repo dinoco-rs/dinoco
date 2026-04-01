@@ -8,11 +8,10 @@ use indicatif::ProgressBar;
 use inquire::{Confirm, Text};
 
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoResult, Expression, Migration, MigrationStep, MySqlAdapter, PostgresAdapter, SelectStatement, col};
+use dinoco_engine::{DinocoAdapter, DinocoResult, Expression, Migration, MigrationStep, MySqlAdapter, PostgresAdapter, SelectStatement, SqlDialectBuilders, col};
 
 use crate::DataCheck;
-use crate::{create_migration_table, drop_all_tables, fetch, get_last_migration, insert_migration, to_snake_case};
-use crate::{decode_schema, encode_schema};
+use crate::{create_migration_table, decode_schema, drop_all_tables, encode_schema, fetch, get_last_migration, insert_migration, normalize_schema, to_snake_case};
 
 pub async fn generate_migrate() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
@@ -117,7 +116,11 @@ pub async fn generate_migrate() -> DinocoResult<()> {
     Ok(())
 }
 
-async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()> {
+async fn execute_migrate<T>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()>
+where
+    T: DinocoAdapter,
+    T::Dialect: SqlDialectBuilders,
+{
     pb.set_message("Fetching current database state...");
 
     let tables = fetch(&adapter).await?;
@@ -168,12 +171,16 @@ async fn execute_migrate<T: DinocoAdapter>(adapter: T, pb: &ProgressBar, parsed_
         None
     };
 
-    return Ok(());
-
     pb.set_message("Calculating schema diff...");
 
-    let migration = Migration::new(&adapter, last_migration, parsed_schema.clone());
+    let mut normalized_schema = parsed_schema.clone();
+
+    normalize_schema(&mut normalized_schema);
+
+    let migration = Migration::new(&adapter, last_migration, normalized_schema);
     let changes = migration.diff();
+
+    println!("{:?}", changes);
 
     pb.finish_and_clear();
 

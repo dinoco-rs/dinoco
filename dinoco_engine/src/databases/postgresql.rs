@@ -10,7 +10,7 @@ use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql_checked};
 use tokio_postgres::{NoTls, Row};
 
-use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, SqlDialect};
+use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, SqlDialect, SqlDialectBuilders};
 
 pub struct PostgresDialect;
 pub struct PostgresAdapter {
@@ -19,6 +19,8 @@ pub struct PostgresAdapter {
 }
 
 static POSTGRES_DIALECT: PostgresDialect = PostgresDialect;
+
+impl SqlDialectBuilders for PostgresDialect {}
 
 #[async_trait]
 impl DinocoAdapter for PostgresAdapter {
@@ -151,11 +153,14 @@ impl SqlDialect for PostgresDialect {
     }
 
     fn identifier(&self, v: &str) -> String {
-        format!("\"{}\"", v)
+        let escaped = v.replace('"', "\"\"");
+
+        format!("\"{}\"", escaped)
     }
 
     fn literal_string(&self, v: &str) -> String {
-        format!("'{}'", v)
+        let escaped = v.replace('\'', "''");
+        format!("'{}'", escaped)
     }
 
     fn modify_column(&self) -> String {
