@@ -5,7 +5,7 @@ use futures::stream::StreamExt;
 
 use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
-use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, QueryDialect};
+use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, SqlDialect};
 
 pub struct MySqlAdapter {
     pub url: String,
@@ -133,13 +133,13 @@ impl DinocoDatabaseRow for Row {
     }
 }
 
-impl QueryDialect for MySqlDialect {
-    fn get_public_table(&self) -> String {
+impl SqlDialect for MySqlDialect {
+    fn default_schema(&self) -> String {
         "DATABASE()".to_string()
     }
 
-    fn cast_boolean(&self, column: String) -> String {
-        format!("{} = 'YES'", column)
+    fn cast_boolean(&self, expr: &str) -> String {
+        format!("{} = 'YES'", expr)
     }
 
     fn bind_param(&self, _index: usize) -> String {
@@ -150,7 +150,7 @@ impl QueryDialect for MySqlDialect {
         format!("`{}`", v)
     }
 
-    fn string(&self, v: &str) -> String {
+    fn literal_string(&self, v: &str) -> String {
         format!("'{}'", v)
     }
 

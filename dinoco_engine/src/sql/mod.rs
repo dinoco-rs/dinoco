@@ -1,4 +1,4 @@
-use crate::{DinocoValue, QueryDialect};
+use crate::{DinocoValue, SqlDialect};
 
 mod data;
 mod helpers;
@@ -40,13 +40,13 @@ pub enum Expression {
     },
 }
 
-pub struct SqlBuilder<'a, D: QueryDialect> {
+pub struct SqlBuilder<'a, D: SqlDialect> {
     buffer: String,
     parameters: Vec<DinocoValue>,
     dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> SqlBuilder<'a, D> {
+impl<'a, D: SqlDialect> SqlBuilder<'a, D> {
     pub fn new(dialect: &'a D, size: usize) -> Self {
         Self {
             buffer: String::with_capacity(size),
@@ -64,7 +64,7 @@ impl<'a, D: QueryDialect> SqlBuilder<'a, D> {
     }
 
     pub fn push_string(&mut self, string: &str) {
-        self.buffer.push_str(&self.dialect.string(string));
+        self.buffer.push_str(&self.dialect.literal_string(string));
     }
 
     pub fn push_bind_param(&mut self, value: DinocoValue) {

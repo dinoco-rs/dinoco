@@ -1,12 +1,12 @@
-use crate::{DinocoValue, QueryDialect, SqlBuilder};
+use crate::{DinocoValue, SqlBuilder, SqlDialect};
 use dinoco_compiler::ParsedEnum;
 
-pub struct CreateEnumStatement<'a, D: QueryDialect> {
+pub struct CreateEnumStatement<'a, D: SqlDialect> {
     pub enum_def: &'a ParsedEnum,
     pub dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> CreateEnumStatement<'a, D> {
+impl<'a, D: SqlDialect> CreateEnumStatement<'a, D> {
     pub fn new(dialect: &'a D, enum_def: &'a ParsedEnum) -> Self {
         Self { enum_def, dialect }
     }

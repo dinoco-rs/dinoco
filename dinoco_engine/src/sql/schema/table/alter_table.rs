@@ -1,12 +1,12 @@
-use crate::{AlterAction, ColumnDefault, ColumnDefinition, ConstraintDefinition, ConstraintType, DinocoValue, QueryDialect, SqlBuilder};
+use crate::{AlterAction, ColumnDefault, ColumnDefinition, ConstraintDefinition, ConstraintType, DinocoValue, SqlDialect, SqlBuilder};
 
-pub struct AlterTableStatement<'a, D: QueryDialect> {
+pub struct AlterTableStatement<'a, D: SqlDialect> {
     pub table_name: &'a str,
     pub actions: Vec<AlterAction<'a>>,
     pub dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> AlterTableStatement<'a, D> {
+impl<'a, D: SqlDialect> AlterTableStatement<'a, D> {
     pub fn new(dialect: &'a D, table_name: &'a str) -> Self {
         Self {
             table_name,

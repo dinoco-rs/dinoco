@@ -1,7 +1,7 @@
 use dinoco_compiler::Database;
 use dinoco_engine::{
     BinaryOperator, ColumnDefault, ColumnDefinition, ColumnType, CreateTableStatement, DinocoAdapter, DinocoResult, DinocoValue, DropTableStatement, Expression, OrderDirection,
-    QueryDialect, SelectStatement,
+    SelectStatement, SqlDialect,
 };
 
 use crate::{DatabaseColumn, DatabaseParsedTable, DatabaseTable, DinocoMigration};
@@ -113,7 +113,7 @@ pub async fn fetch_tables<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<Dat
         .condition(Expression::BinaryOp {
             left: Box::new(Expression::Column("table_schema".to_string())),
             op: BinaryOperator::Eq,
-            right: Box::new(Expression::String(dialect.get_public_table())),
+            right: Box::new(Expression::String(dialect.default_schema())),
         })
         .condition(Expression::BinaryOp {
             left: Box::new(Expression::Column("table_type".to_string())),
@@ -130,8 +130,8 @@ pub async fn fetch_columns<T: DinocoAdapter>(adapter: &T, table_name: &str) -> D
 
     println!("aaa: {}", table_name);
 
-    let nullable = format!("{} AS nullable", dialect.cast_boolean("is_nullable".to_string()));
-    let fields = &["column_name AS name", "data_type AS db_type", nullable.as_str(), "column_default AS default"];
+    let nullable = format!("{} AS nullable", dialect.cast_boolean("is_nullable"));
+    let fields = &["column_name AS name", "data_type AS db_type", nullable.as_str(), "column_default AS default_value"];
 
     let (query, params) = SelectStatement::new(dialect)
         .select(fields)
@@ -139,7 +139,7 @@ pub async fn fetch_columns<T: DinocoAdapter>(adapter: &T, table_name: &str) -> D
         .condition(Expression::BinaryOp {
             left: Box::new(Expression::Column("table_schema".to_string())),
             op: BinaryOperator::Eq,
-            right: Box::new(Expression::String(dialect.get_public_table())),
+            right: Box::new(Expression::String(dialect.default_schema())),
         })
         .condition(Expression::BinaryOp {
             left: Box::new(Expression::Column("table_name".to_string())),

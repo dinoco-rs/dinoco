@@ -1,13 +1,13 @@
-use crate::{ColumnDefault, ColumnDefinition, ConstraintDefinition, ConstraintType, DinocoValue, QueryDialect, SqlBuilder};
+use crate::{ColumnDefault, ColumnDefinition, ConstraintDefinition, ConstraintType, DinocoValue, SqlDialect, SqlBuilder};
 
-pub struct CreateTableStatement<'a, D: QueryDialect> {
+pub struct CreateTableStatement<'a, D: SqlDialect> {
     pub table_name: &'a str,
     pub columns: Vec<ColumnDefinition<'a>>,
     pub constraints: Vec<ConstraintDefinition<'a>>,
     pub dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> CreateTableStatement<'a, D> {
+impl<'a, D: SqlDialect> CreateTableStatement<'a, D> {
     pub fn new(dialect: &'a D, table_name: &'a str) -> Self {
         Self {
             table_name,

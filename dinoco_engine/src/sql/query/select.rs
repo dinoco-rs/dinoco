@@ -1,6 +1,6 @@
-use crate::{DinocoValue, Expression, OrderDirection, QueryDialect, SqlBuilder};
+use crate::{DinocoValue, Expression, OrderDirection, SqlBuilder, SqlDialect};
 
-pub struct SelectStatement<'a, D: QueryDialect> {
+pub struct SelectStatement<'a, D: SqlDialect> {
     pub select: &'a [&'a str],
     pub from: &'a str,
     pub conditions: Vec<Expression>,
@@ -13,7 +13,7 @@ pub struct SelectStatement<'a, D: QueryDialect> {
     pub dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> SelectStatement<'a, D> {
+impl<'a, D: SqlDialect> SelectStatement<'a, D> {
     pub fn new(dialect: &'a D) -> Self {
         Self {
             select: &[],

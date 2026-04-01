@@ -10,7 +10,7 @@ use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql_checked};
 use tokio_postgres::{NoTls, Row};
 
-use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, QueryDialect};
+use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, SqlDialect};
 
 pub struct PostgresDialect;
 pub struct PostgresAdapter {
@@ -137,13 +137,13 @@ impl DinocoDatabaseRow for Row {
     }
 }
 
-impl QueryDialect for PostgresDialect {
-    fn get_public_table(&self) -> String {
+impl SqlDialect for PostgresDialect {
+    fn default_schema(&self) -> String {
         "public".to_string()
     }
 
-    fn cast_boolean(&self, column: String) -> String {
-        format!("CAST({} = 'YES' AS BOOLEAN)", column)
+    fn cast_boolean(&self, expr: &str) -> String {
+        format!("CAST({} = 'YES' AS BOOLEAN)", expr)
     }
 
     fn bind_param(&self, index: usize) -> String {
@@ -154,7 +154,7 @@ impl QueryDialect for PostgresDialect {
         format!("\"{}\"", v)
     }
 
-    fn string(&self, v: &str) -> String {
+    fn literal_string(&self, v: &str) -> String {
         format!("'{}'", v)
     }
 

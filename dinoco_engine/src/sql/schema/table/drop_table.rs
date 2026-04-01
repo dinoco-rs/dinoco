@@ -1,12 +1,12 @@
-use crate::{DinocoValue, QueryDialect, SqlBuilder};
+use crate::{DinocoValue, SqlDialect, SqlBuilder};
 
-pub struct DropTableStatement<'a, D: QueryDialect> {
+pub struct DropTableStatement<'a, D: SqlDialect> {
     pub table_name: &'a str,
     pub cascade: bool,
     pub dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> DropTableStatement<'a, D> {
+impl<'a, D: SqlDialect> DropTableStatement<'a, D> {
     pub fn new(dialect: &'a D, table_name: &'a str) -> Self {
         Self {
             table_name,

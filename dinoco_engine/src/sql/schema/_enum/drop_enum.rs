@@ -1,11 +1,11 @@
-use crate::{DinocoValue, QueryDialect, SqlBuilder};
+use crate::{DinocoValue, SqlBuilder, SqlDialect};
 
-pub struct DropEnumStatement<'a, D: QueryDialect> {
+pub struct DropEnumStatement<'a, D: SqlDialect> {
     pub name: &'a str,
     pub dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> DropEnumStatement<'a, D> {
+impl<'a, D: SqlDialect> DropEnumStatement<'a, D> {
     pub fn new(dialect: &'a D, name: &'a str) -> Self {
         Self { name, dialect }
     }

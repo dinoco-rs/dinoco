@@ -1,12 +1,12 @@
-use crate::{DinocoValue, QueryDialect, SqlBuilder};
+use crate::{DinocoValue, SqlBuilder, SqlDialect};
 
-pub struct DropIndexStatement<'a, D: QueryDialect> {
+pub struct DropIndexStatement<'a, D: SqlDialect> {
     pub index_name: &'a str,
     pub table_name: Option<&'a str>,
     pub dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> DropIndexStatement<'a, D> {
+impl<'a, D: SqlDialect> DropIndexStatement<'a, D> {
     pub fn new(dialect: &'a D, index_name: &'a str) -> Self {
         Self {
             index_name,

@@ -5,7 +5,7 @@ use crate::{DinocoResult, DinocoStream, DinocoValue};
 
 #[async_trait]
 pub trait DinocoAdapter: Sized {
-    type Dialect: QueryDialect;
+    type Dialect: SqlDialect;
 
     fn dialect(&self) -> &Self::Dialect;
 
@@ -42,14 +42,18 @@ pub trait DinocoRow: Sized {
     fn from_row<R: DinocoDatabaseRow>(row: &R) -> DinocoResult<Self>;
 }
 
-pub trait QueryDialect {
+pub trait SqlDialect {
     fn bind_param(&self, index: usize) -> String;
     fn identifier(&self, v: &str) -> String;
-    fn string(&self, v: &str) -> String;
+    fn literal_string(&self, v: &str) -> String;
 
     fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String;
     fn modify_column(&self) -> String;
 
-    fn get_public_table(&self) -> String;
-    fn cast_boolean(&self, column: String) -> String;
+    fn default_schema(&self) -> String;
+    fn cast_boolean(&self, expr: &str) -> String;
 }
+
+// pub trait SqlDialectBuilders {
+//     fn build_create_table<'a>(&self, stmt: &CreateTableStatement<'a, Self>, builder: &mut SqlBuilder<Self>) {}
+// }

@@ -1,6 +1,6 @@
-use crate::{DinocoValue, QueryDialect, SqlBuilder};
+use crate::{DinocoValue, SqlDialect, SqlBuilder};
 
-pub struct CreateIndexStatement<'a, D: QueryDialect> {
+pub struct CreateIndexStatement<'a, D: SqlDialect> {
     pub table_name: &'a str,
     pub index_name: &'a str,
     pub columns: Vec<&'a str>,
@@ -8,7 +8,7 @@ pub struct CreateIndexStatement<'a, D: QueryDialect> {
     pub dialect: &'a D,
 }
 
-impl<'a, D: QueryDialect> CreateIndexStatement<'a, D> {
+impl<'a, D: SqlDialect> CreateIndexStatement<'a, D> {
     pub fn new(dialect: &'a D, table_name: &'a str, index_name: &'a str) -> Self {
         Self {
             table_name,

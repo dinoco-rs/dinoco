@@ -28,7 +28,7 @@ pub struct DatabaseColumn {
     pub name: String,
     pub db_type: String,
     pub nullable: bool,
-    pub default: Option<String>,
+    pub default_value: Option<String>,
 }
 
 #[derive(Seriable, Debug)]
