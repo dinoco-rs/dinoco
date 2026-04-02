@@ -7,6 +7,7 @@ use colored::*;
 use indicatif::ProgressBar;
 use inquire::{Confirm, Text};
 
+use dinoco_codegen::generate_models;
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
 use dinoco_engine::{DinocoAdapter, DinocoResult, Expression, Migration, MigrationStep, MySqlAdapter, PostgresAdapter, SelectStatement, SqlDialectBuilders, col};
 
@@ -180,8 +181,6 @@ where
     let migration = Migration::new(&adapter, last_migration, normalized_schema);
     let changes = migration.diff();
 
-    println!("{:?}", changes);
-
     pb.finish_and_clear();
 
     if changes.is_empty() {
@@ -304,7 +303,7 @@ where
 
     pb.set_message("Saving migration history...");
 
-    insert_migration(&adapter, &migration_name, encode_schema(parsed_schema)).await?;
+    insert_migration(&adapter, &migration_name, encode_schema(parsed_schema.clone())).await?;
 
     std::fs::create_dir_all(format!("dinoco/migrations/{migration_name}")).unwrap();
     std::fs::write(format!("dinoco/migrations/{migration_name}/migration.sql"), sqls.join("\n\n")).unwrap();
@@ -314,6 +313,8 @@ where
     println!("{} {}", "✔".green().bold(), "Migration applied successfully!".white());
 
     pb.set_message(format!("{} {}", "→".cyan().bold(), "Generating models...".dimmed()));
+
+    generate_models(parsed_schema);
 
     pb.finish_and_clear();
 

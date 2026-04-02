@@ -30,6 +30,9 @@ enum Commands {
 enum MigrateCommands {
     #[command(about = "Generate a migration from schema")]
     Generate {},
+
+    #[command(about = "Rollback last migration")]
+    Rollback {},
 }
 
 #[tokio::main]
@@ -47,6 +50,9 @@ async fn main() {
         Commands::Migrate(command) => match command {
             &MigrateCommands::Generate {} => {
                 let _result = generate_migrate().await;
+            }
+            &MigrateCommands::Rollback {} => {
+                let _result = rollback_migration().await;
             }
         },
     }

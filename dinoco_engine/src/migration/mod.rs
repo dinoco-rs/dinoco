@@ -31,6 +31,10 @@ where
         migration_sql::generate_up_sql(self.adapter, changes)
     }
 
+    pub fn to_down_sql(&self, changes: Vec<MigrationStep>) -> Vec<String> {
+        migration_sql::generate_down_sql(self.adapter, changes)
+    }
+
     pub fn diff(&self) -> Vec<MigrationStep> {
         differ::calculate_diff(&self.old_schema, &self.new_schema)
     }

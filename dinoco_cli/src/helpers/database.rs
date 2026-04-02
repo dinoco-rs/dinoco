@@ -1,7 +1,6 @@
-use dinoco_compiler::Database;
 use dinoco_engine::{
-    BinaryOperator, ColumnDefault, ColumnDefinition, ColumnType, CreateTableStatement, DinocoAdapter, DinocoResult, DinocoValue, DropTableStatement, Expression, OrderDirection,
-    SelectStatement, SqlDialect, SqlDialectBuilders,
+    BinaryOperator, ColumnDefault, ColumnDefinition, ColumnType, CreateTableStatement, DeleteStatement, DinocoAdapter, DinocoResult, DinocoValue, DropTableStatement, Expression,
+    InsertStatement, OrderDirection, SelectStatement, SqlDialect, SqlDialectBuilders,
 };
 
 use crate::{DatabaseColumn, DatabaseParsedTable, DatabaseTable, DinocoMigration};
@@ -16,10 +15,37 @@ where
         let stmt = DropTableStatement::new(dialect, &table.name).cascade();
         let (query, _) = dialect.build_drop_table(&stmt);
 
-        println!("{:?}", adapter.execute(&query, &[]).await);
+        adapter.execute(&query, &[]).await?;
     }
 
     Ok(())
+}
+
+pub async fn get_last_migration<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Option<DinocoMigration>> {
+    let (query, params) = SelectStatement::new(adapter.dialect())
+        .select(&["id", "name", "schema"])
+        .from("_dinoco_migrations")
+        .order_by("id", OrderDirection::Desc)
+        .limit(1)
+        .to_sql();
+
+    let result = adapter.query_as::<DinocoMigration>(&query, &params).await?;
+
+    Ok(result.into_iter().next())
+}
+
+pub async fn get_last_two_migrations<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<DinocoMigration>> {
+    let (query, params) = SelectStatement::new(adapter.dialect())
+        .select(&["id", "name", "schema"])
+        .from("_dinoco_migrations")
+        .order_by("id", OrderDirection::Desc)
+        .limit(2)
+        .to_sql();
+
+    match adapter.query_as::<DinocoMigration>(&query, &params).await {
+        Ok(migrations) => Ok(migrations),
+        Err(..) => Ok(vec![]),
+    }
 }
 
 pub async fn create_migration_table<T: DinocoAdapter>(adapter: &T) -> DinocoResult<()>
@@ -69,33 +95,31 @@ where
     Ok(())
 }
 
-pub async fn get_last_migration<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Option<DinocoMigration>> {
-    let (query, params) = SelectStatement::new(adapter.dialect())
-        .select(&["id", "name", "schema"])
-        .from("_dinoco_migrations")
-        .order_by("id", OrderDirection::Desc)
-        .limit(1)
+pub async fn insert_migration<T: DinocoAdapter>(adapter: &T, name: &str, schema_bytes: Vec<u8>) -> DinocoResult<()> {
+    let (query, params) = InsertStatement::new(adapter.dialect())
+        .into("_dinoco_migrations")
+        .columns(&["name", "schema"])
+        .value(vec![DinocoValue::String(name.to_string()), DinocoValue::Bytes(schema_bytes)])
         .to_sql();
 
-    let result = adapter.query_as::<DinocoMigration>(&query, &params).await?;
-
-    Ok(result.into_iter().next())
+    adapter.execute(&query, &params).await
 }
 
-pub async fn insert_migration<T: DinocoAdapter>(adapter: &T, name: &str, schema_bytes: Vec<u8>) -> DinocoResult<()> {
-    adapter
-        .execute(
-            "INSERT INTO _dinoco_migrations (name, schema) VALUES ($1, $2)",
-            &[DinocoValue::String(name.to_string()), DinocoValue::Bytes(schema_bytes)],
-        )
-        .await?;
+pub async fn delete_migration<T: DinocoAdapter>(adapter: &T, id: i64) -> DinocoResult<()> {
+    let (query, params) = DeleteStatement::new(adapter.dialect())
+        .from("_dinoco_migrations")
+        .condition(Expression::BinaryOp {
+            left: Box::new(Expression::Column("id".to_string())),
+            op: BinaryOperator::Eq,
+            right: Box::new(Expression::Value(DinocoValue::Integer(id))),
+        })
+        .to_sql();
 
-    Ok(())
+    adapter.execute(&query, &params).await
 }
 
 pub async fn fetch<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<DatabaseParsedTable>> {
     let mut tables = vec![];
-
     let all_tables = fetch_tables(adapter).await?;
 
     for table in all_tables {

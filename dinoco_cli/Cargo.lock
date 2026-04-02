@@ -494,6 +494,9 @@ dependencies = [
 [[package]]
 name = "dinoco_codegen"
 version = "0.0.1"
+dependencies = [
+ "dinoco_compiler",
+]
 
 [[package]]
 name = "dinoco_compiler"

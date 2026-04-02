@@ -33,14 +33,12 @@ impl From<tokio_postgres::Error> for DinocoError {
 
 impl From<deadpool_postgres::PoolError> for DinocoError {
     fn from(e: deadpool_postgres::PoolError) -> Self {
-        // Mapeamos falhas ao pegar a conexão para o seu ConnectionError
         Self::ConnectionError(format!("Failed to get connection from pool: {}", e))
     }
 }
 
 impl From<deadpool_postgres::BuildError> for DinocoError {
     fn from(e: deadpool_postgres::BuildError) -> Self {
-        // Mapeamos falhas na construção da Pool para o seu ConnectionError
         Self::ConnectionError(format!("Failed to build connection pool: {}", e))
     }
 }

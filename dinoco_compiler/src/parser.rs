@@ -343,8 +343,6 @@ fn parse_config_field<'a>(field_record: Pair<'a, Rule>, position: usize) -> Dino
     })
 }
 
-// fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoResult<ConfigValue<'a>> {
-
 fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoResult<ConfigValue<'a>> {
     let span = value_record.as_span();
 

@@ -135,14 +135,11 @@ impl<'a, D: SqlDialect> SelectStatement<'a, D> {
                 builder.push_string(val);
             }
             Expression::BinaryOp { left, op, right } => {
-                // builder.push("(");
-
                 Self::parse_expression(left, builder);
 
                 builder.push_operator(&op);
 
                 Self::parse_expression(right, builder);
-                // builder.push(")");
             }
             Expression::IsNull(inner_expr) => {
                 Self::parse_expression(inner_expr, builder);
