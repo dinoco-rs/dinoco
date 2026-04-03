@@ -1,14 +1,14 @@
-use dinoco_compiler::ParsedFieldType;
+use dinoco_compiler::{ParsedEnum, ParsedFieldType};
 
 use super::mapper::map_field_to_definition;
 use super::step::MigrationStep;
 
 use crate::{
-    AlterTableStatement, ConstraintDefinition, ConstraintType, CreateIndexStatement, CreateTableStatement, DinocoAdapter, DropIndexStatement, DropTableStatement,
-    SqlDialectBuilders, mapper::map_referential_action,
+    AlterEnumStatement, AlterTableStatement, ConstraintDefinition, ConstraintType, CreateIndexStatement, CreateTableStatement, DinocoAdapter, DropEnumStatement,
+    DropIndexStatement, DropTableStatement, SqlDialectBuilders, mapper::map_referential_action,
 };
 
-pub fn generate_up_sql<'a, T: DinocoAdapter>(adapter: &'a T, changes: Vec<MigrationStep>) -> Vec<String>
+pub fn generate_up_sql<'a, T: DinocoAdapter>(adapter: &'a T, changes: Vec<MigrationStep>, enums: &[ParsedEnum]) -> Vec<String>
 where
     T::Dialect: SqlDialectBuilders,
 {
@@ -17,6 +17,33 @@ where
 
     for change in changes {
         match change {
+            MigrationStep::CreateEnum { name, variants } => {
+                let stmt = crate::CreateEnumStatement::new(dialect, &name, variants);
+                let (sql, _) = dialect.build_create_enum(&stmt);
+
+                if !sql.is_empty() {
+                    sql_statements.push(sql);
+                }
+            }
+
+            MigrationStep::AlterEnum { name, old_variants, new_variants } => {
+                let stmt = AlterEnumStatement::new(dialect, &name, &old_variants, &new_variants);
+
+                for (sql, _) in dialect.build_alter_enum(&stmt) {
+                    if !sql.is_empty() {
+                        sql_statements.push(sql);
+                    }
+                }
+            }
+
+            MigrationStep::DropEnum(name) => {
+                let stmt = crate::DropEnumStatement::new(dialect, &name);
+                let (sql, _) = dialect.build_drop_enum(&stmt);
+
+                if !sql.is_empty() {
+                    sql_statements.push(sql);
+                }
+            }
             MigrationStep::CreateTable(table) => {
                 let mut stmt = CreateTableStatement::new(dialect, &table.name);
 
@@ -25,7 +52,7 @@ where
                         continue;
                     }
 
-                    stmt = stmt.column(map_field_to_definition(field));
+                    stmt = stmt.column(map_field_to_definition(field, dialect, enums));
                 }
 
                 let (sql, _) = dialect.build_create_table(&stmt);
@@ -40,7 +67,7 @@ where
 
             MigrationStep::AddColumn { table_name, field } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
-                stmt = stmt.add_column(map_field_to_definition(&field));
+                stmt = stmt.add_column(map_field_to_definition(&field, dialect, enums));
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
@@ -58,7 +85,7 @@ where
 
             MigrationStep::AlterColumn { table_name, new_field, .. } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
-                stmt = stmt.modify_column(map_field_to_definition(&new_field));
+                stmt = stmt.modify_column(map_field_to_definition(&new_field, dialect, enums));
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
@@ -131,7 +158,7 @@ where
     sql_statements
 }
 
-pub fn generate_down_sql<T: DinocoAdapter>(adapter: &T, changes: Vec<MigrationStep>) -> Vec<String>
+pub fn generate_down_sql<T: DinocoAdapter>(adapter: &T, changes: Vec<MigrationStep>, enums: &[ParsedEnum]) -> Vec<String>
 where
     T::Dialect: SqlDialectBuilders,
 {
@@ -140,6 +167,28 @@ where
 
     for change in changes.into_iter().rev() {
         match change {
+            MigrationStep::CreateEnum { name, .. } => {
+                let stmt = DropEnumStatement::new(dialect, &name);
+                let (sql, _) = dialect.build_drop_enum(&stmt);
+
+                if !sql.is_empty() {
+                    sql_statements.push(sql);
+                }
+            }
+
+            MigrationStep::AlterEnum { name, old_variants, new_variants } => {
+                let stmt = AlterEnumStatement::new(dialect, &name, &new_variants, &old_variants);
+
+                for (sql, _) in dialect.build_alter_enum(&stmt) {
+                    if !sql.is_empty() {
+                        sql_statements.push(sql);
+                    }
+                }
+            }
+
+            MigrationStep::DropEnum(name) => {
+                sql_statements.push(format!("-- ERROR: Cannot accurately recreate enum '{}' without variants context.", name));
+            }
             MigrationStep::CreateTable(table) => {
                 let stmt = DropTableStatement::new(dialect, &table.name).cascade();
                 let (sql, _) = dialect.build_drop_table(&stmt);
@@ -165,7 +214,7 @@ where
 
             MigrationStep::DropColumn { table_name, field } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
-                stmt = stmt.add_column(map_field_to_definition(&field));
+                stmt = stmt.add_column(map_field_to_definition(&field, dialect, enums));
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
@@ -175,7 +224,7 @@ where
             MigrationStep::AlterColumn { table_name, old_field, .. } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
 
-                stmt = stmt.modify_column(map_field_to_definition(&old_field));
+                stmt = stmt.modify_column(map_field_to_definition(&old_field, dialect, enums));
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);

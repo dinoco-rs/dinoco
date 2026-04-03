@@ -498,22 +498,32 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                     entry.push(ast_field.name.clone());
 
                     if entry.len() > 1 {
-                        let spans = ast_table.fields.iter().filter(|f| entry.contains(&f.name)).collect::<Vec<_>>();
+                        let fields_with_same_name: Vec<&Field> = ast_table.fields.iter().filter(|f| entry.contains(&f.name)).collect();
 
-                        let errors = spans
-                            .iter()
-                            .map(|f| {
-                                (
-                                    format!(
-                                        "The relation name {} is used multiple times (conflict on field \"{}\"). Each @relation must have a unique name.",
-                                        name, f.name
-                                    ),
-                                    f.span,
-                                )
-                            })
-                            .collect::<Vec<(String, Span)>>();
+                        let is_self_relation = fields_with_same_name.iter().all(|f| {
+                            if let FieldType::Custom(target) = &f.field_type {
+                                target == &current_table_name
+                            } else {
+                                false
+                            }
+                        });
 
-                        return Err(format_span_errors(errors));
+                        if !is_self_relation || entry.len() > 2 {
+                            let errors = fields_with_same_name
+								.iter()
+								.map(|f| {
+									(
+										format!(
+											"The relation name '{}' is used multiple times (conflict on field '{}'). Each @relation must have a unique name unless it's a self-relation.",
+											name, f.name
+										),
+										f.span,
+									)
+								})
+								.collect::<Vec<(String, Span)>>();
+
+                            return Err(format_span_errors(errors));
+                        }
                     }
 
                     match back_relation_fields.iter().find(|f| get_relation_name(f).as_ref() == Some(name)) {

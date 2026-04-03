@@ -24,6 +24,17 @@ pub struct DatabaseTable {
 }
 
 #[derive(Seriable, Debug)]
+struct DatabaseEnum {
+    pub name: String,
+}
+
+#[derive(Seriable, Debug)]
+pub struct DatabaseForeignKey {
+    pub table_name: String,
+    pub constraint_name: String,
+}
+
+#[derive(Seriable, Debug)]
 pub struct DatabaseColumn {
     pub name: String,
     pub db_type: String,

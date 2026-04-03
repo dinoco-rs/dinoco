@@ -10,6 +10,9 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
         tables: vec![],
     });
 
+    let mut create_enum_steps = Vec::new();
+    let mut alter_enum_steps = Vec::new();
+    let mut drop_enum_steps = Vec::new();
     let mut drop_fk_steps = Vec::new();
     let mut drop_table_steps = Vec::new();
     let mut create_table_steps = Vec::new();
@@ -18,6 +21,32 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
     let mut alter_column_steps = Vec::new();
     let mut create_index_steps = Vec::new();
     let mut add_fk_steps = Vec::new();
+
+    let old_enums_map: HashMap<&String, _> = old_schema.enums.iter().map(|e| (&e.name, e)).collect();
+    let new_enums_map: HashMap<&String, _> = new_schema.enums.iter().map(|e| (&e.name, e)).collect();
+
+    for (name, new_enum) in &new_enums_map {
+        if let Some(old_enum) = old_enums_map.get(name) {
+            if old_enum.values != new_enum.values {
+                alter_enum_steps.push(MigrationStep::AlterEnum {
+                    name: (*name).clone(),
+                    old_variants: old_enum.values.clone(),
+                    new_variants: new_enum.values.clone(),
+                });
+            }
+        } else {
+            create_enum_steps.push(MigrationStep::CreateEnum {
+                name: (*name).clone(),
+                variants: new_enum.values.clone(),
+            });
+        }
+    }
+
+    for name in old_enums_map.keys() {
+        if !new_enums_map.contains_key(name) {
+            drop_enum_steps.push(MigrationStep::DropEnum((*name).clone()));
+        }
+    }
 
     let old_map: HashMap<&String, &ParsedTable> = old_schema.tables.iter().map(|t| (&t.name, t)).collect();
     let new_map: HashMap<&String, &ParsedTable> = new_schema.tables.iter().map(|t| (&t.name, t)).collect();
@@ -67,9 +96,18 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
         }
     }
 
-    for name in old_map.keys() {
-        if !new_map.contains_key(name) {
-            drop_table_steps.push(MigrationStep::DropTable((*name).clone()));
+    for (name, old_table) in &old_map {
+        if !new_map.contains_key(*name) {
+            for field in &old_table.fields {
+                if let ParsedRelation::ManyToOne(_, local_cols, _, _, _) | ParsedRelation::OneToOneOwner(_, local_cols, _, _, _) = &field.relation {
+                    if let Some(local_col) = local_cols.first() {
+                        drop_fk_steps.push(MigrationStep::DropForeignKey {
+                            table_name: old_table.name.clone(),
+                            constraint_name: format!("fk_{}_{}", old_table.name, local_col),
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -79,8 +117,16 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
         }
     }
 
+    for name in old_map.keys() {
+        if !new_map.contains_key(name) {
+            drop_table_steps.push(MigrationStep::DropTable((*name).clone()));
+        }
+    }
+
     let mut final_steps = Vec::new();
 
+    final_steps.extend(create_enum_steps);
+    final_steps.extend(alter_enum_steps);
     final_steps.extend(drop_fk_steps);
     final_steps.extend(drop_table_steps);
     final_steps.extend(create_table_steps);
@@ -89,6 +135,7 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
     final_steps.extend(alter_column_steps);
     final_steps.extend(create_index_steps);
     final_steps.extend(add_fk_steps);
+    final_steps.extend(drop_enum_steps);
 
     final_steps
 }
@@ -193,6 +240,8 @@ pub fn extract_relations(old_table: Option<&ParsedTable>, new_table: &ParsedTabl
     let mut fk_steps = Vec::new();
     let mut join_tables = Vec::new();
 
+    let mut processed_m2m = HashSet::new();
+
     for field in &new_table.fields {
         let is_unchanged = if let Some(old_t) = old_table {
             if let Some(old_f) = old_t.fields.iter().find(|f| f.name == field.name) {
@@ -234,6 +283,12 @@ pub fn extract_relations(old_table: Option<&ParsedTable>, new_table: &ParsedTabl
                 };
 
                 if new_table.name <= target_table_name {
+                    let safe_rel_name = format!("_{}", relation_name.replace("\"", ""));
+
+                    if !processed_m2m.insert(safe_rel_name.clone()) {
+                        continue;
+                    }
+
                     let t1_clean = new_table.name.replace("\"", "").to_lowercase();
                     let t2_clean = target_table_name.replace("\"", "").to_lowercase();
 
@@ -258,8 +313,6 @@ pub fn extract_relations(old_table: Option<&ParsedTable>, new_table: &ParsedTabl
                         .and_then(|t| t.fields.iter().find(|f| f.is_primary_key))
                         .map(|f| f.field_type.clone())
                         .unwrap_or(ParsedFieldType::Integer);
-
-                    let safe_rel_name = format!("_{}", relation_name.replace("\"", ""));
 
                     let join_table = ParsedTable {
                         name: safe_rel_name.clone(),
@@ -295,12 +348,12 @@ pub fn extract_relations(old_table: Option<&ParsedTable>, new_table: &ParsedTabl
 
                     fk_steps.push(MigrationStep::AddForeignKey {
                         table_name: safe_rel_name.clone(),
-                        column_name: col_a,
+                        column_name: col_a.clone(),
                         referenced_table: new_table.name.clone(),
                         referenced_column: "id".to_string(),
                         on_delete: Some(ReferentialAction::Cascade),
                         on_update: Some(ReferentialAction::Cascade),
-                        constraint_name: format!("fk_{}_{}", safe_rel_name, t1_clean),
+                        constraint_name: format!("fk_{}_{}", safe_rel_name, col_a),
                     });
 
                     fk_steps.push(MigrationStep::AddForeignKey {
@@ -310,7 +363,7 @@ pub fn extract_relations(old_table: Option<&ParsedTable>, new_table: &ParsedTabl
                         referenced_column: "id".to_string(),
                         on_delete: Some(ReferentialAction::Cascade),
                         on_update: Some(ReferentialAction::Cascade),
-                        constraint_name: format!("fk_{}_{}", safe_rel_name, t2_clean),
+                        constraint_name: format!("fk_{}_{}", safe_rel_name, col_b),
                     });
 
                     let index_name = format!("{}_{}_idx", safe_rel_name.replace("\"", ""), col_b);

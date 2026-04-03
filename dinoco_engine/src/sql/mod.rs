@@ -41,9 +41,9 @@ pub enum Expression {
 }
 
 pub struct SqlBuilder<'a, D: SqlDialect> {
-    buffer: String,
-    parameters: Vec<DinocoValue>,
-    dialect: &'a D,
+    pub buffer: String,
+    pub parameters: Vec<DinocoValue>,
+    pub dialect: &'a D,
 }
 
 impl<'a, D: SqlDialect> SqlBuilder<'a, D> {

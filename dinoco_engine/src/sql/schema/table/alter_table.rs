@@ -50,25 +50,4 @@ impl<'a, D: SqlDialect> AlterTableStatement<'a, D> {
 
         self
     }
-
-    pub fn push_default_value(builder: &mut SqlBuilder<'_, D>, value: &ColumnDefault) {
-        builder.push(" DEFAULT ");
-
-        match value {
-            ColumnDefault::Function(func) => builder.push(&func.to_uppercase()),
-            ColumnDefault::Raw(v) => builder.push(v),
-            ColumnDefault::Value(val) => match val {
-                DinocoValue::String(s) => builder.push_string(s),
-                DinocoValue::Integer(i) => builder.push(&i.to_string()),
-                DinocoValue::Boolean(b) => builder.push(if *b { "TRUE" } else { "FALSE" }),
-                DinocoValue::Json(v) => {
-                    let json = v.to_string().replace('\'', "''");
-
-                    builder.push(&format!("{}", json));
-                }
-                DinocoValue::DateTime(b) => builder.push(&format!("'{}'", b)),
-                _ => builder.push("NULL"),
-            },
-        }
-    }
 }

@@ -1,4 +1,4 @@
-use crate::{DinocoValue, Expression, SqlBuilder, SqlDialect};
+use crate::{Expression, SqlBuilder, SqlDialect};
 
 pub struct DeleteStatement<'a, D: SqlDialect> {
     pub table: &'a str,
@@ -27,28 +27,7 @@ impl<'a, D: SqlDialect> DeleteStatement<'a, D> {
         self
     }
 
-    pub fn to_sql(&self) -> (String, Vec<DinocoValue>) {
-        let estimated_size = self.table.len() + (self.conditions.len() * 30) + 50;
-
-        let mut builder = SqlBuilder::new(self.dialect, estimated_size);
-
-        builder.push("DELETE FROM ");
-        builder.push(self.table);
-
-        if let Some((first, rest)) = self.conditions.split_first() {
-            builder.push(" WHERE ");
-            Self::parse_expression(first, &mut builder);
-
-            for cond in rest {
-                builder.push(" AND ");
-                Self::parse_expression(cond, &mut builder);
-            }
-        }
-
-        builder.finish()
-    }
-
-    fn parse_expression(expr: &Expression, builder: &mut SqlBuilder<'_, D>) {
+    pub fn parse_expression(expr: &Expression, builder: &mut SqlBuilder<'_, D>) {
         match expr {
             Expression::Column(name) => builder.push_identifier(name),
             Expression::Value(val) => builder.push_bind_param(val.clone()),

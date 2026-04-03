@@ -5,7 +5,10 @@ use futures::stream::StreamExt;
 
 use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
-use crate::{ColumnType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue, SqlDialect, SqlDialectBuilders};
+use crate::{
+    AlterEnumStatement, ColumnType, CreateEnumStatement, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue,
+    DropEnumStatement, DropTableStatement, SqlBuilder, SqlDialect, SqlDialectBuilders,
+};
 
 pub struct MySqlAdapter {
     pub url: String,
@@ -15,8 +18,6 @@ pub struct MySqlAdapter {
 pub struct MySqlDialect;
 
 static MYSQL_DIALECT: MySqlDialect = MySqlDialect;
-
-impl SqlDialectBuilders for MySqlDialect {}
 
 #[async_trait]
 impl DinocoAdapter for MySqlAdapter {
@@ -100,8 +101,15 @@ impl DinocoDatabaseRow for Row {
     }
 
     fn get_string(&self, idx: usize) -> DinocoResult<String> {
-        self.get::<String, _>(idx)
-            .ok_or_else(|| DinocoError::ParseError(format!("Failed to get String at column {}", idx)))
+        if let Some(Ok(val)) = self.get_opt::<String, _>(idx) {
+            return Ok(val);
+        }
+
+        if let Some(Ok(bytes)) = self.get_opt::<Vec<u8>, _>(idx) {
+            return String::from_utf8(bytes).map_err(|_| DinocoError::ParseError(format!("Column {} is not valid UTF-8", idx)));
+        }
+
+        Err(DinocoError::ParseError(format!("Failed to get String at column {}. Is it Null?", idx)))
     }
 
     fn get_bytes(&self, idx: usize) -> DinocoResult<Vec<u8>> {
@@ -112,6 +120,10 @@ impl DinocoDatabaseRow for Row {
     fn get_bool(&self, idx: usize) -> DinocoResult<bool> {
         if let Some(v) = self.get::<bool, _>(idx) {
             return Ok(v);
+        }
+
+        if let Some(v) = self.get::<i64, _>(idx) {
+            return Ok(v != 0);
         }
 
         if let Some(v) = self.get::<i8, _>(idx) {
@@ -141,7 +153,7 @@ impl SqlDialect for MySqlDialect {
     }
 
     fn cast_boolean(&self, expr: &str) -> String {
-        format!("{} = 'YES'", expr)
+        format!("CASE WHEN {} = 'YES' THEN TRUE ELSE FALSE END", expr)
     }
 
     fn bind_param(&self, _index: usize) -> String {
@@ -162,22 +174,35 @@ impl SqlDialect for MySqlDialect {
         "MODIFY COLUMN".to_string()
     }
 
+    fn supports_native_enums(&self) -> bool {
+        false
+    }
+
+    fn query_get_foreign_keys(&self) -> String {
+        "SELECT 
+			TABLE_NAME as table_name, CONSTRAINT_NAME as constraint_name
+				FROM information_schema.KEY_COLUMN_USAGE 
+					WHERE REFERENCED_TABLE_SCHEMA = DATABASE() 
+						AND REFERENCED_TABLE_NAME IS NOT NULL;"
+            .to_string()
+    }
+
     fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String {
         let base_type = match t {
             ColumnType::Integer => "BIGINT".to_string(),
             ColumnType::Float => "DOUBLE PRECISION".to_string(),
-            ColumnType::Text => "LONGTEXT".to_string(),
+            ColumnType::Text => "VARCHAR(255)".to_string(),
             ColumnType::Boolean => "TINYINT(1)".to_string(),
             ColumnType::Json => "JSON".to_string(),
             ColumnType::DateTime => "TIMESTAMP".to_string(),
             ColumnType::Bytes => "BLOB".to_string(),
-
             ColumnType::Enum(name) => {
                 format!("VARCHAR(255) /* enum {} */", name)
             }
-
             ColumnType::EnumInline(values) => {
-                format!("ENUM({})", values.iter().map(|v| format!("'{}'", v)).collect::<Vec<_>>().join(", "))
+                let safe_values = values.iter().map(|v| format!("'{}'", v.replace('\'', "''"))).collect::<Vec<_>>().join(", ");
+
+                format!("ENUM({})", safe_values)
             }
         };
 
@@ -192,5 +217,32 @@ impl SqlDialect for MySqlDialect {
         }
 
         definition
+    }
+}
+
+impl SqlDialectBuilders for MySqlDialect {
+    fn build_create_enum<'a>(&self, _stmt: &CreateEnumStatement<'a, Self>) -> (String, Vec<DinocoValue>) {
+        ("".to_string(), vec![])
+    }
+
+    fn build_alter_enum<'a>(&self, _stmt: &AlterEnumStatement<'a, Self>) -> Vec<(String, Vec<DinocoValue>)> {
+        vec![]
+    }
+
+    fn build_drop_enum<'a>(&self, _stmt: &DropEnumStatement<'a, Self>) -> (String, Vec<DinocoValue>) {
+        ("".to_string(), vec![])
+    }
+
+    fn build_drop_table<'a>(&self, stmt: &DropTableStatement<'a, Self>) -> (String, Vec<DinocoValue>) {
+        let mut builder = SqlBuilder::new(self, 128);
+
+        builder.push("DROP TABLE ");
+        builder.push_identifier(stmt.table_name);
+
+        if stmt.cascade {
+            builder.push(" CASCADE;");
+        }
+
+        builder.finish()
     }
 }

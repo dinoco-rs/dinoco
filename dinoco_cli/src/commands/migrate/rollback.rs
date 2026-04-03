@@ -107,7 +107,7 @@ pub async fn rollback_migration() -> DinocoResult<()> {
 async fn execute_rollback<T>(adapter: T, pb: &ProgressBar) -> DinocoResult<()>
 where
     T: DinocoAdapter,
-    T::Dialect: SqlDialectBuilders,
+    
 {
     pb.set_message("Fetching migration history...");
 

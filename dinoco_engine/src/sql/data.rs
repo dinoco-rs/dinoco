@@ -14,6 +14,7 @@ pub enum ColumnDefault {
     Value(DinocoValue),
     Function(String),
     Raw(String),
+    EnumValue(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -91,7 +92,7 @@ impl<'a> ColumnDefinition<'a> {
     pub fn default(mut self, val: DinocoValue) -> Result<Self, String> {
         if matches!(val, DinocoValue::Null) {
             if self.not_null {
-                return Err(format!("Coluna '{}' é NOT NULL, mas o valor default é Null.", self.name));
+                return Err(format!("Column '{}' is NOT NULL, but the default value is Null.", self.name));
             }
 
             self.default = Some(ColumnDefault::Value(val));
@@ -106,12 +107,16 @@ impl<'a> ColumnDefinition<'a> {
             (ColumnType::Boolean, DinocoValue::Boolean(_)) => true,
             (ColumnType::Json, DinocoValue::Json(_)) => true,
             (ColumnType::DateTime, DinocoValue::DateTime(_)) => true,
+
+            (ColumnType::Enum(_), DinocoValue::String(_)) => true,
+            (ColumnType::EnumInline(variants), DinocoValue::String(s)) => variants.contains(s),
+
             _ => false,
         };
 
         if !is_valid {
             return Err(format!(
-                "Incompatibilidade de tipo na coluna '{}': não é possível usar esse valor default para o tipo {:?}",
+                "Type mismatch on column '{}': cannot use this default value for type {:?}",
                 self.name, self.col_type
             ));
         }
@@ -160,6 +165,7 @@ impl<'a> ConstraintDefinition<'a> {
         if let ConstraintType::ForeignKey { ref mut on_delete, .. } = self.constraint_type {
             *on_delete = Some(action);
         }
+
         self
     }
 
@@ -167,6 +173,7 @@ impl<'a> ConstraintDefinition<'a> {
         if let ConstraintType::ForeignKey { ref mut on_update, .. } = self.constraint_type {
             *on_update = Some(action);
         }
+
         self
     }
 }

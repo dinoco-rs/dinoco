@@ -120,7 +120,6 @@ pub async fn generate_migrate() -> DinocoResult<()> {
 async fn execute_migrate<T>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()>
 where
     T: DinocoAdapter,
-    T::Dialect: SqlDialectBuilders,
 {
     pb.set_message("Fetching current database state...");
 
@@ -128,6 +127,7 @@ where
     let has_dinoco_migrations = tables.iter().any(|x| x.name == "_dinoco_migrations");
 
     if !tables.is_empty() && !has_dinoco_migrations {
+        // if true {
         let should_reset = pb.suspend(|| {
             let prompt_msg = "This database already contains data, but no migration history was found.\n  Do you want to reset the database and apply your new schema?";
 
@@ -195,10 +195,13 @@ where
     let mut has_data_loss = false;
     let mut loss_descriptions = Vec::new();
 
+    let dialect = adapter.dialect();
+
     for change in &changes {
         match change {
             MigrationStep::DropTable(table_name) => {
-                let query = SelectStatement::new(adapter.dialect()).select(&["1 as has_data"]).from("User").limit(1).to_sql().0;
+                let stmt = SelectStatement::new(dialect).select(&["1 as has_data"]).from("User").limit(1);
+                let (query, _) = dialect.build_select(&stmt);
 
                 if let Ok(res) = adapter.query_as::<DataCheck>(&query, &[]).await {
                     if !res.is_empty() {
@@ -209,14 +212,9 @@ where
             }
             MigrationStep::DropColumn { table_name, field } => {
                 let cond = Expression::IsNotNull(Box::new(col(field.name.clone())));
+                let stmt = SelectStatement::new(adapter.dialect()).select(&["1 as has_data"]).from(table_name).condition(cond).limit(1);
 
-                let query = SelectStatement::new(adapter.dialect())
-                    .select(&["1 as has_data"])
-                    .from(table_name)
-                    .condition(cond)
-                    .limit(1)
-                    .to_sql()
-                    .0;
+                let (query, _) = dialect.build_select(&stmt);
 
                 if let Ok(res) = adapter.query_as::<DataCheck>(&query, &[]).await {
                     if !res.is_empty() {
@@ -298,7 +296,14 @@ where
 
     let sqls = migration.to_up_sql(changes);
     for sql in &sqls {
-        adapter.execute(&sql, &[]).await?;
+        let result = adapter.execute(&sql, &[]).await;
+
+        println!("{:?}", sql);
+        println!("{:?}", result);
+
+        if result.is_err() {
+            return Ok(());
+        }
     }
 
     pb.set_message("Saving migration history...");

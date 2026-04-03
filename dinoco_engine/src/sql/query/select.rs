@@ -1,4 +1,4 @@
-use crate::{DinocoValue, Expression, OrderDirection, SqlBuilder, SqlDialect};
+use crate::{Expression, OrderDirection, SqlBuilder, SqlDialect};
 
 pub struct SelectStatement<'a, D: SqlDialect> {
     pub select: &'a [&'a str],
@@ -62,68 +62,7 @@ impl<'a, D: SqlDialect> SelectStatement<'a, D> {
         self
     }
 
-    pub fn to_sql(&self) -> (String, Vec<DinocoValue>) {
-        let estimated_size = self.from.len() + (self.select.len() * 20) + (self.conditions.len() * 30) + (self.order_by.len() * 20) + 150;
-
-        let mut builder = SqlBuilder::new(self.dialect, estimated_size);
-
-        builder.push("SELECT ");
-
-        if let Some((first, rest)) = self.select.split_first() {
-            builder.push(first);
-
-            for col in rest {
-                builder.push(", ");
-                builder.push(col);
-            }
-        } else {
-            builder.push("*");
-        }
-
-        builder.push(" FROM ");
-        builder.push(self.from);
-
-        if let Some((first, rest)) = self.conditions.split_first() {
-            builder.push(" WHERE ");
-            Self::parse_expression(first, &mut builder);
-
-            for cond in rest {
-                builder.push(" AND ");
-                Self::parse_expression(cond, &mut builder);
-            }
-        }
-
-        if let Some((first, rest)) = self.order_by.split_first() {
-            builder.push(" ORDER BY ");
-
-            builder.push_identifier(first.0);
-            builder.push(if first.1 == OrderDirection::Asc { " ASC" } else { " DESC" });
-
-            for col in rest {
-                builder.push(", ");
-                builder.push_identifier(col.0);
-                builder.push(if col.1 == OrderDirection::Asc { " ASC" } else { " DESC" });
-            }
-        }
-
-        if let Some(limit) = self.limit {
-            builder.push(" LIMIT ");
-
-            let limit_str = limit.to_string();
-            builder.push(&limit_str);
-        }
-
-        if let Some(skip) = self.skip {
-            builder.push(" OFFSET ");
-
-            let skip_str = skip.to_string();
-            builder.push(&skip_str);
-        }
-
-        builder.finish()
-    }
-
-    fn parse_expression(expr: &Expression, builder: &mut SqlBuilder<D>) {
+    pub fn parse_expression(expr: &Expression, builder: &mut SqlBuilder<D>) {
         match expr {
             Expression::Column(name) => builder.push_identifier(&name),
             Expression::Value(val) => builder.push_bind_param(val.clone()),

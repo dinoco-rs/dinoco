@@ -1,14 +1,13 @@
-use dinoco_compiler::ParsedEnum;
-
 use crate::SqlDialect;
 
 pub struct CreateEnumStatement<'a, D: SqlDialect> {
-    pub enum_def: &'a ParsedEnum,
+    pub name: &'a str,
+    pub variants: Vec<String>,
     pub dialect: &'a D,
 }
 
 impl<'a, D: SqlDialect> CreateEnumStatement<'a, D> {
-    pub fn new(dialect: &'a D, enum_def: &'a ParsedEnum) -> Self {
-        Self { enum_def, dialect }
+    pub fn new(dialect: &'a D, name: &'a str, variants: Vec<String>) -> Self {
+        Self { name, variants, dialect }
     }
 }
