@@ -7,6 +7,14 @@ mod encoders;
 pub use database::*;
 pub use encoders::*;
 
+#[derive(Seriable, Debug)]
+pub struct SqliteColumnRaw {
+    pub name: String,
+    pub r#type: String,
+    pub notnull: i64,
+    pub dflt_value: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct DatabaseParsedTable {
     pub name: String,

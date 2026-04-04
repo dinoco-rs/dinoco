@@ -60,6 +60,10 @@ pub trait SqlDialect {
     fn cast_boolean(&self, expr: &str) -> String;
     fn supports_native_enums(&self) -> bool;
 
+    fn supports_information_schema(&self) -> bool {
+        true
+    }
+
     fn supports_drop_constraints(&self) -> bool {
         true
     }

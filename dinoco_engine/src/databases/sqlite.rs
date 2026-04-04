@@ -165,6 +165,10 @@ impl SqlDialect for SqliteDialect {
         false
     }
 
+    fn supports_information_schema(&self) -> bool {
+        false
+    }
+
     fn query_get_foreign_keys(&self) -> String {
         "PRAGMA foreign_key_list".to_string()
     }
