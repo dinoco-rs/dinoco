@@ -1,8 +1,10 @@
 use async_trait::async_trait;
+use dinoco_compiler::{ParsedEnum, ParsedTable};
+use mysql_async::Column;
 
 use crate::{
-    AlterAction, AlterEnumStatement, AlterTableStatement, ColumnDefault, ConstraintType, CreateEnumStatement, CreateIndexStatement, CreateTableStatement, DeleteStatement,
-    DinocoValue, DropEnumStatement, DropIndexStatement, DropTableStatement, InsertStatement, OrderDirection, SelectStatement, SqlBuilder, UpdateStatement,
+    AlterAction, AlterEnumStatement, AlterTableStatement, ColumnDefault, ColumnDefinition, ConstraintType, CreateEnumStatement, CreateIndexStatement, CreateTableStatement,
+    DeleteStatement, DinocoValue, DropEnumStatement, DropIndexStatement, DropTableStatement, InsertStatement, OrderDirection, SelectStatement, SqlBuilder, UpdateStatement,
 };
 
 use crate::{ColumnType, DinocoResult, DinocoStream};
@@ -42,7 +44,7 @@ pub trait DinocoType: Sized {
     fn from_row<R: DinocoDatabaseRow>(row: &R, idx: usize) -> DinocoResult<Self>;
 }
 
-pub trait DinocoRow: Sized {
+pub trait DinocoRow: Sized + Send + 'static {
     fn from_row<R: DinocoDatabaseRow>(row: &R) -> DinocoResult<Self>;
 }
 
@@ -51,12 +53,16 @@ pub trait SqlDialect {
     fn identifier(&self, v: &str) -> String;
     fn literal_string(&self, v: &str) -> String;
 
-    fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String;
+    fn column_type(&self, t: &ColumnDefinition, is_primary: bool, auto_increment: bool) -> String;
     fn modify_column(&self) -> String;
 
     fn default_schema(&self) -> String;
     fn cast_boolean(&self, expr: &str) -> String;
     fn supports_native_enums(&self) -> bool;
+
+    fn supports_drop_constraints(&self) -> bool {
+        true
+    }
 
     fn query_get_foreign_keys(&self) -> String;
     fn query_get_enums(&self) -> String {
@@ -65,6 +71,16 @@ pub trait SqlDialect {
 }
 
 pub trait SqlDialectBuilders: SqlDialect + Sized {
+    fn rebuild_table_shadow<'a>(
+        &self,
+        _table_name: &str,
+        _parsed_table: &ParsedTable,
+        _enums: &[ParsedEnum],
+        _modified_col: Option<&ColumnDefinition<'a>>,
+    ) -> Vec<(String, Vec<DinocoValue>)> {
+        vec![]
+    }
+
     fn build_select<'a>(&self, stmt: &SelectStatement<'a, Self>) -> (String, Vec<DinocoValue>) {
         let estimated_size = stmt.from.len() + (stmt.select.len() * 20) + (stmt.conditions.len() * 30) + (stmt.order_by.len() * 20) + 150;
 
@@ -292,7 +308,7 @@ pub trait SqlDialectBuilders: SqlDialect + Sized {
 
             let is_inline_pk = col.primary_key && !is_composite_pk;
 
-            builder.push(&self.column_type(&col.col_type, is_inline_pk, col.auto_increment));
+            builder.push(&self.column_type(&col, is_inline_pk, col.auto_increment));
 
             if col.not_null && !is_inline_pk {
                 builder.push(" NOT NULL");
@@ -418,7 +434,7 @@ pub trait SqlDialectBuilders: SqlDialect + Sized {
                     builder.push_identifier(col.name);
                     builder.push(" ");
 
-                    builder.push(&self.column_type(&col.col_type, col.primary_key, col.auto_increment));
+                    builder.push(&self.column_type(&col, col.primary_key, col.auto_increment));
 
                     if col.not_null && !col.primary_key {
                         builder.push(" NOT NULL");
@@ -433,13 +449,13 @@ pub trait SqlDialectBuilders: SqlDialect + Sized {
                     builder.push_identifier(name);
                 }
 
-                AlterAction::ModifyColumn(col) => {
+                AlterAction::ModifyColumn(_, _, col) => {
                     builder.push(&self.modify_column());
                     builder.push(" ");
                     builder.push_identifier(col.name);
                     builder.push(" ");
 
-                    builder.push(&self.column_type(&col.col_type, col.primary_key, col.auto_increment));
+                    builder.push(&self.column_type(&col, col.primary_key, col.auto_increment));
 
                     if col.not_null && !col.primary_key {
                         builder.push(" NOT NULL");
@@ -459,7 +475,7 @@ pub trait SqlDialectBuilders: SqlDialect + Sized {
                     builder.push_identifier(new_name);
                 }
 
-                AlterAction::AddConstraint(constraint) => {
+                AlterAction::AddConstraint(_, _, constraint) => {
                     builder.push("ADD CONSTRAINT ");
                     builder.push_identifier(constraint.name);
                     builder.push(" ");
@@ -533,7 +549,7 @@ pub trait SqlDialectBuilders: SqlDialect + Sized {
                         }
                     }
                 }
-                AlterAction::DropConstraint(name) => {
+                AlterAction::DropConstraint(_, _, name) => {
                     builder.push("DROP CONSTRAINT ");
                     builder.push_identifier(name);
                 }

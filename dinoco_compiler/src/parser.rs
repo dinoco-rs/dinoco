@@ -20,9 +20,11 @@ fn parse_default_value(value: &str) -> FieldDefaultValue {
             if let Ok(n) = value.parse::<i64>() {
                 return FieldDefaultValue::Integer(n);
             }
+
             if let Ok(f) = value.parse::<f64>() {
                 return FieldDefaultValue::Float(f);
             }
+
             if value.starts_with('"') && value.ends_with('"') {
                 return FieldDefaultValue::String(value[1..value.len() - 1].to_string());
             }

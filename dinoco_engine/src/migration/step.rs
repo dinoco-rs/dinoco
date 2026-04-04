@@ -23,6 +23,7 @@ pub enum MigrationStep {
         field: ParsedField,
     },
     AlterColumn {
+        table: ParsedTable,
         table_name: String,
         old_field: ParsedField,
         new_field: ParsedField,
@@ -33,6 +34,7 @@ pub enum MigrationStep {
         new_name: String,
     },
     AddForeignKey {
+        table: ParsedTable,
         table_name: String,
         column_name: String,
         referenced_table: String,
@@ -42,6 +44,7 @@ pub enum MigrationStep {
         constraint_name: String,
     },
     DropForeignKey {
+        table: ParsedTable,
         table_name: String,
         constraint_name: String,
     },

@@ -61,6 +61,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoResult<Pa
                     match db.as_str() {
                         "mysql" => database = Some(Database::Mysql),
                         "postgresql" => database = Some(Database::Postgresql),
+                        "sqlite" => database = Some(Database::Sqlite),
                         _ => return Err(format_span_error(format!("Unsupported database '{}'.", db), field.span)),
                     }
                 } else {

@@ -8,7 +8,7 @@ use indicatif::ProgressBar;
 use inquire::Confirm;
 
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoResult, Migration, MySqlAdapter, PostgresAdapter, SqlDialectBuilders};
+use dinoco_engine::{DinocoAdapter, DinocoResult, Migration, MySqlAdapter, PostgresAdapter, SqlDialectBuilders, SqliteAdapter};
 
 use crate::helpers::{decode_schema, delete_migration, drop_all_tables, fetch, get_last_two_migrations};
 
@@ -99,6 +99,17 @@ pub async fn rollback_migration() -> DinocoResult<()> {
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
         },
+        Database::Sqlite => match SqliteAdapter::connect(url).await {
+            Ok(adapter) => {
+                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+                execute_rollback(adapter, &pb).await?;
+            }
+            Err(e) => {
+                pb.finish_and_clear();
+                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+                println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
+            }
+        },
     }
 
     Ok(())
@@ -107,7 +118,6 @@ pub async fn rollback_migration() -> DinocoResult<()> {
 async fn execute_rollback<T>(adapter: T, pb: &ProgressBar) -> DinocoResult<()>
 where
     T: DinocoAdapter,
-    
 {
     pb.set_message("Fetching migration history...");
 

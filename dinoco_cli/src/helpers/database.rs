@@ -1,3 +1,5 @@
+use dinoco_compiler::ParsedTable;
+use dinoco_derives::Seriable;
 use dinoco_engine::{
     AlterTableStatement, BinaryOperator, ColumnDefault, ColumnDefinition, ColumnType, CreateTableStatement, DeleteStatement, DinocoAdapter, DinocoResult, DinocoValue,
     DropEnumStatement, DropTableStatement, Expression, InsertStatement, OrderDirection, SelectStatement, SqlDialect, SqlDialectBuilders,
@@ -10,13 +12,21 @@ use crate::{
 
 pub async fn drop_all_tables<T: DinocoAdapter>(adapter: &T, tables: Vec<DatabaseParsedTable>) -> DinocoResult<()> {
     let dialect = adapter.dialect();
-    let foreign_keys = adapter.query_as::<DatabaseForeignKey>(&dialect.query_get_foreign_keys(), &[]).await?;
 
-    for key in foreign_keys {
-        let stmt = AlterTableStatement::new(dialect, &key.table_name).drop_constraint(&key.constraint_name);
+    if dialect.supports_drop_constraints() {
+        let foreign_keys = adapter.query_as::<DatabaseForeignKey>(&dialect.query_get_foreign_keys(), &[]).await?;
 
-        for (query, params) in dialect.build_alter_table(&stmt) {
-            adapter.execute(&query, &params).await?;
+        for key in foreign_keys {
+            let parsed_table = ParsedTable {
+                name: key.table_name.clone(),
+                fields: vec![],
+            };
+
+            let stmt = AlterTableStatement::new(dialect, &key.table_name).drop_constraint(parsed_table, vec![], &key.constraint_name);
+
+            for (query, params) in dialect.build_alter_table(&stmt) {
+                adapter.execute(&query, &params).await?;
+            }
         }
     }
 
@@ -111,6 +121,8 @@ pub async fn create_migration_table<T: DinocoAdapter>(adapter: &T) -> DinocoResu
 
     let (sql, _) = dialect.build_create_table(&stmt);
 
+    println!("{:?}", sql);
+
     adapter.execute(&sql, &[]).await?;
 
     Ok(())
@@ -162,46 +174,87 @@ pub async fn fetch<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<DatabasePa
 pub async fn fetch_tables<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<DatabaseTable>> {
     let dialect = adapter.dialect();
 
-    let stmt = SelectStatement::new(dialect)
-        .select(&["table_name as name"])
-        .from("information_schema.tables")
-        .condition(Expression::BinaryOp {
-            left: Box::new(Expression::Column("table_schema".to_string())),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expression::String(dialect.default_schema())),
-        })
-        .condition(Expression::BinaryOp {
-            left: Box::new(Expression::Column("table_type".to_string())),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expression::String("BASE TABLE".to_string())),
-        });
+    // let stmt = SelectStatement::new(dialect)
+    //     .select(&["table_name as name"])
+    //     .from("information_schema.tables")
+    //     .condition(Expression::BinaryOp {
+    //         left: Box::new(Expression::Column("table_schema".to_string())),
+    //         op: BinaryOperator::Eq,
+    //         right: Box::new(Expression::String(dialect.default_schema())),
+    //     })
+    //     .condition(Expression::BinaryOp {
+    //         left: Box::new(Expression::Column("table_type".to_string())),
+    //         op: BinaryOperator::Eq,
+    //         right: Box::new(Expression::String("BASE TABLE".to_string())),
+    //     });
 
-    let (query, params) = dialect.build_select(&stmt);
+    // let (query, params) = dialect.build_select(&stmt);
 
-    adapter.query_as::<DatabaseTable>(&query, &params).await
+    // adapter.query_as::<DatabaseTable>(&query, &params).await
+
+    let query = r#"
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+        AND name NOT LIKE 'sqlite_%'
+    "#;
+
+    let result = adapter.query_as::<DatabaseTable>(query, &[]).await;
+
+    println!("{:?}", result);
+
+    return result;
 }
 
 pub async fn fetch_columns<T: DinocoAdapter>(adapter: &T, table_name: &str) -> DinocoResult<Vec<DatabaseColumn>> {
     let dialect = adapter.dialect();
 
-    let nullable = format!("{} AS nullable", dialect.cast_boolean("is_nullable"));
-    let fields = &["column_name AS name", "data_type AS db_type", nullable.as_str(), "column_default AS default_value"];
+    // let nullable = format!("{} AS nullable", dialect.cast_boolean("is_nullable"));
+    // let fields = &["column_name AS name", "data_type AS db_type", nullable.as_str(), "column_default AS default_value"];
 
-    let stmt = SelectStatement::new(dialect)
-        .select(fields)
-        .from("information_schema.columns")
-        .condition(Expression::BinaryOp {
-            left: Box::new(Expression::Column("table_schema".to_string())),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expression::String(dialect.default_schema())),
-        })
-        .condition(Expression::BinaryOp {
-            left: Box::new(Expression::Column("table_name".to_string())),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expression::Value(DinocoValue::String(table_name.to_string()))),
-        });
+    // let stmt = SelectStatement::new(dialect)
+    //     .select(fields)
+    //     .from("information_schema.columns")
+    //     .condition(Expression::BinaryOp {
+    //         left: Box::new(Expression::Column("table_schema".to_string())),
+    //         op: BinaryOperator::Eq,
+    //         right: Box::new(Expression::String(dialect.default_schema())),
+    //     })
+    //     .condition(Expression::BinaryOp {
+    //         left: Box::new(Expression::Column("table_name".to_string())),
+    //         op: BinaryOperator::Eq,
+    //         right: Box::new(Expression::Value(DinocoValue::String(table_name.to_string()))),
+    //     });
 
-    let (query, params) = dialect.build_select(&stmt);
+    // let (query, params) = dialect.build_select(&stmt);
 
-    adapter.query_as::<DatabaseColumn>(&query, &params).await
+    // adapter.query_as::<DatabaseColumn>(&query, &params).await
+
+    let query = format!("PRAGMA table_info({})", dialect.identifier(table_name));
+
+    // #[derive(Seriable)]
+    // pub struct SqliteColumnRaw {
+    //     pub name: String,
+    //     pub r#type: String,
+    //     pub notnull: i64,
+    //     pub dflt_value: Option<String>,
+    // }
+
+    // let rows = adapter.query_as::<SqliteColumnRaw>(&query, &[]).await?;
+
+    // let result = rows
+    //     .into_iter()
+    //     .map(|col| DatabaseColumn {
+    //         name: col.name,
+    //         db_type: col.r#type,
+    //         nullable: col.notnull == 0,
+    //         default_value: col.dflt_value,
+    //     })
+    //     .collect();
+
+    // println!("{}")
+
+    // unimplemented!()
+
+    Ok(vec![])
 }

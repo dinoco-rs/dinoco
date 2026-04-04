@@ -1,4 +1,6 @@
-use crate::{AlterAction, ColumnDefault, ColumnDefinition, ConstraintDefinition, DinocoValue, SqlBuilder, SqlDialect};
+use dinoco_compiler::{ParsedEnum, ParsedTable};
+
+use crate::{AlterAction, ColumnDefinition, ConstraintDefinition, SqlDialect};
 
 pub struct AlterTableStatement<'a, D: SqlDialect> {
     pub table_name: &'a str,
@@ -27,8 +29,8 @@ impl<'a, D: SqlDialect> AlterTableStatement<'a, D> {
         self
     }
 
-    pub fn modify_column(mut self, column: ColumnDefinition<'a>) -> Self {
-        self.actions.push(AlterAction::ModifyColumn(column));
+    pub fn modify_column(mut self, table: ParsedTable, enums: Vec<ParsedEnum>, column: ColumnDefinition<'a>) -> Self {
+        self.actions.push(AlterAction::ModifyColumn(table, enums, column));
 
         self
     }
@@ -39,14 +41,14 @@ impl<'a, D: SqlDialect> AlterTableStatement<'a, D> {
         self
     }
 
-    pub fn add_constraint(mut self, constraint: ConstraintDefinition<'a>) -> Self {
-        self.actions.push(AlterAction::AddConstraint(constraint));
+    pub fn add_constraint(mut self, table: ParsedTable, enums: Vec<ParsedEnum>, constraint: ConstraintDefinition<'a>) -> Self {
+        self.actions.push(AlterAction::AddConstraint(table, enums, constraint));
 
         self
     }
 
-    pub fn drop_constraint(mut self, constraint_name: &'a str) -> Self {
-        self.actions.push(AlterAction::DropConstraint(constraint_name));
+    pub fn drop_constraint(mut self, table: ParsedTable, enums: Vec<ParsedEnum>, constraint_name: &'a str) -> Self {
+        self.actions.push(AlterAction::DropConstraint(table, enums, constraint_name));
 
         self
     }

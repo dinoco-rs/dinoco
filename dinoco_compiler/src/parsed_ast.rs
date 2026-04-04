@@ -20,7 +20,7 @@ pub struct ParsedConfig {
 pub enum Database {
     Mysql,
     Postgresql,
-    // Sqlite,
+    Sqlite,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

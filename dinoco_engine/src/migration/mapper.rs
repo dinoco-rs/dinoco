@@ -66,7 +66,7 @@ pub fn map_default(df: &ParsedFieldDefault) -> Option<ColumnDefault> {
         ParsedFieldDefault::EnumValue(value) => Some(ColumnDefault::Value(DinocoValue::String(value.clone()))),
         ParsedFieldDefault::Function(func) => match func {
             FunctionCall::Now => Some(ColumnDefault::Function("NOW()".to_string())),
-            FunctionCall::AutoIncrement | FunctionCall::Uuid | _ => None,
+            FunctionCall::AutoIncrement | FunctionCall::Uuid | FunctionCall::Snowflake | _ => None,
         },
         _ => None,
     }

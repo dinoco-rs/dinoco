@@ -9,7 +9,7 @@ use inquire::{Confirm, Text};
 
 use dinoco_codegen::generate_models;
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoResult, Expression, Migration, MigrationStep, MySqlAdapter, PostgresAdapter, SelectStatement, SqlDialectBuilders, col};
+use dinoco_engine::{DinocoAdapter, DinocoResult, Expression, Migration, MigrationStep, MySqlAdapter, PostgresAdapter, SelectStatement, SqlDialectBuilders, SqliteAdapter, col};
 
 use crate::DataCheck;
 use crate::{create_migration_table, decode_schema, drop_all_tables, encode_schema, fetch, get_last_migration, insert_migration, normalize_schema, to_snake_case};
@@ -112,6 +112,19 @@ pub async fn generate_migrate() -> DinocoResult<()> {
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
         },
+        Database::Sqlite => match SqliteAdapter::connect(url).await {
+            Ok(adapter) => {
+                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+
+                execute_migrate(adapter, &pb, parsed).await?;
+            }
+            Err(e) => {
+                pb.finish_and_clear();
+
+                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+                println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
+            }
+        },
     }
 
     Ok(())
@@ -127,7 +140,6 @@ where
     let has_dinoco_migrations = tables.iter().any(|x| x.name == "_dinoco_migrations");
 
     if !tables.is_empty() && !has_dinoco_migrations {
-        // if true {
         let should_reset = pb.suspend(|| {
             let prompt_msg = "This database already contains data, but no migration history was found.\n  Do you want to reset the database and apply your new schema?";
 

@@ -49,10 +49,37 @@ async fn main() {
 
         Commands::Migrate(command) => match command {
             &MigrateCommands::Generate {} => {
-                let _result = generate_migrate().await;
+                if let Err(data) = generate_migrate().await {
+                    eprintln!("❌ Failed to generate migration.");
+                    eprintln!("👉 Details: {}", data);
+
+                    eprintln!("\n💡 Possible causes:");
+                    eprintln!("- Database connection failure");
+                    eprintln!("- Invalid or inconsistent schema");
+                    eprintln!("- Insufficient database permissions");
+
+                    eprintln!("\n🛠️ Suggestions:");
+                    eprintln!("- Check the DATABASE_URL environment variable");
+                    eprintln!("- Ensure the database is accessible");
+                    eprintln!("- Review recent schema changes");
+                }
             }
+
             &MigrateCommands::Rollback {} => {
-                let _result = rollback_migration().await;
+                if let Err(err) = rollback_migration().await {
+                    eprintln!("❌ Failed to execute rollback.");
+                    eprintln!("👉 Details: {}", err);
+
+                    eprintln!("\n💡 Possible causes:");
+                    eprintln!("- No migrations available to rollback");
+                    eprintln!("- Inconsistent migration state");
+                    eprintln!("- Database connection failure");
+
+                    eprintln!("\n🛠️ Suggestions:");
+                    eprintln!("- Check the migration history");
+                    eprintln!("- Verify the database connection");
+                    eprintln!("- Run a migration status command first");
+                }
             }
         },
     }

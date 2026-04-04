@@ -11,8 +11,8 @@ use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql
 use tokio_postgres::{NoTls, Row};
 
 use crate::{
-    AlterAction, AlterTableStatement, ColumnType, ConstraintType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue,
-    SqlBuilder, SqlDialect, SqlDialectBuilders,
+    AlterAction, AlterTableStatement, ColumnDefinition, ColumnType, ConstraintType, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream,
+    DinocoType, DinocoValue, SqlBuilder, SqlDialect, SqlDialectBuilders,
 };
 
 pub struct PostgresDialect;
@@ -192,8 +192,8 @@ impl SqlDialect for PostgresDialect {
             .to_string()
     }
 
-    fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String {
-        let mut base_type = match t {
+    fn column_type(&self, col: &ColumnDefinition, is_primary: bool, auto_increment: bool) -> String {
+        let mut base_type = match &col.col_type {
             ColumnType::Integer => "BIGINT".to_string(),
             ColumnType::Float => "DOUBLE PRECISION".to_string(),
             ColumnType::Text => "TEXT".to_string(),
@@ -235,7 +235,7 @@ impl SqlDialectBuilders for PostgresDialect {
                     builder.push_identifier(col.name);
                     builder.push(" ");
 
-                    builder.push(&self.column_type(&col.col_type, col.primary_key, col.auto_increment));
+                    builder.push(&self.column_type(&col, col.primary_key, col.auto_increment));
 
                     if col.not_null && !col.primary_key {
                         builder.push(" NOT NULL");
@@ -250,11 +250,11 @@ impl SqlDialectBuilders for PostgresDialect {
                     builder.push_identifier(name);
                 }
 
-                AlterAction::ModifyColumn(col) => {
+                AlterAction::ModifyColumn(_, _, col) => {
                     let table = self.identifier(stmt.table_name);
                     let column = self.identifier(col.name);
 
-                    let col_type = self.column_type(&col.col_type, false, col.auto_increment);
+                    let col_type = self.column_type(&col, false, col.auto_increment);
 
                     let type_sql = if let ColumnType::Enum(enum_name) = &col.col_type {
                         format!(
@@ -306,7 +306,7 @@ impl SqlDialectBuilders for PostgresDialect {
                     builder.push_identifier(new_name);
                 }
 
-                AlterAction::AddConstraint(constraint) => {
+                AlterAction::AddConstraint(_, _, constraint) => {
                     builder.push("ADD CONSTRAINT ");
                     builder.push_identifier(constraint.name);
                     builder.push(" ");
@@ -380,7 +380,7 @@ impl SqlDialectBuilders for PostgresDialect {
                         }
                     }
                 }
-                AlterAction::DropConstraint(name) => {
+                AlterAction::DropConstraint(_, _, name) => {
                     builder.push("DROP CONSTRAINT ");
                     builder.push_identifier(name);
                 }

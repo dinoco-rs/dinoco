@@ -6,8 +6,8 @@ use futures::stream::StreamExt;
 use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
 use crate::{
-    AlterEnumStatement, ColumnType, CreateEnumStatement, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType, DinocoValue,
-    DropEnumStatement, DropTableStatement, SqlBuilder, SqlDialect, SqlDialectBuilders,
+    AlterEnumStatement, ColumnDefinition, ColumnType, CreateEnumStatement, DinocoAdapter, DinocoDatabaseRow, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoType,
+    DinocoValue, DropEnumStatement, DropTableStatement, SqlBuilder, SqlDialect, SqlDialectBuilders,
 };
 
 pub struct MySqlAdapter {
@@ -187,8 +187,8 @@ impl SqlDialect for MySqlDialect {
             .to_string()
     }
 
-    fn column_type(&self, t: &ColumnType, is_primary: bool, auto_increment: bool) -> String {
-        let base_type = match t {
+    fn column_type(&self, col: &ColumnDefinition, is_primary: bool, auto_increment: bool) -> String {
+        let base_type = match &col.col_type {
             ColumnType::Integer => "BIGINT".to_string(),
             ColumnType::Float => "DOUBLE PRECISION".to_string(),
             ColumnType::Text => "VARCHAR(255)".to_string(),

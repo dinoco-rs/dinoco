@@ -1,4 +1,4 @@
-use dinoco_compiler::{ParsedEnum, ParsedFieldType};
+use dinoco_compiler::{ParsedEnum, ParsedFieldType, ParsedSchema};
 
 use super::mapper::map_field_to_definition;
 use super::step::MigrationStep;
@@ -8,7 +8,7 @@ use crate::{
     DropIndexStatement, DropTableStatement, SqlDialectBuilders, mapper::map_referential_action,
 };
 
-pub fn generate_up_sql<'a, T: DinocoAdapter>(adapter: &'a T, changes: Vec<MigrationStep>, enums: &[ParsedEnum]) -> Vec<String>
+pub fn generate_up_sql<'a, T: DinocoAdapter>(adapter: &'a T, changes: Vec<MigrationStep>, schema: &ParsedSchema) -> Vec<String>
 where
     T::Dialect: SqlDialectBuilders,
 {
@@ -52,7 +52,7 @@ where
                         continue;
                     }
 
-                    stmt = stmt.column(map_field_to_definition(field, dialect, enums));
+                    stmt = stmt.column(map_field_to_definition(field, dialect, &schema.enums));
                 }
 
                 let (sql, _) = dialect.build_create_table(&stmt);
@@ -67,7 +67,7 @@ where
 
             MigrationStep::AddColumn { table_name, field } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
-                stmt = stmt.add_column(map_field_to_definition(&field, dialect, enums));
+                stmt = stmt.add_column(map_field_to_definition(&field, dialect, &schema.enums));
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
@@ -83,9 +83,9 @@ where
                 }
             }
 
-            MigrationStep::AlterColumn { table_name, new_field, .. } => {
+            MigrationStep::AlterColumn { table, table_name, new_field, .. } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
-                stmt = stmt.modify_column(map_field_to_definition(&new_field, dialect, enums));
+                stmt = stmt.modify_column(table, schema.enums.clone(), map_field_to_definition(&new_field, dialect, &schema.enums));
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
@@ -102,6 +102,7 @@ where
             }
 
             MigrationStep::AddForeignKey {
+                table,
                 table_name,
                 column_name,
                 referenced_table,
@@ -112,25 +113,33 @@ where
             } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
 
-                stmt = stmt.add_constraint(ConstraintDefinition {
-                    name: &constraint_name,
-                    constraint_type: ConstraintType::ForeignKey {
-                        columns: vec![&column_name],
-                        ref_table: &referenced_table,
-                        ref_columns: vec![&referenced_column],
-                        on_delete: map_referential_action(&on_delete),
-                        on_update: map_referential_action(&on_update),
+                stmt = stmt.add_constraint(
+                    table,
+                    schema.enums.clone(),
+                    ConstraintDefinition {
+                        name: &constraint_name,
+                        constraint_type: ConstraintType::ForeignKey {
+                            columns: vec![&column_name],
+                            ref_table: &referenced_table,
+                            ref_columns: vec![&referenced_column],
+                            on_delete: map_referential_action(&on_delete),
+                            on_update: map_referential_action(&on_update),
+                        },
                     },
-                });
+                );
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
                 }
             }
 
-            MigrationStep::DropForeignKey { table_name, constraint_name } => {
+            MigrationStep::DropForeignKey {
+                table,
+                table_name,
+                constraint_name,
+            } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
-                stmt = stmt.drop_constraint(&constraint_name);
+                stmt = stmt.drop_constraint(table, schema.enums.clone(), &constraint_name);
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
@@ -158,7 +167,7 @@ where
     sql_statements
 }
 
-pub fn generate_down_sql<T: DinocoAdapter>(adapter: &T, changes: Vec<MigrationStep>, enums: &[ParsedEnum]) -> Vec<String>
+pub fn generate_down_sql<T: DinocoAdapter>(adapter: &T, changes: Vec<MigrationStep>, schema: &ParsedSchema) -> Vec<String>
 where
     T::Dialect: SqlDialectBuilders,
 {
@@ -214,17 +223,17 @@ where
 
             MigrationStep::DropColumn { table_name, field } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
-                stmt = stmt.add_column(map_field_to_definition(&field, dialect, enums));
+                stmt = stmt.add_column(map_field_to_definition(&field, dialect, &schema.enums));
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
                 }
             }
 
-            MigrationStep::AlterColumn { table_name, old_field, .. } => {
+            MigrationStep::AlterColumn { table, table_name, old_field, .. } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
 
-                stmt = stmt.modify_column(map_field_to_definition(&old_field, dialect, enums));
+                stmt = stmt.modify_column(table, schema.enums.clone(), map_field_to_definition(&old_field, dialect, &schema.enums));
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);
@@ -240,9 +249,14 @@ where
                 }
             }
 
-            MigrationStep::AddForeignKey { table_name, constraint_name, .. } => {
+            MigrationStep::AddForeignKey {
+                table,
+                table_name,
+                constraint_name,
+                ..
+            } => {
                 let mut stmt = AlterTableStatement::new(dialect, &table_name);
-                stmt = stmt.drop_constraint(&constraint_name);
+                stmt = stmt.drop_constraint(table, schema.enums.clone(), &constraint_name);
 
                 for (sql, _) in dialect.build_alter_table(&stmt) {
                     sql_statements.push(sql);

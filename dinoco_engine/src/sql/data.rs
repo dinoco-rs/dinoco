@@ -1,11 +1,16 @@
+use dinoco_compiler::{ParsedEnum, ParsedTable};
+
 use crate::DinocoValue;
 
 pub enum AlterAction<'a> {
     AddColumn(ColumnDefinition<'a>),
     DropColumn(&'a str),
-    ModifyColumn(ColumnDefinition<'a>),
-    AddConstraint(ConstraintDefinition<'a>),
-    DropConstraint(&'a str),
+
+    ModifyColumn(ParsedTable, Vec<ParsedEnum>, ColumnDefinition<'a>),
+
+    AddConstraint(ParsedTable, Vec<ParsedEnum>, ConstraintDefinition<'a>),
+    DropConstraint(ParsedTable, Vec<ParsedEnum>, &'a str),
+
     RenameColumn { old_name: &'a str, new_name: &'a str },
 }
 
