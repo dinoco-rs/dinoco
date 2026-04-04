@@ -5,7 +5,7 @@
 	"icon": "images/icon.png",
 	"publisher": "dinoco-rs",
 	"engines": {
-		"vscode": "^1.75.0"
+		"vscode": "^1.110.0"
 	},
 	"main": "./out/extension.js",
 	"activationEvents": [
@@ -39,6 +39,7 @@
 		]
 	},
 	"dependencies": {
+		"@vscode/vsce": "^3.7.1",
 		"vscode-languageclient": "^9.0.1"
 	},
 	"devDependencies": {

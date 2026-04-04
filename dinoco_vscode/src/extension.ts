@@ -7,7 +7,7 @@ let client: LanguageClient;
 
 export function activate(context: ExtensionContext) {
 	const command = process.platform === 'win32' ? 'dinoco_vscode.exe' : 'dinoco_vscode';
-	const serverPath = context.asAbsolutePath(path.join('target', 'debug', command));
+	const serverPath = context.asAbsolutePath(path.join('bin', command));
 
 	const serverOptions: ServerOptions = {
 		run: { command: serverPath, transport: TransportKind.stdio },

@@ -127,7 +127,7 @@ pub struct Category {
     pub name: String,
 
     // Relacionamentos
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none"1)]
     pub posts: Option<Vec<Post>>,
 }
 

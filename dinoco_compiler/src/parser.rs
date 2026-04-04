@@ -46,7 +46,7 @@ fn parse_field_type(data: &str) -> FieldType {
     }
 }
 
-fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoResult<Field<'a>> {
+fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompilerResult<Field<'a>> {
     let span = field_pair.as_span();
     let mut f_inner = field_pair.into_inner();
 
@@ -201,7 +201,7 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoResult<
     })
 }
 
-fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoResult<Table<'a>> {
+fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoCompilerResult<Table<'a>> {
     let span = table_record.as_span();
 
     let mut name = String::new();
@@ -244,7 +244,7 @@ fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoResul
     })
 }
 
-fn parse_enum<'a>(enum_record: Pair<'a, Rule>, position: usize) -> DinocoResult<Enum<'a>> {
+fn parse_enum<'a>(enum_record: Pair<'a, Rule>, position: usize) -> DinocoCompilerResult<Enum<'a>> {
     let span = enum_record.as_span();
 
     let mut name = String::new();
@@ -291,7 +291,7 @@ fn parse_enum<'a>(enum_record: Pair<'a, Rule>, position: usize) -> DinocoResult<
     })
 }
 
-fn parse_config<'a>(config_record: Pair<'a, Rule>, position: usize) -> DinocoResult<Config<'a>> {
+fn parse_config<'a>(config_record: Pair<'a, Rule>, position: usize) -> DinocoCompilerResult<Config<'a>> {
     let span = config_record.as_span();
     let mut fields = vec![];
 
@@ -316,7 +316,7 @@ fn parse_config<'a>(config_record: Pair<'a, Rule>, position: usize) -> DinocoRes
     })
 }
 
-fn parse_config_field<'a>(field_record: Pair<'a, Rule>, position: usize) -> DinocoResult<ConfigField<'a>> {
+fn parse_config_field<'a>(field_record: Pair<'a, Rule>, position: usize) -> DinocoCompilerResult<ConfigField<'a>> {
     let span = field_record.as_span();
     let mut name = String::new();
     let mut value = None;
@@ -345,7 +345,7 @@ fn parse_config_field<'a>(field_record: Pair<'a, Rule>, position: usize) -> Dino
     })
 }
 
-fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoResult<ConfigValue<'a>> {
+fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoCompilerResult<ConfigValue<'a>> {
     let span = value_record.as_span();
 
     match value_record.as_rule() {
@@ -403,7 +403,7 @@ fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoResult<ConfigVa
     }
 }
 
-pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoResult<Schema<'a>> {
+pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoCompilerResult<Schema<'a>> {
     let mut parsed = DinocoParser::parse(Rule::schema, raw_input).map_err(|e| {
         let (start_line, start_column, end_line, end_column) = match e.line_col {
             pest::error::LineColLocation::Pos((line, col)) => (line, col, line, col + 1),
@@ -471,7 +471,7 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoResult<Schema<'a>> {
             .message()
             .to_string();
 
-        vec![DinocoError {
+        vec![DinocoCompilerError {
             message: err,
             start_line,
             start_column,
@@ -512,11 +512,11 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoResult<Schema<'a>> {
     })
 }
 
-pub fn format_span_error(message: String, span: pest::Span) -> Vec<DinocoError> {
+pub fn format_span_error(message: String, span: pest::Span) -> Vec<DinocoCompilerError> {
     let (start_line, start_column) = span.start_pos().line_col();
     let (end_line, end_column) = span.end_pos().line_col();
 
-    vec![DinocoError {
+    vec![DinocoCompilerError {
         message: format!("{}", message),
 
         start_line,
@@ -527,14 +527,14 @@ pub fn format_span_error(message: String, span: pest::Span) -> Vec<DinocoError> 
     }]
 }
 
-pub fn format_span_errors(data: Vec<(String, pest::Span)>) -> Vec<DinocoError> {
+pub fn format_span_errors(data: Vec<(String, pest::Span)>) -> Vec<DinocoCompilerError> {
     let mut errors = vec![];
 
     for (message, span) in data {
         let (start_line, start_column) = span.start_pos().line_col();
         let (end_line, end_column) = span.end_pos().line_col();
 
-        errors.push(DinocoError {
+        errors.push(DinocoCompilerError {
             message: format!("{}", message),
 
             start_line,

@@ -1,5 +1,7 @@
-use crate::{DinocoError, DinocoResult, FromDinocoValue, RowExt};
 use chrono::{DateTime, Utc};
+use std::convert::TryFrom;
+
+use crate::DinocoError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DinocoValue {
@@ -13,65 +15,6 @@ pub enum DinocoValue {
 
     Json(serde_json::Value),
     DateTime(DateTime<Utc>),
-}
-
-impl DinocoValue {
-    pub fn as_value<T: FromDinocoValue>(&self) -> Result<T, DinocoError> {
-        T::from_value(self)
-    }
-}
-
-impl RowExt for Vec<DinocoValue> {
-    fn get_value<T: FromDinocoValue>(&self, index: usize) -> DinocoResult<T> {
-        let value = self.get(index).ok_or(DinocoError::ColumnNotFound)?;
-
-        value.as_value()
-    }
-}
-
-impl FromDinocoValue for String {
-    fn from_value(value: &DinocoValue) -> DinocoResult<Self> {
-        match value {
-            DinocoValue::String(v) => Ok(v.clone()),
-            _ => Err(DinocoError::TypeMismatch),
-        }
-    }
-}
-
-impl FromDinocoValue for i64 {
-    fn from_value(value: &DinocoValue) -> DinocoResult<Self> {
-        match value {
-            DinocoValue::Integer(v) => Ok(*v),
-            _ => Err(DinocoError::TypeMismatch),
-        }
-    }
-}
-
-impl FromDinocoValue for bool {
-    fn from_value(value: &DinocoValue) -> DinocoResult<Self> {
-        match value {
-            DinocoValue::Boolean(v) => Ok(*v),
-            _ => Err(DinocoError::TypeMismatch),
-        }
-    }
-}
-
-impl FromDinocoValue for f64 {
-    fn from_value(value: &DinocoValue) -> DinocoResult<Self> {
-        match value {
-            DinocoValue::Float(v) => Ok(*v),
-            _ => Err(DinocoError::TypeMismatch),
-        }
-    }
-}
-
-impl FromDinocoValue for Vec<u8> {
-    fn from_value(value: &DinocoValue) -> DinocoResult<Self> {
-        match value {
-            DinocoValue::Bytes(v) => Ok(v.to_vec()),
-            _ => Err(DinocoError::TypeMismatch),
-        }
-    }
 }
 
 impl From<&str> for DinocoValue {
@@ -107,5 +50,84 @@ impl From<bool> for DinocoValue {
 impl From<Vec<u8>> for DinocoValue {
     fn from(value: Vec<u8>) -> Self {
         DinocoValue::Bytes(value)
+    }
+}
+
+impl From<DateTime<Utc>> for DinocoValue {
+    fn from(value: DateTime<Utc>) -> Self {
+        DinocoValue::DateTime(value)
+    }
+}
+
+impl TryFrom<DinocoValue> for String {
+    type Error = DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        match value {
+            DinocoValue::String(s) => Ok(s),
+            DinocoValue::Bytes(b) => {
+                String::from_utf8(b).map_err(|_| DinocoError::ParseError("Invalid UTF-8".into()))
+            }
+            _ => Err(DinocoError::ParseError("Expected String".into())),
+        }
+    }
+}
+
+impl TryFrom<DinocoValue> for i64 {
+    type Error = DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        match value {
+            DinocoValue::Integer(i) => Ok(i),
+            DinocoValue::Boolean(b) => Ok(if b { 1 } else { 0 }),
+            _ => Err(DinocoError::ParseError("Expected i64".into())),
+        }
+    }
+}
+
+impl TryFrom<DinocoValue> for f64 {
+    type Error = DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        match value {
+            DinocoValue::Float(f) => Ok(f),
+            DinocoValue::Integer(i) => Ok(i as f64),
+            _ => Err(DinocoError::ParseError("Expected f64".into())),
+        }
+    }
+}
+
+impl TryFrom<DinocoValue> for bool {
+    type Error = DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        match value {
+            DinocoValue::Boolean(b) => Ok(b),
+            DinocoValue::Integer(i) => Ok(i != 0),
+            _ => Err(DinocoError::ParseError("Expected bool".into())),
+        }
+    }
+}
+
+impl TryFrom<DinocoValue> for Vec<u8> {
+    type Error = DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        match value {
+            DinocoValue::Bytes(b) => Ok(b),
+            DinocoValue::String(s) => Ok(s.into_bytes()),
+            _ => Err(DinocoError::ParseError("Expected bytes".into())),
+        }
+    }
+}
+
+impl TryFrom<DinocoValue> for DateTime<Utc> {
+    type Error = DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        match value {
+            DinocoValue::DateTime(dt) => Ok(dt),
+            _ => Err(DinocoError::ParseError("Expected DateTime<Utc>".into())),
+        }
     }
 }

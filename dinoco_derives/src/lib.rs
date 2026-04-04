@@ -1,11 +1,12 @@
 extern crate proc_macro;
 
+use syn::{DeriveInput, PathArguments, Type, parse_macro_input};
+
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, Path, parse_macro_input};
 
-#[proc_macro_derive(Seriable)]
-pub fn selectable_derive(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(Rowable)]
+pub fn rowable_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
 
@@ -13,22 +14,30 @@ pub fn selectable_derive(input: TokenStream) -> TokenStream {
         if let syn::Fields::Named(fields) = data.fields {
             fields.named
         } else {
-            panic!("Seriable only supports structs with named fields");
+            panic!("Rowable only supports structs with named fields");
         }
     } else {
-        panic!("Seriable can only be derived for structs");
+        panic!("Rowable can only be derived for structs");
     };
 
     let getters = fields.iter().enumerate().map(|(i, f)| {
         let ident = &f.ident;
-        quote! {
-            #ident: row.get(#i)?
+        let ty = &f.ty;
+
+        if let Some(inner_ty) = extract_option_inner(ty) {
+            quote! {
+                #ident: row.get_optional::<#inner_ty>(#i)?
+            }
+        } else {
+            quote! {
+                #ident: row.get(#i)?
+            }
         }
     });
 
     let expanded = quote! {
         impl DinocoRow for #name {
-            fn from_row<R: DinocoDatabaseRow>(row: &R) -> DinocoResult<Self> {
+            fn from_row<R: DinocoGenericRow>(row: &R) -> DinocoResult<Self> {
                 Ok(Self {
                     #(#getters),*
                 })
@@ -37,125 +46,20 @@ pub fn selectable_derive(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
-
-    // let input = parse_macro_input!(input as DeriveInput);
-    // let name = input.ident;
-
-    // let fields = if let syn::Data::Struct(data) = input.data {
-    //     if let syn::Fields::Named(fields) = data.fields {
-    //         fields.named
-    //     } else {
-    //         panic!("Selectable only supports structs with named fields");
-    //     }
-    // } else {
-    //     panic!("Selectable can only be derived for structs");
-    // };
-
-    // let field_names: Vec<String> = fields.iter().map(|f| f.ident.as_ref().unwrap().to_string()).collect();
-
-    // let expanded = quote! {
-    //     // impl DinocoModel for #name {
-    //     //     fn select_fields() -> Vec<&'static str> {
-    //     //         vec![#(#field_names),*]
-    //     //     }
-
-    //     //     fn select_fields() -> Vec<&'static str> {
-    //     //         vec![#(#field_names),*]
-    //     //     }
-    //     // }
-    // };
-
-    // TokenStream::from(expanded)
 }
 
-// #[proc_macro_derive(DinocoModel)]
-// pub fn dinoco_row_derive(input: TokenStream) -> TokenStream {
-//     let input = parse_macro_input!(input as DeriveInput);
-//     let name = input.ident;
+fn extract_option_inner(ty: &Type) -> Option<&Type> {
+    if let Type::Path(type_path) = ty {
+        let segment = type_path.path.segments.last()?;
 
-//     let fields = if let syn::Data::Struct(data) = input.data {
-//         if let syn::Fields::Named(fields) = data.fields {
-//             fields.named
-//         } else {
-//             panic!("DinocoModel only supports structs with named fields");
-//         }
-//     } else {
-//         panic!("DinocoModel can only be derived for structs");
-//     };
+        if segment.ident == "Option" {
+            if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
+                    return Some(inner_ty);
+                }
+            }
+        }
+    }
 
-//     let getters = fields.iter().enumerate().map(|(i, f)| {
-//         let ident = &f.ident;
-//         quote! {
-//             #ident: row.get(#i)?
-//         }
-//     });
-
-//     let expanded = quote! {
-
-//         impl DinocoRow for #name {
-//             fn from_row<R: DinocoDatabaseRow>(row: &R) -> DinocoResult<Self> {
-//                 Ok(Self {
-//                     #(#getters),*
-//                 })
-//             }
-//         }
-//     };
-
-//     TokenStream::from(expanded)
-// }
-
-// #[proc_macro_derive(DinocoExtend, attributes(extend))]
-// pub fn extend_derive(input: TokenStream) -> TokenStream {
-//     let input = parse_macro_input!(input as DeriveInput);
-//     let struct_name = &input.ident;
-
-//     let mut base_model: Option<Path> = None;
-
-//     for attr in &input.attrs {
-//         if attr.path().is_ident("extend") {
-//             let _ = attr.parse_nested_meta(|meta| {
-//                 base_model = Some(meta.path.clone());
-//                 Ok(())
-//             });
-//         }
-//     }
-
-//     let base_model = base_model.expect("Expected #[extend(ModelName)]");
-
-//     let fields = if let syn::Data::Struct(data) = input.data {
-//         if let syn::Fields::Named(fields) = data.fields {
-//             fields.named
-//         } else {
-//             panic!("DinocoExtend only supports structs with named fields");
-//         }
-//     } else {
-//         panic!("DinocoExtend can only be derived for structs");
-//     };
-
-//     let field_names: Vec<String> = fields.iter().map(|f| f.ident.as_ref().unwrap().to_string()).collect();
-
-//     let getters = fields.iter().enumerate().map(|(i, f)| {
-//         let ident = &f.ident;
-//         quote! {
-//             #ident: row.get(#i)?
-//         }
-//     });
-
-//     let expanded = quote! {
-//         impl DinocoModel for #struct_name {
-//             fn select_fields() -> Vec<&'static str> {
-//                 vec![#(#field_names),*]
-//             }
-//         }
-
-//         impl DinocoRow for #struct_name {
-//             fn from_row<R: DinocoDatabaseRow>(row: &R) -> DinocoResult<Self> {
-//                 Ok(Self {
-//                     #(#getters),*
-//                 })
-//             }
-//         }
-//     };
-
-//     TokenStream::from(expanded)
-// }
+    None
+}

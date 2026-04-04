@@ -4,7 +4,7 @@ use pest::Span;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DinocoError {
+pub struct DinocoCompilerError {
     pub message: String,
 
     pub start_line: usize,
@@ -14,7 +14,7 @@ pub struct DinocoError {
     pub end_column: usize,
 }
 
-impl Default for DinocoError {
+impl Default for DinocoCompilerError {
     fn default() -> Self {
         Self {
             message: "".to_string(),
@@ -27,7 +27,7 @@ impl Default for DinocoError {
     }
 }
 
-pub type DinocoResult<T> = Result<T, Vec<DinocoError>>;
+pub type DinocoCompilerResult<T> = Result<T, Vec<DinocoCompilerError>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schema<'a> {
@@ -161,7 +161,7 @@ impl FunctionCall {
         }
     }
 
-    pub fn from_string(data: &str) -> DinocoResult<Self> {
+    pub fn from_string(data: &str) -> DinocoCompilerResult<Self> {
         if let Some((name, params_with_paren)) = data.split_once('(') {
             if let Some(params) = params_with_paren.strip_suffix(')') {
                 match name {
@@ -170,13 +170,13 @@ impl FunctionCall {
                     "snowflake" => Ok(Self::Snowflake),
                     "now" => Ok(Self::Now),
                     "autoincrement" => Ok(Self::AutoIncrement),
-                    _ => Err(vec![DinocoError::default()]),
+                    _ => Err(vec![DinocoCompilerError::default()]),
                 }
             } else {
-                Err(vec![DinocoError::default()])
+                Err(vec![DinocoCompilerError::default()])
             }
         } else {
-            Err(vec![DinocoError::default()])
+            Err(vec![DinocoCompilerError::default()])
         }
     }
 }
