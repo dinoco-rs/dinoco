@@ -322,8 +322,18 @@ where
 
     insert_migration(&adapter, &migration_name, encode_schema(parsed_schema.clone())).await?;
 
+    let sqls_with_semicolons: Vec<String> = sqls
+        .into_iter()
+        .map(|mut q| {
+            if !q.trim_end().ends_with(';') {
+                q.push(';');
+            }
+            q
+        })
+        .collect();
+
     std::fs::create_dir_all(format!("dinoco/migrations/{migration_name}")).unwrap();
-    std::fs::write(format!("dinoco/migrations/{migration_name}/migration.sql"), sqls.join("\n\n")).unwrap();
+    std::fs::write(format!("dinoco/migrations/{migration_name}/migration.sql"), sqls_with_semicolons.join("\n\n")).unwrap();
 
     pb.finish_and_clear();
 

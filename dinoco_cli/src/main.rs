@@ -33,6 +33,9 @@ enum MigrateCommands {
 
     #[command(about = "Rollback last migration")]
     Rollback {},
+
+    #[command(about = "Rul all migrations")]
+    Run {},
 }
 
 #[tokio::main]
@@ -67,6 +70,23 @@ async fn main() {
 
             &MigrateCommands::Rollback {} => {
                 if let Err(err) = rollback_migration().await {
+                    eprintln!("❌ Failed to execute rollback.");
+                    eprintln!("👉 Details: {}", err);
+
+                    eprintln!("\n💡 Possible causes:");
+                    eprintln!("- No migrations available to rollback");
+                    eprintln!("- Inconsistent migration state");
+                    eprintln!("- Database connection failure");
+
+                    eprintln!("\n🛠️ Suggestions:");
+                    eprintln!("- Check the migration history");
+                    eprintln!("- Verify the database connection");
+                    eprintln!("- Run a migration status command first");
+                }
+            }
+
+            &MigrateCommands::Run {} => {
+                if let Err(err) = run_migrations().await {
                     eprintln!("❌ Failed to execute rollback.");
                     eprintln!("👉 Details: {}", err);
 

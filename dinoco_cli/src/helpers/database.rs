@@ -1,5 +1,4 @@
 use dinoco_compiler::ParsedTable;
-use dinoco_derives::Seriable;
 use dinoco_engine::{
     AlterTableStatement, BinaryOperator, ColumnDefault, ColumnDefinition, ColumnType, CreateTableStatement, DeleteStatement, DinocoAdapter, DinocoResult, DinocoValue,
     DropEnumStatement, DropTableStatement, Expression, InsertStatement, OrderDirection, SelectStatement, SqlDialect, SqlDialectBuilders,
@@ -59,6 +58,20 @@ pub async fn get_last_migration<T: DinocoAdapter>(adapter: &T) -> DinocoResult<O
         .from("_dinoco_migrations")
         .order_by("id", OrderDirection::Desc)
         .limit(1);
+
+    let (query, params) = dialect.build_select(&stmt);
+    let result = adapter.query_as::<DinocoMigration>(&query, &params).await?;
+
+    Ok(result.into_iter().next())
+}
+
+pub async fn get_all_migrations<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Option<DinocoMigration>> {
+    let dialect = adapter.dialect();
+
+    let stmt = SelectStatement::new(dialect)
+        .select(&["id", "name", "schema"])
+        .from("_dinoco_migrations")
+        .order_by("id", OrderDirection::Desc);
 
     let (query, params) = dialect.build_select(&stmt);
     let result = adapter.query_as::<DinocoMigration>(&query, &params).await?;
