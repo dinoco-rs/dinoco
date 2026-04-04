@@ -1,6 +1,5 @@
 use dinoco_engine::{
-    AdapterDialect, ColumnDefinition, ColumnType, DeleteStatement, DinocoAdapter, DinocoResult, DinocoValue, Expression, InsertStatement, OrderDirection, QueryBuilder,
-    SelectStatement,
+    AdapterDialect, DeleteStatement, DinocoAdapter, DinocoResult, DinocoValue, Expression, InsertStatement, OrderDirection, QueryBuilder, SelectStatement,
 };
 
 use crate::DinocoMigration;
@@ -42,30 +41,12 @@ async fn get_last_migrations<T: DinocoAdapter>(adapter: &T, limit: usize) -> Din
 
 pub async fn create_migration_table<T: DinocoAdapter>(adapter: &T) -> DinocoResult<()> {
     let dialect = adapter.dialect();
-    let name_definition = ColumnDefinition {
-        name: "name",
-        col_type: ColumnType::Text,
-        primary_key: true,
-        not_null: true,
-        auto_increment: false,
-        default: None,
-    };
-    let schema_definition = ColumnDefinition {
-        name: "schema",
-        col_type: ColumnType::Bytes,
-        primary_key: false,
-        not_null: true,
-        auto_increment: false,
-        default: None,
-    };
 
     let sql = format!(
-        "CREATE TABLE IF NOT EXISTS {} ({} {}, {} {} NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS {} ({} TEXT PRIMARY KEY NOT NULL, {} BLOB NOT NULL)",
         dialect.identifier(MIGRATIONS_TABLE),
         dialect.identifier("name"),
-        dialect.column_type(&name_definition, true, false),
         dialect.identifier("schema"),
-        dialect.column_type(&schema_definition, false, false),
     );
 
     adapter.execute(&sql, &[]).await

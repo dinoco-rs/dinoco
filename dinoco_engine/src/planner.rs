@@ -29,6 +29,7 @@ pub fn calculate_diff(
     let mut alter_column_steps = Vec::new();
     let mut create_index_steps = Vec::new();
     let mut add_fk_steps = Vec::new();
+    let mut created_table_names = HashSet::new();
 
     let old_enums_map: HashMap<&String, _> =
         old_schema.enums.iter().map(|e| (&e.name, e)).collect();
@@ -88,6 +89,7 @@ pub fn calculate_diff(
             }
         } else {
             create_table_steps.push(MigrationStep::CreateTable((*new_table).clone()));
+            created_table_names.insert((*name).clone());
         }
 
         let (relations_steps, join_tables) =
@@ -95,7 +97,11 @@ pub fn calculate_diff(
 
         for step in relations_steps {
             match step {
-                MigrationStep::AddForeignKey { .. } => add_fk_steps.push(step),
+                MigrationStep::AddForeignKey { ref table_name, .. } => {
+                    if !created_table_names.contains(table_name) {
+                        add_fk_steps.push(step);
+                    }
+                }
                 MigrationStep::DropForeignKey { .. } => drop_fk_steps.push(step),
                 MigrationStep::CreateIndex { .. } => create_index_steps.push(step),
                 _ => {}
@@ -108,6 +114,7 @@ pub fn calculate_diff(
             if !old_map.contains_key(&join_table.name)
                 && !old_join_tables.contains_key(&join_table.name)
             {
+                created_table_names.insert(join_table.name.clone());
                 create_table_steps.push(MigrationStep::CreateTable(join_table));
             }
         }

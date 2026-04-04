@@ -295,46 +295,59 @@ pub fn render_sqlite_rebuild_table_sql<D: AdapterDialect>(
     schema: &ParsedSchema,
     preserved_columns: &[String],
 ) -> Vec<String> {
-    let temp_table_name = format!("__dinoco_rebuild_{}", table.name);
-    let target_columns = table
-        .fields
+    let copy_mappings = preserved_columns
         .iter()
-        .filter(|field| !matches!(field.field_type, ParsedFieldType::Relation(..)))
-        .map(|field| field.name.clone())
-        .collect::<Vec<_>>();
-
-    let copy_columns = target_columns
-        .iter()
-        .filter(|column| preserved_columns.contains(column))
         .cloned()
+        .map(|column| (column.clone(), column))
         .collect::<Vec<_>>();
+    let mut sqls = vec!["PRAGMA foreign_keys = OFF".to_string()];
 
-    let mut sqls = vec![
-        "PRAGMA foreign_keys = OFF".to_string(),
-        render_sqlite_create_table_sql(
-            &ParsedTable {
-                name: temp_table_name.clone(),
-                fields: table.fields.clone(),
-            },
-            dialect,
-            schema,
-        ),
-    ];
+    sqls.extend(render_sqlite_rebuild_table_sql_with_copy_mappings(
+        table,
+        dialect,
+        schema,
+        &copy_mappings,
+    ));
+    sqls.push("PRAGMA foreign_keys = ON".to_string());
 
-    if !copy_columns.is_empty() {
-        let copy_columns_sql = render_identifier_list(
-            &copy_columns
+    sqls
+}
+
+pub fn render_sqlite_rebuild_table_sql_with_copy_mappings<D: AdapterDialect>(
+    table: &ParsedTable,
+    dialect: &D,
+    schema: &ParsedSchema,
+    copy_mappings: &[(String, String)],
+) -> Vec<String> {
+    let temp_table_name = format!("__dinoco_rebuild_{}", table.name);
+    let mut sqls = vec![render_sqlite_create_table_sql(
+        &ParsedTable {
+            name: temp_table_name.clone(),
+            fields: table.fields.clone(),
+        },
+        dialect,
+        schema,
+    )];
+
+    if !copy_mappings.is_empty() {
+        let target_columns_sql = render_identifier_list(
+            &copy_mappings
                 .iter()
-                .map(|column| column.as_str())
+                .map(|(target, _)| target.as_str())
                 .collect::<Vec<_>>(),
             dialect,
         );
+        let source_columns_sql = copy_mappings
+            .iter()
+            .map(|(_, source)| source.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
 
         sqls.push(format!(
             "INSERT INTO {} ({}) SELECT {} FROM {}",
             dialect.identifier(&temp_table_name),
-            copy_columns_sql,
-            copy_columns_sql,
+            target_columns_sql,
+            source_columns_sql,
             dialect.identifier(&table.name)
         ));
     }
@@ -345,7 +358,6 @@ pub fn render_sqlite_rebuild_table_sql<D: AdapterDialect>(
         dialect.identifier(&temp_table_name),
         dialect.identifier(&table.name)
     ));
-    sqls.push("PRAGMA foreign_keys = ON".to_string());
 
     sqls
 }

@@ -440,7 +440,7 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
             let on_update = parse_action(on_update_str, "onUpdate", field.span)?;
             let on_delete = parse_action(on_delete_str, "onDelete", field.span)?;
 
-            Ok((on_update, on_delete))
+            Ok((on_delete, on_update))
         } else {
             Ok((None, None))
         }
@@ -462,7 +462,7 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                 let target_ast_table = schema_tables.iter().find(|t| t.name == *target_model_name).unwrap();
 
                 let (fields, _) = get_relation_fields_and_references(ast_field);
-                let (on_update, on_delete) = get_referential_actions(ast_field)?;
+                let (on_delete, on_update) = get_referential_actions(ast_field)?;
 
                 for local_f in &fields {
                     if !used_foreign_keys.insert(local_f.clone()) {
@@ -590,7 +590,7 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                 } else if !is_local_list && is_remote_list {
                     validate_types_and_keys(ast_field, ast_table, target_ast_table)?;
 
-                    parsed_rel = ParsedRelation::ManyToOne(current_rel_name, fields, references, on_update, on_delete);
+                    parsed_rel = ParsedRelation::ManyToOne(current_rel_name, fields, references, on_delete, on_update);
                 } else if is_local_list && !is_remote_list {
                     if has_fields_or_references(ast_field) {
                         return Err(format_span_error(
@@ -632,7 +632,7 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                             }
                         }
 
-                        parsed_rel = ParsedRelation::OneToOneOwner(current_rel_name, fields, references, on_update, on_delete);
+                        parsed_rel = ParsedRelation::OneToOneOwner(current_rel_name, fields, references, on_delete, on_update);
                     } else {
                         parsed_rel = ParsedRelation::OneToOneInverse(current_rel_name);
                     }
