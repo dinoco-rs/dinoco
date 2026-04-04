@@ -191,7 +191,6 @@ pub async fn fetch_tables<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<Dat
         return adapter.query_as::<DatabaseTable>(&query, &params).await;
     }
 
-    // SQLITE
     let query = r#"
         SELECT name
         FROM sqlite_master
