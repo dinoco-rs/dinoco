@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use dinoco_compiler::ParsedSchema;
 
 use crate::{
-    ColumnDefinition, DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex, DatabaseParsedTable, DinocoError, DinocoResult, DinocoStream, DinocoValue, MigrationStep,
+    ColumnDefinition, DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex,
+    DatabaseParsedTable, DinocoError, DinocoResult, DinocoStream, DinocoValue, MigrationStep,
 };
 
 #[async_trait]
@@ -14,8 +15,16 @@ pub trait DinocoAdapter: Sized {
     async fn connect(url: String) -> DinocoResult<Self>;
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()>;
-    async fn query_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>>;
-    async fn stream_as<T: DinocoRow + Send + 'static>(&self, query: &str, params: &[DinocoValue]) -> DinocoStream<T>;
+    async fn query_as<T: DinocoRow>(
+        &self,
+        query: &str,
+        params: &[DinocoValue],
+    ) -> DinocoResult<Vec<T>>;
+    async fn stream_as<T: DinocoRow + Send + 'static>(
+        &self,
+        query: &str,
+        params: &[DinocoValue],
+    ) -> DinocoStream<T>;
 }
 
 #[async_trait]
@@ -76,7 +85,12 @@ pub trait MigrationExecutor {
     fn build_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String>;
     fn build_reverse_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String>;
 
-    fn build_migration(&self, steps: &[MigrationStep], schema: &ParsedSchema, reverse: bool) -> Vec<String> {
+    fn build_migration(
+        &self,
+        steps: &[MigrationStep],
+        schema: &ParsedSchema,
+        reverse: bool,
+    ) -> Vec<String> {
         let mut sqls = Vec::new();
 
         for step in steps {

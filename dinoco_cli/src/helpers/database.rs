@@ -1,70 +1,80 @@
-use dinoco_engine::{ColumnDefault, ColumnDefinition, ColumnType, DinocoAdapter, DinocoResult, DinocoValue};
+use dinoco_engine::{
+    AdapterDialect, ColumnDefinition, ColumnType, DeleteStatement, DinocoAdapter, DinocoResult, DinocoValue, Expression, InsertStatement, OrderDirection, QueryBuilder,
+    SelectStatement,
+};
 
 use crate::DinocoMigration;
 
-pub async fn get_all_migrations<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Option<DinocoMigration>> {
-    let dialect = adapter.dialect();
+const MIGRATIONS_TABLE: &str = "_dinoco_migrations";
 
-    let stmt = SelectStatement::new(dialect)
-        .select(&["id", "name", "schema"])
-        .from("_dinoco_migrations")
-        .order_by("id", OrderDirection::Desc);
+pub async fn get_all_migrations<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<DinocoMigration>> {
+    let dialect = adapter.dialect();
+    let stmt = SelectStatement::new()
+        .select(&["name", "schema"])
+        .from(MIGRATIONS_TABLE)
+        .order_by("name", OrderDirection::Asc);
 
     let (query, params) = dialect.build_select(&stmt);
-    let result = adapter.query_as::<DinocoMigration>(&query, &params).await?;
 
-    Ok(result.into_iter().next())
+    adapter.query_as::<DinocoMigration>(&query, &params).await
+}
+
+pub async fn get_last_migration<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Option<DinocoMigration>> {
+    Ok(get_last_migrations(adapter, 1).await?.into_iter().next())
+}
+
+pub async fn get_last_two_migrations<T: DinocoAdapter>(adapter: &T) -> DinocoResult<Vec<DinocoMigration>> {
+    get_last_migrations(adapter, 2).await
+}
+
+async fn get_last_migrations<T: DinocoAdapter>(adapter: &T, limit: usize) -> DinocoResult<Vec<DinocoMigration>> {
+    let dialect = adapter.dialect();
+    let stmt = SelectStatement::new()
+        .select(&["name", "schema"])
+        .from(MIGRATIONS_TABLE)
+        .order_by("name", OrderDirection::Desc)
+        .limit(limit);
+
+    let (query, params) = dialect.build_select(&stmt);
+
+    adapter.query_as::<DinocoMigration>(&query, &params).await
 }
 
 pub async fn create_migration_table<T: DinocoAdapter>(adapter: &T) -> DinocoResult<()> {
     let dialect = adapter.dialect();
+    let name_definition = ColumnDefinition {
+        name: "name",
+        col_type: ColumnType::Text,
+        primary_key: true,
+        not_null: true,
+        auto_increment: false,
+        default: None,
+    };
+    let schema_definition = ColumnDefinition {
+        name: "schema",
+        col_type: ColumnType::Bytes,
+        primary_key: false,
+        not_null: true,
+        auto_increment: false,
+        default: None,
+    };
 
-    let stmt = CreateTableStatement::new(dialect, "_dinoco_migrations")
-        .column(ColumnDefinition {
-            name: "id",
-            col_type: ColumnType::Integer,
-            primary_key: true,
-            not_null: true,
-            auto_increment: true,
-            default: None,
-        })
-        .column(ColumnDefinition {
-            name: "name",
-            col_type: ColumnType::Text,
-            primary_key: false,
-            not_null: true,
-            auto_increment: false,
-            default: None,
-        })
-        .column(ColumnDefinition {
-            name: "schema",
-            col_type: ColumnType::Bytes,
-            primary_key: false,
-            not_null: true,
-            auto_increment: false,
-            default: None,
-        })
-        .column(ColumnDefinition {
-            name: "applied_at",
-            col_type: ColumnType::DateTime,
-            primary_key: false,
-            not_null: true,
-            auto_increment: false,
-            default: Some(ColumnDefault::Function("NOW()".to_string())),
-        });
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} ({} {}, {} {} NOT NULL)",
+        dialect.identifier(MIGRATIONS_TABLE),
+        dialect.identifier("name"),
+        dialect.column_type(&name_definition, true, false),
+        dialect.identifier("schema"),
+        dialect.column_type(&schema_definition, false, false),
+    );
 
-    let (sql, _) = dialect.build_create_table(&stmt);
-
-    adapter.execute(&sql, &[]).await?;
-
-    Ok(())
+    adapter.execute(&sql, &[]).await
 }
 
 pub async fn insert_migration<T: DinocoAdapter>(adapter: &T, name: &str, schema_bytes: Vec<u8>) -> DinocoResult<()> {
     let dialect = adapter.dialect();
-
-    let stmt = InsertStatement::new(dialect)
-        .into("_dinoco_migrations")
+    let stmt = InsertStatement::new()
+        .into(MIGRATIONS_TABLE)
         .columns(&["name", "schema"])
         .value(vec![DinocoValue::String(name.to_string()), DinocoValue::Bytes(schema_bytes)]);
 
@@ -73,14 +83,11 @@ pub async fn insert_migration<T: DinocoAdapter>(adapter: &T, name: &str, schema_
     adapter.execute(&query, &params).await
 }
 
-pub async fn delete_migration<T: DinocoAdapter>(adapter: &T, id: i64) -> DinocoResult<()> {
+pub async fn delete_migration<T: DinocoAdapter>(adapter: &T, name: &str) -> DinocoResult<()> {
     let dialect = adapter.dialect();
-
-    let stmt = DeleteStatement::new(dialect).from("_dinoco_migrations").condition(Expression::BinaryOp {
-        left: Box::new(Expression::Column("id".to_string())),
-        op: BinaryOperator::Eq,
-        right: Box::new(Expression::Value(DinocoValue::Integer(id))),
-    });
+    let stmt = DeleteStatement::new()
+        .from(MIGRATIONS_TABLE)
+        .condition(Expression::Column("name".to_string()).eq(name.to_string()));
 
     let (query, params) = dialect.build_delete(&stmt);
 

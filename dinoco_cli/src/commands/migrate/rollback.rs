@@ -7,10 +7,13 @@ use colored::*;
 use indicatif::ProgressBar;
 use inquire::Confirm;
 
-use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoResult, Migration, MySqlAdapter, PostgresAdapter, SqlDialectBuilders, SqliteAdapter};
+use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig};
+use dinoco_compiler::{compile, render_error};
 
-use crate::helpers::{decode_schema, delete_migration, drop_all_tables, fetch, get_last_two_migrations};
+use dinoco_engine::calculate_diff;
+use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoResult, MigrationExecutor, MySqlAdapter, PostgresAdapter, SqliteAdapter};
+
+use crate::{create_migration_table, decode_schema, delete_migration, get_last_two_migrations};
 
 pub async fn rollback_migration() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
@@ -91,6 +94,7 @@ pub async fn rollback_migration() -> DinocoResult<()> {
         Database::Mysql => match MySqlAdapter::connect(url).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+
                 execute_rollback(adapter, &pb).await?;
             }
             Err(e) => {
@@ -117,9 +121,18 @@ pub async fn rollback_migration() -> DinocoResult<()> {
 
 async fn execute_rollback<T>(adapter: T, pb: &ProgressBar) -> DinocoResult<()>
 where
-    T: DinocoAdapter,
+    T: DinocoAdapter + DinocoAdapterHandler + MigrationExecutor,
 {
     pb.set_message("Fetching migration history...");
+
+    let tables = adapter.fetch_tables().await?;
+    let has_history_table = tables.iter().any(|table| table.name == "_dinoco_migrations");
+
+    if !has_history_table {
+        pb.finish_and_clear();
+        println!("{} {}", "✔".green().bold(), "No migrations found to rollback.".white());
+        return Ok(());
+    }
 
     let mut migrations = get_last_two_migrations(&adapter).await?;
 
@@ -130,67 +143,44 @@ where
         return Ok(());
     }
 
-    let target_migration = migrations.remove(0);
+    let current_migration = migrations.remove(0);
 
-    println!("{} {}", "✔".green().bold(), format!("Found migration to rollback: '{}'.", target_migration.name).white());
+    println!("{} {}", "✔".green().bold(), format!("Found migration to rollback: '{}'.", current_migration.name).white());
 
-    let confirm = Confirm::new(&format!("Are you sure you want to rollback '{}'?", target_migration.name))
+    match Confirm::new(&format!("Are you sure you want to rollback '{}'?", current_migration.name))
         .with_default(false)
-        .prompt();
-
-    match confirm {
+        .prompt()
+    {
         Ok(true) => {
             println!("{} {}", "⚠".yellow().bold(), "Rolling back migration...".yellow());
         }
         _ => {
             println!("{} {}", "✗".red().bold(), "Rollback cancelled.".white());
-
             return Ok(());
         }
     }
 
-    if migrations.len() > 0 {
-        let current_schema = decode_schema(&target_migration.schema);
+    if let Some(previous_migration) = migrations.first() {
+        let current_schema = decode_schema(&current_migration.schema);
+        let previous_schema = decode_schema(&previous_migration.schema);
+        let rollback_plan = calculate_diff(&Some(current_schema), &previous_schema);
+        let sqls = adapter.build_migration(&rollback_plan.steps, &previous_schema, false);
 
-        let target_rollback_schema = if !migrations.is_empty() {
-            decode_schema(&migrations[0].schema)
-        } else {
-            let mut empty_schema = current_schema.clone();
-            empty_schema.tables.clear();
-            empty_schema
-        };
-
-        let reverse_engine = Migration::new(&adapter, Some(current_schema), target_rollback_schema);
-        let reverse_changes = reverse_engine.diff();
-
-        println!("{} {}", "✔".green().bold(), format!("Detected {} rollback step(s).", reverse_changes.len()).white());
-
-        for sql in reverse_engine.to_up_sql(reverse_changes) {
+        for sql in sqls {
             adapter.execute(&sql, &[]).await?;
         }
 
-        delete_migration(&adapter, target_migration.id).await?;
+        delete_migration(&adapter, &current_migration.name).await?;
+        println!("{} {}", "✔".green().bold(), "Rollback applied to database.".white());
+        println!("{} {}", "✔".green().bold(), "Migration history updated.".white());
+        println!("{} {}", "ℹ".blue(), "Local migration files were kept intact.".bright_black());
     } else {
-        let tables = fetch(&adapter).await?;
-
-        drop_all_tables(&adapter, tables).await?;
+        adapter.reset_database().await?;
+        create_migration_table(&adapter).await?;
+        println!("{} {}", "✔".green().bold(), "Database reset to an empty state.".white());
+        println!("{} {}", "✔".green().bold(), "Migration history cleared.".white());
+        println!("{} {}", "ℹ".blue(), "Local migration files were kept intact.".bright_black());
     }
-
-    println!("{} {}", "✔".green().bold(), "Rollback applied to database.".white());
-
-    let migration_dir = if migrations.len() > 0 {
-        format!("dinoco/migrations/{}", target_migration.name)
-    } else {
-        "dinoco/migrations".to_string()
-    };
-
-    println!("{}", Path::new(&migration_dir).exists());
-
-    if Path::new(&migration_dir).exists() {
-        std::fs::remove_dir_all(&migration_dir).unwrap_or_default();
-    }
-
-    println!("{} {}", "✔".green().bold(), "Migration history updated.".white());
 
     println!("{} {}", "✔".green().bold(), "Rollback completed successfully!".white());
 

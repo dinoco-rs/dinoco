@@ -7,10 +7,9 @@ use colored::*;
 use indicatif::ProgressBar;
 
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
+use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
 
-use crate::helpers::encode_schema;
-use crate::{create_migration_table, fetch, get_all_migrations, insert_migration};
+use crate::{create_migration_table, encode_schema, get_all_migrations, insert_migration};
 
 pub async fn run_migrations() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
@@ -117,25 +116,25 @@ pub async fn run_migrations() -> DinocoResult<()> {
 
 async fn execute_run<T>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()>
 where
-    T: DinocoAdapter,
+    T: DinocoAdapter + DinocoAdapterHandler,
 {
-    pb.set_message("Verificando integridade do banco...");
+    pb.set_message("Checking migration history...");
 
-    let tables = fetch(&adapter).await?;
-    let has_history_table = tables.iter().any(|x| x.name == "_dinoco_migrations");
+    let tables = adapter.fetch_tables().await?;
+    let has_history_table = tables.iter().any(|table| table.name == "_dinoco_migrations");
 
     if !has_history_table {
-        pb.set_message("Inicializando tabela de histórico...");
+        pb.set_message("Initializing migration history...");
         create_migration_table(&adapter).await?;
     }
 
-    let applied_migrations = get_all_migrations(&adapter).await.unwrap_or_default();
-    let applied_names: Vec<String> = applied_migrations.into_iter().map(|m| m.name).collect();
+    let applied_migrations = get_all_migrations(&adapter).await?;
+    let applied_names: Vec<String> = applied_migrations.into_iter().map(|migration| migration.name).collect();
 
     let migrations_dir = Path::new("dinoco/migrations");
     if !migrations_dir.exists() {
         pb.finish_and_clear();
-        println!("{} {}", "✔".green().bold(), "Nenhuma pasta de migrações encontrada.".white());
+        println!("{} {}", "✔".green().bold(), "No local migrations directory was found.".white());
         return Ok(());
     }
 
@@ -144,7 +143,7 @@ where
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if let Some(name) = path.file_name().and_then(|value| value.to_str()) {
                     local_folders.push(name.to_string());
                 }
             }
@@ -153,49 +152,56 @@ where
 
     local_folders.sort();
 
-    let pending: Vec<String> = local_folders.into_iter().filter(|m| !applied_names.contains(m)).collect();
+    let pending: Vec<String> = local_folders.into_iter().filter(|migration| !applied_names.contains(migration)).collect();
 
     pb.finish_and_clear();
 
     if pending.is_empty() {
-        println!("{} {}", "✔".green().bold(), "O banco de dados já está atualizado.".white());
+        println!("{} {}", "✔".green().bold(), "The database is already up to date.".white());
         return Ok(());
     }
 
-    println!("{} {}", "✔".green().bold(), format!("Encontrada(s) {} migração(ões) pendente(s).", pending.len()).white());
+    println!("{} {}", "✔".green().bold(), format!("Found {} pending migration(s).", pending.len()).white());
+
+    let schema_bytes = encode_schema(parsed_schema);
 
     for migration_name in pending {
-        println!("  {} Aplicando '{}'...", "→".cyan().bold(), migration_name);
+        println!("  {} Applying '{}'...", "→".cyan().bold(), migration_name);
 
-        let sql_path = migrations_dir.join(&migration_name).join("migration.sql");
+        let migration_dir = migrations_dir.join(&migration_name);
+        let sql_path = migration_dir.join("migration.sql");
 
-        let sql_content = fs::read_to_string(&sql_path)
-            .map_err(|e| format!("Erro ao ler arquivo SQL em {}: {}", sql_path.display(), e))
-            .unwrap();
+        let sql_content = match fs::read_to_string(&sql_path) {
+            Ok(content) => content,
+            Err(err) => {
+                println!("    {} {}", "✖".red(), "Failed to read migration SQL.".bold());
+                println!("    {} {}", "Path:".yellow(), sql_path.display());
+                println!("    {} {}", "Reason:".red(), err);
 
-        if !sql_content.trim().is_empty() {
-            let statements = sql_content.split(';');
+                return Ok(());
+            }
+        };
 
-            for stmt in statements {
-                let clean_stmt = stmt.trim();
-                if clean_stmt.is_empty() {
-                    continue;
-                }
+        for statement in sql_content.split(';') {
+            let clean_statement = statement.trim();
+            if clean_statement.is_empty() {
+                continue;
+            }
 
-                if let Err(e) = adapter.execute(clean_stmt, &[]).await {
-                    println!("    {} {} {}", "✖".red(), "Erro ao executar query na migração:".bold(), migration_name.yellow());
-                    println!("    {} {}", "Query:".yellow(), clean_stmt.cyan());
-                    println!("    {} {}", "Motivo:".red(), e);
-                    return Ok(());
-                }
+            if let Err(err) = adapter.execute(clean_statement, &[]).await {
+                println!("    {} {} {}", "✖".red(), "Failed to execute migration:".bold(), migration_name.yellow());
+                println!("    {} {}", "Statement:".yellow(), clean_statement.cyan());
+                println!("    {} {}", "Reason:".red(), err);
+
+                return Ok(());
             }
         }
 
-        insert_migration(&adapter, &migration_name, encode_schema(parsed_schema.clone())).await?;
-        println!("    {} Aplicada com sucesso.", "✔".green());
+        insert_migration(&adapter, &migration_name, schema_bytes.clone()).await?;
+        println!("    {} Applied successfully.", "✔".green());
     }
 
-    println!("\n{} {}", "✔".green().bold(), "Todas as migrações locais foram aplicadas!".white());
+    println!("\n{} {}", "✔".green().bold(), "All local migrations were applied successfully!".white());
 
     Ok(())
 }

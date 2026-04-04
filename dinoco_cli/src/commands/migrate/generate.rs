@@ -1,5 +1,5 @@
 use std::env;
-use std::fs::read_to_string;
+use std::fs::{self, read_to_string};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -8,11 +8,11 @@ use indicatif::ProgressBar;
 use inquire::{Confirm, Text};
 
 use dinoco_codegen::generate_models;
-use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoResult, Expression, Migration, MigrationStep, MySqlAdapter, PostgresAdapter, SelectStatement, SqlDialectBuilders, SqliteAdapter, col};
+use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema};
+use dinoco_compiler::{compile, render_error};
+use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoResult, MigrationExecutor, MySqlAdapter, PostgresAdapter, SafetyLevel, SqliteAdapter, calculate_diff};
 
-use crate::DataCheck;
-use crate::{create_migration_table, decode_schema, drop_all_tables, encode_schema, fetch, get_last_migration, insert_migration, normalize_schema, to_snake_case};
+use crate::{create_migration_table, decode_schema, encode_schema, get_last_migration, insert_migration, normalize_schema, to_snake_case};
 
 pub async fn generate_migrate() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
@@ -36,8 +36,10 @@ pub async fn generate_migrate() -> DinocoResult<()> {
         Ok(content) => content,
         Err(e) => {
             pb.finish_and_clear();
+
             println!("\n{} {}\n", "✖".red().bold(), "Failed to read schema file.".bold());
             println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
+
             return Ok(());
         }
     };
@@ -47,6 +49,7 @@ pub async fn generate_migrate() -> DinocoResult<()> {
             pb.suspend(|| {
                 println!("{} {}", "✔".green().bold(), "Schema compiled successfully.".white());
             });
+
             parsed
         }
         Err(errs) => {
@@ -58,6 +61,7 @@ pub async fn generate_migrate() -> DinocoResult<()> {
             }
 
             println!("\n{} {}\n", "Hint:".blue().bold(), "Fix the errors above and run the command again.".white());
+
             return Ok(());
         }
     };
@@ -95,6 +99,7 @@ pub async fn generate_migrate() -> DinocoResult<()> {
             }
             Err(e) => {
                 pb.finish_and_clear();
+
                 println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
@@ -115,12 +120,10 @@ pub async fn generate_migrate() -> DinocoResult<()> {
         Database::Sqlite => match SqliteAdapter::connect(url).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-
                 execute_migrate(adapter, &pb, parsed).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
-
                 println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
@@ -132,31 +135,28 @@ pub async fn generate_migrate() -> DinocoResult<()> {
 
 async fn execute_migrate<T>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()>
 where
-    T: DinocoAdapter,
+    T: DinocoAdapter + DinocoAdapterHandler + MigrationExecutor,
 {
     pb.set_message("Fetching current database state...");
 
-    let tables = fetch(&adapter).await?;
-    let has_dinoco_migrations = tables.iter().any(|x| x.name == "_dinoco_migrations");
+    let tables = adapter.fetch_tables().await?;
+    let has_migration_history = tables.iter().any(|table| table.name == "_dinoco_migrations");
 
-    if !tables.is_empty() && !has_dinoco_migrations {
+    if !tables.is_empty() && !has_migration_history {
         let should_reset = pb.suspend(|| {
             let prompt_msg = "This database already contains data, but no migration history was found.\n  Do you want to reset the database and apply your new schema?";
 
             match Confirm::new(prompt_msg).with_default(false).prompt() {
                 Ok(true) => {
                     println!("{} {}", "⚠".yellow().bold(), "Proceeding with database reset...".yellow());
-
                     true
                 }
                 Ok(false) => {
                     println!("{} {}", "✗".red().bold(), "Migration cancelled by user.".white());
-
                     false
                 }
                 Err(_) => {
                     println!("{} {}", "✗".red().bold(), "Prompt error. Migration cancelled.".white());
-
                     false
                 }
             }
@@ -168,107 +168,80 @@ where
         }
 
         pb.set_message("Resetting database...");
-
-        drop_all_tables(&adapter, tables).await?;
+        adapter.reset_database().await?;
         create_migration_table(&adapter).await?;
-    } else if !has_dinoco_migrations {
+    } else if !has_migration_history {
         pb.set_message("Initializing migration table...");
         create_migration_table(&adapter).await?;
     }
 
     pb.set_message("Fetching last migration...");
 
-    let last_migration: Option<ParsedSchema> = if let Some(last) = get_last_migration(&adapter).await? {
-        Some(decode_schema(&last.schema))
-    } else {
-        None
-    };
+    let last_schema = get_last_migration(&adapter).await?.map(|migration| decode_schema(&migration.schema));
 
     pb.set_message("Calculating schema diff...");
 
     let mut normalized_schema = parsed_schema.clone();
-
     normalize_schema(&mut normalized_schema);
 
-    let migration = Migration::new(&adapter, last_migration, normalized_schema);
-    let changes = migration.diff();
+    let plan = calculate_diff(&last_schema, &normalized_schema);
 
     pb.finish_and_clear();
 
-    if changes.is_empty() {
+    if plan.steps.is_empty() {
         println!("{} {}", "✔".green().bold(), "No changes detected.".white());
         println!("  {} Your schema is already up to date.", "└─".dimmed());
-
         return Ok(());
     }
 
-    println!("{} {}", "✔".green().bold(), format!("Detected {} pending change(s).", changes.len()).white());
+    println!("{} {}", "✔".green().bold(), format!("Detected {} pending change(s).", plan.steps.len()).white());
 
-    let mut has_data_loss = false;
-    let mut loss_descriptions = Vec::new();
+    if !plan.safety_alerts.is_empty() {
+        let is_destructive = plan.is_destructive();
 
-    let dialect = adapter.dialect();
+        println!(
+            "\n{} {}",
+            "⚠".yellow().bold(),
+            if is_destructive {
+                "WARNING: This migration may cause data loss!".red().bold()
+            } else {
+                "This migration needs extra attention.".yellow().bold()
+            }
+        );
 
-    for change in &changes {
-        match change {
-            MigrationStep::DropTable(table_name) => {
-                let stmt = SelectStatement::new(dialect).select(&["1 as has_data"]).from("User").limit(1);
-                let (query, _) = dialect.build_select(&stmt);
-
-                if let Ok(res) = adapter.query_as::<DataCheck>(&query, &[]).await {
-                    if !res.is_empty() {
-                        has_data_loss = true;
-                        loss_descriptions.push(format!("Table '{}' is going to be dropped.", table_name));
-                    }
+        for alert in plan.safety_alerts.iter().take(5) {
+            match alert {
+                SafetyLevel::Destructive(message) => {
+                    println!("  {} {}", "•".red(), message.yellow());
+                }
+                SafetyLevel::Warning(message) => {
+                    println!("  {} {}", "•".yellow(), message.white());
                 }
             }
-            MigrationStep::DropColumn { table_name, field } => {
-                let cond = Expression::IsNotNull(Box::new(col(field.name.clone())));
-                let stmt = SelectStatement::new(adapter.dialect()).select(&["1 as has_data"]).from(table_name).condition(cond).limit(1);
-
-                let (query, _) = dialect.build_select(&stmt);
-
-                if let Ok(res) = adapter.query_as::<DataCheck>(&query, &[]).await {
-                    if !res.is_empty() {
-                        has_data_loss = true;
-                        loss_descriptions.push(format!("Column '{}.{}' is going to be dropped.", table_name, field.name));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if has_data_loss {
-        println!("\n{} {}", "⚠".yellow().bold(), "WARNING: This migration will cause DATA LOSS!".red().bold());
-
-        for desc in loss_descriptions.iter().take(3) {
-            println!("  {} {}", "•".red(), desc.yellow());
         }
 
-        if loss_descriptions.len() > 3 {
-            println!("  {} ...and {} more items.", "•".red(), loss_descriptions.len() - 3);
+        if plan.safety_alerts.len() > 5 {
+            println!("  {} ...and {} more item(s).", "•".yellow(), plan.safety_alerts.len() - 5);
         }
 
-        let confirm = Confirm::new("Are you sure you want to proceed and permanently DELETE this data?")
-            .with_default(false)
-            .prompt();
+        let confirm = if is_destructive {
+            "Are you sure you want to proceed and permanently apply these destructive changes?"
+        } else {
+            "Do you want to proceed with this migration?"
+        };
 
-        match confirm {
+        match Confirm::new(confirm).with_default(false).prompt() {
             Ok(true) => {
-                println!("{} {}", "⚠".yellow().bold(), "Proceeding with data deletion...".yellow());
+                println!("{} {}", "⚠".yellow().bold(), "Proceeding with migration...".yellow());
             }
             _ => {
-                println!("{} {}", "✗".red().bold(), "Migration cancelled to prevent data loss.".white());
-
+                println!("{} {}", "✗".red().bold(), "Migration cancelled for safety.".white());
                 return Ok(());
             }
         }
     }
 
-    let mut migration_name = String::new();
-
-    loop {
+    let migration_name = loop {
         match Text::new("Enter a name for the new migration (e.g., AddedTesting):").prompt() {
             Ok(input_name) => {
                 let trimmed = input_name.trim();
@@ -282,7 +255,6 @@ where
                 let snake_name = to_snake_case(trimmed);
                 let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                 let proposed_name = format!("{}_{}", timestamp, snake_name);
-
                 let migration_dir = format!("dinoco/migrations/{}", proposed_name);
 
                 if Path::new(&migration_dir).exists() {
@@ -292,9 +264,7 @@ where
                         "A migration with this name/timestamp already exists. Please wait a second or use a different name.".white()
                     );
                 } else {
-                    migration_name = proposed_name;
-
-                    break;
+                    break proposed_name;
                 }
             }
             Err(_) => {
@@ -302,48 +272,45 @@ where
                 return Ok(());
             }
         }
+    };
+
+    let sqls = adapter.build_migration(&plan.steps, &normalized_schema, false);
+
+    if sqls.is_empty() {
+        println!("{} {}", "✔".green().bold(), "No executable SQL was generated for this migration.".white());
+        return Ok(());
     }
 
     pb.set_message("Applying migration to database...");
 
-    let sqls = migration.to_up_sql(changes);
     for sql in &sqls {
-        let result = adapter.execute(&sql, &[]).await;
-
-        println!("{:?}", sql);
-        println!("{:?}", result);
-
-        if result.is_err() {
+        if let Err(err) = adapter.execute(sql, &[]).await {
+            pb.finish_and_clear();
+            println!("{} {}", "✖".red().bold(), "Failed to execute migration SQL.".white());
+            println!("  {} {}", "Statement:".yellow().bold(), sql.cyan());
+            println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
             return Ok(());
         }
     }
 
     pb.set_message("Saving migration history...");
 
-    insert_migration(&adapter, &migration_name, encode_schema(parsed_schema.clone())).await?;
+    let schema_bytes = encode_schema(normalized_schema);
+    insert_migration(&adapter, &migration_name, schema_bytes.clone()).await?;
 
-    let sqls_with_semicolons: Vec<String> = sqls
-        .into_iter()
-        .map(|mut q| {
-            if !q.trim_end().ends_with(';') {
-                q.push(';');
-            }
-            q
-        })
-        .collect();
+    let migration_dir = format!("dinoco/migrations/{migration_name}");
 
-    std::fs::create_dir_all(format!("dinoco/migrations/{migration_name}")).unwrap();
-    std::fs::write(format!("dinoco/migrations/{migration_name}/migration.sql"), sqls_with_semicolons.join("\n\n")).unwrap();
+    fs::create_dir_all(&migration_dir).unwrap();
+
+    fs::write(format!("{migration_dir}/migration.sql"), sqls.join("\n\n")).unwrap();
+    // fs::write(format!("{migration_dir}/schema.bin"), schema_bytes).unwrap();
 
     pb.finish_and_clear();
 
     println!("{} {}", "✔".green().bold(), "Migration applied successfully!".white());
-
-    pb.set_message(format!("{} {}", "→".cyan().bold(), "Generating models...".dimmed()));
+    println!("{} {}", "→".cyan().bold(), "Generating models...".dimmed());
 
     generate_models(parsed_schema);
-
-    pb.finish_and_clear();
 
     println!("{} {}", "✔".green().bold(), "Models generated successfully!".white());
 

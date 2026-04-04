@@ -1,5 +1,5 @@
-use dinoco_derives::Seriable;
-use dinoco_engine::{DinocoDatabaseRow, DinocoResult, DinocoRow};
+use dinoco_derives::Rowable;
+use dinoco_engine::{DinocoGenericRow, DinocoResult, DinocoRow};
 
 mod database;
 mod encoders;
@@ -7,9 +7,8 @@ mod encoders;
 pub use database::*;
 pub use encoders::*;
 
-#[derive(Seriable, Debug)]
+#[derive(Rowable, Debug)]
 pub struct DinocoMigration {
-    pub id: i64,
     pub name: String,
     pub schema: Vec<u8>,
 }
