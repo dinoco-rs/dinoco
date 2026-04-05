@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use dinoco_derives::Rowable;
 
 mod database;
@@ -10,8 +9,8 @@ pub use migrations::*;
 #[derive(Rowable, Debug)]
 pub struct DinocoMigration {
     pub name: String,
-    pub applied_at: Option<DateTime<Utc>>,
-    pub rollback_at: Option<DateTime<Utc>>,
+    pub applied_at: Option<String>,
+    pub rollback_at: Option<String>,
 }
 
 pub fn to_snake_case(s: &str) -> String {

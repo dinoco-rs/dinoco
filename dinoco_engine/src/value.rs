@@ -73,6 +73,8 @@ impl TryFrom<DinocoValue> for String {
         match value {
             DinocoValue::String(s) => Ok(s),
             DinocoValue::Bytes(b) => String::from_utf8(b).map_err(|_| DinocoError::ParseError("Invalid UTF-8".into())),
+            DinocoValue::DateTime(dt) => Ok(dt.to_rfc3339()),
+            DinocoValue::Date(date) => Ok(date.to_string()),
             _ => Err(DinocoError::ParseError("Expected String".into())),
         }
     }
