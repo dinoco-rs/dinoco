@@ -21,12 +21,7 @@ impl AdapterDialect for MySqlDialect {
         "18446744073709551615".to_string()
     }
 
-    fn column_type(
-        &self,
-        col: &ColumnDefinition,
-        is_primary: bool,
-        auto_increment: bool,
-    ) -> String {
+    fn column_type(&self, col: &ColumnDefinition, is_primary: bool, auto_increment: bool) -> String {
         let base_type = match &col.col_type {
             ColumnType::Integer => "BIGINT".to_string(),
             ColumnType::Float => "DOUBLE PRECISION".to_string(),
@@ -34,16 +29,13 @@ impl AdapterDialect for MySqlDialect {
             ColumnType::Boolean => "TINYINT(1)".to_string(),
             ColumnType::Json => "JSON".to_string(),
             ColumnType::DateTime => "TIMESTAMP".to_string(),
+            ColumnType::Date => "DATE".to_string(),
             ColumnType::Bytes => "BLOB".to_string(),
             ColumnType::Enum(name) => {
                 format!("VARCHAR(255) /* enum {} */", name)
             }
             ColumnType::EnumInline(values) => {
-                let safe_values = values
-                    .iter()
-                    .map(|v| format!("'{}'", v.replace('\'', "''")))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let safe_values = values.iter().map(|v| format!("'{}'", v.replace('\'', "''"))).collect::<Vec<_>>().join(", ");
 
                 format!("ENUM({})", safe_values)
             }

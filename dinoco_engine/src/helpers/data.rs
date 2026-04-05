@@ -1,31 +1,18 @@
 use crate::{AdapterDialect, ColumnDefault, ColumnDefinition, ColumnType, DinocoValue};
-use dinoco_compiler::{
-    FunctionCall, ParsedEnum, ParsedField, ParsedFieldDefault, ParsedFieldType, ReferentialAction,
-};
+use dinoco_compiler::{FunctionCall, ParsedEnum, ParsedField, ParsedFieldDefault, ParsedFieldType, ReferentialAction};
 
-pub fn map_field_to_definition<'a, D: AdapterDialect>(
-    field: &'a ParsedField,
-    dialect: &D,
-    schema_enums: &[ParsedEnum],
-) -> ColumnDefinition<'a> {
+pub fn map_field_to_definition<'a, D: AdapterDialect>(field: &'a ParsedField, dialect: &D, schema_enums: &[ParsedEnum]) -> ColumnDefinition<'a> {
     ColumnDefinition {
         name: field.name.as_str(),
         col_type: map_column_type(&field.field_type, dialect, schema_enums),
         primary_key: field.is_primary_key,
         not_null: !field.is_optional,
-        auto_increment: matches!(
-            field.default_value,
-            ParsedFieldDefault::Function(FunctionCall::AutoIncrement)
-        ),
+        auto_increment: matches!(field.default_value, ParsedFieldDefault::Function(FunctionCall::AutoIncrement)),
         default: map_default(&field.default_value),
     }
 }
 
-pub fn map_column_type<D: AdapterDialect>(
-    field_type: &ParsedFieldType,
-    dialect: &D,
-    schema_enums: &[ParsedEnum],
-) -> ColumnType {
+pub fn map_column_type<D: AdapterDialect>(field_type: &ParsedFieldType, dialect: &D, schema_enums: &[ParsedEnum]) -> ColumnType {
     match field_type {
         ParsedFieldType::String => ColumnType::Text,
         ParsedFieldType::Boolean => ColumnType::Boolean,
@@ -33,6 +20,7 @@ pub fn map_column_type<D: AdapterDialect>(
         ParsedFieldType::Float => ColumnType::Float,
         ParsedFieldType::Json => ColumnType::Json,
         ParsedFieldType::DateTime => ColumnType::DateTime,
+        ParsedFieldType::Date => ColumnType::Date,
 
         ParsedFieldType::Relation(_) => ColumnType::Integer,
 
@@ -40,11 +28,7 @@ pub fn map_column_type<D: AdapterDialect>(
             if dialect.supports_native_enums() {
                 ColumnType::Enum(name.to_string())
             } else {
-                let variants = schema_enums
-                    .iter()
-                    .find(|e| e.name == *name)
-                    .map(|e| e.values.clone())
-                    .unwrap_or_default();
+                let variants = schema_enums.iter().find(|e| e.name == *name).map(|e| e.values.clone()).unwrap_or_default();
 
                 ColumnType::EnumInline(variants)
             }

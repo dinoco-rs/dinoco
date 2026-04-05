@@ -140,6 +140,7 @@ pub enum FieldType {
     Float,
     Json,
     DateTime,
+    Date,
     Custom(String),
 }
 

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use std::convert::TryFrom;
 
 use crate::DinocoError;
@@ -15,6 +15,7 @@ pub enum DinocoValue {
 
     Json(serde_json::Value),
     DateTime(DateTime<Utc>),
+    Date(NaiveDate),
 }
 
 impl From<&str> for DinocoValue {
@@ -59,15 +60,19 @@ impl From<DateTime<Utc>> for DinocoValue {
     }
 }
 
+impl From<NaiveDate> for DinocoValue {
+    fn from(value: NaiveDate) -> Self {
+        DinocoValue::Date(value)
+    }
+}
+
 impl TryFrom<DinocoValue> for String {
     type Error = DinocoError;
 
     fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
         match value {
             DinocoValue::String(s) => Ok(s),
-            DinocoValue::Bytes(b) => {
-                String::from_utf8(b).map_err(|_| DinocoError::ParseError("Invalid UTF-8".into()))
-            }
+            DinocoValue::Bytes(b) => String::from_utf8(b).map_err(|_| DinocoError::ParseError("Invalid UTF-8".into())),
             _ => Err(DinocoError::ParseError("Expected String".into())),
         }
     }
@@ -128,6 +133,17 @@ impl TryFrom<DinocoValue> for DateTime<Utc> {
         match value {
             DinocoValue::DateTime(dt) => Ok(dt),
             _ => Err(DinocoError::ParseError("Expected DateTime<Utc>".into())),
+        }
+    }
+}
+
+impl TryFrom<DinocoValue> for NaiveDate {
+    type Error = DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        match value {
+            DinocoValue::Date(date) => Ok(date),
+            _ => Err(DinocoError::ParseError("Expected NaiveDate".into())),
         }
     }
 }

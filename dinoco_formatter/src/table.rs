@@ -93,6 +93,7 @@ fn get_full_type_string(field: &Field) -> String {
         FieldType::Float => "Float".to_string(),
         FieldType::Json => "Json".to_string(),
         FieldType::DateTime => "DateTime".to_string(),
+        FieldType::Date => "Date".to_string(),
         FieldType::Custom(c) => c.clone(),
     };
 

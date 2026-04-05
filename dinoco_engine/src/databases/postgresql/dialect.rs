@@ -35,6 +35,7 @@ impl AdapterDialect for PostgresDialect {
             ColumnType::Boolean => "BOOLEAN".to_string(),
             ColumnType::Json => "JSONB".to_string(),
             ColumnType::DateTime => "TIMESTAMP".to_string(),
+            ColumnType::Date => "DATE".to_string(),
             ColumnType::Bytes => "BYTEA".to_string(),
 
             ColumnType::Enum(name) => self.identifier(name),

@@ -42,6 +42,7 @@ fn parse_field_type(data: &str) -> FieldType {
         "Float" => FieldType::Float,
         "Json" => FieldType::Json,
         "DateTime" => FieldType::DateTime,
+        "Date" => FieldType::Date,
         custom => FieldType::Custom(custom.to_string()),
     }
 }

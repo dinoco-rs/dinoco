@@ -1,3 +1,4 @@
+use chrono::{Datelike, Timelike};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -100,8 +101,25 @@ impl From<DinocoValue> for Value {
             DinocoValue::Json(v) => Value::Bytes(v.to_string().into_bytes()),
             DinocoValue::Bytes(v) => Value::Bytes(v),
             DinocoValue::DateTime(dt) => {
-                Value::Bytes(dt.format("%Y-%m-%d %H:%M:%S").to_string().into_bytes())
+                Value::Date(
+                    dt.year() as u16,
+                    dt.month() as u8,
+                    dt.day() as u8,
+                    dt.hour() as u8,
+                    dt.minute() as u8,
+                    dt.second() as u8,
+                    dt.timestamp_subsec_micros(),
+                )
             }
+            DinocoValue::Date(date) => Value::Date(
+                date.year() as u16,
+                date.month() as u8,
+                date.day() as u8,
+                0,
+                0,
+                0,
+                0,
+            ),
         }
     }
 }

@@ -479,6 +479,7 @@ pub fn render_value_sql<D: AdapterDialect>(value: &DinocoValue, dialect: &D) -> 
             dialect.literal_string(&hex)
         }
         DinocoValue::DateTime(value) => dialect.literal_string(&value.to_string()),
+        DinocoValue::Date(value) => dialect.literal_string(&value.to_string()),
     }
 }
 

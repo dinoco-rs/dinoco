@@ -34,6 +34,7 @@ impl AdapterDialect for SqliteDialect {
             ColumnType::Boolean => "INTEGER".to_string(),
             ColumnType::Json => "TEXT".to_string(),
             ColumnType::DateTime => "TEXT".to_string(),
+            ColumnType::Date => "TEXT".to_string(),
             ColumnType::Bytes => "BLOB".to_string(),
             ColumnType::Enum(_) => "TEXT".to_string(),
             ColumnType::EnumInline(values) => {

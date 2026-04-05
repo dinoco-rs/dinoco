@@ -16,15 +16,11 @@ pub struct MigrationPlan {
 
 impl MigrationPlan {
     pub fn is_destructive(&self) -> bool {
-        self.safety_alerts
-            .iter()
-            .any(|alert| matches!(alert, SafetyLevel::Destructive(_)))
+        self.safety_alerts.iter().any(|alert| matches!(alert, SafetyLevel::Destructive(_)))
     }
 
     pub fn has_warnings(&self) -> bool {
-        self.safety_alerts
-            .iter()
-            .any(|alert| matches!(alert, SafetyLevel::Warning(_)))
+        self.safety_alerts.iter().any(|alert| matches!(alert, SafetyLevel::Warning(_)))
     }
 }
 
@@ -129,6 +125,7 @@ pub enum ColumnType {
     Boolean,
     Json,
     DateTime,
+    Date,
     Bytes,
     Enum(String),
     EnumInline(Vec<String>),

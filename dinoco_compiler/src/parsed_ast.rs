@@ -90,6 +90,7 @@ pub enum ParsedFieldType {
     Float,
     Json,
     DateTime,
+    Date,
     Enum(String),
     Relation(String),
 }
@@ -103,6 +104,7 @@ impl ToString for ParsedFieldType {
             ParsedFieldType::Float => "Float or Integer".to_string(),
             ParsedFieldType::Json => "Json object or Array".to_string(),
             ParsedFieldType::DateTime => "Time in the utc".to_string(),
+            ParsedFieldType::Date => "Time without time".to_string(),
             ParsedFieldType::Enum(name) => name.clone(),
             ParsedFieldType::Relation(name) => name.clone(),
         }

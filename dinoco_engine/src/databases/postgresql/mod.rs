@@ -129,7 +129,8 @@ impl ToSql for DinocoValue {
             DinocoValue::String(s) => s.to_sql(ty, out),
             DinocoValue::Json(v) => Json(v).to_sql(ty, out),
             DinocoValue::Bytes(v) => v.to_sql(ty, out),
-            DinocoValue::DateTime(dt) => dt.to_string().to_sql(ty, out),
+            DinocoValue::DateTime(dt) => dt.to_sql(ty, out),
+            DinocoValue::Date(date) => date.to_sql(ty, out),
         }
     }
 

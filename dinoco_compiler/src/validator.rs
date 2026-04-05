@@ -219,6 +219,7 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
                 FieldType::Boolean => parsed_field.field_type = ParsedFieldType::Boolean,
                 FieldType::Float => parsed_field.field_type = ParsedFieldType::Float,
                 FieldType::DateTime => parsed_field.field_type = ParsedFieldType::DateTime,
+                FieldType::Date => parsed_field.field_type = ParsedFieldType::Date,
                 FieldType::Json => parsed_field.field_type = ParsedFieldType::Json,
             }
 
