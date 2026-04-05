@@ -74,8 +74,7 @@ impl DinocoAdapterHandler for MySqlAdapter {
                 COLUMN_NAME AS name,
                 COLUMN_TYPE AS db_type, -- COLUMN_TYPE traz o tipo completo, ex: varchar(255) ou enum('A','B')
                 (IS_NULLABLE = 'YES') AS nullable,
-                COLUMN_DEFAULT AS default_value,
-                EXTRA AS extra -- Aqui vem o 'auto_increment'
+                COLUMN_DEFAULT AS default_value
             FROM information_schema.columns 
             WHERE table_schema = DATABASE() 
               AND table_name = ?;

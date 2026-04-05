@@ -53,8 +53,7 @@ impl DinocoAdapterHandler for SqliteAdapter {
                 type AS db_type,
                 -- No SQLite, notnull é 1 (se for NOT NULL) e 0 (se permitir NULL).
                 (\"notnull\" = 0) AS nullable,
-                dflt_value AS default_value,
-                NULL AS extra
+                dflt_value AS default_value
             FROM pragma_table_info(?);
         ";
 

@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use async_trait::async_trait;
 
 use super::PostgresAdapter;
@@ -11,51 +9,22 @@ use crate::{
 #[async_trait]
 impl DinocoAdapterHandler for PostgresAdapter {
     async fn reset_database(&self) -> DinocoResult<()> {
-        let foreign_keys = self.fetch_foreign_keys().await?;
-        let tables = self.fetch_tables().await?;
-        let enums = self.fetch_enums().await?;
-        let mut dropped_constraints = BTreeSet::new();
-
-        for foreign_key in foreign_keys {
-            let key = (
-                foreign_key.table_name.clone(),
-                foreign_key.constraint_name.clone(),
-            );
-
-            if !dropped_constraints.insert(key) {
-                continue;
-            }
-
-            let query = format!(
-                "ALTER TABLE \"{}\" DROP CONSTRAINT IF EXISTS \"{}\";",
-                foreign_key.table_name, foreign_key.constraint_name
-            );
-
-            self.execute(&query, &[]).await?;
-        }
-
-        for table in tables {
-            let query = format!("DROP TABLE IF EXISTS \"{}\";", table.name);
-
-            self.execute(&query, &[]).await?;
-        }
-
-        for _enum in enums {
-            let query = format!("DROP TYPE IF EXISTS \"{}\" CASCADE;", _enum.name);
-
-            self.execute(&query, &[]).await?;
-        }
+        self.execute("DROP SCHEMA IF EXISTS public CASCADE;", &[])
+            .await?;
+        self.execute("CREATE SCHEMA public;", &[]).await?;
 
         Ok(())
     }
 
     async fn fetch_tables(&self) -> DinocoResult<Vec<DatabaseParsedTable>> {
         let query = "
-            SELECT table_name AS name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-              AND table_type = 'BASE TABLE';
-		";
+            SELECT
+                table_name::text AS name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_name;
+        ";
 
         let mut tables = vec![];
 
@@ -65,7 +34,7 @@ impl DinocoAdapterHandler for PostgresAdapter {
             tables.push(DatabaseParsedTable {
                 name: table.name,
                 columns,
-            })
+            });
         }
 
         Ok(tables)
@@ -74,15 +43,14 @@ impl DinocoAdapterHandler for PostgresAdapter {
     async fn fetch_columns(&self, table_name: String) -> DinocoResult<Vec<DatabaseColumn>> {
         let query = "
             SELECT
-                column_name AS name,
-                data_type AS db_type,
-                -- Postgres retorna 'YES' ou 'NO'. Convertendo direto no SQL para Boolean:
+                column_name::text AS name,
+                data_type::text AS db_type,
                 (is_nullable = 'YES') AS nullable,
-                column_default AS default_value,
-                NULL AS extra -- Postgres usa default_value (nextval) para auto_increment
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-              AND table_name = $1;
+                column_default::text AS default_value
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = $1
+            ORDER BY ordinal_position;
         ";
 
         self.query_as::<DatabaseColumn>(query, &[DinocoValue::from(table_name)])
@@ -92,20 +60,21 @@ impl DinocoAdapterHandler for PostgresAdapter {
     async fn fetch_foreign_keys(&self) -> DinocoResult<Vec<DatabaseForeignKey>> {
         let query = "
             SELECT
-                tc.table_name AS table_name,
-                tc.constraint_name AS constraint_name,
-                kcu.column_name AS column_name,
-                ccu.table_name AS foreign_table_name,
-                ccu.column_name AS foreign_column_name
+                tc.table_name::text AS table_name,
+                tc.constraint_name::text AS constraint_name,
+                kcu.column_name::text AS column_name,
+                ccu.table_name::text AS foreign_table_name,
+                ccu.column_name::text AS foreign_column_name
             FROM information_schema.table_constraints AS tc
             JOIN information_schema.key_column_usage AS kcu
-              ON tc.constraint_name = kcu.constraint_name 
+              ON tc.constraint_name = kcu.constraint_name
              AND tc.table_schema = kcu.table_schema
             JOIN information_schema.constraint_column_usage AS ccu
-              ON ccu.constraint_name = tc.constraint_name 
+              ON ccu.constraint_name = tc.constraint_name
              AND ccu.table_schema = tc.table_schema
-            WHERE tc.constraint_type = 'FOREIGN KEY' 
-              AND tc.table_schema = 'public';
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+              AND tc.table_schema = 'public'
+            ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position;
         ";
 
         self.query_as::<DatabaseForeignKey>(query, &[]).await
@@ -113,13 +82,14 @@ impl DinocoAdapterHandler for PostgresAdapter {
 
     async fn fetch_enums(&self) -> DinocoResult<Vec<DatabaseEnumRaw>> {
         let query = "
-            SELECT 
-                t.typname AS name, 
-                e.enumlabel AS value
-            FROM pg_type t 
-            JOIN pg_enum e ON t.oid = e.enumtypid  
+            SELECT
+                t.typname::text AS name,
+                e.enumlabel::text AS value
+            FROM pg_type t
+            JOIN pg_enum e ON t.oid = e.enumtypid
             JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
-            WHERE n.nspname = 'public';
+            WHERE n.nspname = 'public'
+            ORDER BY t.typname, e.enumsortorder;
         ";
 
         self.query_as::<DatabaseEnumRaw>(query, &[]).await
@@ -127,20 +97,21 @@ impl DinocoAdapterHandler for PostgresAdapter {
 
     async fn fetch_indexes(&self) -> DinocoResult<Vec<DatabaseIndex>> {
         let query = "
-            SELECT 
-                t.relname AS table_name,
-                i.relname AS index_name,
-                a.attname AS column_name,
+            SELECT
+                t.relname::text AS table_name,
+                i.relname::text AS index_name,
+                a.attname::text AS column_name,
                 ix.indisunique AS is_unique
             FROM pg_class t
             JOIN pg_index ix ON t.oid = ix.indrelid
             JOIN pg_class i ON i.oid = ix.indexrelid
             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
             JOIN pg_namespace n ON n.oid = t.relnamespace
-            WHERE t.relkind = 'r' 
+            WHERE t.relkind = 'r'
               AND n.nspname = 'public'
               AND t.relname != '_dinoco_migrations'
-              AND NOT ix.indisprimary;
+              AND NOT ix.indisprimary
+            ORDER BY t.relname, i.relname, a.attnum;
         ";
 
         self.query_as::<DatabaseIndex>(query, &[]).await

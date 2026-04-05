@@ -1,12 +1,58 @@
+use std::collections::HashSet;
+
+use dinoco_compiler::{ParsedField, ParsedSchema};
+
 use crate::{AdapterDialect, DinocoAdapter, MigrationExecutor, MigrationStep, PostgresAdapter};
 use crate::{
     find_enum_columns, invert_step, map_field_to_definition, map_referential_action,
     render_add_foreign_key_clause, render_column_default_from_mapped, render_create_index_sql,
     render_create_table_sql, render_identifier_list,
 };
-use dinoco_compiler::{ParsedField, ParsedSchema};
 
 impl MigrationExecutor for PostgresAdapter {
+    fn build_migration(
+        &self,
+        steps: &[MigrationStep],
+        schema: &ParsedSchema,
+        reverse: bool,
+    ) -> Vec<String> {
+        let dropped_tables = steps
+            .iter()
+            .filter_map(|step| match step {
+                MigrationStep::DropTable(table_name) => Some(table_name.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        let mut sqls = Vec::new();
+
+        for step in steps {
+            if matches!(
+                step,
+                MigrationStep::DropForeignKey { table_name, .. } if dropped_tables.contains(table_name.as_str())
+            ) {
+                continue;
+            }
+
+            let mut step_sqls = if reverse {
+                self.build_reverse_step(step, schema)
+            } else {
+                self.build_step(step, schema)
+            };
+
+            for sql in &mut step_sqls {
+                let trimmed = sql.trim_end();
+
+                if !trimmed.ends_with(';') {
+                    *sql = format!("{};", trimmed);
+                }
+            }
+
+            sqls.extend(step_sqls);
+        }
+
+        sqls
+    }
+
     fn build_reverse_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String> {
         invert_step(step, schema)
             .iter()
@@ -154,12 +200,15 @@ fn build_postgres_alter_column_sql(
     let table_ident = dialect.identifier(table_name);
     let column_ident = dialect.identifier(&new_field.name);
     let new_definition = map_field_to_definition(new_field, dialect, &schema.enums);
-    let new_type = dialect.column_type(&new_definition, false, false);
 
-    sqls.push(format!(
-        "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::text::{}",
-        table_ident, column_ident, new_type, column_ident, new_type
-    ));
+    if old_field.field_type != new_field.field_type {
+        let new_type = dialect.column_type(&new_definition, false, false);
+
+        sqls.push(format!(
+            "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::text::{}",
+            table_ident, column_ident, new_type, column_ident, new_type
+        ));
+    }
 
     if old_field.is_optional != new_field.is_optional {
         sqls.push(format!(
@@ -170,7 +219,16 @@ fn build_postgres_alter_column_sql(
         ));
     }
 
-    if old_field.default_value != new_field.default_value {
+    let enum_default_is_handled_by_alter_enum = matches!(
+        (&old_field.field_type, &new_field.field_type),
+        (
+            dinoco_compiler::ParsedFieldType::Enum(old_enum),
+            dinoco_compiler::ParsedFieldType::Enum(new_enum),
+        ) if old_enum == new_enum
+    );
+
+    if !enum_default_is_handled_by_alter_enum && old_field.default_value != new_field.default_value
+    {
         if let Some(default_sql) = render_column_default_sql(new_field, dialect, schema) {
             sqls.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {}",

@@ -29,8 +29,10 @@ pub async fn reset_database() -> DinocoResult<()> {
         Ok(content) => content,
         Err(err) => {
             pb.finish_and_clear();
+
             println!("\n{} {}\n", "✖".red().bold(), "Failed to read schema file.".bold());
             println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
+
             return Ok(());
         }
     };
@@ -118,18 +120,7 @@ async fn execute_reset<T>(adapter: T, pb: &ProgressBar) -> DinocoResult<()>
 where
     T: DinocoAdapter + DinocoAdapterHandler,
 {
-    pb.set_message("Inspecting current database state...");
-
-    let tables = adapter.fetch_tables().await?;
-
     pb.finish_and_clear();
-
-    println!(
-        "{} {}",
-        "⚠".yellow().bold(),
-        format!("This will delete all {} table(s) from the database.", tables.len()).yellow()
-    );
-    println!("{} {}", "ℹ".blue(), "Local migration files will be kept intact.".bright_black());
 
     match Confirm::new("Are you sure you want to reset the database?").with_default(false).prompt() {
         Ok(true) => {
@@ -142,13 +133,11 @@ where
         }
     }
 
-    let reset_pb = ProgressBar::new_spinner();
-    reset_pb.enable_steady_tick(Duration::from_millis(80));
-    reset_pb.set_message("Dropping database objects...");
+    pb.set_message("Dropping database objects...");
 
     adapter.reset_database().await?;
 
-    reset_pb.finish_and_clear();
+    pb.finish_and_clear();
 
     println!("{} {}", "✔".green().bold(), "Database reset completed successfully!".white());
     println!("{} {}", "✔".green().bold(), "Migration history cleared.".white());

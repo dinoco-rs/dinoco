@@ -31,7 +31,6 @@ pub struct DatabaseColumn {
     pub db_type: String,
     pub nullable: bool,
     pub default_value: Option<String>,
-    pub extra: Option<String>,
 }
 
 #[derive(Rowable, Debug)]
