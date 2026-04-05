@@ -4,18 +4,12 @@ use dinoco_compiler::{ParsedField, ParsedSchema};
 
 use crate::{AdapterDialect, DinocoAdapter, MigrationExecutor, MigrationStep, PostgresAdapter};
 use crate::{
-    find_enum_columns, invert_step, map_field_to_definition, map_referential_action,
-    render_add_foreign_key_clause, render_column_default_from_mapped, render_create_index_sql,
-    render_create_table_sql, render_identifier_list,
+    find_enum_columns, invert_step, map_field_to_definition, map_referential_action, render_add_foreign_key_clause,
+    render_column_default_from_mapped, render_create_index_sql, render_create_table_sql, render_identifier_list,
 };
 
 impl MigrationExecutor for PostgresAdapter {
-    fn build_migration(
-        &self,
-        steps: &[MigrationStep],
-        schema: &ParsedSchema,
-        reverse: bool,
-    ) -> Vec<String> {
+    fn build_migration(&self, steps: &[MigrationStep], schema: &ParsedSchema, reverse: bool) -> Vec<String> {
         let dropped_tables = steps
             .iter()
             .filter_map(|step| match step {
@@ -33,11 +27,8 @@ impl MigrationExecutor for PostgresAdapter {
                 continue;
             }
 
-            let mut step_sqls = if reverse {
-                self.build_reverse_step(step, schema)
-            } else {
-                self.build_step(step, schema)
-            };
+            let mut step_sqls =
+                if reverse { self.build_reverse_step(step, schema) } else { self.build_step(step, schema) };
 
             for sql in &mut step_sqls {
                 let trimmed = sql.trim_end();
@@ -54,10 +45,7 @@ impl MigrationExecutor for PostgresAdapter {
     }
 
     fn build_reverse_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String> {
-        invert_step(step, schema)
-            .iter()
-            .flat_map(|inverted| self.build_step(inverted, schema))
-            .collect()
+        invert_step(step, schema).iter().flat_map(|inverted| self.build_step(inverted, schema)).collect()
     }
 
     fn build_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String> {
@@ -65,15 +53,11 @@ impl MigrationExecutor for PostgresAdapter {
 
         match step {
             MigrationStep::CreateTable(table) => {
-                vec![replace_postgres_default(&render_create_table_sql(
-                    table, dialect, schema,
-                ))]
+                vec![replace_postgres_default(&render_create_table_sql(table, dialect, schema))]
             }
-            MigrationStep::RenameTable { old_name, new_name } => vec![format!(
-                "ALTER TABLE {} RENAME TO {}",
-                dialect.identifier(old_name),
-                dialect.identifier(new_name)
-            )],
+            MigrationStep::RenameTable { old_name, new_name } => {
+                vec![format!("ALTER TABLE {} RENAME TO {}", dialect.identifier(old_name), dialect.identifier(new_name))]
+            }
             MigrationStep::DropTable(name) => {
                 vec![format!("DROP TABLE {}", dialect.identifier(name))]
             }
@@ -85,11 +69,9 @@ impl MigrationExecutor for PostgresAdapter {
                     render_enum_values(variants, dialect)
                 )]
             }
-            MigrationStep::AlterEnum {
-                name,
-                old_variants,
-                new_variants,
-            } => build_postgres_alter_enum_sql(name, old_variants, new_variants, schema, dialect),
+            MigrationStep::AlterEnum { name, old_variants, new_variants } => {
+                build_postgres_alter_enum_sql(name, old_variants, new_variants, schema, dialect)
+            }
             MigrationStep::DropEnum(name) => {
                 vec![format!("DROP TYPE {}", dialect.identifier(name))]
             }
@@ -97,51 +79,30 @@ impl MigrationExecutor for PostgresAdapter {
             MigrationStep::AddColumn { table_name, field } => vec![format!(
                 "ALTER TABLE {} ADD COLUMN {}",
                 dialect.identifier(table_name),
-                replace_postgres_default(&crate::render_column_definition(
-                    field, dialect, schema, true
-                ))
+                replace_postgres_default(&crate::render_column_definition(field, dialect, schema, true))
             )],
             MigrationStep::DropColumn { table_name, field } => vec![format!(
                 "ALTER TABLE {} DROP COLUMN {}",
                 dialect.identifier(table_name),
                 dialect.identifier(&field.name)
             )],
-            MigrationStep::AlterColumn {
-                table_name,
-                old_field,
-                new_field,
-            } => build_postgres_alter_column_sql(table_name, old_field, new_field, schema, dialect),
-            MigrationStep::RenameColumn {
-                table_name,
-                old_name,
-                new_name,
-            } => vec![format!(
+            MigrationStep::AlterColumn { table_name, old_field, new_field } => {
+                build_postgres_alter_column_sql(table_name, old_field, new_field, schema, dialect)
+            }
+            MigrationStep::RenameColumn { table_name, old_name, new_name } => vec![format!(
                 "ALTER TABLE {} RENAME COLUMN {} TO {}",
                 dialect.identifier(table_name),
                 dialect.identifier(old_name),
                 dialect.identifier(new_name)
             )],
 
-            MigrationStep::AddPrimaryKey {
-                table_name,
-                columns,
-                constraint_name,
-            } => vec![format!(
+            MigrationStep::AddPrimaryKey { table_name, columns, constraint_name } => vec![format!(
                 "ALTER TABLE {} ADD CONSTRAINT {} PRIMARY KEY ({})",
                 dialect.identifier(table_name),
                 dialect.identifier(&primary_key_name(table_name, constraint_name)),
-                render_identifier_list(
-                    &columns
-                        .iter()
-                        .map(|column| column.as_str())
-                        .collect::<Vec<_>>(),
-                    dialect
-                )
+                render_identifier_list(&columns.iter().map(|column| column.as_str()).collect::<Vec<_>>(), dialect)
             )],
-            MigrationStep::DropPrimaryKey {
-                table_name,
-                constraint_name,
-            } => vec![format!(
+            MigrationStep::DropPrimaryKey { table_name, constraint_name } => vec![format!(
                 "ALTER TABLE {} DROP CONSTRAINT {}",
                 dialect.identifier(table_name),
                 dialect.identifier(&primary_key_name(table_name, constraint_name))
@@ -165,23 +126,15 @@ impl MigrationExecutor for PostgresAdapter {
                 constraint_name,
                 dialect,
             )],
-            MigrationStep::DropForeignKey {
-                table_name,
-                constraint_name,
-            } => vec![format!(
+            MigrationStep::DropForeignKey { table_name, constraint_name } => vec![format!(
                 "ALTER TABLE {} DROP CONSTRAINT {}",
                 dialect.identifier(table_name),
                 dialect.identifier(constraint_name)
             )],
 
-            MigrationStep::CreateIndex {
-                table_name,
-                columns,
-                index_name,
-                is_unique,
-            } => vec![render_create_index_sql(
-                table_name, columns, index_name, *is_unique, dialect,
-            )],
+            MigrationStep::CreateIndex { table_name, columns, index_name, is_unique } => {
+                vec![render_create_index_sql(table_name, columns, index_name, *is_unique, dialect)]
+            }
             MigrationStep::DropIndex { index_name, .. } => {
                 vec![format!("DROP INDEX {}", dialect.identifier(index_name))]
             }
@@ -227,18 +180,11 @@ fn build_postgres_alter_column_sql(
         ) if old_enum == new_enum
     );
 
-    if !enum_default_is_handled_by_alter_enum && old_field.default_value != new_field.default_value
-    {
+    if !enum_default_is_handled_by_alter_enum && old_field.default_value != new_field.default_value {
         if let Some(default_sql) = render_column_default_sql(new_field, dialect, schema) {
-            sqls.push(format!(
-                "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {}",
-                table_ident, column_ident, default_sql
-            ));
+            sqls.push(format!("ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {}", table_ident, column_ident, default_sql));
         } else {
-            sqls.push(format!(
-                "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
-                table_ident, column_ident
-            ));
+            sqls.push(format!("ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT", table_ident, column_ident));
         }
     }
 
@@ -253,11 +199,7 @@ fn build_postgres_alter_column_sql(
                 column_ident
             ));
         } else {
-            sqls.push(format!(
-                "ALTER TABLE {} DROP CONSTRAINT {}",
-                table_ident,
-                dialect.identifier(&constraint_name)
-            ));
+            sqls.push(format!("ALTER TABLE {} DROP CONSTRAINT {}", table_ident, dialect.identifier(&constraint_name)));
         }
     }
 
@@ -271,10 +213,7 @@ fn build_postgres_alter_enum_sql(
     schema: &ParsedSchema,
     dialect: &crate::PostgresDialect,
 ) -> Vec<String> {
-    let removed_variants = old_variants
-        .iter()
-        .filter(|variant| !new_variants.contains(variant))
-        .collect::<Vec<_>>();
+    let removed_variants = old_variants.iter().filter(|variant| !new_variants.contains(variant)).collect::<Vec<_>>();
 
     if removed_variants.is_empty() {
         return new_variants
@@ -292,11 +231,7 @@ fn build_postgres_alter_enum_sql(
 
     let old_type_name = format!("{}_old", enum_name);
     let mut sqls = vec![
-        format!(
-            "ALTER TYPE {} RENAME TO {}",
-            dialect.identifier(enum_name),
-            dialect.identifier(&old_type_name)
-        ),
+        format!("ALTER TYPE {} RENAME TO {}", dialect.identifier(enum_name), dialect.identifier(&old_type_name)),
         format!(
             "CREATE TYPE {} AS ENUM ({})",
             dialect.identifier(enum_name),
@@ -308,14 +243,9 @@ fn build_postgres_alter_enum_sql(
         let table_ident = dialect.identifier(&table.name);
         let column_ident = dialect.identifier(&field.name);
         let using_expression = build_postgres_enum_using_expression(&field, schema, dialect)
-            .unwrap_or_else(|| {
-                format!("{}::text::{}", column_ident, dialect.identifier(enum_name))
-            });
+            .unwrap_or_else(|| format!("{}::text::{}", column_ident, dialect.identifier(enum_name)));
 
-        sqls.push(format!(
-            "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
-            table_ident, column_ident
-        ));
+        sqls.push(format!("ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT", table_ident, column_ident));
         sqls.push(format!(
             "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}",
             table_ident,
@@ -325,10 +255,7 @@ fn build_postgres_alter_enum_sql(
         ));
 
         if let Some(default_sql) = render_column_default_sql(field, dialect, schema) {
-            sqls.push(format!(
-                "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {}",
-                table_ident, column_ident, default_sql
-            ));
+            sqls.push(format!("ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {}", table_ident, column_ident, default_sql));
         }
     }
 
@@ -383,17 +310,14 @@ fn render_column_default_sql(
     schema: &ParsedSchema,
 ) -> Option<String> {
     let definition = map_field_to_definition(field, dialect, &schema.enums);
-    definition.default.as_ref().map(|default| {
-        replace_postgres_default(&render_column_default_from_mapped(default, dialect))
-    })
+    definition
+        .default
+        .as_ref()
+        .map(|default| replace_postgres_default(&render_column_default_from_mapped(default, dialect)))
 }
 
 fn render_enum_values(values: &[String], dialect: &crate::PostgresDialect) -> String {
-    values
-        .iter()
-        .map(|value| dialect.literal_string(value))
-        .collect::<Vec<_>>()
-        .join(", ")
+    values.iter().map(|value| dialect.literal_string(value)).collect::<Vec<_>>().join(", ")
 }
 
 fn unique_constraint_name(table_name: &str, column_name: &str) -> String {
@@ -401,9 +325,7 @@ fn unique_constraint_name(table_name: &str, column_name: &str) -> String {
 }
 
 fn primary_key_name(table_name: &str, constraint_name: &Option<String>) -> String {
-    constraint_name
-        .clone()
-        .unwrap_or_else(|| format!("{}_pkey", table_name))
+    constraint_name.clone().unwrap_or_else(|| format!("{}_pkey", table_name))
 }
 
 fn replace_postgres_default(sql: &str) -> String {

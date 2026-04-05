@@ -17,12 +17,12 @@ impl DinocoSchema {
 }
 
 impl DinocoConfig {
-    pub fn new(database: DinocoDatabase, database_url: DinocoDatabaseUrl, read_replicas: Vec<DinocoDatabaseUrl>) -> Self {
-        Self {
-            database,
-            database_url,
-            read_replicas,
-        }
+    pub fn new(
+        database: DinocoDatabase,
+        database_url: DinocoDatabaseUrl,
+        read_replicas: Vec<DinocoDatabaseUrl>,
+    ) -> Self {
+        Self { database, database_url, read_replicas }
     }
 }
 

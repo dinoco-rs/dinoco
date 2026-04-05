@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 
-use futures::stream;
 use std::sync::Arc;
 
 use deadpool_sqlite::{Config, Pool, Runtime};
@@ -11,7 +10,7 @@ mod handler;
 mod migration;
 mod row;
 
-use crate::{DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoValue};
+use crate::{DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
 
 pub use dialect::SqliteDialect;
 
@@ -32,14 +31,9 @@ impl DinocoAdapter for SqliteAdapter {
 
     async fn connect(url: String) -> DinocoResult<Self> {
         let cfg = Config::new(&url);
-        let pool = cfg
-            .create_pool(Runtime::Tokio1)
-            .map_err(DinocoError::from)?;
+        let pool = cfg.create_pool(Runtime::Tokio1).map_err(DinocoError::from)?;
 
-        Ok(Self {
-            url,
-            pool: Arc::new(pool),
-        })
+        Ok(Self { url, pool: Arc::new(pool) })
     }
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
@@ -48,10 +42,8 @@ impl DinocoAdapter for SqliteAdapter {
         let params_owned = params.to_vec();
 
         conn.interact(move |conn| {
-            let params_refs: Vec<&dyn rusqlite::ToSql> = params_owned
-                .iter()
-                .map(|p| p as &dyn rusqlite::ToSql)
-                .collect();
+            let params_refs: Vec<&dyn rusqlite::ToSql> =
+                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
             conn.execute(&query_owned, params_refs.as_slice())
         })
@@ -74,14 +66,10 @@ impl DinocoAdapter for SqliteAdapter {
         let results = conn
             .interact(move |conn| -> DinocoResult<Vec<T>> {
                 let mut stmt = conn.prepare(&query_owned).map_err(DinocoError::from)?;
-                let params_refs: Vec<&dyn rusqlite::ToSql> = params_owned
-                    .iter()
-                    .map(|p| p as &dyn rusqlite::ToSql)
-                    .collect();
+                let params_refs: Vec<&dyn rusqlite::ToSql> =
+                    params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
-                let mut rows = stmt
-                    .query(params_refs.as_slice())
-                    .map_err(DinocoError::from)?;
+                let mut rows = stmt.query(params_refs.as_slice()).map_err(DinocoError::from)?;
                 let mut results = Vec::new();
 
                 while let Some(row) = rows.next().map_err(DinocoError::from)? {
@@ -95,17 +83,6 @@ impl DinocoAdapter for SqliteAdapter {
 
         Ok(results)
     }
-
-    async fn stream_as<T: DinocoRow + Send + 'static>(
-        &self,
-        query: &str,
-        params: &[DinocoValue],
-    ) -> DinocoStream<T> {
-        match self.query_as::<T>(query, params).await {
-            Ok(results) => Box::pin(stream::iter(results.into_iter().map(Ok))),
-            Err(e) => Box::pin(stream::once(async { Err(e) })),
-        }
-    }
 }
 
 impl rusqlite::ToSql for DinocoValue {
@@ -114,9 +91,7 @@ impl rusqlite::ToSql for DinocoValue {
             DinocoValue::Null => Ok(ToSqlOutput::Owned(Value::Null)),
             DinocoValue::Integer(i) => Ok(ToSqlOutput::Owned(Value::Integer(*i))),
             DinocoValue::Float(f) => Ok(ToSqlOutput::Owned(Value::Real(*f))),
-            DinocoValue::Boolean(b) => {
-                Ok(ToSqlOutput::Owned(Value::Integer(if *b { 1 } else { 0 })))
-            }
+            DinocoValue::Boolean(b) => Ok(ToSqlOutput::Owned(Value::Integer(if *b { 1 } else { 0 }))),
             DinocoValue::String(s) => Ok(ToSqlOutput::Owned(Value::Text(s.clone()))),
             DinocoValue::Json(v) => Ok(ToSqlOutput::Owned(Value::Text(v.to_string()))),
             DinocoValue::Bytes(v) => Ok(ToSqlOutput::Owned(Value::Blob(v.clone()))),

@@ -2,15 +2,14 @@ use async_trait::async_trait;
 
 use super::PostgresAdapter;
 use crate::{
-    DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex, DatabaseParsedTable,
-    DatabaseTable, DinocoAdapter, DinocoAdapterHandler, DinocoResult, DinocoValue,
+    DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex, DatabaseParsedTable, DatabaseTable,
+    DinocoAdapter, DinocoAdapterHandler, DinocoResult, DinocoValue,
 };
 
 #[async_trait]
 impl DinocoAdapterHandler for PostgresAdapter {
     async fn reset_database(&self) -> DinocoResult<()> {
-        self.execute("DROP SCHEMA IF EXISTS public CASCADE;", &[])
-            .await?;
+        self.execute("DROP SCHEMA IF EXISTS public CASCADE;", &[]).await?;
         self.execute("CREATE SCHEMA public;", &[]).await?;
 
         Ok(())
@@ -31,10 +30,7 @@ impl DinocoAdapterHandler for PostgresAdapter {
         for table in self.query_as::<DatabaseTable>(query, &[]).await? {
             let columns = self.fetch_columns(table.name.clone()).await?;
 
-            tables.push(DatabaseParsedTable {
-                name: table.name,
-                columns,
-            });
+            tables.push(DatabaseParsedTable { name: table.name, columns });
         }
 
         Ok(tables)
@@ -44,17 +40,30 @@ impl DinocoAdapterHandler for PostgresAdapter {
         let query = "
             SELECT
                 column_name::text AS name,
-                data_type::text AS db_type,
+                CASE
+                    WHEN data_type = 'USER-DEFINED' THEN udt_name::text
+                    ELSE data_type::text
+                END AS db_type,
                 (is_nullable = 'YES') AS nullable,
-                column_default::text AS default_value
+                COALESCE((tc.constraint_type = 'PRIMARY KEY'), false) AS is_primary_key,
+                column_default::text AS default_value,
+                NULL::text AS enum_values
             FROM information_schema.columns
+            LEFT JOIN information_schema.key_column_usage kcu
+              ON kcu.table_schema = columns.table_schema
+             AND kcu.table_name = columns.table_name
+             AND kcu.column_name = columns.column_name
+            LEFT JOIN information_schema.table_constraints tc
+              ON tc.table_schema = kcu.table_schema
+             AND tc.table_name = kcu.table_name
+             AND tc.constraint_name = kcu.constraint_name
+             AND tc.constraint_type = 'PRIMARY KEY'
             WHERE table_schema = 'public'
               AND table_name = $1
             ORDER BY ordinal_position;
         ";
 
-        self.query_as::<DatabaseColumn>(query, &[DinocoValue::from(table_name)])
-            .await
+        self.query_as::<DatabaseColumn>(query, &[DinocoValue::from(table_name)]).await
     }
 
     async fn fetch_foreign_keys(&self) -> DinocoResult<Vec<DatabaseForeignKey>> {

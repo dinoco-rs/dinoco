@@ -1,16 +1,17 @@
+use chrono::{DateTime, Utc};
 use dinoco_derives::Rowable;
-use dinoco_engine::{DinocoGenericRow, DinocoResult, DinocoRow};
 
 mod database;
-mod encoders;
+mod migrations;
 
 pub use database::*;
-pub use encoders::*;
+pub use migrations::*;
 
 #[derive(Rowable, Debug)]
 pub struct DinocoMigration {
     pub name: String,
-    pub schema: Vec<u8>,
+    pub applied_at: Option<DateTime<Utc>>,
+    pub rollback_at: Option<DateTime<Utc>>,
 }
 
 pub fn to_snake_case(s: &str) -> String {

@@ -46,7 +46,11 @@ pub async fn reset_database() -> DinocoResult<()> {
         }
         Err(errs) => {
             pb.finish_and_clear();
-            println!("\n{} {}\n", "✖".red().bold(), format!("Schema compilation failed ({} error(s)).", errs.len()).bold());
+            println!(
+                "\n{} {}\n",
+                "✖".red().bold(),
+                format!("Schema compilation failed ({} error(s)).", errs.len()).bold()
+            );
 
             for err in errs {
                 println!("{}", render_error(&err, &source));

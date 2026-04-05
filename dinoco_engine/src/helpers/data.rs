@@ -1,7 +1,11 @@
 use crate::{AdapterDialect, ColumnDefault, ColumnDefinition, ColumnType, DinocoValue};
 use dinoco_compiler::{FunctionCall, ParsedEnum, ParsedField, ParsedFieldDefault, ParsedFieldType, ReferentialAction};
 
-pub fn map_field_to_definition<'a, D: AdapterDialect>(field: &'a ParsedField, dialect: &D, schema_enums: &[ParsedEnum]) -> ColumnDefinition<'a> {
+pub fn map_field_to_definition<'a, D: AdapterDialect>(
+    field: &'a ParsedField,
+    dialect: &D,
+    schema_enums: &[ParsedEnum],
+) -> ColumnDefinition<'a> {
     ColumnDefinition {
         name: field.name.as_str(),
         col_type: map_column_type(&field.field_type, dialect, schema_enums),
@@ -12,7 +16,11 @@ pub fn map_field_to_definition<'a, D: AdapterDialect>(field: &'a ParsedField, di
     }
 }
 
-pub fn map_column_type<D: AdapterDialect>(field_type: &ParsedFieldType, dialect: &D, schema_enums: &[ParsedEnum]) -> ColumnType {
+pub fn map_column_type<D: AdapterDialect>(
+    field_type: &ParsedFieldType,
+    dialect: &D,
+    schema_enums: &[ParsedEnum],
+) -> ColumnType {
     match field_type {
         ParsedFieldType::String => ColumnType::Text,
         ParsedFieldType::Boolean => ColumnType::Boolean,
@@ -28,7 +36,8 @@ pub fn map_column_type<D: AdapterDialect>(field_type: &ParsedFieldType, dialect:
             if dialect.supports_native_enums() {
                 ColumnType::Enum(name.to_string())
             } else {
-                let variants = schema_enums.iter().find(|e| e.name == *name).map(|e| e.values.clone()).unwrap_or_default();
+                let variants =
+                    schema_enums.iter().find(|e| e.name == *name).map(|e| e.values.clone()).unwrap_or_default();
 
                 ColumnType::EnumInline(variants)
             }

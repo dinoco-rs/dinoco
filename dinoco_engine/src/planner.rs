@@ -1,20 +1,13 @@
 use dinoco_compiler::{
-    ParsedField, ParsedFieldDefault, ParsedFieldType, ParsedRelation, ParsedSchema, ParsedTable,
-    ReferentialAction,
+    ParsedField, ParsedFieldDefault, ParsedFieldType, ParsedRelation, ParsedSchema, ParsedTable, ReferentialAction,
 };
 use std::collections::{HashMap, HashSet};
 
 use crate::{MigrationPlan, MigrationStep, SafetyLevel, is_destructive_cast};
 
-pub fn calculate_diff(
-    old_schema: &Option<ParsedSchema>,
-    new_schema: &ParsedSchema,
-) -> MigrationPlan {
-    let old_schema = old_schema.clone().unwrap_or(ParsedSchema {
-        config: new_schema.config.clone(),
-        enums: vec![],
-        tables: vec![],
-    });
+pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSchema) -> MigrationPlan {
+    let old_schema =
+        old_schema.clone().unwrap_or(ParsedSchema { config: new_schema.config.clone(), enums: vec![], tables: vec![] });
 
     let mut safety_alerts = Vec::new();
 
@@ -31,10 +24,8 @@ pub fn calculate_diff(
     let mut add_fk_steps = Vec::new();
     let mut created_table_names = HashSet::new();
 
-    let old_enums_map: HashMap<&String, _> =
-        old_schema.enums.iter().map(|e| (&e.name, e)).collect();
-    let new_enums_map: HashMap<&String, _> =
-        new_schema.enums.iter().map(|e| (&e.name, e)).collect();
+    let old_enums_map: HashMap<&String, _> = old_schema.enums.iter().map(|e| (&e.name, e)).collect();
+    let new_enums_map: HashMap<&String, _> = new_schema.enums.iter().map(|e| (&e.name, e)).collect();
 
     for (name, new_enum) in &new_enums_map {
         if let Some(old_enum) = old_enums_map.get(name) {
@@ -46,10 +37,8 @@ pub fn calculate_diff(
                 });
             }
         } else {
-            create_enum_steps.push(MigrationStep::CreateEnum {
-                name: (*name).clone(),
-                variants: new_enum.values.clone(),
-            });
+            create_enum_steps
+                .push(MigrationStep::CreateEnum { name: (*name).clone(), variants: new_enum.values.clone() });
         }
     }
 
@@ -59,10 +48,8 @@ pub fn calculate_diff(
         }
     }
 
-    let old_map: HashMap<&String, &ParsedTable> =
-        old_schema.tables.iter().map(|t| (&t.name, t)).collect();
-    let new_map: HashMap<&String, &ParsedTable> =
-        new_schema.tables.iter().map(|t| (&t.name, t)).collect();
+    let old_map: HashMap<&String, &ParsedTable> = old_schema.tables.iter().map(|t| (&t.name, t)).collect();
+    let new_map: HashMap<&String, &ParsedTable> = new_schema.tables.iter().map(|t| (&t.name, t)).collect();
 
     let mut old_join_tables = HashMap::new();
     for table in &old_schema.tables {
@@ -111,9 +98,7 @@ pub fn calculate_diff(
         for join_table in join_tables {
             new_join_tables_map.insert(join_table.name.clone(), join_table.clone());
 
-            if !old_map.contains_key(&join_table.name)
-                && !old_join_tables.contains_key(&join_table.name)
-            {
+            if !old_map.contains_key(&join_table.name) && !old_join_tables.contains_key(&join_table.name) {
                 created_table_names.insert(join_table.name.clone());
                 create_table_steps.push(MigrationStep::CreateTable(join_table));
             }
@@ -168,23 +153,14 @@ pub fn calculate_diff(
     final_steps.extend(add_fk_steps);
     final_steps.extend(drop_enum_steps);
 
-    MigrationPlan {
-        steps: final_steps,
-        safety_alerts,
-    }
+    MigrationPlan { steps: final_steps, safety_alerts }
 }
 
-fn diff_columns(
-    old_table: &ParsedTable,
-    new_table: &ParsedTable,
-    alerts: &mut Vec<SafetyLevel>,
-) -> Vec<MigrationStep> {
+fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut Vec<SafetyLevel>) -> Vec<MigrationStep> {
     let mut steps = Vec::new();
 
-    let old_fields: HashMap<&String, &ParsedField> =
-        old_table.fields.iter().map(|f| (&f.name, f)).collect();
-    let new_fields: HashMap<&String, &ParsedField> =
-        new_table.fields.iter().map(|f| (&f.name, f)).collect();
+    let old_fields: HashMap<&String, &ParsedField> = old_table.fields.iter().map(|f| (&f.name, f)).collect();
+    let new_fields: HashMap<&String, &ParsedField> = new_table.fields.iter().map(|f| (&f.name, f)).collect();
 
     let mut added_fields = Vec::new();
     let mut dropped_fields = Vec::new();
@@ -202,8 +178,7 @@ fn diff_columns(
             let unique = old_field.is_unique != new_field.is_unique;
 
             if type_changed || became_required || default_value || primary_key || unique {
-                if type_changed && is_destructive_cast(&old_field.field_type, &new_field.field_type)
-                {
+                if type_changed && is_destructive_cast(&old_field.field_type, &new_field.field_type) {
                     alerts.push(SafetyLevel::Destructive(format!(
                         "Incompatible type change in '{}.{}': {:?} -> {:?}",
                         new_table.name, name, old_field.field_type, new_field.field_type
@@ -273,10 +248,7 @@ fn diff_columns(
 
     for add_f in added_fields {
         if !resolved_adds.contains(&add_f.name) {
-            steps.push(MigrationStep::AddColumn {
-                table_name: new_table.name.clone(),
-                field: add_f.clone(),
-            });
+            steps.push(MigrationStep::AddColumn { table_name: new_table.name.clone(), field: add_f.clone() });
         }
     }
 
@@ -298,10 +270,7 @@ fn diff_columns(
                 old_table.name, drop_f.name
             )));
 
-            steps.push(MigrationStep::DropColumn {
-                table_name: old_table.name.clone(),
-                field: drop_f.clone(),
-            });
+            steps.push(MigrationStep::DropColumn { table_name: old_table.name.clone(), field: drop_f.clone() });
         }
     }
 

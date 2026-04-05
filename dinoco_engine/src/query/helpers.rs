@@ -146,17 +146,8 @@ pub fn render_expression_into<D: AdapterDialect + ?Sized>(
     }
 }
 
-pub fn render_query_identifier_into<D: AdapterDialect + ?Sized>(
-    dialect: &D,
-    value: &str,
-    buf: &mut String,
-) {
-    if value == "*"
-        || value.contains(' ')
-        || value.contains('(')
-        || value.contains(')')
-        || value.contains(',')
-    {
+pub fn render_query_identifier_into<D: AdapterDialect + ?Sized>(dialect: &D, value: &str, buf: &mut String) {
+    if value == "*" || value.contains(' ') || value.contains('(') || value.contains(')') || value.contains(',') {
         buf.push_str(value);
 
         return;

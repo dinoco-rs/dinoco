@@ -35,7 +35,8 @@ impl AdapterDialect for MySqlDialect {
                 format!("VARCHAR(255) /* enum {} */", name)
             }
             ColumnType::EnumInline(values) => {
-                let safe_values = values.iter().map(|v| format!("'{}'", v.replace('\'', "''"))).collect::<Vec<_>>().join(", ");
+                let safe_values =
+                    values.iter().map(|v| format!("'{}'", v.replace('\'', "''"))).collect::<Vec<_>>().join(", ");
 
                 format!("ENUM({})", safe_values)
             }

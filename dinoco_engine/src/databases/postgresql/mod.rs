@@ -3,14 +3,12 @@ use async_trait::async_trait;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use futures::stream::{self, TryStreamExt};
-
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 
 use tokio_postgres::NoTls;
 use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql_checked};
 
-use crate::{DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoStream, DinocoValue};
+use crate::{DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
 
 mod dialect;
 mod handler;
@@ -37,23 +35,11 @@ impl DinocoAdapter for PostgresAdapter {
     async fn connect(url: String) -> DinocoResult<Self> {
         let pg_config = tokio_postgres::Config::from_str(&url).map_err(|e| DinocoError::from(e))?;
 
-        let mgr = Manager::from_config(
-            pg_config,
-            NoTls,
-            ManagerConfig {
-                recycling_method: RecyclingMethod::Fast,
-            },
-        );
+        let mgr = Manager::from_config(pg_config, NoTls, ManagerConfig { recycling_method: RecyclingMethod::Fast });
 
-        let pool = Pool::builder(mgr)
-            .max_size(16)
-            .build()
-            .map_err(|e| DinocoError::from(e))?;
+        let pool = Pool::builder(mgr).max_size(16).build().map_err(|e| DinocoError::from(e))?;
 
-        Ok(Self {
-            url,
-            client: Arc::new(pool),
-        })
+        Ok(Self { url, client: Arc::new(pool) })
     }
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
@@ -65,11 +51,7 @@ impl DinocoAdapter for PostgresAdapter {
         Ok(())
     }
 
-    async fn query_as<T: DinocoRow>(
-        &self,
-        query: &str,
-        params: &[DinocoValue],
-    ) -> DinocoResult<Vec<T>> {
+    async fn query_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>> {
         let pg_params: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p as _).collect();
         let client = self.client.get().await.map_err(|e| DinocoError::from(e))?;
 
@@ -82,45 +64,10 @@ impl DinocoAdapter for PostgresAdapter {
 
         Ok(results)
     }
-
-    async fn stream_as<T: DinocoRow>(
-        &self,
-        query: &str,
-        params: &[DinocoValue],
-    ) -> DinocoStream<T> {
-        let client = self.client.clone();
-
-        let query_owned = query.to_string();
-        let params_owned = params.to_vec();
-
-        let stream = stream::once(async move {
-            let client = client.get().await.map_err(|e| DinocoError::from(e))?;
-            let pg_params: Vec<&(dyn ToSql + Sync)> = params_owned
-                .iter()
-                .map(|p| p as &(dyn ToSql + Sync))
-                .collect();
-
-            let row_stream = client
-                .query_raw(&query_owned, pg_params.iter().copied())
-                .await
-                .map_err(DinocoError::from)?;
-            let row_stream = row_stream.map_err(DinocoError::from);
-
-            Ok::<_, DinocoError>(row_stream)
-        })
-        .try_flatten()
-        .and_then(|row| async move { T::from_row(&row) });
-
-        Box::pin(stream)
-    }
 }
 
 impl ToSql for DinocoValue {
-    fn to_sql(
-        &self,
-        ty: &Type,
-        out: &mut BytesMut,
-    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
+    fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
         match self {
             DinocoValue::Null => Ok(IsNull::Yes),
             DinocoValue::Integer(i) => i.to_sql(ty, out),

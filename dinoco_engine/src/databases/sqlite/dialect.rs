@@ -17,12 +17,7 @@ impl AdapterDialect for SqliteDialect {
         format!("'{}'", escaped)
     }
 
-    fn column_type(
-        &self,
-        col: &ColumnDefinition,
-        is_primary: bool,
-        auto_increment: bool,
-    ) -> String {
+    fn column_type(&self, col: &ColumnDefinition, is_primary: bool, auto_increment: bool) -> String {
         if is_primary && auto_increment {
             return "INTEGER PRIMARY KEY AUTOINCREMENT".to_string();
         }
@@ -31,18 +26,14 @@ impl AdapterDialect for SqliteDialect {
             ColumnType::Integer => "INTEGER".to_string(),
             ColumnType::Float => "REAL".to_string(),
             ColumnType::Text => "TEXT".to_string(),
-            ColumnType::Boolean => "INTEGER".to_string(),
+            ColumnType::Boolean => "BOOLEAN".to_string(),
             ColumnType::Json => "TEXT".to_string(),
-            ColumnType::DateTime => "TEXT".to_string(),
-            ColumnType::Date => "TEXT".to_string(),
+            ColumnType::DateTime => "DATETIME".to_string(),
+            ColumnType::Date => "DATE".to_string(),
             ColumnType::Bytes => "BLOB".to_string(),
             ColumnType::Enum(_) => "TEXT".to_string(),
             ColumnType::EnumInline(values) => {
-                let check_values = values
-                    .iter()
-                    .map(|v| self.literal_string(v))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let check_values = values.iter().map(|v| self.literal_string(v)).collect::<Vec<_>>().join(", ");
 
                 format!("TEXT CHECK ({} IN ({}))", col.name, check_values)
             }

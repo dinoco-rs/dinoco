@@ -12,41 +12,26 @@ pub fn init_command() {
     let exists = Path::new("dinoco/schema.dinoco").exists();
 
     if exists {
-        println!(
-            "\n{} {}",
-            "⚠".yellow().bold(),
-            "Dinoco project already exists in this directory.".yellow()
-        );
-        let rewrite = Confirm::new("Do you want to overwrite the existing configuration?")
-            .with_default(false)
-            .prompt();
+        println!("\n{} {}", "⚠".yellow().bold(), "Dinoco project already exists in this directory.".yellow());
+        let rewrite = Confirm::new("Do you want to overwrite the existing configuration?").with_default(false).prompt();
 
         match rewrite {
             Ok(true) => {}
             Ok(false) => {
-                println!(
-                    "{} {}",
-                    "✗".red().bold(),
-                    "Initialization cancelled.".white()
-                );
+                println!("{} {}", "✗".red().bold(), "Initialization cancelled.".white());
                 return;
             }
             Err(_) => return,
         }
     }
 
-    let database =
-        match Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL"]).prompt() {
-            Ok(db) => db,
-            Err(_) => {
-                println!(
-                    "\n{} {}",
-                    "✖".red().bold(),
-                    "Database selection cancelled.".white()
-                );
-                return;
-            }
-        };
+    let database = match Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL"]).prompt() {
+        Ok(db) => db,
+        Err(_) => {
+            println!("\n{} {}", "✖".red().bold(), "Database selection cancelled.".white());
+            return;
+        }
+    };
 
     let connection_type = match Select::new(
         "How do you want to provide the connection string?",
@@ -56,11 +41,7 @@ pub fn init_command() {
     {
         Ok(ct) => ct,
         Err(_) => {
-            println!(
-                "\n{} {}",
-                "✖".red().bold(),
-                "Connection type selection cancelled.".white()
-            );
+            println!("\n{} {}", "✖".red().bold(), "Connection type selection cancelled.".white());
             return;
         }
     };
@@ -73,15 +54,12 @@ pub fn init_command() {
 
         if is_env {
             if input.contains(' ') {
-                return Ok(Validation::Invalid(
-                    "Environment variable names cannot contain spaces.".into(),
-                ));
+                return Ok(Validation::Invalid("Environment variable names cannot contain spaces.".into()));
             }
 
             if !input.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 return Ok(Validation::Invalid(
-                    "Environment variables can only contain letters, numbers, and underscores."
-                        .into(),
+                    "Environment variables can only contain letters, numbers, and underscores.".into(),
                 ));
             }
         }
@@ -89,15 +67,8 @@ pub fn init_command() {
         Ok(Validation::Valid)
     };
 
-    let prompt_message = ternary!(
-        is_env,
-        "What is the environment variable name?",
-        "What is the connection string?"
-    );
-    let connection_url = match Text::new(prompt_message)
-        .with_validator(input_validator)
-        .prompt()
-    {
+    let prompt_message = ternary!(is_env, "What is the environment variable name?", "What is the connection string?");
+    let connection_url = match Text::new(prompt_message).with_validator(input_validator).prompt() {
         Ok(url) => url,
         Err(_) => {
             println!("\n{} {}", "✖".red().bold(), "Input cancelled.".white());
@@ -105,17 +76,10 @@ pub fn init_command() {
         }
     };
 
-    let with_replicas = match Confirm::new("Do you want to use read replicas?")
-        .with_default(false)
-        .prompt()
-    {
+    let with_replicas = match Confirm::new("Do you want to use read replicas?").with_default(false).prompt() {
         Ok(val) => val,
         Err(_) => {
-            println!(
-                "\n{} {}",
-                "✖".red().bold(),
-                "Replica configuration cancelled.".white()
-            );
+            println!("\n{} {}", "✖".red().bold(), "Replica configuration cancelled.".white());
             return;
         }
     };
@@ -125,22 +89,13 @@ pub fn init_command() {
     if with_replicas {
         let replica_validator = |input: &str| match input.trim().parse::<u32>() {
             Ok(val) if val > 0 => Ok(Validation::Valid),
-            _ => Ok(Validation::Invalid(
-                "Please enter a valid number greater than 0.".into(),
-            )),
+            _ => Ok(Validation::Invalid("Please enter a valid number greater than 0.".into())),
         };
 
-        match Text::new("How many replicas?")
-            .with_validator(replica_validator)
-            .prompt()
-        {
+        match Text::new("How many replicas?").with_validator(replica_validator).prompt() {
             Ok(amount) => replicas_amount = amount.trim().parse::<u32>().unwrap_or(0),
             Err(_) => {
-                println!(
-                    "\n{} {}",
-                    "✖".red().bold(),
-                    "Replica amount cancelled.".white()
-                );
+                println!("\n{} {}", "✖".red().bold(), "Replica amount cancelled.".white());
                 return;
             }
         };
@@ -206,16 +161,8 @@ pub fn init_command() {
         return;
     }
 
-    println!(
-        "\n{} {}",
-        "✔".green().bold(),
-        "Your Dinoco environment was successfully created!".white()
-    );
-    println!(
-        "  {} Schema created at: {}",
-        "→".cyan().bold(),
-        "dinoco/schema.dinoco".blue()
-    );
+    println!("\n{} {}", "✔".green().bold(), "Your Dinoco environment was successfully created!".white());
+    println!("  {} Schema created at: {}", "→".cyan().bold(), "dinoco/schema.dinoco".blue());
     println!(
         "\n{} {}",
         "📚 Next steps: Check out the documentation at".bright_black(),

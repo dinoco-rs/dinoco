@@ -29,6 +29,12 @@ enum Commands {
 
     #[command(subcommand)]
     Migrate(MigrateCommands),
+
+    #[command(subcommand)]
+    Models(ModelsCommands),
+
+    #[command(subcommand)]
+    Schema(SchemaCommands),
 }
 
 #[derive(Subcommand)]
@@ -39,25 +45,39 @@ enum DatabaseCommands {
 
 #[derive(Subcommand)]
 enum MigrateCommands {
-    #[command(about = "Generate a migration from schema")]
-    Generate {},
+    #[command(about = "Generate a migration from the current schema")]
+    Generate {
+        #[arg(long, help = "Apply the generated migration immediately and generate Rust models")]
+        apply: bool,
+    },
 
-    #[command(about = "Rollback last migration")]
+    #[command(about = "Rollback the last migration")]
     Rollback {},
 
-    #[command(about = "Rul all migrations")]
+    #[command(about = "Run all pending migrations")]
     Run {},
+}
+
+#[derive(Subcommand)]
+enum ModelsCommands {
+    #[command(about = "Generate Rust models from the latest migration stored in the database")]
+    Generate {},
+}
+
+#[derive(Subcommand)]
+enum SchemaCommands {
+    #[command(about = "Restore schema.dinoco from the latest local migration")]
+    Restore {
+        #[arg(help = "Optional migration name to restore from")]
+        name: Option<String>,
+    },
 }
 
 #[tokio::main]
 async fn main() {
     let env = dotenvy::dotenv().ok();
     if env.is_some() {
-        println!(
-            "{} {}",
-            "ℹ".blue(),
-            "Successfully loaded .env file!".bright_black()
-        );
+        println!("{} {}", "ℹ".blue(), "Successfully loaded .env file!".bright_black());
     }
 
     let cli = Cli::parse();
@@ -85,8 +105,8 @@ async fn main() {
         },
 
         Commands::Migrate(command) => match command {
-            &MigrateCommands::Generate {} => {
-                if let Err(data) = generate_migrate().await {
+            MigrateCommands::Generate { apply } => {
+                if let Err(data) = generate_migrate(*apply).await {
                     eprintln!("❌ Failed to generate migration.");
                     eprintln!("👉 Details: {}", data);
 
@@ -104,35 +124,73 @@ async fn main() {
 
             &MigrateCommands::Rollback {} => {
                 if let Err(err) = rollback_migration().await {
-                    eprintln!("❌ Failed to execute rollback.");
+                    eprintln!("❌ Failed to roll back the migration.");
                     eprintln!("👉 Details: {}", err);
 
                     eprintln!("\n💡 Possible causes:");
-                    eprintln!("- No migrations available to rollback");
-                    eprintln!("- Inconsistent migration state");
+                    eprintln!("- No migrations are available to roll back");
+                    eprintln!("- The migration history is inconsistent");
                     eprintln!("- Database connection failure");
 
                     eprintln!("\n🛠️ Suggestions:");
                     eprintln!("- Check the migration history");
                     eprintln!("- Verify the database connection");
-                    eprintln!("- Run a migration status command first");
+                    eprintln!("- Re-run the latest migration if needed");
                 }
             }
 
             &MigrateCommands::Run {} => {
                 if let Err(err) = run_migrations().await {
-                    eprintln!("❌ Failed to execute rollback.");
+                    eprintln!("❌ Failed to run pending migrations.");
                     eprintln!("👉 Details: {}", err);
 
                     eprintln!("\n💡 Possible causes:");
-                    eprintln!("- No migrations available to rollback");
-                    eprintln!("- Inconsistent migration state");
+                    eprintln!("- The migration files are invalid");
+                    eprintln!("- The migration history is inconsistent");
                     eprintln!("- Database connection failure");
 
                     eprintln!("\n🛠️ Suggestions:");
                     eprintln!("- Check the migration history");
                     eprintln!("- Verify the database connection");
-                    eprintln!("- Run a migration status command first");
+                    eprintln!("- Review the latest generated migration");
+                }
+            }
+        },
+
+        Commands::Models(command) => match command {
+            ModelsCommands::Generate {} => {
+                if let Err(err) = generate_models_from_latest_migration().await {
+                    eprintln!("❌ Failed to generate models.");
+                    eprintln!("👉 Details: {}", err);
+
+                    eprintln!("\n💡 Possible causes:");
+                    eprintln!("- No migrations were applied to the database");
+                    eprintln!("- The latest local migration files are missing");
+                    eprintln!("- Database connection failure");
+
+                    eprintln!("\n🛠️ Suggestions:");
+                    eprintln!("- Run `dinoco migrate generate` first");
+                    eprintln!("- Run `dinoco migrate run` if migrations are pending");
+                    eprintln!("- Verify the database connection");
+                }
+            }
+        },
+
+        Commands::Schema(command) => match command {
+            SchemaCommands::Restore { name } => {
+                if let Err(err) = restore_schema_from_migration(name.as_deref()) {
+                    eprintln!("❌ Failed to restore schema.dinoco.");
+                    eprintln!("👉 Details: {}", err);
+
+                    eprintln!("\n💡 Possible causes:");
+                    eprintln!("- No local migrations are available");
+                    eprintln!("- The latest migration is missing schema.bin");
+                    eprintln!("- The migration metadata is corrupted");
+
+                    eprintln!("\n🛠️ Suggestions:");
+                    eprintln!("- Run `dinoco migrate generate` first");
+                    eprintln!("- Check whether the latest migration contains schema.bin");
+                    eprintln!("- Re-generate the latest migration if needed");
                 }
             }
         },

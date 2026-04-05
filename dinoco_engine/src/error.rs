@@ -28,3 +28,9 @@ impl std::fmt::Display for DinocoError {
 }
 
 impl std::error::Error for DinocoError {}
+
+impl From<std::io::Error> for DinocoError {
+    fn from(err: std::io::Error) -> Self {
+        Self::ParseError(err.to_string())
+    }
+}

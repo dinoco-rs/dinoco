@@ -8,8 +8,6 @@ pub use mysql::*;
 pub use postgresql::*;
 pub use sqlite::*;
 
-use crate::{DinocoGenericRow, DinocoResult, DinocoRow};
-
 pub struct DatabaseParsedTable {
     pub name: String,
     pub columns: Vec<DatabaseColumn>,
@@ -30,7 +28,9 @@ pub struct DatabaseColumn {
     pub name: String,
     pub db_type: String,
     pub nullable: bool,
+    pub is_primary_key: bool,
     pub default_value: Option<String>,
+    pub enum_values: Option<String>,
 }
 
 #[derive(Rowable, Debug)]

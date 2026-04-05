@@ -4,8 +4,8 @@ use async_trait::async_trait;
 
 use super::MySqlAdapter;
 use crate::{
-    DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex, DatabaseParsedTable,
-    DatabaseTable, DinocoAdapter, DinocoAdapterHandler, DinocoResult, DinocoValue,
+    DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex, DatabaseParsedTable, DatabaseTable,
+    DinocoAdapter, DinocoAdapterHandler, DinocoResult, DinocoValue,
 };
 
 #[async_trait]
@@ -17,19 +17,14 @@ impl DinocoAdapterHandler for MySqlAdapter {
         self.execute("SET FOREIGN_KEY_CHECKS = 0;", &[]).await?;
 
         for foreign_key in foreign_keys {
-            let key = (
-                foreign_key.table_name.clone(),
-                foreign_key.constraint_name.clone(),
-            );
+            let key = (foreign_key.table_name.clone(), foreign_key.constraint_name.clone());
 
             if !dropped_constraints.insert(key) {
                 continue;
             }
 
-            let query = format!(
-                "ALTER TABLE `{}` DROP FOREIGN KEY `{}`;",
-                foreign_key.table_name, foreign_key.constraint_name
-            );
+            let query =
+                format!("ALTER TABLE `{}` DROP FOREIGN KEY `{}`;", foreign_key.table_name, foreign_key.constraint_name);
 
             self.execute(&query, &[]).await?;
         }
@@ -59,10 +54,7 @@ impl DinocoAdapterHandler for MySqlAdapter {
         for table in self.query_as::<DatabaseTable>(query, &[]).await? {
             let columns = self.fetch_columns(table.name.clone()).await?;
 
-            tables.push(DatabaseParsedTable {
-                name: table.name,
-                columns,
-            })
+            tables.push(DatabaseParsedTable { name: table.name, columns })
         }
 
         Ok(tables)
@@ -74,14 +66,18 @@ impl DinocoAdapterHandler for MySqlAdapter {
                 COLUMN_NAME AS name,
                 COLUMN_TYPE AS db_type, -- COLUMN_TYPE traz o tipo completo, ex: varchar(255) ou enum('A','B')
                 (IS_NULLABLE = 'YES') AS nullable,
-                COLUMN_DEFAULT AS default_value
+                (COLUMN_KEY = 'PRI') AS is_primary_key,
+                COLUMN_DEFAULT AS default_value,
+                CASE
+                    WHEN DATA_TYPE = 'enum' THEN COLUMN_TYPE
+                    ELSE NULL
+                END AS enum_values
             FROM information_schema.columns 
             WHERE table_schema = DATABASE() 
               AND table_name = ?;
         ";
 
-        self.query_as::<DatabaseColumn>(query, &[DinocoValue::from(table_name)])
-            .await
+        self.query_as::<DatabaseColumn>(query, &[DinocoValue::from(table_name)]).await
     }
 
     async fn fetch_foreign_keys(&self) -> DinocoResult<Vec<DatabaseForeignKey>> {

@@ -41,19 +41,14 @@ pub trait QueryBuilder: AdapterDialect {
         if !stmt.order_by.is_empty() {
             sql.push_str(" ORDER BY ");
 
-            push_joined(
-                &mut sql,
-                &stmt.order_by,
-                ", ",
-                |buf, (column, direction)| {
-                    let dir = match direction {
-                        OrderDirection::Asc => "ASC",
-                        OrderDirection::Desc => "DESC",
-                    };
+            push_joined(&mut sql, &stmt.order_by, ", ", |buf, (column, direction)| {
+                let dir = match direction {
+                    OrderDirection::Asc => "ASC",
+                    OrderDirection::Desc => "DESC",
+                };
 
-                    let _ = write!(buf, "{} {}", self.identifier(column), dir);
-                },
-            );
+                let _ = write!(buf, "{} {}", self.identifier(column), dir);
+            });
         }
 
         append_limit_skip(self, &mut sql, &mut params, stmt.limit, stmt.skip);

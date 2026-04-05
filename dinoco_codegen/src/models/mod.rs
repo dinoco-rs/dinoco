@@ -1,5 +1,7 @@
-use dinoco_compiler::ParsedSchema;
+mod helpers;
+mod relations;
+mod render_dinoco;
+mod render_enums;
+mod render_models;
 
-pub fn generate_models(schema: ParsedSchema) {
-    println!("CODEGEN: generating models...")
-}
+pub use render_models::generate_models;

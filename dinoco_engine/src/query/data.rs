@@ -26,17 +26,10 @@ pub enum Expression {
     Raw(String),
     IsNull(Box<Expression>),
     IsNotNull(Box<Expression>),
-    In {
-        expr: Box<Expression>,
-        values: Vec<DinocoValue>,
-    },
+    In { expr: Box<Expression>, values: Vec<DinocoValue> },
     And(Vec<Expression>),
     Or(Vec<Expression>),
-    BinaryOp {
-        left: Box<Expression>,
-        op: BinaryOperator,
-        right: Box<Expression>,
-    },
+    BinaryOp { left: Box<Expression>, op: BinaryOperator, right: Box<Expression> },
 }
 
 impl Expression {
@@ -49,59 +42,31 @@ impl Expression {
     }
 
     pub fn eq(self, value: impl Into<DinocoValue>) -> Self {
-        Self::BinaryOp {
-            left: Box::new(self),
-            op: BinaryOperator::Eq,
-            right: Box::new(Self::Value(value.into())),
-        }
+        Self::BinaryOp { left: Box::new(self), op: BinaryOperator::Eq, right: Box::new(Self::Value(value.into())) }
     }
 
     pub fn neq(self, value: impl Into<DinocoValue>) -> Self {
-        Self::BinaryOp {
-            left: Box::new(self),
-            op: BinaryOperator::Neq,
-            right: Box::new(Self::Value(value.into())),
-        }
+        Self::BinaryOp { left: Box::new(self), op: BinaryOperator::Neq, right: Box::new(Self::Value(value.into())) }
     }
 
     pub fn gt(self, value: impl Into<DinocoValue>) -> Self {
-        Self::BinaryOp {
-            left: Box::new(self),
-            op: BinaryOperator::Gt,
-            right: Box::new(Self::Value(value.into())),
-        }
+        Self::BinaryOp { left: Box::new(self), op: BinaryOperator::Gt, right: Box::new(Self::Value(value.into())) }
     }
 
     pub fn lt(self, value: impl Into<DinocoValue>) -> Self {
-        Self::BinaryOp {
-            left: Box::new(self),
-            op: BinaryOperator::Lt,
-            right: Box::new(Self::Value(value.into())),
-        }
+        Self::BinaryOp { left: Box::new(self), op: BinaryOperator::Lt, right: Box::new(Self::Value(value.into())) }
     }
 
     pub fn gte(self, value: impl Into<DinocoValue>) -> Self {
-        Self::BinaryOp {
-            left: Box::new(self),
-            op: BinaryOperator::Gte,
-            right: Box::new(Self::Value(value.into())),
-        }
+        Self::BinaryOp { left: Box::new(self), op: BinaryOperator::Gte, right: Box::new(Self::Value(value.into())) }
     }
 
     pub fn lte(self, value: impl Into<DinocoValue>) -> Self {
-        Self::BinaryOp {
-            left: Box::new(self),
-            op: BinaryOperator::Lte,
-            right: Box::new(Self::Value(value.into())),
-        }
+        Self::BinaryOp { left: Box::new(self), op: BinaryOperator::Lte, right: Box::new(Self::Value(value.into())) }
     }
 
     pub fn like(self, value: impl Into<DinocoValue>) -> Self {
-        Self::BinaryOp {
-            left: Box::new(self),
-            op: BinaryOperator::Like,
-            right: Box::new(Self::Value(value.into())),
-        }
+        Self::BinaryOp { left: Box::new(self), op: BinaryOperator::Like, right: Box::new(Self::Value(value.into())) }
     }
 
     pub fn is_null(self) -> Self {
@@ -121,10 +86,7 @@ impl Expression {
     }
 
     pub fn in_values(self, values: Vec<DinocoValue>) -> Self {
-        Self::In {
-            expr: Box::new(self),
-            values,
-        }
+        Self::In { expr: Box::new(self), values }
     }
 }
 

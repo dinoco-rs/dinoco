@@ -51,6 +51,8 @@ pub fn format_table(table: &Table, config: &FormatterConfig) -> String {
                 out.push_str(clean.trim());
             }
 
+            out = out.trim().to_string();
+
             out.push_str(&format_newlines(field.newlines, false));
         }
     }

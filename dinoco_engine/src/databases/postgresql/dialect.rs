@@ -22,12 +22,7 @@ impl AdapterDialect for PostgresDialect {
         true
     }
 
-    fn column_type(
-        &self,
-        col: &ColumnDefinition,
-        is_primary: bool,
-        auto_increment: bool,
-    ) -> String {
+    fn column_type(&self, col: &ColumnDefinition, is_primary: bool, auto_increment: bool) -> String {
         let mut base_type = match &col.col_type {
             ColumnType::Integer => "BIGINT".to_string(),
             ColumnType::Float => "DOUBLE PRECISION".to_string(),

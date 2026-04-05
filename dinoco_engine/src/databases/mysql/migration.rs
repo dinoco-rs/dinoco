@@ -4,26 +4,18 @@ use dinoco_compiler::{ParsedField, ParsedFieldDefault, ParsedSchema};
 
 use crate::{AdapterDialect, DinocoAdapter, MigrationExecutor, MigrationStep, MySqlAdapter};
 use crate::{
-    find_enum_columns, invert_step, map_referential_action, render_add_foreign_key_clause,
-    render_column_definition, render_create_index_sql, render_create_table_sql,
-    render_identifier_list,
+    find_enum_columns, invert_step, map_referential_action, render_add_foreign_key_clause, render_column_definition,
+    render_create_index_sql, render_create_table_sql, render_identifier_list,
 };
 
 impl MigrationExecutor for MySqlAdapter {
-    fn build_migration(
-        &self,
-        steps: &[MigrationStep],
-        schema: &ParsedSchema,
-        reverse: bool,
-    ) -> Vec<String> {
+    fn build_migration(&self, steps: &[MigrationStep], schema: &ParsedSchema, reverse: bool) -> Vec<String> {
         let tables_with_primary_key_drop = steps
             .iter()
             .filter_map(|step| match step {
-                MigrationStep::AlterColumn {
-                    table_name,
-                    old_field,
-                    new_field,
-                } if old_field.is_primary_key && !new_field.is_primary_key => {
+                MigrationStep::AlterColumn { table_name, old_field, new_field }
+                    if old_field.is_primary_key && !new_field.is_primary_key =>
+                {
                     Some(table_name.as_str())
                 }
                 MigrationStep::DropPrimaryKey { table_name, .. } => Some(table_name.as_str()),
@@ -46,10 +38,7 @@ impl MigrationExecutor for MySqlAdapter {
                 if tables_with_primary_key_drop.contains(table_name.as_str())
                     && dropped_primary_keys.insert(table_name.as_str())
                 {
-                    sqls.push(format!(
-                        "ALTER TABLE {} DROP PRIMARY KEY;",
-                        self.dialect().identifier(table_name)
-                    ));
+                    sqls.push(format!("ALTER TABLE {} DROP PRIMARY KEY;", self.dialect().identifier(table_name)));
                 }
             }
 
@@ -67,11 +56,8 @@ impl MigrationExecutor for MySqlAdapter {
                 continue;
             }
 
-            let mut step_sqls = if reverse {
-                self.build_reverse_step(step, schema)
-            } else {
-                self.build_step(step, schema)
-            };
+            let mut step_sqls =
+                if reverse { self.build_reverse_step(step, schema) } else { self.build_step(step, schema) };
 
             for sql in &mut step_sqls {
                 let trimmed = sql.trim_end();
@@ -88,10 +74,7 @@ impl MigrationExecutor for MySqlAdapter {
     }
 
     fn build_reverse_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String> {
-        invert_step(step, schema)
-            .iter()
-            .flat_map(|inverted| self.build_step(inverted, schema))
-            .collect()
+        invert_step(step, schema).iter().flat_map(|inverted| self.build_step(inverted, schema)).collect()
     }
 
     fn build_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String> {
@@ -99,16 +82,10 @@ impl MigrationExecutor for MySqlAdapter {
 
         match step {
             MigrationStep::CreateTable(table) => {
-                vec![replace_mysql_default(&render_create_table_sql(
-                    table, dialect, schema,
-                ))]
+                vec![replace_mysql_default(&render_create_table_sql(table, dialect, schema))]
             }
             MigrationStep::RenameTable { old_name, new_name } => {
-                vec![format!(
-                    "RENAME TABLE {} TO {}",
-                    dialect.identifier(old_name),
-                    dialect.identifier(new_name)
-                )]
+                vec![format!("RENAME TABLE {} TO {}", dialect.identifier(old_name), dialect.identifier(new_name))]
             }
             MigrationStep::DropTable(name) => {
                 vec![format!("DROP TABLE {}", dialect.identifier(name))]
@@ -116,9 +93,7 @@ impl MigrationExecutor for MySqlAdapter {
             MigrationStep::CreateEnum { .. } | MigrationStep::DropEnum(_) => vec![],
             MigrationStep::AlterEnum { name, .. } => find_enum_columns(schema, name)
                 .into_iter()
-                .flat_map(|(table, field)| {
-                    build_mysql_alter_enum_sql(&table.name, field, schema, dialect)
-                })
+                .flat_map(|(table, field)| build_mysql_alter_enum_sql(&table.name, field, schema, dialect))
                 .collect(),
 
             MigrationStep::AddColumn { table_name, field } => vec![format!(
@@ -131,21 +106,12 @@ impl MigrationExecutor for MySqlAdapter {
                 dialect.identifier(table_name),
                 dialect.identifier(&field.name)
             )],
-            MigrationStep::AlterColumn {
-                table_name,
-                old_field,
-                new_field,
-            } => {
+            MigrationStep::AlterColumn { table_name, old_field, new_field } => {
                 let inline_primary_key = !old_field.is_primary_key && new_field.is_primary_key;
                 let mut sqls = vec![format!(
                     "ALTER TABLE {} MODIFY COLUMN {}",
                     dialect.identifier(table_name),
-                    replace_mysql_default(&render_column_definition(
-                        new_field,
-                        dialect,
-                        schema,
-                        inline_primary_key,
-                    ))
+                    replace_mysql_default(&render_column_definition(new_field, dialect, schema, inline_primary_key,))
                 )];
 
                 if old_field.is_unique != new_field.is_unique {
@@ -169,37 +135,20 @@ impl MigrationExecutor for MySqlAdapter {
 
                 sqls
             }
-            MigrationStep::RenameColumn {
-                table_name,
-                old_name,
-                new_name,
-            } => vec![format!(
+            MigrationStep::RenameColumn { table_name, old_name, new_name } => vec![format!(
                 "ALTER TABLE {} RENAME COLUMN {} TO {}",
                 dialect.identifier(table_name),
                 dialect.identifier(old_name),
                 dialect.identifier(new_name)
             )],
 
-            MigrationStep::AddPrimaryKey {
-                table_name,
-                columns,
-                ..
-            } => vec![format!(
+            MigrationStep::AddPrimaryKey { table_name, columns, .. } => vec![format!(
                 "ALTER TABLE {} ADD PRIMARY KEY ({})",
                 dialect.identifier(table_name),
-                render_identifier_list(
-                    &columns
-                        .iter()
-                        .map(|column| column.as_str())
-                        .collect::<Vec<_>>(),
-                    dialect
-                )
+                render_identifier_list(&columns.iter().map(|column| column.as_str()).collect::<Vec<_>>(), dialect)
             )],
             MigrationStep::DropPrimaryKey { table_name, .. } => {
-                vec![format!(
-                    "ALTER TABLE {} DROP PRIMARY KEY",
-                    dialect.identifier(table_name)
-                )]
+                vec![format!("ALTER TABLE {} DROP PRIMARY KEY", dialect.identifier(table_name))]
             }
 
             MigrationStep::AddForeignKey {
@@ -220,31 +169,18 @@ impl MigrationExecutor for MySqlAdapter {
                 constraint_name,
                 dialect,
             )],
-            MigrationStep::DropForeignKey {
-                table_name,
-                constraint_name,
-            } => vec![format!(
+            MigrationStep::DropForeignKey { table_name, constraint_name } => vec![format!(
                 "ALTER TABLE {} DROP FOREIGN KEY {}",
                 dialect.identifier(table_name),
                 dialect.identifier(constraint_name)
             )],
 
-            MigrationStep::CreateIndex {
-                table_name,
-                columns,
-                index_name,
-                is_unique,
-            } => vec![render_create_index_sql(
-                table_name, columns, index_name, *is_unique, dialect,
-            )],
-            MigrationStep::DropIndex {
-                table_name,
-                index_name,
-            } => vec![format!(
-                "DROP INDEX {} ON {}",
-                dialect.identifier(index_name),
-                dialect.identifier(table_name)
-            )],
+            MigrationStep::CreateIndex { table_name, columns, index_name, is_unique } => {
+                vec![render_create_index_sql(table_name, columns, index_name, *is_unique, dialect)]
+            }
+            MigrationStep::DropIndex { table_name, index_name } => {
+                vec![format!("DROP INDEX {} ON {}", dialect.identifier(index_name), dialect.identifier(table_name))]
+            }
         }
     }
 }

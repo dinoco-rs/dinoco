@@ -593,6 +593,7 @@ name = "dinoco_cli"
 version = "0.0.1"
 dependencies = [
  "bincode",
+ "chrono",
  "clap",
  "colored",
  "dinoco_codegen",
@@ -628,6 +629,7 @@ dependencies = [
 name = "dinoco_derives"
 version = "0.0.1"
 dependencies = [
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn",
