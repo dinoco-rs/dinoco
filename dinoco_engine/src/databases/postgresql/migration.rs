@@ -249,18 +249,21 @@ fn build_postgres_alter_enum_sql(
     for (table, field) in find_enum_columns(schema, enum_name) {
         let table_ident = dialect.identifier(&table.name);
         let column_ident = dialect.identifier(&field.name);
+        let using_expression = build_postgres_enum_using_expression(&field, schema, dialect)
+            .unwrap_or_else(|| {
+                format!("{}::text::{}", column_ident, dialect.identifier(enum_name))
+            });
 
         sqls.push(format!(
             "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
             table_ident, column_ident
         ));
         sqls.push(format!(
-            "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::text::{}",
+            "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}",
             table_ident,
             column_ident,
             dialect.identifier(enum_name),
-            column_ident,
-            dialect.identifier(enum_name)
+            using_expression
         ));
 
         if let Some(default_sql) = render_column_default_sql(field, dialect, schema) {
@@ -274,6 +277,46 @@ fn build_postgres_alter_enum_sql(
     sqls.push(format!("DROP TYPE {}", dialect.identifier(&old_type_name)));
 
     sqls
+}
+
+fn build_postgres_enum_using_expression(
+    field: &ParsedField,
+    schema: &ParsedSchema,
+    dialect: &crate::PostgresDialect,
+) -> Option<String> {
+    let dinoco_compiler::ParsedFieldType::Enum(enum_name) = &field.field_type else {
+        return None;
+    };
+
+    let valid_values = schema
+        .enums
+        .iter()
+        .find(|parsed_enum| parsed_enum.name == *enum_name)?
+        .values
+        .iter()
+        .map(|value| dialect.literal_string(value))
+        .collect::<Vec<_>>();
+
+    if valid_values.is_empty() {
+        return None;
+    }
+
+    let fallback = match &field.default_value {
+        dinoco_compiler::ParsedFieldDefault::EnumValue(value) => dialect.literal_string(value),
+        dinoco_compiler::ParsedFieldDefault::NotDefined if field.is_optional => "NULL".to_string(),
+        _ => return None,
+    };
+
+    let column_ident = dialect.identifier(&field.name);
+
+    Some(format!(
+        "(CASE WHEN {}::text IN ({}) THEN {}::text ELSE {} END)::{}",
+        column_ident,
+        valid_values.join(", "),
+        column_ident,
+        fallback,
+        dialect.identifier(enum_name)
+    ))
 }
 
 fn render_column_default_sql(

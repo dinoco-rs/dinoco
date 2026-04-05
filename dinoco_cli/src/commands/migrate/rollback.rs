@@ -11,7 +11,10 @@ use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig};
 use dinoco_compiler::{compile, render_error};
 
 use dinoco_engine::calculate_diff;
-use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoResult, MigrationExecutor, MySqlAdapter, PostgresAdapter, SqliteAdapter};
+use dinoco_engine::{
+    DinocoAdapter, DinocoAdapterHandler, DinocoResult, MigrationExecutor, MySqlAdapter,
+    PostgresAdapter, SqliteAdapter,
+};
 
 use crate::{create_migration_table, decode_schema, delete_migration, get_last_two_migrations};
 
@@ -19,7 +22,11 @@ pub async fn rollback_migration() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
 
     if !Path::new(schema_path).exists() {
-        println!("\n{} {}\n", "✖".red().bold(), "Dinoco project not initialized.".bold());
+        println!(
+            "\n{} {}\n",
+            "✖".red().bold(),
+            "Dinoco project not initialized.".bold()
+        );
         return Ok(());
     }
 
@@ -33,7 +40,11 @@ pub async fn rollback_migration() -> DinocoResult<()> {
         Ok(content) => content,
         Err(e) => {
             pb.finish_and_clear();
-            println!("\n{} {}\n", "✖".red().bold(), "Failed to read schema file.".bold());
+            println!(
+                "\n{} {}\n",
+                "✖".red().bold(),
+                "Failed to read schema file.".bold()
+            );
             println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             return Ok(());
         }
@@ -42,13 +53,21 @@ pub async fn rollback_migration() -> DinocoResult<()> {
     let parsed = match compile(&source) {
         Ok((_, parsed)) => {
             pb.suspend(|| {
-                println!("{} {}", "✔".green().bold(), "Schema compiled successfully.".white());
+                println!(
+                    "{} {}",
+                    "✔".green().bold(),
+                    "Schema compiled successfully.".white()
+                );
             });
             parsed
         }
         Err(errs) => {
             pb.finish_and_clear();
-            println!("\n{} {}\n", "✖".red().bold(), format!("Schema compilation failed ({} error(s)).", errs.len()).bold());
+            println!(
+                "\n{} {}\n",
+                "✖".red().bold(),
+                format!("Schema compilation failed ({} error(s)).", errs.len()).bold()
+            );
 
             for err in errs {
                 println!("{}", render_error(&err, &source));
@@ -59,14 +78,22 @@ pub async fn rollback_migration() -> DinocoResult<()> {
     };
 
     let (url, db_type) = {
-        let ParsedConfig { database, database_url, .. } = &parsed.config;
+        let ParsedConfig {
+            database,
+            database_url,
+            ..
+        } = &parsed.config;
 
         let url = match database_url {
             ConnectionUrl::Env(var_name) => match env::var(var_name) {
                 Ok(val) => val,
                 Err(_) => {
                     pb.finish_and_clear();
-                    println!("\n{} {}\n", "✖".red().bold(), "Missing environment variable.".bold());
+                    println!(
+                        "\n{} {}\n",
+                        "✖".red().bold(),
+                        "Missing environment variable.".bold()
+                    );
                     println!("  {} {}", "→ Variable:".yellow().bold(), var_name.cyan());
                     return Ok(());
                 }
@@ -82,35 +109,65 @@ pub async fn rollback_migration() -> DinocoResult<()> {
     match db_type {
         Database::Postgresql => match PostgresAdapter::connect(url).await {
             Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+                pb.suspend(|| {
+                    println!(
+                        "{} {}",
+                        "✔".green().bold(),
+                        "Connected to database.".white()
+                    )
+                });
                 execute_rollback(adapter, &pb).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+                println!(
+                    "\n{} {}\n",
+                    "✖".red().bold(),
+                    "Database connection failed.".bold()
+                );
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
         },
         Database::Mysql => match MySqlAdapter::connect(url).await {
             Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+                pb.suspend(|| {
+                    println!(
+                        "{} {}",
+                        "✔".green().bold(),
+                        "Connected to database.".white()
+                    )
+                });
 
                 execute_rollback(adapter, &pb).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+                println!(
+                    "\n{} {}\n",
+                    "✖".red().bold(),
+                    "Database connection failed.".bold()
+                );
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
         },
         Database::Sqlite => match SqliteAdapter::connect(url).await {
             Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+                pb.suspend(|| {
+                    println!(
+                        "{} {}",
+                        "✔".green().bold(),
+                        "Connected to database.".white()
+                    )
+                });
                 execute_rollback(adapter, &pb).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+                println!(
+                    "\n{} {}\n",
+                    "✖".red().bold(),
+                    "Database connection failed.".bold()
+                );
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
         },
@@ -126,11 +183,17 @@ where
     pb.set_message("Fetching migration history...");
 
     let tables = adapter.fetch_tables().await?;
-    let has_history_table = tables.iter().any(|table| table.name == "_dinoco_migrations");
+    let has_history_table = tables
+        .iter()
+        .any(|table| table.name == "_dinoco_migrations");
 
     if !has_history_table {
         pb.finish_and_clear();
-        println!("{} {}", "✔".green().bold(), "No migrations found to rollback.".white());
+        println!(
+            "{} {}",
+            "✔".green().bold(),
+            "No migrations found to rollback.".white()
+        );
         return Ok(());
     }
 
@@ -139,20 +202,35 @@ where
     pb.finish_and_clear();
 
     if migrations.is_empty() {
-        println!("{} {}", "✔".green().bold(), "No migrations found to rollback.".white());
+        println!(
+            "{} {}",
+            "✔".green().bold(),
+            "No migrations found to rollback.".white()
+        );
         return Ok(());
     }
 
     let current_migration = migrations.remove(0);
 
-    println!("{} {}", "✔".green().bold(), format!("Found migration to rollback: '{}'.", current_migration.name).white());
+    println!(
+        "{} {}",
+        "✔".green().bold(),
+        format!("Found migration to rollback: '{}'.", current_migration.name).white()
+    );
 
-    match Confirm::new(&format!("Are you sure you want to rollback '{}'?", current_migration.name))
-        .with_default(false)
-        .prompt()
+    match Confirm::new(&format!(
+        "Are you sure you want to rollback '{}'?",
+        current_migration.name
+    ))
+    .with_default(false)
+    .prompt()
     {
         Ok(true) => {
-            println!("{} {}", "⚠".yellow().bold(), "Rolling back migration...".yellow());
+            println!(
+                "{} {}",
+                "⚠".yellow().bold(),
+                "Rolling back migration...".yellow()
+            );
         }
         _ => {
             println!("{} {}", "✗".red().bold(), "Rollback cancelled.".white());
@@ -171,18 +249,46 @@ where
         }
 
         delete_migration(&adapter, &current_migration.name).await?;
-        println!("{} {}", "✔".green().bold(), "Rollback applied to database.".white());
-        println!("{} {}", "✔".green().bold(), "Migration history updated.".white());
-        println!("{} {}", "ℹ".blue(), "Local migration files were kept intact.".bright_black());
+        println!(
+            "{} {}",
+            "✔".green().bold(),
+            "Rollback applied to database.".white()
+        );
+        println!(
+            "{} {}",
+            "✔".green().bold(),
+            "Migration history updated.".white()
+        );
+        println!(
+            "{} {}",
+            "ℹ".blue(),
+            "Local migration files were kept intact.".bright_black()
+        );
     } else {
         adapter.reset_database().await?;
         create_migration_table(&adapter).await?;
-        println!("{} {}", "✔".green().bold(), "Database reset to an empty state.".white());
-        println!("{} {}", "✔".green().bold(), "Migration history cleared.".white());
-        println!("{} {}", "ℹ".blue(), "Local migration files were kept intact.".bright_black());
+        println!(
+            "{} {}",
+            "✔".green().bold(),
+            "Database reset to an empty state.".white()
+        );
+        println!(
+            "{} {}",
+            "✔".green().bold(),
+            "Migration history cleared.".white()
+        );
+        println!(
+            "{} {}",
+            "ℹ".blue(),
+            "Local migration files were kept intact.".bright_black()
+        );
     }
 
-    println!("{} {}", "✔".green().bold(), "Rollback completed successfully!".white());
+    println!(
+        "{} {}",
+        "✔".green().bold(),
+        "Rollback completed successfully!".white()
+    );
 
     Ok(())
 }

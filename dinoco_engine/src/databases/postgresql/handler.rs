@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use async_trait::async_trait;
 
 use super::PostgresAdapter;
@@ -9,11 +11,31 @@ use crate::{
 #[async_trait]
 impl DinocoAdapterHandler for PostgresAdapter {
     async fn reset_database(&self) -> DinocoResult<()> {
+        let foreign_keys = self.fetch_foreign_keys().await?;
         let tables = self.fetch_tables().await?;
         let enums = self.fetch_enums().await?;
+        let mut dropped_constraints = BTreeSet::new();
+
+        for foreign_key in foreign_keys {
+            let key = (
+                foreign_key.table_name.clone(),
+                foreign_key.constraint_name.clone(),
+            );
+
+            if !dropped_constraints.insert(key) {
+                continue;
+            }
+
+            let query = format!(
+                "ALTER TABLE \"{}\" DROP CONSTRAINT IF EXISTS \"{}\";",
+                foreign_key.table_name, foreign_key.constraint_name
+            );
+
+            self.execute(&query, &[]).await?;
+        }
 
         for table in tables {
-            let query = format!("DROP TABLE IF EXISTS \"{}\" CASCADE;", table.name);
+            let query = format!("DROP TABLE IF EXISTS \"{}\";", table.name);
 
             self.execute(&query, &[]).await?;
         }
@@ -117,7 +139,8 @@ impl DinocoAdapterHandler for PostgresAdapter {
             JOIN pg_namespace n ON n.oid = t.relnamespace
             WHERE t.relkind = 'r' 
               AND n.nspname = 'public'
-              AND t.relname != '_dinoco_migrations';
+              AND t.relname != '_dinoco_migrations'
+              AND NOT ix.indisprimary;
         ";
 
         self.query_as::<DatabaseIndex>(query, &[]).await

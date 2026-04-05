@@ -18,7 +18,13 @@ where
     }
 }
 
-pub fn append_limit_skip<D: AdapterDialect + ?Sized>(dialect: &D, sql: &mut String, params: &mut Vec<DinocoValue>, limit: Option<usize>, skip: Option<usize>) {
+pub fn append_limit_skip<D: AdapterDialect + ?Sized>(
+    dialect: &D,
+    sql: &mut String,
+    params: &mut Vec<DinocoValue>,
+    limit: Option<usize>,
+    skip: Option<usize>,
+) {
     match (limit, skip) {
         (Some(limit), Some(skip)) => {
             params.push(DinocoValue::Integer(limit as i64));
@@ -41,13 +47,24 @@ pub fn append_limit_skip<D: AdapterDialect + ?Sized>(dialect: &D, sql: &mut Stri
     }
 }
 
-pub fn render_condition_group_into<D: AdapterDialect + ?Sized>(dialect: &D, conditions: &[Expression], params: &mut Vec<DinocoValue>, joiner: &str, buf: &mut String) {
+pub fn render_condition_group_into<D: AdapterDialect + ?Sized>(
+    dialect: &D,
+    conditions: &[Expression],
+    params: &mut Vec<DinocoValue>,
+    joiner: &str,
+    buf: &mut String,
+) {
     push_joined(buf, conditions, joiner, |b, condition| {
         render_expression_into(dialect, condition, params, b);
     });
 }
 
-pub fn render_expression_into<D: AdapterDialect + ?Sized>(dialect: &D, expression: &Expression, params: &mut Vec<DinocoValue>, buf: &mut String) {
+pub fn render_expression_into<D: AdapterDialect + ?Sized>(
+    dialect: &D,
+    expression: &Expression,
+    params: &mut Vec<DinocoValue>,
+    buf: &mut String,
+) {
     match expression {
         Expression::Column(name) => render_query_identifier_into(dialect, name, buf),
         Expression::Value(value) => {
@@ -129,8 +146,17 @@ pub fn render_expression_into<D: AdapterDialect + ?Sized>(dialect: &D, expressio
     }
 }
 
-pub fn render_query_identifier_into<D: AdapterDialect + ?Sized>(dialect: &D, value: &str, buf: &mut String) {
-    if value == "*" || value.contains(' ') || value.contains('(') || value.contains(')') || value.contains(',') {
+pub fn render_query_identifier_into<D: AdapterDialect + ?Sized>(
+    dialect: &D,
+    value: &str,
+    buf: &mut String,
+) {
+    if value == "*"
+        || value.contains(' ')
+        || value.contains('(')
+        || value.contains(')')
+        || value.contains(',')
+    {
         buf.push_str(value);
 
         return;

@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use async_trait::async_trait;
 
 use super::MySqlAdapter;
@@ -9,7 +11,28 @@ use crate::{
 #[async_trait]
 impl DinocoAdapterHandler for MySqlAdapter {
     async fn reset_database(&self) -> DinocoResult<()> {
+        let foreign_keys = self.fetch_foreign_keys().await?;
+        let mut dropped_constraints = BTreeSet::new();
+
         self.execute("SET FOREIGN_KEY_CHECKS = 0;", &[]).await?;
+
+        for foreign_key in foreign_keys {
+            let key = (
+                foreign_key.table_name.clone(),
+                foreign_key.constraint_name.clone(),
+            );
+
+            if !dropped_constraints.insert(key) {
+                continue;
+            }
+
+            let query = format!(
+                "ALTER TABLE `{}` DROP FOREIGN KEY `{}`;",
+                foreign_key.table_name, foreign_key.constraint_name
+            );
+
+            self.execute(&query, &[]).await?;
+        }
 
         let tables = self.fetch_tables().await?;
 

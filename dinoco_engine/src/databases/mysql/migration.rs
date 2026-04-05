@@ -1,3 +1,7 @@
+use std::collections::HashSet;
+
+use dinoco_compiler::{ParsedField, ParsedFieldDefault, ParsedSchema};
+
 use crate::{AdapterDialect, DinocoAdapter, MigrationExecutor, MigrationStep, MySqlAdapter};
 use crate::{
     find_enum_columns, invert_step, map_referential_action, render_add_foreign_key_clause,
@@ -5,9 +9,84 @@ use crate::{
     render_identifier_list,
 };
 
-use dinoco_compiler::ParsedSchema;
-
 impl MigrationExecutor for MySqlAdapter {
+    fn build_migration(
+        &self,
+        steps: &[MigrationStep],
+        schema: &ParsedSchema,
+        reverse: bool,
+    ) -> Vec<String> {
+        let tables_with_primary_key_drop = steps
+            .iter()
+            .filter_map(|step| match step {
+                MigrationStep::AlterColumn {
+                    table_name,
+                    old_field,
+                    new_field,
+                } if old_field.is_primary_key && !new_field.is_primary_key => {
+                    Some(table_name.as_str())
+                }
+                MigrationStep::DropPrimaryKey { table_name, .. } => Some(table_name.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        let dropped_tables = steps
+            .iter()
+            .filter_map(|step| match step {
+                MigrationStep::DropTable(table_name) => Some(table_name.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        let mut dropped_primary_keys = HashSet::new();
+
+        let mut sqls = Vec::new();
+
+        for step in steps {
+            if let MigrationStep::AlterColumn { table_name, .. } = step {
+                if tables_with_primary_key_drop.contains(table_name.as_str())
+                    && dropped_primary_keys.insert(table_name.as_str())
+                {
+                    sqls.push(format!(
+                        "ALTER TABLE {} DROP PRIMARY KEY;",
+                        self.dialect().identifier(table_name)
+                    ));
+                }
+            }
+
+            if matches!(
+                step,
+                MigrationStep::DropForeignKey { table_name, .. } if dropped_tables.contains(table_name.as_str())
+            ) {
+                continue;
+            }
+
+            if matches!(
+                step,
+                MigrationStep::DropPrimaryKey { table_name, .. } if tables_with_primary_key_drop.contains(table_name.as_str())
+            ) {
+                continue;
+            }
+
+            let mut step_sqls = if reverse {
+                self.build_reverse_step(step, schema)
+            } else {
+                self.build_step(step, schema)
+            };
+
+            for sql in &mut step_sqls {
+                let trimmed = sql.trim_end();
+
+                if !trimmed.ends_with(';') {
+                    *sql = format!("{};", trimmed);
+                }
+            }
+
+            sqls.extend(step_sqls);
+        }
+
+        sqls
+    }
+
     fn build_reverse_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String> {
         invert_step(step, schema)
             .iter()
@@ -37,14 +116,8 @@ impl MigrationExecutor for MySqlAdapter {
             MigrationStep::CreateEnum { .. } | MigrationStep::DropEnum(_) => vec![],
             MigrationStep::AlterEnum { name, .. } => find_enum_columns(schema, name)
                 .into_iter()
-                .map(|(table, field)| {
-                    format!(
-                        "ALTER TABLE {} MODIFY COLUMN {}",
-                        dialect.identifier(&table.name),
-                        replace_mysql_default(&render_column_definition(
-                            field, dialect, schema, true
-                        ))
-                    )
+                .flat_map(|(table, field)| {
+                    build_mysql_alter_enum_sql(&table.name, field, schema, dialect)
                 })
                 .collect(),
 
@@ -63,11 +136,15 @@ impl MigrationExecutor for MySqlAdapter {
                 old_field,
                 new_field,
             } => {
+                let inline_primary_key = !old_field.is_primary_key && new_field.is_primary_key;
                 let mut sqls = vec![format!(
                     "ALTER TABLE {} MODIFY COLUMN {}",
                     dialect.identifier(table_name),
                     replace_mysql_default(&render_column_definition(
-                        new_field, dialect, schema, true
+                        new_field,
+                        dialect,
+                        schema,
+                        inline_primary_key,
                     ))
                 )];
 
@@ -174,6 +251,79 @@ impl MigrationExecutor for MySqlAdapter {
 
 fn unique_key_name(table_name: &str, column_name: &str) -> String {
     format!("uq_{}_{}", table_name, column_name)
+}
+
+fn build_mysql_alter_enum_sql(
+    table_name: &str,
+    field: &ParsedField,
+    schema: &ParsedSchema,
+    dialect: &crate::MySqlDialect,
+) -> Vec<String> {
+    let mut sqls = Vec::new();
+
+    if let Some(update_sql) = build_mysql_enum_cleanup_sql(table_name, field, schema, dialect) {
+        sqls.push(update_sql);
+    }
+
+    sqls.push(format!(
+        "ALTER TABLE {} MODIFY COLUMN {}",
+        dialect.identifier(table_name),
+        replace_mysql_default(&render_column_definition(field, dialect, schema, true))
+    ));
+
+    sqls
+}
+
+fn build_mysql_enum_cleanup_sql(
+    table_name: &str,
+    field: &ParsedField,
+    schema: &ParsedSchema,
+    dialect: &crate::MySqlDialect,
+) -> Option<String> {
+    let valid_values = enum_valid_values(field, schema)?;
+    let fallback = mysql_enum_fallback_sql(field, dialect)?;
+
+    Some(format!(
+        "UPDATE {} SET {} = CASE WHEN {} IN ({}) THEN {} ELSE {} END WHERE {} IS NOT NULL AND {} NOT IN ({})",
+        dialect.identifier(table_name),
+        dialect.identifier(&field.name),
+        dialect.identifier(&field.name),
+        valid_values,
+        dialect.identifier(&field.name),
+        fallback,
+        dialect.identifier(&field.name),
+        dialect.identifier(&field.name),
+        valid_values
+    ))
+}
+
+fn enum_valid_values(field: &ParsedField, schema: &ParsedSchema) -> Option<String> {
+    let dinoco_compiler::ParsedFieldType::Enum(enum_name) = &field.field_type else {
+        return None;
+    };
+
+    let values = schema
+        .enums
+        .iter()
+        .find(|parsed_enum| parsed_enum.name == *enum_name)?
+        .values
+        .iter()
+        .map(|value| format!("'{}'", value.replace('\'', "''")))
+        .collect::<Vec<_>>();
+
+    if values.is_empty() {
+        return None;
+    }
+
+    Some(values.join(", "))
+}
+
+fn mysql_enum_fallback_sql(field: &ParsedField, dialect: &crate::MySqlDialect) -> Option<String> {
+    match &field.default_value {
+        ParsedFieldDefault::EnumValue(value) => Some(dialect.literal_string(value)),
+        ParsedFieldDefault::NotDefined if field.is_optional => Some("NULL".to_string()),
+        _ => None,
+    }
 }
 
 fn replace_mysql_default(sql: &str) -> String {

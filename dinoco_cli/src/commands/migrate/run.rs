@@ -7,7 +7,9 @@ use colored::*;
 use indicatif::ProgressBar;
 
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
+use dinoco_engine::{
+    DinocoAdapter, DinocoAdapterHandler, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter,
+};
 
 use crate::{create_migration_table, encode_schema, get_all_migrations, insert_migration};
 
@@ -15,11 +17,19 @@ pub async fn run_migrations() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
 
     if !Path::new(schema_path).exists() {
-        println!("\n{} {}\n", "✖".red().bold(), "Dinoco project not initialized.".bold());
+        println!(
+            "\n{} {}\n",
+            "✖".red().bold(),
+            "Dinoco project not initialized.".bold()
+        );
         return Ok(());
     }
 
-    println!("{} {}", "✔".green().bold(), "Starting migrations run...".white());
+    println!(
+        "{} {}",
+        "✔".green().bold(),
+        "Starting migrations run...".white()
+    );
 
     let pb = ProgressBar::new_spinner();
     pb.enable_steady_tick(Duration::from_millis(80));
@@ -29,7 +39,11 @@ pub async fn run_migrations() -> DinocoResult<()> {
         Ok(content) => content,
         Err(e) => {
             pb.finish_and_clear();
-            println!("\n{} {}\n", "✖".red().bold(), "Failed to read schema file.".bold());
+            println!(
+                "\n{} {}\n",
+                "✖".red().bold(),
+                "Failed to read schema file.".bold()
+            );
             println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             return Ok(());
         }
@@ -38,13 +52,21 @@ pub async fn run_migrations() -> DinocoResult<()> {
     let parsed = match compile(&source) {
         Ok((_, parsed)) => {
             pb.suspend(|| {
-                println!("{} {}", "✔".green().bold(), "Schema compiled successfully.".white());
+                println!(
+                    "{} {}",
+                    "✔".green().bold(),
+                    "Schema compiled successfully.".white()
+                );
             });
             parsed
         }
         Err(errs) => {
             pb.finish_and_clear();
-            println!("\n{} {}\n", "✖".red().bold(), format!("Schema compilation failed ({} error(s)).", errs.len()).bold());
+            println!(
+                "\n{} {}\n",
+                "✖".red().bold(),
+                format!("Schema compilation failed ({} error(s)).", errs.len()).bold()
+            );
 
             for err in errs {
                 println!("{}", render_error(&err, &source));
@@ -55,14 +77,22 @@ pub async fn run_migrations() -> DinocoResult<()> {
     };
 
     let (url, db_type) = {
-        let ParsedConfig { database, database_url, .. } = &parsed.config;
+        let ParsedConfig {
+            database,
+            database_url,
+            ..
+        } = &parsed.config;
 
         let url = match database_url {
             ConnectionUrl::Env(var_name) => match env::var(var_name) {
                 Ok(val) => val,
                 Err(_) => {
                     pb.finish_and_clear();
-                    println!("\n{} {}\n", "✖".red().bold(), "Missing environment variable.".bold());
+                    println!(
+                        "\n{} {}\n",
+                        "✖".red().bold(),
+                        "Missing environment variable.".bold()
+                    );
                     println!("  {} {}", "→ Variable:".yellow().bold(), var_name.cyan());
                     return Ok(());
                 }
@@ -78,34 +108,64 @@ pub async fn run_migrations() -> DinocoResult<()> {
     match db_type {
         Database::Postgresql => match PostgresAdapter::connect(url).await {
             Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+                pb.suspend(|| {
+                    println!(
+                        "{} {}",
+                        "✔".green().bold(),
+                        "Connected to database.".white()
+                    )
+                });
                 execute_run(adapter, &pb, parsed).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+                println!(
+                    "\n{} {}\n",
+                    "✖".red().bold(),
+                    "Database connection failed.".bold()
+                );
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
         },
         Database::Mysql => match MySqlAdapter::connect(url).await {
             Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+                pb.suspend(|| {
+                    println!(
+                        "{} {}",
+                        "✔".green().bold(),
+                        "Connected to database.".white()
+                    )
+                });
                 execute_run(adapter, &pb, parsed).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+                println!(
+                    "\n{} {}\n",
+                    "✖".red().bold(),
+                    "Database connection failed.".bold()
+                );
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
         },
         Database::Sqlite => match SqliteAdapter::connect(url).await {
             Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+                pb.suspend(|| {
+                    println!(
+                        "{} {}",
+                        "✔".green().bold(),
+                        "Connected to database.".white()
+                    )
+                });
                 execute_run(adapter, &pb, parsed).await?;
             }
             Err(e) => {
                 pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+                println!(
+                    "\n{} {}\n",
+                    "✖".red().bold(),
+                    "Database connection failed.".bold()
+                );
                 println!("  {} {}", "Reason:".yellow().bold(), e.to_string().white());
             }
         },
@@ -114,14 +174,20 @@ pub async fn run_migrations() -> DinocoResult<()> {
     Ok(())
 }
 
-async fn execute_run<T>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()>
+async fn execute_run<T>(
+    adapter: T,
+    pb: &ProgressBar,
+    parsed_schema: ParsedSchema,
+) -> DinocoResult<()>
 where
     T: DinocoAdapter + DinocoAdapterHandler,
 {
     pb.set_message("Checking migration history...");
 
     let tables = adapter.fetch_tables().await?;
-    let has_history_table = tables.iter().any(|table| table.name == "_dinoco_migrations");
+    let has_history_table = tables
+        .iter()
+        .any(|table| table.name == "_dinoco_migrations");
 
     if !has_history_table {
         pb.set_message("Initializing migration history...");
@@ -129,12 +195,19 @@ where
     }
 
     let applied_migrations = get_all_migrations(&adapter).await?;
-    let applied_names: Vec<String> = applied_migrations.into_iter().map(|migration| migration.name).collect();
+    let applied_names: Vec<String> = applied_migrations
+        .into_iter()
+        .map(|migration| migration.name)
+        .collect();
 
     let migrations_dir = Path::new("dinoco/migrations");
     if !migrations_dir.exists() {
         pb.finish_and_clear();
-        println!("{} {}", "✔".green().bold(), "No local migrations directory was found.".white());
+        println!(
+            "{} {}",
+            "✔".green().bold(),
+            "No local migrations directory was found.".white()
+        );
         return Ok(());
     }
 
@@ -152,16 +225,27 @@ where
 
     local_folders.sort();
 
-    let pending: Vec<String> = local_folders.into_iter().filter(|migration| !applied_names.contains(migration)).collect();
+    let pending: Vec<String> = local_folders
+        .into_iter()
+        .filter(|migration| !applied_names.contains(migration))
+        .collect();
 
     pb.finish_and_clear();
 
     if pending.is_empty() {
-        println!("{} {}", "✔".green().bold(), "The database is already up to date.".white());
+        println!(
+            "{} {}",
+            "✔".green().bold(),
+            "The database is already up to date.".white()
+        );
         return Ok(());
     }
 
-    println!("{} {}", "✔".green().bold(), format!("Found {} pending migration(s).", pending.len()).white());
+    println!(
+        "{} {}",
+        "✔".green().bold(),
+        format!("Found {} pending migration(s).", pending.len()).white()
+    );
 
     let schema_bytes = encode_schema(parsed_schema);
 
@@ -174,7 +258,11 @@ where
         let sql_content = match fs::read_to_string(&sql_path) {
             Ok(content) => content,
             Err(err) => {
-                println!("    {} {}", "✖".red(), "Failed to read migration SQL.".bold());
+                println!(
+                    "    {} {}",
+                    "✖".red(),
+                    "Failed to read migration SQL.".bold()
+                );
                 println!("    {} {}", "Path:".yellow(), sql_path.display());
                 println!("    {} {}", "Reason:".red(), err);
 
@@ -189,7 +277,12 @@ where
             }
 
             if let Err(err) = adapter.execute(clean_statement, &[]).await {
-                println!("    {} {} {}", "✖".red(), "Failed to execute migration:".bold(), migration_name.yellow());
+                println!(
+                    "    {} {} {}",
+                    "✖".red(),
+                    "Failed to execute migration:".bold(),
+                    migration_name.yellow()
+                );
                 println!("    {} {}", "Statement:".yellow(), clean_statement.cyan());
                 println!("    {} {}", "Reason:".red(), err);
 
@@ -201,7 +294,11 @@ where
         println!("    {} Applied successfully.", "✔".green());
     }
 
-    println!("\n{} {}", "✔".green().bold(), "All local migrations were applied successfully!".white());
+    println!(
+        "\n{} {}",
+        "✔".green().bold(),
+        "All local migrations were applied successfully!".white()
+    );
 
     Ok(())
 }

@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{AdapterDialect, DinocoAdapter, MigrationExecutor, MigrationStep, SqliteAdapter};
 use crate::{
-    find_enum_columns, find_table_in_schema, invert_step, render_column_definition, render_create_index_sql, render_sqlite_create_table_sql, render_sqlite_rebuild_table_sql,
+    find_enum_columns, find_table_in_schema, invert_step, render_column_definition,
+    render_create_index_sql, render_sqlite_create_table_sql, render_sqlite_rebuild_table_sql,
     render_sqlite_rebuild_table_sql_with_copy_mappings,
 };
 
@@ -13,7 +14,12 @@ struct SqliteRebuildPlan {
 }
 
 impl MigrationExecutor for SqliteAdapter {
-    fn build_migration(&self, steps: &[MigrationStep], schema: &ParsedSchema, reverse: bool) -> Vec<String> {
+    fn build_migration(
+        &self,
+        steps: &[MigrationStep],
+        schema: &ParsedSchema,
+        reverse: bool,
+    ) -> Vec<String> {
         if reverse {
             let mut sqls = Vec::new();
 
@@ -83,7 +89,10 @@ impl MigrationExecutor for SqliteAdapter {
     }
 
     fn build_reverse_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String> {
-        invert_step(step, schema).iter().flat_map(|inverted| self.build_step(inverted, schema)).collect()
+        invert_step(step, schema)
+            .iter()
+            .flat_map(|inverted| self.build_step(inverted, schema))
+            .collect()
     }
 
     fn build_step(&self, step: &MigrationStep, schema: &ParsedSchema) -> Vec<String> {
@@ -91,9 +100,15 @@ impl MigrationExecutor for SqliteAdapter {
 
         match step {
             MigrationStep::CreateTable(table) => {
-                vec![replace_sqlite_default(&render_sqlite_create_table_sql(table, dialect, schema))]
+                vec![replace_sqlite_default(&render_sqlite_create_table_sql(
+                    table, dialect, schema,
+                ))]
             }
-            MigrationStep::RenameTable { old_name, new_name } => vec![format!("ALTER TABLE {} RENAME TO {}", dialect.identifier(old_name), dialect.identifier(new_name))],
+            MigrationStep::RenameTable { old_name, new_name } => vec![format!(
+                "ALTER TABLE {} RENAME TO {}",
+                dialect.identifier(old_name),
+                dialect.identifier(new_name)
+            )],
             MigrationStep::DropTable(name) => {
                 vec![format!("DROP TABLE {}", dialect.identifier(name))]
             }
@@ -101,7 +116,9 @@ impl MigrationExecutor for SqliteAdapter {
             MigrationStep::CreateEnum { .. } | MigrationStep::DropEnum(_) => vec![],
             MigrationStep::AlterEnum { name, .. } => find_enum_columns(schema, name)
                 .into_iter()
-                .flat_map(|(table, _)| rebuild_table_sql(&table.name, schema, table_column_names(table)))
+                .flat_map(|(table, _)| {
+                    rebuild_table_sql(&table.name, schema, table_column_names(table))
+                })
                 .collect(),
 
             MigrationStep::AddColumn { table_name, field } => {
@@ -118,7 +135,9 @@ impl MigrationExecutor for SqliteAdapter {
                     vec![format!(
                         "ALTER TABLE {} ADD COLUMN {}",
                         dialect.identifier(table_name),
-                        replace_sqlite_default(&render_column_definition(field, dialect, schema, true))
+                        replace_sqlite_default(&render_column_definition(
+                            field, dialect, schema, true
+                        ))
                     )]
                 }
             }
@@ -132,14 +151,22 @@ impl MigrationExecutor for SqliteAdapter {
 
                 rebuild_table_sql(table_name, schema, preserved_columns)
             }
-            MigrationStep::AlterColumn { table_name, old_field, new_field } => {
+            MigrationStep::AlterColumn {
+                table_name,
+                old_field,
+                new_field,
+            } => {
                 let preserved_columns = find_table_in_schema(schema, table_name)
                     .map(table_column_names)
                     .unwrap_or_else(|| vec![old_field.name.clone(), new_field.name.clone()]);
 
                 rebuild_table_sql(table_name, schema, preserved_columns)
             }
-            MigrationStep::RenameColumn { table_name, old_name, new_name } => vec![format!(
+            MigrationStep::RenameColumn {
+                table_name,
+                old_name,
+                new_name,
+            } => vec![format!(
                 "ALTER TABLE {} RENAME COLUMN {} TO {}",
                 dialect.identifier(table_name),
                 dialect.identifier(old_name),
@@ -149,16 +176,22 @@ impl MigrationExecutor for SqliteAdapter {
             MigrationStep::AddPrimaryKey { table_name, .. }
             | MigrationStep::DropPrimaryKey { table_name, .. }
             | MigrationStep::AddForeignKey { table_name, .. }
-            | MigrationStep::DropForeignKey { table_name, .. } => {
-                rebuild_table_sql(table_name, schema, find_table_in_schema(schema, table_name).map(table_column_names).unwrap_or_default())
-            }
+            | MigrationStep::DropForeignKey { table_name, .. } => rebuild_table_sql(
+                table_name,
+                schema,
+                find_table_in_schema(schema, table_name)
+                    .map(table_column_names)
+                    .unwrap_or_default(),
+            ),
 
             MigrationStep::CreateIndex {
                 table_name,
                 columns,
                 index_name,
                 is_unique,
-            } => vec![render_create_index_sql(table_name, columns, index_name, *is_unique, dialect)],
+            } => vec![render_create_index_sql(
+                table_name, columns, index_name, *is_unique, dialect,
+            )],
             MigrationStep::DropIndex { index_name, .. } => {
                 vec![format!("DROP INDEX {}", dialect.identifier(index_name))]
             }
@@ -166,7 +199,11 @@ impl MigrationExecutor for SqliteAdapter {
     }
 }
 
-fn rebuild_table_sql(table_name: &str, schema: &ParsedSchema, preserved_columns: Vec<String>) -> Vec<String> {
+fn rebuild_table_sql(
+    table_name: &str,
+    schema: &ParsedSchema,
+    preserved_columns: Vec<String>,
+) -> Vec<String> {
     let dialect = crate::SqliteDialect;
 
     find_table_in_schema(schema, table_name)
@@ -192,20 +229,32 @@ fn replace_sqlite_default(sql: &str) -> String {
     sql.replace("now()", "CURRENT_TIMESTAMP")
 }
 
-fn build_grouped_rebuild_sql(table_name: &str, plan: &SqliteRebuildPlan, schema: &ParsedSchema) -> Vec<String> {
+fn build_grouped_rebuild_sql(
+    table_name: &str,
+    plan: &SqliteRebuildPlan,
+    schema: &ParsedSchema,
+) -> Vec<String> {
     let dialect = crate::SqliteDialect;
 
     find_table_in_schema(schema, table_name)
         .map(|table| {
-            render_sqlite_rebuild_table_sql_with_copy_mappings(table, &dialect, schema, &compute_copy_mappings(table, &plan.ordered_steps, schema, &dialect))
-                .into_iter()
-                .map(|sql| replace_sqlite_default(&sql))
-                .collect()
+            render_sqlite_rebuild_table_sql_with_copy_mappings(
+                table,
+                &dialect,
+                schema,
+                &compute_copy_mappings(table, &plan.ordered_steps, schema, &dialect),
+            )
+            .into_iter()
+            .map(|sql| replace_sqlite_default(&sql))
+            .collect()
         })
         .unwrap_or_default()
 }
 
-fn build_rebuild_plans(steps: &[MigrationStep], schema: &ParsedSchema) -> HashMap<String, SqliteRebuildPlan> {
+fn build_rebuild_plans(
+    steps: &[MigrationStep],
+    schema: &ParsedSchema,
+) -> HashMap<String, SqliteRebuildPlan> {
     let rebuild_tables = collect_rebuild_tables(steps, schema);
     let mut plans = rebuild_tables
         .iter()
@@ -272,9 +321,15 @@ fn collect_rebuild_tables(steps: &[MigrationStep], schema: &ParsedSchema) -> Vec
     ordered_tables
 }
 
-fn should_skip_direct_step(step: &MigrationStep, rebuild_tables: &HashSet<String>, schema: &ParsedSchema) -> bool {
+fn should_skip_direct_step(
+    step: &MigrationStep,
+    rebuild_tables: &HashSet<String>,
+    schema: &ParsedSchema,
+) -> bool {
     match step {
-        MigrationStep::AlterEnum { name, .. } => find_enum_columns(schema, name).into_iter().any(|(table, _)| rebuild_tables.contains(&table.name)),
+        MigrationStep::AlterEnum { name, .. } => find_enum_columns(schema, name)
+            .into_iter()
+            .any(|(table, _)| rebuild_tables.contains(&table.name)),
         MigrationStep::AddColumn { table_name, .. }
         | MigrationStep::DropColumn { table_name, .. }
         | MigrationStep::AlterColumn { table_name, .. }
@@ -287,18 +342,32 @@ fn should_skip_direct_step(step: &MigrationStep, rebuild_tables: &HashSet<String
     }
 }
 
-fn compute_copy_mappings(table: &ParsedTable, steps: &[MigrationStep], schema: &ParsedSchema, dialect: &crate::SqliteDialect) -> Vec<(String, String)> {
-    let mut mappings = table_column_names(table).into_iter().map(|column| (column.clone(), Some(column))).collect::<Vec<_>>();
+fn compute_copy_mappings(
+    table: &ParsedTable,
+    steps: &[MigrationStep],
+    schema: &ParsedSchema,
+    dialect: &crate::SqliteDialect,
+) -> Vec<(String, String)> {
+    let mut mappings = table_column_names(table)
+        .into_iter()
+        .map(|column| (column.clone(), Some(column)))
+        .collect::<Vec<_>>();
 
     for step in steps.iter().rev() {
         match step {
             MigrationStep::AddColumn { field, .. } => {
                 remove_added_column_mappings(&mut mappings, &field.name);
             }
-            MigrationStep::AlterColumn { old_field, new_field, .. } => {
+            MigrationStep::AlterColumn {
+                old_field,
+                new_field,
+                ..
+            } => {
                 replace_mapping_source(&mut mappings, &new_field.name, &old_field.name);
             }
-            MigrationStep::RenameColumn { old_name, new_name, .. } => {
+            MigrationStep::RenameColumn {
+                old_name, new_name, ..
+            } => {
                 replace_mapping_source(&mut mappings, new_name, old_name);
             }
             _ => {}
@@ -309,7 +378,8 @@ fn compute_copy_mappings(table: &ParsedTable, steps: &[MigrationStep], schema: &
         .into_iter()
         .filter_map(|(target, source)| {
             source.map(|source| {
-                let source_expression = build_copy_expression(table, &target, &source, steps, schema, dialect);
+                let source_expression =
+                    build_copy_expression(table, &target, &source, steps, schema, dialect);
 
                 (target, source_expression)
             })
@@ -317,8 +387,19 @@ fn compute_copy_mappings(table: &ParsedTable, steps: &[MigrationStep], schema: &
         .collect()
 }
 
-fn build_copy_expression(table: &ParsedTable, target_column: &str, source_column: &str, steps: &[MigrationStep], schema: &ParsedSchema, dialect: &crate::SqliteDialect) -> String {
-    let Some(field) = table.fields.iter().find(|field| field.name == target_column) else {
+fn build_copy_expression(
+    table: &ParsedTable,
+    target_column: &str,
+    source_column: &str,
+    steps: &[MigrationStep],
+    schema: &ParsedSchema,
+    dialect: &crate::SqliteDialect,
+) -> String {
+    let Some(field) = table
+        .fields
+        .iter()
+        .find(|field| field.name == target_column)
+    else {
         return dialect.identifier(source_column);
     };
 
@@ -326,7 +407,9 @@ fn build_copy_expression(table: &ParsedTable, target_column: &str, source_column
         return dialect.identifier(source_column);
     };
 
-    let enum_was_altered = steps.iter().any(|step| matches!(step, MigrationStep::AlterEnum { name, .. } if name == enum_name));
+    let enum_was_altered = steps
+        .iter()
+        .any(|step| matches!(step, MigrationStep::AlterEnum { name, .. } if name == enum_name));
     if !enum_was_altered {
         return dialect.identifier(source_column);
     }
@@ -351,7 +434,11 @@ fn build_copy_expression(table: &ParsedTable, target_column: &str, source_column
     format!(
         "CASE WHEN {} IN ({}) THEN {} ELSE {} END",
         dialect.identifier(source_column),
-        valid_values.iter().map(|value| dialect.literal_string(value)).collect::<Vec<_>>().join(", "),
+        valid_values
+            .iter()
+            .map(|value| dialect.literal_string(value))
+            .collect::<Vec<_>>()
+            .join(", "),
         dialect.identifier(source_column),
         fallback
     )
@@ -364,12 +451,19 @@ fn remove_added_column_mappings(mappings: &mut Vec<(String, Option<String>)>, co
         }
     }
 
-    if let Some((_, source)) = mappings.iter_mut().find(|(target, _)| target == column_name) {
+    if let Some((_, source)) = mappings
+        .iter_mut()
+        .find(|(target, _)| target == column_name)
+    {
         *source = None;
     }
 }
 
-fn replace_mapping_source(mappings: &mut Vec<(String, Option<String>)>, current_source: &str, previous_source: &str) {
+fn replace_mapping_source(
+    mappings: &mut Vec<(String, Option<String>)>,
+    current_source: &str,
+    previous_source: &str,
+) {
     for (_, source) in mappings.iter_mut() {
         if source.as_deref() == Some(current_source) {
             *source = Some(previous_source.to_string());

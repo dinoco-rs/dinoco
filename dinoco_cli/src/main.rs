@@ -11,7 +11,9 @@ use helpers::*;
 
 #[derive(Parser)]
 #[command(name = "dinoco")]
-#[command(about = "Dinoco is a modern type-safe database engine for querying, modeling and managing data (https://dinoco.io)")]
+#[command(
+    about = "Dinoco is a modern type-safe database engine for querying, modeling and managing data (https://dinoco.io)"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -23,7 +25,16 @@ enum Commands {
     Init {},
 
     #[command(subcommand)]
+    Database(DatabaseCommands),
+
+    #[command(subcommand)]
     Migrate(MigrateCommands),
+}
+
+#[derive(Subcommand)]
+enum DatabaseCommands {
+    #[command(about = "Reset the configured database")]
+    Reset {},
 }
 
 #[derive(Subcommand)]
@@ -42,13 +53,36 @@ enum MigrateCommands {
 async fn main() {
     let env = dotenvy::dotenv().ok();
     if env.is_some() {
-        println!("{} {}", "ℹ".blue(), "Successfully loaded .env file!".bright_black());
+        println!(
+            "{} {}",
+            "ℹ".blue(),
+            "Successfully loaded .env file!".bright_black()
+        );
     }
 
     let cli = Cli::parse();
 
     match &cli.command {
         Commands::Init {} => init_command(),
+
+        Commands::Database(command) => match command {
+            &DatabaseCommands::Reset {} => {
+                if let Err(err) = reset_database().await {
+                    eprintln!("❌ Failed to reset database.");
+                    eprintln!("👉 Details: {}", err);
+
+                    eprintln!("\n💡 Possible causes:");
+                    eprintln!("- Database connection failure");
+                    eprintln!("- Insufficient database permissions");
+                    eprintln!("- An unexpected error while dropping tables");
+
+                    eprintln!("\n🛠️ Suggestions:");
+                    eprintln!("- Check the DATABASE_URL environment variable");
+                    eprintln!("- Verify the database connection");
+                    eprintln!("- Confirm the current user can drop database objects");
+                }
+            }
+        },
 
         Commands::Migrate(command) => match command {
             &MigrateCommands::Generate {} => {
