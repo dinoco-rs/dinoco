@@ -113,7 +113,7 @@ fn render_field_attributes(field: &ParsedField) -> Vec<String> {
 fn render_default_value(default_value: &ParsedFieldDefault) -> String {
     match default_value {
         ParsedFieldDefault::NotDefined => String::new(),
-        ParsedFieldDefault::String(value) => format!("\"{}\"", value.replace('"', "\\\"")),
+        ParsedFieldDefault::String(value) => format!("\"{}\"", value),
         ParsedFieldDefault::Boolean(value) => value.to_string(),
         ParsedFieldDefault::Integer(value) => value.to_string(),
         ParsedFieldDefault::Float(value) => value.to_string(),
@@ -132,14 +132,14 @@ fn render_relation_attribute(relation: &ParsedRelation) -> Option<String> {
     match relation {
         ParsedRelation::NotDefined => None,
         ParsedRelation::OneToOneInverse(name) | ParsedRelation::OneToMany(name) | ParsedRelation::ManyToMany(name) => {
-            name.as_ref().map(|name| format!("@relation(name: \"{}\")", name))
+            name.as_ref().map(|name| format!("@relation(name: {})", name))
         }
         ParsedRelation::ManyToOne(name, fields, references, on_delete, on_update)
         | ParsedRelation::OneToOneOwner(name, fields, references, on_delete, on_update) => {
             let mut parts = Vec::new();
 
             if let Some(name) = name {
-                parts.push(format!("name: \"{}\"", name));
+                parts.push(format!("name: {}", name));
             }
 
             parts.push(format!("fields: [{}]", fields.join(", ")));
