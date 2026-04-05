@@ -200,7 +200,8 @@ impl LanguageServer for LspServer {
                 create_completion("Integer", CompletionItemKind::TYPE_PARAMETER, "Integer number type", "Integer"),
                 create_completion("Float", CompletionItemKind::TYPE_PARAMETER, "Floating point number", "Float"),
                 create_completion("Boolean", CompletionItemKind::TYPE_PARAMETER, "True or False type", "Boolean"),
-                create_completion("DateTime", CompletionItemKind::TYPE_PARAMETER, "Date and Time type", "DateTime"),
+                create_completion("DateTime", CompletionItemKind::TYPE_PARAMETER, "Date and Time in UTC", "DateTime"),
+                create_completion("Date", CompletionItemKind::TYPE_PARAMETER, "Date without time", "Date"),
                 create_completion("Json", CompletionItemKind::TYPE_PARAMETER, "JSON object type", "Json"),
             ]);
         }

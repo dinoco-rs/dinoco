@@ -7,3 +7,7 @@ tsconfig.json
 Cargo.toml
 Cargo.lock
 target/**
+.xwin-cache
+scripts
+
+*.vsix

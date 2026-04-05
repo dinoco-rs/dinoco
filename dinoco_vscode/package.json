@@ -2,11 +2,11 @@
 	"name": "dinoco-vscode",
 	"displayName": "Dinoco",
 	"version": "0.0.1",
-	"description": "VS Code support for Dinoco schemas with syntax highlighting, diagnostics, formatting, and language server features.",
+	"description": "Support for Dinoco schemas with syntax highlighting, diagnostics, formatting, and language server features.",
 	"icon": "images/icon.png",
 	"publisher": "dinoco-rs",
 	"author": "Matheus Castro",
-	"license": "UNLICENSED",
+	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/dinoco-rs/dinoco.git"
