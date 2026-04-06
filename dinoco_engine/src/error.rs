@@ -32,7 +32,35 @@ impl std::fmt::Display for DinocoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Constraint(error) => write!(f, "{}", error.message),
-            Self::Postgres(e) => write!(f, "Postgres error: {}", e),
+            Self::Postgres(e) => {
+                if let Some(db_error) = e.as_db_error() {
+                    write!(f, "Postgres error [{}]: {}", db_error.code().code(), db_error.message())?;
+
+                    if let Some(detail) = db_error.detail() {
+                        write!(f, " | detail: {}", detail)?;
+                    }
+
+                    if let Some(hint) = db_error.hint() {
+                        write!(f, " | hint: {}", hint)?;
+                    }
+
+                    if let Some(table) = db_error.table() {
+                        write!(f, " | table: {}", table)?;
+                    }
+
+                    if let Some(column) = db_error.column() {
+                        write!(f, " | column: {}", column)?;
+                    }
+
+                    if let Some(constraint) = db_error.constraint() {
+                        write!(f, " | constraint: {}", constraint)?;
+                    }
+
+                    Ok(())
+                } else {
+                    write!(f, "Postgres error: {}", e)
+                }
+            }
             Self::MySql(e) => write!(f, "MySQL error: {}", e),
             Self::Sqlite(e) => write!(f, "Sqlite error: {}", e),
 

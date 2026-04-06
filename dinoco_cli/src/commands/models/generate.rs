@@ -6,7 +6,7 @@ use colored::Colorize;
 
 use dinoco_codegen::generate_models;
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
+use dinoco_engine::{DinocoAdapter, DinocoClientConfig, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
 
 use crate::{get_last_migration, local_migration_names, read_migration_schema};
 
@@ -60,7 +60,7 @@ async fn generate_models_from_database_state<T>(database_url: String, fallback_s
 where
     T: DinocoAdapter,
 {
-    let adapter = T::connect(database_url).await?;
+    let adapter = T::connect(database_url, DinocoClientConfig::default()).await?;
     let last_migration = get_last_migration(&adapter).await?;
 
     let Some(migration) = last_migration else {

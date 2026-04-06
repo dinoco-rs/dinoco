@@ -2,6 +2,7 @@ extern crate self as dinoco_engine;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+mod config;
 mod data;
 mod databases;
 mod error;
@@ -11,6 +12,7 @@ mod query;
 mod traits;
 mod value;
 
+pub use config::*;
 pub use data::*;
 pub use databases::*;
 pub use error::*;
@@ -29,13 +31,14 @@ pub struct DinocoClient<T: DinocoAdapter> {
 }
 
 impl DinocoClient<PostgresAdapter> {
-    pub async fn new(url: String, reads: Vec<String>) -> DinocoResult<Self> {
-        let adapter = PostgresAdapter::connect(url).await?;
+    pub async fn new(url: String, reads: Vec<String>, config: DinocoClientConfig) -> DinocoResult<Self> {
+        config.initialize_runtime();
+        let adapter = PostgresAdapter::connect(url, config.clone()).await?;
 
         let mut read_replicas: Vec<PostgresAdapter> = Vec::with_capacity(reads.len());
 
         for read in reads {
-            let adapter = PostgresAdapter::connect(read).await?;
+            let adapter = PostgresAdapter::connect(read, config.clone()).await?;
             read_replicas.push(adapter);
         }
 
@@ -44,13 +47,14 @@ impl DinocoClient<PostgresAdapter> {
 }
 
 impl DinocoClient<MySqlAdapter> {
-    pub async fn new(url: String, reads: Vec<String>) -> DinocoResult<Self> {
-        let adapter = MySqlAdapter::connect(url).await?;
+    pub async fn new(url: String, reads: Vec<String>, config: DinocoClientConfig) -> DinocoResult<Self> {
+        config.initialize_runtime();
+        let adapter = MySqlAdapter::connect(url, config.clone()).await?;
 
         let mut read_replicas: Vec<MySqlAdapter> = Vec::with_capacity(reads.len());
 
         for read in reads {
-            let adapter = MySqlAdapter::connect(read).await?;
+            let adapter = MySqlAdapter::connect(read, config.clone()).await?;
             read_replicas.push(adapter);
         }
 
@@ -59,13 +63,14 @@ impl DinocoClient<MySqlAdapter> {
 }
 
 impl DinocoClient<SqliteAdapter> {
-    pub async fn new(url: String, reads: Vec<String>) -> DinocoResult<Self> {
-        let adapter = SqliteAdapter::connect(url).await?;
+    pub async fn new(url: String, reads: Vec<String>, config: DinocoClientConfig) -> DinocoResult<Self> {
+        config.initialize_runtime();
+        let adapter = SqliteAdapter::connect(url, config.clone()).await?;
 
         let mut read_replicas: Vec<SqliteAdapter> = Vec::with_capacity(reads.len());
 
         for read in reads {
-            let adapter = SqliteAdapter::connect(read).await?;
+            let adapter = SqliteAdapter::connect(read, config.clone()).await?;
             read_replicas.push(adapter);
         }
 

@@ -2,8 +2,8 @@ mod common;
 
 use dinoco_derives::Rowable;
 use dinoco_engine::{
-    ConstraintKind, DinocoAdapter, DinocoAdapterHandler, DinocoClient, DinocoError, DinocoResult, MySqlAdapter,
-    PostgresAdapter, SqliteAdapter,
+    ConstraintKind, DinocoAdapter, DinocoAdapterHandler, DinocoClient, DinocoClientConfig, DinocoError, DinocoResult,
+    MySqlAdapter, PostgresAdapter, SqliteAdapter,
 };
 
 use crate::common::{mysql_url, postgres_url, sqlite_url, unique_name};
@@ -17,7 +17,8 @@ struct UserRow {
 
 #[tokio::test]
 async fn sqlite_adapter_maps_constraints_and_queries_rows() -> DinocoResult<()> {
-    let client = DinocoClient::<SqliteAdapter>::new(sqlite_url("constraints"), vec![]).await?;
+    let client =
+        DinocoClient::<SqliteAdapter>::new(sqlite_url("constraints"), vec![], DinocoClientConfig::default()).await?;
     let teams_table = unique_name("teams");
     let users_table = unique_name("users");
 
@@ -29,7 +30,7 @@ async fn sqlite_adapter_maps_constraints_and_queries_rows() -> DinocoResult<()> 
 
 #[tokio::test]
 async fn postgres_adapter_maps_constraints_and_queries_rows() -> DinocoResult<()> {
-    let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![]).await?;
+    let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default()).await?;
     let teams_table = unique_name("teams");
     let users_table = unique_name("users");
 
@@ -40,7 +41,7 @@ async fn postgres_adapter_maps_constraints_and_queries_rows() -> DinocoResult<()
 
 #[tokio::test]
 async fn mysql_adapter_maps_constraints_and_queries_rows() -> DinocoResult<()> {
-    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![]).await?;
+    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default()).await?;
     let teams_table = unique_name("teams");
     let users_table = unique_name("users");
 

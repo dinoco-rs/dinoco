@@ -38,7 +38,12 @@ struct RecordInclude {}
 
 #[tokio::test]
 async fn sqlite_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
-    let client = DinocoClient::<SqliteAdapter>::new(common::sqlite_url("crud-adapters"), vec![]).await?;
+    let client = DinocoClient::<SqliteAdapter>::new(
+        common::sqlite_url("crud-adapters"),
+        vec![],
+        dinoco::DinocoClientConfig::default(),
+    )
+    .await?;
 
     client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
     create_sqlite_table(&client).await?;
@@ -47,7 +52,9 @@ async fn sqlite_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
 
 #[tokio::test]
 async fn postgres_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
-    let client = DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![]).await?;
+    let client =
+        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+            .await?;
 
     client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
     create_postgres_table(&client).await?;
@@ -59,7 +66,8 @@ async fn postgres_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
 
 #[tokio::test]
 async fn mysql_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
-    let client = DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![]).await?;
+    let client =
+        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
 
     client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
     create_mysql_table(&client).await?;

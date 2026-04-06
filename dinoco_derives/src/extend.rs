@@ -20,9 +20,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let crate_path = runtime_crate();
 
     let scalar_fields = fields.iter().filter(|field| !is_relation_field(&field.ty)).collect::<Vec<_>>();
+    let count_fields = scalar_fields.iter().copied().filter(|field| is_count_field(field)).collect::<Vec<_>>();
+    let base_scalar_fields = scalar_fields.iter().copied().filter(|field| !is_count_field(field)).collect::<Vec<_>>();
     let relation_fields = fields.iter().filter(|field| is_relation_field(&field.ty)).collect::<Vec<_>>();
 
-    let scalar_field_validations = scalar_fields.iter().map(|field| {
+    let scalar_field_validations = base_scalar_fields.iter().map(|field| {
         let ident = field.ident.as_ref().unwrap();
         let ty = &field.ty;
         let span = ident.span();
@@ -45,14 +47,28 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    let count_field_validations = count_fields.iter().map(|field| {
+        let ident = field.ident.as_ref().unwrap();
+        let relation_ident = format_ident!("{}", count_field_relation_name(ident));
+        let span = ident.span();
+
+        quote_spanned! {span=>
+            let _ = |include: &<#model as #crate_path::Model>::Include| {
+                let _ = include.#relation_ident();
+            };
+        }
+    });
+
     let field_names =
-        scalar_fields.iter().filter_map(|field| field.ident.as_ref()).map(|ident| quote! { stringify!(#ident) });
+        base_scalar_fields.iter().filter_map(|field| field.ident.as_ref()).map(|ident| quote! { stringify!(#ident) });
 
     let mut scalar_index = 0usize;
     let row_initializers = fields.iter().map(|field| {
         let ident = field.ident.as_ref().unwrap();
 
         if is_relation_field(&field.ty) {
+            quote! { #ident: ::core::default::Default::default() }
+        } else if is_count_field(field) {
             quote! { #ident: ::core::default::Default::default() }
         } else if let Some(inner_ty) = extract_option_inner(&field.ty) {
             let index = scalar_index;
@@ -75,7 +91,15 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let uses_foreign_key =
             fields.iter().any(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident));
         let key_getter = if uses_foreign_key {
-            quote! { |item: &Self| ::core::option::Option::Some(item.#foreign_key_ident.clone()) }
+            let foreign_key_field = fields
+                .iter()
+                .find(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident))?;
+
+            if extract_option_inner(&foreign_key_field.ty).is_some() {
+                quote! { |item: &Self| item.#foreign_key_ident.clone() }
+            } else {
+                quote! { |item: &Self| ::core::option::Option::Some(item.#foreign_key_ident.clone()) }
+            }
         } else {
             quote! { |item: &Self| ::core::option::Option::Some(item.id.clone()) }
         };
@@ -112,6 +136,44 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    let count_match_arms = count_fields.iter().filter_map(|field| {
+        let ident = field.ident.as_ref()?;
+        let relation_name = count_field_relation_name(ident);
+        let loader = format_ident!("__dinoco_count_{}", relation_name);
+        let relation_field_ident = format_ident!("{}", relation_name);
+        let relation_name_literal = relation_name.clone();
+        let foreign_key_ident = format_ident!("{}Id", relation_field_ident);
+        let uses_foreign_key =
+            fields.iter().any(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident));
+        let key_getter = if uses_foreign_key {
+            let foreign_key_field = fields
+                .iter()
+                .find(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident))?;
+
+            if extract_option_inner(&foreign_key_field.ty).is_some() {
+                quote! { |item: &Self| item.#foreign_key_ident.clone() }
+            } else {
+                quote! { |item: &Self| ::core::option::Option::Some(item.#foreign_key_ident.clone()) }
+            }
+        } else {
+            quote! { |item: &Self| ::core::option::Option::Some(item.id.clone()) }
+        };
+
+        Some(quote! {
+            #relation_name_literal => {
+                let item_keys = items.iter().map(#key_getter).collect::<::std::vec::Vec<_>>();
+
+                tasks.push(#model::#loader::<Self, A>(
+                    item_keys,
+                    count,
+                    client,
+                    read_mode,
+                    |item: &mut Self| &mut item.#ident,
+                ));
+            }
+        })
+    });
+
     TokenStream::from(quote! {
         #[doc(hidden)]
         #[allow(unused_imports)]
@@ -130,6 +192,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
             #(#scalar_field_validations)*
             #(#relation_field_validations)*
+            #(#count_field_validations)*
         };
 
         impl #crate_path::Projection<#model> for #name {
@@ -165,6 +228,35 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     Ok(())
                 })
             }
+
+            fn load_counts<'a, A>(
+                items: &'a mut [Self],
+                counts: &'a [#crate_path::CountNode],
+                client: &'a #crate_path::DinocoClient<A>,
+                read_mode: #crate_path::ReadMode,
+            ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = #crate_path::DinocoResult<()>> + 'a>>
+            where
+                A: #crate_path::DinocoAdapter,
+            {
+                Box::pin(async move {
+                    let mut tasks: ::std::vec::Vec<#crate_path::IncludeLoaderFuture<'a, Self>> = ::std::vec::Vec::new();
+
+                    for count in counts {
+                        match count.name {
+                            #(#count_match_arms)*
+                            _ => {}
+                        }
+                    }
+
+                    let appliers = #crate_path::futures::future::try_join_all(tasks).await?;
+
+                    for apply in appliers {
+                        apply(items);
+                    }
+
+                    Ok(())
+                })
+            }
         }
 
         impl #crate_path::DinocoRow for #name {
@@ -175,6 +267,29 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
         }
     })
+}
+
+fn is_count_field(field: &syn::Field) -> bool {
+    let Some(ident) = &field.ident else {
+        return false;
+    };
+
+    ident.to_string().ends_with("_count") && is_usize_type(&field.ty)
+}
+
+fn is_usize_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+
+    segment.ident == "usize"
+}
+
+fn count_field_relation_name(ident: &syn::Ident) -> String {
+    ident.to_string().trim_end_matches("_count").to_string()
 }
 
 fn is_relation_field(ty: &syn::Type) -> bool {

@@ -5,6 +5,13 @@ pub struct IncludeNode {
     pub name: &'static str,
     pub statement: Option<SelectStatement>,
     pub includes: Vec<IncludeNode>,
+    pub counts: Vec<CountNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CountNode {
+    pub name: &'static str,
+    pub statement: Option<SelectStatement>,
 }
 
 #[derive(Debug, Clone, Copy)]

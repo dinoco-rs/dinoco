@@ -18,7 +18,9 @@ struct UserInclude {}
 fn main() {
     let _query = find_many::<User>()
         .cond(|x| x.id.eq(1_i64))
-        .cond(|x| x.email.eq("matheus@dinoco.dev"));
+        .cond(|x| x.email.eq("matheus@dinoco.dev"))
+        .cond(|x| x.id.in_values(vec![1_i64, 2_i64]))
+        .cond(|x| x.email.not_in_values(vec!["blocked@dinoco.dev", "hidden@dinoco.dev"]));
 }
 
 impl Projection<User> for User {

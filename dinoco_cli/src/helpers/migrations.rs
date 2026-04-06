@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use bincode::{deserialize, serialize};
 
-use dinoco_compiler::{ParsedSchema, compile, render_error};
+use dinoco_compiler::ParsedSchema;
 use dinoco_engine::{DinocoAdapter, DinocoError, DinocoResult};
 
 pub fn local_migration_names() -> DinocoResult<Vec<String>> {
@@ -41,10 +41,6 @@ pub fn migration_schema_path(migration_name: &str) -> PathBuf {
     migration_dir(migration_name).join("schema.bin")
 }
 
-pub fn migration_schema_source_path(migration_name: &str) -> PathBuf {
-    migration_dir(migration_name).join("schema.dinoco")
-}
-
 pub fn write_migration_schema(migration_name: &str, schema: &ParsedSchema) -> DinocoResult<()> {
     let schema_bytes = serialize(schema).map_err(|err| DinocoError::ParseError(err.to_string()))?;
 
@@ -52,35 +48,16 @@ pub fn write_migration_schema(migration_name: &str, schema: &ParsedSchema) -> Di
         .map_err(|err| DinocoError::ParseError(err.to_string()))
 }
 
-pub fn write_migration_schema_source(migration_name: &str, schema_source: &str) -> DinocoResult<()> {
-    fs::write(migration_schema_source_path(migration_name), schema_source)
-        .map_err(|err| DinocoError::ParseError(err.to_string()))
-}
-
 pub fn read_migration_schema(migration_name: &str) -> DinocoResult<ParsedSchema> {
     let schema_binary_path = migration_schema_path(migration_name);
 
-    match fs::read(&schema_binary_path) {
-        Ok(schema_bytes) => match deserialize(&schema_bytes) {
-            Ok(parsed_schema) => Ok(parsed_schema),
-            Err(binary_err) => read_migration_schema_source(migration_name).map_err(|source_err| {
-                DinocoError::ParseError(format!(
-                    "Failed to deserialize '{}': {}. Fallback schema source could not be loaded: {}",
-                    schema_binary_path.display(),
-                    binary_err,
-                    source_err
-                ))
-            }),
-        },
-        Err(binary_err) => read_migration_schema_source(migration_name).map_err(|source_err| {
-            DinocoError::ParseError(format!(
-                "Failed to read '{}': {}. Fallback schema source could not be loaded: {}",
-                schema_binary_path.display(),
-                binary_err,
-                source_err
-            ))
-        }),
-    }
+    let schema_bytes = fs::read(&schema_binary_path).map_err(|err| {
+        DinocoError::ParseError(format!("Failed to read '{}': {}", schema_binary_path.display(), err))
+    })?;
+
+    deserialize(&schema_bytes).map_err(|err| {
+        DinocoError::ParseError(format!("Failed to deserialize '{}': {}", schema_binary_path.display(), err))
+    })
 }
 
 pub fn read_latest_local_schema() -> DinocoResult<Option<ParsedSchema>> {
@@ -93,43 +70,10 @@ pub fn read_latest_local_schema() -> DinocoResult<Option<ParsedSchema>> {
 
 pub async fn execute_migration_file<T>(adapter: &T, migration_name: &str) -> DinocoResult<()>
 where
-    T: DinocoAdapter,
+    T: DinocoAdapter + Sync,
 {
     let sql_path = migration_sql_path(migration_name);
     let sql_content = fs::read_to_string(&sql_path)?;
 
-    execute_sql_script(adapter, &sql_content).await
-}
-
-pub async fn execute_sql_script<T>(adapter: &T, sql_content: &str) -> DinocoResult<()>
-where
-    T: DinocoAdapter,
-{
-    for statement in sql_content.split(';') {
-        let clean_statement = statement.trim();
-
-        if clean_statement.is_empty() {
-            continue;
-        }
-
-        adapter.execute(clean_statement, &[]).await?;
-    }
-
-    Ok(())
-}
-
-fn read_migration_schema_source(migration_name: &str) -> DinocoResult<ParsedSchema> {
-    let schema_source_path = migration_schema_source_path(migration_name);
-    let schema_source = fs::read_to_string(&schema_source_path).map_err(|err| {
-        DinocoError::ParseError(format!("Failed to read '{}': {}", schema_source_path.display(), err))
-    })?;
-
-    let (_, parsed_schema) = compile(&schema_source).map_err(|errors| {
-        let rendered_errors =
-            errors.iter().map(|error| render_error(error, &schema_source)).collect::<Vec<_>>().join("\n");
-
-        DinocoError::ParseError(format!("Failed to compile '{}':\n{}", schema_source_path.display(), rendered_errors))
-    })?;
-
-    Ok(parsed_schema)
+    adapter.execute_script(&sql_content).await
 }

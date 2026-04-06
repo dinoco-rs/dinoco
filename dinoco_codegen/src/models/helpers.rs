@@ -18,7 +18,19 @@ pub(crate) fn relation_fields(fields: &[ParsedField]) -> Vec<&ParsedField> {
 }
 
 pub(crate) fn rust_scalar_type(field: &ParsedField, enum_names: &[String]) -> String {
-    let base = match &field.field_type {
+    let base = rust_scalar_base_type(field, enum_names);
+
+    if field.is_optional {
+        format!("Option<{base}>")
+    } else if field.is_list {
+        format!("Vec<{base}>")
+    } else {
+        base
+    }
+}
+
+pub(crate) fn rust_scalar_base_type(field: &ParsedField, enum_names: &[String]) -> String {
+    match &field.field_type {
         ParsedFieldType::String => "String".to_string(),
         ParsedFieldType::Boolean => "bool".to_string(),
         ParsedFieldType::Integer => "i64".to_string(),
@@ -34,14 +46,6 @@ pub(crate) fn rust_scalar_type(field: &ParsedField, enum_names: &[String]) -> St
             }
         }
         ParsedFieldType::Relation(_) => unreachable!(),
-    };
-
-    if field.is_optional {
-        format!("Option<{base}>")
-    } else if field.is_list {
-        format!("Vec<{base}>")
-    } else {
-        base
     }
 }
 
@@ -94,25 +98,12 @@ pub(crate) fn to_snake_case(value: &str) -> String {
     output
 }
 
-pub(crate) fn pascal_case(value: &str) -> String {
-    let mut output = String::new();
-    let mut uppercase_next = true;
-
-    for ch in value.chars() {
-        if ch == '_' || ch == '-' || ch == ' ' {
-            uppercase_next = true;
-            continue;
-        }
-
-        if uppercase_next {
-            output.extend(ch.to_uppercase());
-            uppercase_next = false;
-        } else {
-            output.push(ch);
-        }
+pub(crate) fn enum_variant_name(value: &str) -> String {
+    if is_rust_keyword(value) {
+        return format!("r#{value}");
     }
 
-    output
+    value.to_string()
 }
 
 pub(crate) fn default_value_expr(field: &ParsedField, enum_names: &[String]) -> String {
@@ -167,8 +158,65 @@ fn default_expr_by_type(field: &ParsedField, enum_names: &[String]) -> String {
 fn render_enum_expr(field: &ParsedField, value: &str, enum_names: &[String]) -> String {
     match &field.field_type {
         ParsedFieldType::Enum(name) if enum_names.iter().any(|item| item == name) => {
-            format!("super::enums::{name}::{}", pascal_case(value))
+            format!("super::enums::{name}::{}", enum_variant_name(value))
         }
         _ => format!("{value:?}.to_string()"),
     }
+}
+
+fn is_rust_keyword(value: &str) -> bool {
+    matches!(
+        value,
+        "as"
+            | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "async"
+            | "await"
+            | "dyn"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "try"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+    )
 }

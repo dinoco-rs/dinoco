@@ -209,7 +209,7 @@ impl LanguageServer for LspServer {
                     "config",
                     CompletionItemKind::KEYWORD,
                     "Database configuration",
-                    "config {\n\tprovider = \"${1:postgresql}\"\n\turl = \"${2:env(\"DATABASE_URL\")}\"\n}",
+                    "config {\n\tdatabase = \"${1:postgresql}\"\n\tdatabase_url = ${2:env(\"DATABASE_URL\")}\n}",
                 ),
             ]);
         } else {

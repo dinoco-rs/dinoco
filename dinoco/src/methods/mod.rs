@@ -1,3 +1,4 @@
+mod count;
 mod delete;
 mod delete_many;
 mod find_first;
@@ -7,6 +8,7 @@ mod insert_many;
 mod update;
 mod update_many;
 
+pub use count::*;
 pub use delete::*;
 pub use delete_many::*;
 pub use find_first::*;

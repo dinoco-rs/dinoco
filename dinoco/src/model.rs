@@ -1,6 +1,6 @@
 use dinoco_engine::{DinocoRow, DinocoValue, Expression};
 
-use crate::IncludeNode;
+use crate::{CountNode, IncludeNode};
 
 pub type IncludeApplier<'a, T> = Box<dyn FnOnce(&mut [T]) + 'a>;
 pub type IncludeLoaderFuture<'a, T> =
@@ -19,6 +19,19 @@ pub trait Projection<M: Model>: DinocoRow {
     fn load_includes<'a, A>(
         _items: &'a mut [Self],
         _includes: &'a [IncludeNode],
+        _client: &'a dinoco_engine::DinocoClient<A>,
+        _read_mode: crate::ReadMode,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    where
+        Self: Sized,
+        A: dinoco_engine::DinocoAdapter,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn load_counts<'a, A>(
+        _items: &'a mut [Self],
+        _counts: &'a [CountNode],
         _client: &'a dinoco_engine::DinocoClient<A>,
         _read_mode: crate::ReadMode,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
@@ -48,7 +61,66 @@ pub trait UpdateModel: Model {
 }
 
 pub trait InsertRelation<R>: InsertModel {
-    fn bind_relation(&self, item: &mut R);
+    fn bind_relation(&self, _item: &mut R) {}
+
+    fn relation_links(&self, _item: &R) -> Vec<RelationLinkPlan> {
+        Vec::new()
+    }
+}
+
+pub trait InsertConnection<R>: InsertRelation<R> {
+    fn connection_updates(&self, _item: &R) -> Vec<ConnectionUpdatePlan> {
+        Vec::new()
+    }
+
+    fn connection_links(&self, item: &R) -> Vec<RelationLinkPlan> {
+        self.relation_links(item)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RelationMutationTarget {
+    pub relation_name: &'static str,
+    pub expression: Expression,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum RelationWriteAction {
+    Connect,
+    Disconnect,
+}
+
+#[derive(Debug, Clone)]
+pub struct RelationWritePlan {
+    pub join_table_name: &'static str,
+    pub source_table_name: &'static str,
+    pub source_key_column: &'static str,
+    pub source_join_column: &'static str,
+    pub target_table_name: &'static str,
+    pub target_key_column: &'static str,
+    pub target_join_column: &'static str,
+    pub target_expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct RelationLinkPlan {
+    pub table_name: &'static str,
+    pub columns: &'static [&'static str],
+    pub row: Vec<DinocoValue>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectionUpdatePlan {
+    pub table_name: &'static str,
+    pub columns: &'static [&'static str],
+    pub row: Vec<DinocoValue>,
+    pub conditions: Vec<Expression>,
+}
+
+pub trait RelationMutationModel: Model {
+    type Relations: Default;
+
+    fn relation_write_plan(target: RelationMutationTarget) -> Option<RelationWritePlan>;
 }
 
 pub trait IntoDinocoValue {
@@ -61,6 +133,10 @@ pub trait ScalarFieldValue<T> {
 
 pub trait IntoIncludeNode {
     fn into_include_node(self) -> IncludeNode;
+}
+
+pub trait IntoCountNode {
+    fn into_count_node(self) -> CountNode;
 }
 
 impl IntoDinocoValue for DinocoValue {

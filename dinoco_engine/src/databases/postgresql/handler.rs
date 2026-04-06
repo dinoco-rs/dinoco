@@ -9,8 +9,11 @@ use crate::{
 #[async_trait]
 impl DinocoAdapterHandler for PostgresAdapter {
     async fn reset_database(&self) -> DinocoResult<()> {
-        self.execute("DROP SCHEMA IF EXISTS public CASCADE;", &[]).await?;
+        self.execute("DROP SCHEMA public CASCADE;", &[]).await?;
+
         self.execute("CREATE SCHEMA public;", &[]).await?;
+
+        self.execute("GRANT ALL ON SCHEMA public TO public;", &[]).await?;
 
         Ok(())
     }

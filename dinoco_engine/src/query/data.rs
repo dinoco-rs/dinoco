@@ -27,6 +27,7 @@ pub enum Expression {
     IsNull(Box<Expression>),
     IsNotNull(Box<Expression>),
     In { expr: Box<Expression>, values: Vec<DinocoValue> },
+    NotIn { expr: Box<Expression>, values: Vec<DinocoValue> },
     And(Vec<Expression>),
     Or(Vec<Expression>),
     BinaryOp { left: Box<Expression>, op: BinaryOperator, right: Box<Expression> },
@@ -87,6 +88,10 @@ impl Expression {
 
     pub fn in_values(self, values: Vec<DinocoValue>) -> Self {
         Self::In { expr: Box::new(self), values }
+    }
+
+    pub fn not_in_values(self, values: Vec<DinocoValue>) -> Self {
+        Self::NotIn { expr: Box::new(self), values }
     }
 }
 

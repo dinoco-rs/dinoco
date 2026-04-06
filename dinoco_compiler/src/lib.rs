@@ -31,7 +31,9 @@ pub fn render_error(error: &DinocoCompilerError, source: &str) -> String {
     Report::build(ReportKind::Error, "schema.dinoco", offset)
         .with_code("E001")
         .with_message(&error.message)
-        .with_label(Label::new(("schema.dinoco", offset..end_offset)).with_message("happened here").with_color(Color::Red))
+        .with_label(
+            Label::new(("schema.dinoco", offset..end_offset)).with_message("happened here").with_color(Color::Red),
+        )
         .finish()
         .write(("schema.dinoco", Source::from(source)), &mut out)
         .unwrap();

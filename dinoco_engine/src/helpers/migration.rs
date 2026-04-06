@@ -362,6 +362,7 @@ pub fn render_value_sql<D: AdapterDialect>(value: &DinocoValue, dialect: &D) -> 
             }
         }
         DinocoValue::String(value) => dialect.literal_string(value),
+        DinocoValue::Enum(_, value) => dialect.literal_string(value),
         DinocoValue::Json(value) => dialect.literal_string(&value.to_string()),
         DinocoValue::Bytes(value) => {
             let hex = value.iter().map(|byte| format!("{:02x}", byte)).collect::<String>();

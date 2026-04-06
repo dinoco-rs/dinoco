@@ -1,12 +1,16 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{create_dir_all, write};
 use std::path::Path;
 
-use dinoco_compiler::{FunctionCall, ParsedFieldDefault, ParsedFieldType, ParsedRelation, ParsedSchema, ParsedTable};
+use dinoco_compiler::{
+    FunctionCall, ParsedField, ParsedFieldDefault, ParsedFieldType, ParsedRelation, ParsedSchema, ParsedTable,
+};
 
 use super::helpers::{
-    default_value_expr, filter_type, relation_fields, relation_target, rust_scalar_type, scalar_fields, to_snake_case,
+    default_value_expr, filter_type, relation_fields, relation_target, rust_scalar_base_type, rust_scalar_type,
+    scalar_fields, to_snake_case,
 };
-use super::relations::{RelationCardinality, resolve_relation};
+use super::relations::{RelationCardinality, collect_join_tables, resolve_relation};
 use super::render_dinoco::render_dinoco_module;
 use super::render_enums::render_enums;
 
@@ -46,7 +50,17 @@ pub fn generate_models(schema: ParsedSchema) {
     for table in &schema.tables {
         let file_name = to_snake_case(&table.name);
         let file_path = output_dir.join(format!("{file_name}.rs"));
-        let model_file = render_model(table, &schema, &enum_names);
+        let model_file = render_model(table, &table.name, &schema, &enum_names);
+
+        write(file_path, model_file).unwrap();
+        module_exports.push(format!("pub mod {file_name};"));
+        module_exports.push(format!("pub use {file_name}::*;"));
+    }
+
+    for join_table in collect_join_tables(&schema) {
+        let file_name = to_snake_case(&join_table.model_name);
+        let file_path = output_dir.join(format!("{file_name}.rs"));
+        let model_file = render_model(&join_table.table, &join_table.model_name, &schema, &enum_names);
 
         write(file_path, model_file).unwrap();
         module_exports.push(format!("pub mod {file_name};"));
@@ -60,8 +74,8 @@ pub fn generate_models(schema: ParsedSchema) {
     .unwrap();
 }
 
-fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String]) -> String {
-    let name = &table.name;
+fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, enum_names: &[String]) -> String {
+    let name = model_name;
     let fields = &table.fields;
     let scalar_fields = scalar_fields(fields);
     let insert_fields = scalar_fields
@@ -87,8 +101,14 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
                 return None;
             };
 
+            if target == name {
+                return None;
+            }
+
             Some(format!("{}::{}", to_snake_case(target), target))
         })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect::<Vec<_>>();
 
     let mut output = String::from(GENERATED_FILE_BANNER);
@@ -96,7 +116,7 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
     output.push_str(GENERATED_FILE_LINTS);
 
     output.push_str(
-        "use dinoco::{InsertModel, IntoDinocoValue, Model, Projection, RelationField, Rowable, ScalarField, UpdateModel};\n",
+        "use dinoco::{InsertModel, AdapterDialect, IntoDinocoValue, Model, Projection, RelationField, RelationMutationWhere, RelationScalarField, RelationWritePlan, RelationMutationModel, Rowable, ScalarField, UpdateModel};\n",
     );
 
     if !relation_imports.is_empty() {
@@ -104,7 +124,8 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
     }
 
     output.push('\n');
-    output.push_str("#[derive(Debug, Clone, Rowable)]\n");
+    output.push_str("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize, Rowable)]\n");
+    output.push_str("#[serde(crate = \"dinoco::serde\")]\n");
     output.push_str(&format!("pub struct {} {{\n", name));
 
     for field in &scalar_fields {
@@ -135,7 +156,9 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
     }
 
     output.push_str("}\n\n");
+    output.push_str(&render_relation_mutation_where(table, &scalar_fields, enum_names));
     output.push_str(&format!("pub struct {}Include {}\n\n", name, "{}"));
+    output.push_str(&format!("pub struct {}Relations {}\n\n", name, "{}"));
     output.push_str(&format!("impl Projection<{}> for {} {{\n", name, name));
     output.push_str("    fn columns() -> &'static [&'static str] {\n");
     output.push_str("        &[\n");
@@ -229,6 +252,11 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
     output.push_str("        Self {}\n");
     output.push_str("    }\n");
     output.push_str("}\n\n");
+    output.push_str(&format!("impl Default for {}Relations {{\n", name));
+    output.push_str("    fn default() -> Self {\n");
+    output.push_str("        Self {}\n");
+    output.push_str("    }\n");
+    output.push_str("}\n\n");
     output.push_str(&format!("impl {}Include {{\n", name));
 
     for field in &relation_fields {
@@ -238,13 +266,74 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
     }
 
     output.push_str("}\n\n");
+    output.push_str(&format!("impl {}Relations {{\n", name));
+
+    for field in &relation_fields {
+        let ParsedFieldType::Relation(target_name) = &field.field_type else {
+            continue;
+        };
+
+        output.push_str(&format!(
+            "    pub fn {}(&self) -> RelationMutationWhere<super::{}::{}RelationWhere> {{\n",
+            field.name,
+            to_snake_case(target_name),
+            target_name
+        ));
+        output.push_str(&format!(
+            "        super::{}::{}RelationWhere::new({:?})\n",
+            to_snake_case(target_name),
+            target_name,
+            field.name
+        ));
+        output.push_str("    }\n");
+    }
+
+    output.push_str("}\n\n");
     output.push_str(&render_relation_loaders(table, schema));
+    output.push_str(&render_relation_count_loaders(table, schema));
+    output.push_str(&render_relation_mutations(table, schema));
     output.push_str(&render_insert_relations(table, schema));
     output.push_str(&format!("impl Model for {} {{\n", name));
     output.push_str(&format!("    type Include = {}Include;\n", name));
     output.push_str(&format!("    type Where = {}Where;\n\n", name));
     output.push_str("    fn table_name() -> &'static str {\n");
     output.push_str(&format!("        \"{}\"\n", table.database_name));
+    output.push_str("    }\n");
+    output.push_str("}\n");
+    output.push_str("\n");
+    output.push_str(&format!("impl RelationMutationModel for {} {{\n", name));
+    output.push_str(&format!("    type Relations = {}Relations;\n\n", name));
+    output.push_str(
+        "    fn relation_write_plan(target: dinoco::RelationMutationTarget) -> Option<RelationWritePlan> {\n",
+    );
+    output.push_str("        match target.relation_name {\n");
+
+    for field in &relation_fields {
+        let Some(relation) = resolve_relation(table, field, schema) else {
+            continue;
+        };
+
+        let RelationCardinality::ManyToMany { join_table_name, current_join_column, target_join_column } =
+            relation.cardinality
+        else {
+            continue;
+        };
+
+        output.push_str(&format!(
+            "            {:?} => Some(RelationWritePlan {{ join_table_name: {:?}, source_table_name: {:?}, source_key_column: {:?}, source_join_column: {:?}, target_table_name: {:?}, target_key_column: {:?}, target_join_column: {:?}, target_expression: target.expression }}),\n",
+            field.name,
+            join_table_name,
+            table.database_name,
+            relation.local_key_field.name,
+            current_join_column,
+            relation.target_table_name,
+            relation.remote_key_field.name,
+            target_join_column
+        ));
+    }
+
+    output.push_str("            _ => None,\n");
+    output.push_str("        }\n");
     output.push_str("    }\n");
     output.push_str("}\n");
 
@@ -280,6 +369,42 @@ fn render_insert_validations(table: &ParsedTable, insert_fields: &[&dinoco_compi
     output
 }
 
+fn render_relation_mutation_where(
+    table: &ParsedTable,
+    scalar_fields: &[&ParsedField],
+    enum_names: &[String],
+) -> String {
+    let mut output = String::new();
+
+    output.push_str(&format!("pub struct {}RelationWhere {{\n", table.name));
+
+    for field in scalar_fields {
+        output.push_str(&format!("    pub {}: RelationScalarField<{}>,\n", field.name, filter_type(field, enum_names)));
+    }
+
+    output.push_str("}\n\n");
+    output.push_str(&format!("impl {}RelationWhere {{\n", table.name));
+    output.push_str("    pub fn new(relation_name: &'static str) -> RelationMutationWhere<Self> {\n");
+    output.push_str("        RelationMutationWhere::new(Self {\n");
+
+    for field in scalar_fields {
+        output.push_str(&format!(
+            "            {}: RelationScalarField::new(relation_name, {:?}),\n",
+            field.name, field.name
+        ));
+    }
+
+    output.push_str("        })\n");
+    output.push_str("    }\n");
+    output.push_str("}\n\n");
+
+    output
+}
+
+fn render_relation_mutations(_table: &ParsedTable, _schema: &ParsedSchema) -> String {
+    String::new()
+}
+
 fn render_relation_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String {
     let mut output = String::new();
 
@@ -289,8 +414,8 @@ fn render_relation_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String
         };
 
         let loader_name = format!("__dinoco_load_{}", field.name);
-        let local_key_ty = rust_scalar_type(relation.local_key_field, &[]);
-        let remote_key_ty = rust_scalar_type(relation.remote_key_field, &[]);
+        let local_key_ty = rust_scalar_base_type(relation.local_key_field, &[]);
+        let remote_key_ty = rust_scalar_base_type(relation.remote_key_field, &[]);
         let target_model = relation_target(field);
         let remote_key_ident = &relation.remote_key_field.name;
         let statement_table = &relation.target_table_name;
@@ -336,25 +461,60 @@ fn render_relation_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String
     output
 }
 
-fn render_insert_relations(table: &ParsedTable, schema: &ParsedSchema) -> String {
-    let Some(primary_key_name) = table.primary_key_fields.first() else {
-        return String::new();
-    };
-    let Some(primary_key_field) = table.fields.iter().find(|field| &field.name == primary_key_name) else {
-        return String::new();
-    };
-
-    if !matches!(
-        primary_key_field.default_value,
-        ParsedFieldDefault::Function(FunctionCall::Uuid | FunctionCall::Snowflake)
-    ) {
-        return String::new();
-    }
-
+fn render_relation_count_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String {
     let mut output = String::new();
 
     for field in relation_fields(&table.fields) {
-        if !matches!(field.relation, ParsedRelation::OneToMany(_) | ParsedRelation::OneToOneInverse(_)) {
+        let Some(relation) = resolve_relation(table, field, schema) else {
+            continue;
+        };
+
+        let loader_name = format!("__dinoco_count_{}", field.name);
+        let local_key_ty = rust_scalar_base_type(relation.local_key_field, &[]);
+        let remote_key_ty = rust_scalar_base_type(relation.remote_key_field, &[]);
+        let remote_key_ident = &relation.remote_key_field.name;
+        let statement_table = &relation.target_table_name;
+
+        let block = match relation.cardinality {
+            RelationCardinality::Many | RelationCardinality::OptionalOne => render_relation_count_loader(
+                table.name.as_str(),
+                &loader_name,
+                &local_key_ty,
+                remote_key_ident,
+                statement_table,
+            ),
+            RelationCardinality::ManyToMany {
+                ref join_table_name,
+                ref current_join_column,
+                ref target_join_column,
+            } => render_many_to_many_count_loader(
+                table.name.as_str(),
+                &loader_name,
+                &local_key_ty,
+                &remote_key_ty,
+                remote_key_ident,
+                statement_table,
+                join_table_name,
+                current_join_column,
+                target_join_column,
+            ),
+        };
+
+        output.push_str(&block);
+    }
+
+    output
+}
+
+fn render_insert_relations(table: &ParsedTable, schema: &ParsedSchema) -> String {
+    let mut output = String::new();
+    let mut relations = Vec::new();
+
+    for field in relation_fields(&table.fields) {
+        if !matches!(
+            field.relation,
+            ParsedRelation::OneToMany(_) | ParsedRelation::OneToOneInverse(_) | ParsedRelation::ManyToMany(_)
+        ) {
             continue;
         }
 
@@ -363,15 +523,105 @@ fn render_insert_relations(table: &ParsedTable, schema: &ParsedSchema) -> String
         };
 
         let target_model = relation_target(field);
+        relations.push((field, relation, target_model));
+    }
+
+    let mut relation_counts = BTreeMap::<String, usize>::new();
+
+    for (_, _, target_model) in &relations {
+        *relation_counts.entry(target_model.clone()).or_default() += 1;
+    }
+
+    for (_field, relation, target_model) in relations {
+        if relation_counts.get(&target_model).copied().unwrap_or_default() > 1 {
+            continue;
+        }
 
         output.push_str(&format!("impl dinoco::InsertRelation<{}> for {} {{\n", target_model, table.name));
-        output.push_str(&format!("    fn bind_relation(&self, item: &mut {}) {{\n", target_model));
-        output.push_str(&format!(
-            "        item.{} = self.{}.clone();\n",
-            relation.remote_key_field.name, relation.local_key_field.name
-        ));
-        output.push_str("    }\n");
+        match relation.cardinality {
+            RelationCardinality::ManyToMany {
+                ref join_table_name,
+                ref current_join_column,
+                ref target_join_column,
+            } => {
+                output.push_str(&format!(
+                    "    fn relation_links(&self, item: &{}) -> Vec<dinoco::RelationLinkPlan> {{\n",
+                    target_model
+                ));
+                output.push_str("        vec![dinoco::RelationLinkPlan {\n");
+                output.push_str(&format!("            table_name: {:?},\n", join_table_name));
+                output.push_str(&format!(
+                    "            columns: &[{:?}, {:?}],\n",
+                    current_join_column, target_join_column
+                ));
+                output.push_str(&format!(
+                    "            row: vec![self.{}.clone().into_dinoco_value(), item.{}.clone().into_dinoco_value()],\n",
+                    relation.local_key_field.name, relation.remote_key_field.name
+                ));
+                output.push_str("        }]\n");
+                output.push_str("    }\n");
+            }
+            _ => {
+                output.push_str(&format!("    fn bind_relation(&self, item: &mut {}) {{\n", target_model));
+                if relation.remote_key_field.is_optional {
+                    output.push_str(&format!(
+                        "        item.{} = Some(self.{}.clone());\n",
+                        relation.remote_key_field.name, relation.local_key_field.name
+                    ));
+                } else {
+                    output.push_str(&format!(
+                        "        item.{} = self.{}.clone();\n",
+                        relation.remote_key_field.name, relation.local_key_field.name
+                    ));
+                }
+                output.push_str("    }\n");
+            }
+        }
         output.push_str("}\n\n");
+
+        match relation.cardinality {
+            RelationCardinality::ManyToMany { .. } => {
+                output
+                    .push_str(&format!("impl dinoco::InsertConnection<{}> for {} {{}}\n\n", target_model, table.name));
+            }
+            _ => {
+                let target_table_name = target_model.rsplit("::").next().unwrap_or(&target_model);
+                let Some(target_table) = schema.tables.iter().find(|candidate| candidate.name == target_table_name)
+                else {
+                    continue;
+                };
+
+                if target_table.primary_key_fields.is_empty() {
+                    continue;
+                }
+
+                output.push_str(&format!("impl dinoco::InsertConnection<{}> for {} {{\n", target_model, table.name));
+                output.push_str(&format!(
+                    "    fn connection_updates(&self, item: &{}) -> Vec<dinoco::ConnectionUpdatePlan> {{\n",
+                    target_model
+                ));
+                output.push_str("        vec![dinoco::ConnectionUpdatePlan {\n");
+                output.push_str(&format!("            table_name: {:?},\n", relation.target_table_name));
+                output.push_str(&format!("            columns: &[{:?}],\n", relation.remote_key_field.name));
+                output.push_str(&format!(
+                    "            row: vec![self.{}.clone().into_dinoco_value()],\n",
+                    relation.local_key_field.name
+                ));
+                output.push_str("            conditions: vec![\n");
+
+                for primary_key in &target_table.primary_key_fields {
+                    output.push_str(&format!(
+                        "                dinoco_engine::Expression::Column({:?}.to_string()).eq(item.{}.clone().into_dinoco_value()),\n",
+                        primary_key, primary_key
+                    ));
+                }
+
+                output.push_str("            ],\n");
+                output.push_str("        }]\n");
+                output.push_str("    }\n");
+                output.push_str("}\n\n");
+            }
+        }
     }
 
     output
@@ -386,7 +636,7 @@ fn render_many_loader(
     statement_table: &str,
 ) -> String {
     format!(
-        "impl {model_name} {{\n    pub fn {loader_name}<'a, P, C, A>(\n        item_keys: Vec<Option<{local_key_ty}>>,\n        include: &'a dinoco::IncludeNode,\n        client: &'a dinoco::DinocoClient<A>,\n        read_mode: dinoco::ReadMode,\n        relation_field: impl Fn(&mut P) -> &mut Vec<C> + Copy + 'a,\n    ) -> dinoco::IncludeLoaderFuture<'a, P>\n    where\n        A: dinoco::DinocoAdapter,\n        C: dinoco::Projection<{target_model}>,\n    {{\n        Box::pin(async move {{\n            use std::collections::HashMap;\n\n            struct DinocoChildRow<C> {{\n                item: C,\n                relation_key: {local_key_ty},\n            }}\n\n            impl<C> dinoco::DinocoRow for DinocoChildRow<C>\n            where\n                C: dinoco::Projection<{target_model}>,\n            {{\n                fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> dinoco::DinocoResult<Self> {{\n                    Ok(Self {{\n                        item: C::from_row(row)?,\n                        relation_key: row.get(C::columns().len())?,\n                    }})\n                }}\n            }}\n\n            let keys = item_keys.iter().flatten().cloned().collect::<Vec<_>>();\n\n            if keys.is_empty() {{\n                return Ok(Box::new(|_: &mut [P]| {{}}) as dinoco::IncludeApplier<'a, P>);\n            }}\n\n            let base_statement = include.statement.clone().unwrap_or_else(|| dinoco_engine::SelectStatement::new().from({statement_table:?}).select(C::columns()));\n            let adapter = client.read_adapter(matches!(read_mode, dinoco::ReadMode::Primary));\n            let mut statement = base_statement;\n            let mut select_columns = statement.select.clone();\n\n            if select_columns.is_empty() {{\n                select_columns = C::columns().iter().map(|column| column.to_string()).collect::<Vec<_>>();\n            }}\n\n            select_columns.push({remote_key_ident:?}.to_string());\n            statement.select = select_columns;\n            statement.conditions.push(dinoco_engine::Expression::Column({remote_key_ident:?}.to_string()).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));\n\n            let (sql, params) = if statement.limit.is_some() || statement.skip.is_some() {{\n                dinoco_engine::QueryBuilder::build_partitioned_select(adapter.dialect(), &statement, {remote_key_ident:?}, \"__dinoco_row_num\")\n            }} else {{\n                dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &statement)\n            }};\n            let child_rows = adapter.query_as::<DinocoChildRow<C>>(&sql, &params).await?;\n            let relation_keys = child_rows.iter().map(|row| row.relation_key.clone()).collect::<Vec<_>>();\n            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();\n\n            C::load_includes(&mut children, &include.includes, client, read_mode).await?;\n\n            let mut grouped: HashMap<{local_key_ty}, Vec<C>> = HashMap::new();\n\n            for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {{\n                grouped.entry(relation_key).or_default().push(child);\n            }}\n\n            Ok(Box::new(move |items: &mut [P]| {{\n                for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {{\n                    *relation_field(item) = key.and_then(|key| grouped.get(&key).cloned()).unwrap_or_default();\n                }}\n            }}) as dinoco::IncludeApplier<'a, P>)\n        }})\n    }}\n}}\n\n"
+        "impl {model_name} {{\n    pub fn {loader_name}<'a, P, C, A>(\n        item_keys: Vec<Option<{local_key_ty}>>,\n        include: &'a dinoco::IncludeNode,\n        client: &'a dinoco::DinocoClient<A>,\n        read_mode: dinoco::ReadMode,\n        relation_field: impl Fn(&mut P) -> &mut Vec<C> + Copy + 'a,\n    ) -> dinoco::IncludeLoaderFuture<'a, P>\n    where\n        A: dinoco::DinocoAdapter,\n        C: dinoco::Projection<{target_model}>,\n    {{\n        Box::pin(async move {{\n            use std::collections::HashMap;\n\n            struct DinocoChildRow<C> {{\n                item: C,\n                relation_key: {local_key_ty},\n            }}\n\n            impl<C> dinoco::DinocoRow for DinocoChildRow<C>\n            where\n                C: dinoco::Projection<{target_model}>,\n            {{\n                fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> dinoco::DinocoResult<Self> {{\n                    Ok(Self {{\n                        item: C::from_row(row)?,\n                        relation_key: row.get(C::columns().len())?,\n                    }})\n                }}\n            }}\n\n            let keys = item_keys.iter().flatten().cloned().collect::<Vec<_>>();\n\n            if keys.is_empty() {{\n                return Ok(Box::new(|_: &mut [P]| {{}}) as dinoco::IncludeApplier<'a, P>);\n            }}\n\n            let base_statement = include.statement.clone().unwrap_or_else(|| dinoco_engine::SelectStatement::new().from({statement_table:?}).select(C::columns()));\n            let adapter = client.read_adapter(false);\n            let mut statement = base_statement;\n            let mut select_columns = statement.select.clone();\n\n            if select_columns.is_empty() {{\n                select_columns = C::columns().iter().map(|column| column.to_string()).collect::<Vec<_>>();\n            }}\n\n            select_columns.push({remote_key_ident:?}.to_string());\n            statement.select = select_columns;\n            statement.conditions.push(dinoco_engine::Expression::Column({remote_key_ident:?}.to_string()).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));\n\n            let (sql, params) = if statement.limit.is_some() || statement.skip.is_some() {{\n                dinoco_engine::QueryBuilder::build_partitioned_select(adapter.dialect(), &statement, {remote_key_ident:?}, \"__dinoco_row_num\")\n            }} else {{\n                dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &statement)\n            }};\n            let child_rows = adapter.query_as::<DinocoChildRow<C>>(&sql, &params).await?;\n            let relation_keys = child_rows.iter().map(|row| row.relation_key.clone()).collect::<Vec<_>>();\n            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();\n\n            C::load_includes(&mut children, &include.includes, client, read_mode).await?;\n            C::load_counts(&mut children, &include.counts, client, read_mode).await?;\n\n            let mut grouped: HashMap<{local_key_ty}, Vec<C>> = HashMap::new();\n\n            for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {{\n                grouped.entry(relation_key).or_default().push(child);\n            }}\n\n            Ok(Box::new(move |items: &mut [P]| {{\n                for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {{\n                    *relation_field(item) = key.and_then(|key| grouped.remove(&key)).unwrap_or_default();\n                }}\n            }}) as dinoco::IncludeApplier<'a, P>)\n        }})\n    }}\n}}\n\n"
     )
 }
 
@@ -399,7 +649,7 @@ fn render_optional_loader(
     statement_table: &str,
 ) -> String {
     format!(
-        "impl {model_name} {{\n    pub fn {loader_name}<'a, P, C, A>(\n        item_keys: Vec<Option<{local_key_ty}>>,\n        include: &'a dinoco::IncludeNode,\n        client: &'a dinoco::DinocoClient<A>,\n        read_mode: dinoco::ReadMode,\n        relation_field: impl Fn(&mut P) -> &mut Option<C> + Copy + 'a,\n    ) -> dinoco::IncludeLoaderFuture<'a, P>\n    where\n        A: dinoco::DinocoAdapter,\n        C: dinoco::Projection<{target_model}>,\n    {{\n        Box::pin(async move {{\n            use std::collections::HashMap;\n\n            struct DinocoChildRow<C> {{\n                item: C,\n                relation_key: {local_key_ty},\n            }}\n\n            impl<C> dinoco::DinocoRow for DinocoChildRow<C>\n            where\n                C: dinoco::Projection<{target_model}>,\n            {{\n                fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> dinoco::DinocoResult<Self> {{\n                    Ok(Self {{\n                        item: C::from_row(row)?,\n                        relation_key: row.get(C::columns().len())?,\n                    }})\n                }}\n            }}\n\n            let keys = item_keys.iter().flatten().cloned().collect::<Vec<_>>();\n\n            if keys.is_empty() {{\n                return Ok(Box::new(|_: &mut [P]| {{}}) as dinoco::IncludeApplier<'a, P>);\n            }}\n\n            let mut statement = include.statement.clone().unwrap_or_else(|| dinoco_engine::SelectStatement::new().from({statement_table:?}).select(C::columns()));\n            let mut select_columns = statement.select.clone();\n\n            if select_columns.is_empty() {{\n                select_columns = C::columns().iter().map(|column| column.to_string()).collect::<Vec<_>>();\n            }}\n\n            select_columns.push({remote_key_ident:?}.to_string());\n            statement.select = select_columns;\n            statement.conditions.push(dinoco_engine::Expression::Column({remote_key_ident:?}.to_string()).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));\n\n            let adapter = client.read_adapter(matches!(read_mode, dinoco::ReadMode::Primary));\n            let (sql, params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &statement);\n            let child_rows = adapter.query_as::<DinocoChildRow<C>>(&sql, &params).await?;\n            let relation_keys = child_rows.iter().map(|row| row.relation_key.clone()).collect::<Vec<_>>();\n            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();\n\n            C::load_includes(&mut children, &include.includes, client, read_mode).await?;\n\n            let mut grouped: HashMap<{local_key_ty}, C> = HashMap::new();\n\n            for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {{\n                grouped.insert(relation_key, child);\n            }}\n\n            Ok(Box::new(move |items: &mut [P]| {{\n                for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {{\n                    *relation_field(item) = key.and_then(|key| grouped.remove(&key));\n                }}\n            }}) as dinoco::IncludeApplier<'a, P>)\n        }})\n    }}\n}}\n\n"
+        "impl {model_name} {{\n    pub fn {loader_name}<'a, P, C, A>(\n        item_keys: Vec<Option<{local_key_ty}>>,\n        include: &'a dinoco::IncludeNode,\n        client: &'a dinoco::DinocoClient<A>,\n        read_mode: dinoco::ReadMode,\n        relation_field: impl Fn(&mut P) -> &mut Option<C> + Copy + 'a,\n    ) -> dinoco::IncludeLoaderFuture<'a, P>\n    where\n        A: dinoco::DinocoAdapter,\n        C: dinoco::Projection<{target_model}>,\n    {{\n        Box::pin(async move {{\n            use std::collections::HashMap;\n\n            struct DinocoChildRow<C> {{\n                item: C,\n                relation_key: {local_key_ty},\n            }}\n\n            impl<C> dinoco::DinocoRow for DinocoChildRow<C>\n            where\n                C: dinoco::Projection<{target_model}>,\n            {{\n                fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> dinoco::DinocoResult<Self> {{\n                    Ok(Self {{\n                        item: C::from_row(row)?,\n                        relation_key: row.get(C::columns().len())?,\n                    }})\n                }}\n            }}\n\n            let keys = item_keys.iter().flatten().cloned().collect::<Vec<_>>();\n\n            if keys.is_empty() {{\n                return Ok(Box::new(|_: &mut [P]| {{}}) as dinoco::IncludeApplier<'a, P>);\n            }}\n\n            let mut statement = include.statement.clone().unwrap_or_else(|| dinoco_engine::SelectStatement::new().from({statement_table:?}).select(C::columns()));\n            let mut select_columns = statement.select.clone();\n\n            if select_columns.is_empty() {{\n                select_columns = C::columns().iter().map(|column| column.to_string()).collect::<Vec<_>>();\n            }}\n\n            select_columns.push({remote_key_ident:?}.to_string());\n            statement.select = select_columns;\n            statement.conditions.push(dinoco_engine::Expression::Column({remote_key_ident:?}.to_string()).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));\n\n            let adapter = client.read_adapter(false);\n            let (sql, params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &statement);\n            let child_rows = adapter.query_as::<DinocoChildRow<C>>(&sql, &params).await?;\n            let relation_keys = child_rows.iter().map(|row| row.relation_key.clone()).collect::<Vec<_>>();\n            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();\n\n            C::load_includes(&mut children, &include.includes, client, read_mode).await?;\n            C::load_counts(&mut children, &include.counts, client, read_mode).await?;\n\n            let mut grouped: HashMap<{local_key_ty}, C> = HashMap::new();\n\n            for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {{\n                grouped.insert(relation_key, child);\n            }}\n\n            Ok(Box::new(move |items: &mut [P]| {{\n                for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {{\n                    *relation_field(item) = key.and_then(|key| grouped.remove(&key));\n                }}\n            }}) as dinoco::IncludeApplier<'a, P>)\n        }})\n    }}\n}}\n\n"
     )
 }
 
@@ -415,7 +665,441 @@ fn render_many_to_many_loader(
     current_join_column: &str,
     target_join_column: &str,
 ) -> String {
-    format!(
-        "impl {model_name} {{\n    pub fn {loader_name}<'a, P, C, A>(\n        item_keys: Vec<Option<{local_key_ty}>>,\n        include: &'a dinoco::IncludeNode,\n        client: &'a dinoco::DinocoClient<A>,\n        read_mode: dinoco::ReadMode,\n        relation_field: impl Fn(&mut P) -> &mut Vec<C> + Copy + 'a,\n    ) -> dinoco::IncludeLoaderFuture<'a, P>\n    where\n        A: dinoco::DinocoAdapter,\n        C: dinoco::Projection<{target_model}> + Clone,\n    {{\n        Box::pin(async move {{\n            use std::collections::HashMap;\n\n            #[derive(Debug, Clone, dinoco::Rowable)]\n            struct DinocoJoinRow {{\n                {current_join_column}: {local_key_ty},\n                {target_join_column}: {remote_key_ty},\n            }}\n\n            struct DinocoChildRow<C> {{\n                item: C,\n                relation_key: {remote_key_ty},\n            }}\n\n            impl<C> dinoco::DinocoRow for DinocoChildRow<C>\n            where\n                C: dinoco::Projection<{target_model}>,\n            {{\n                fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> dinoco::DinocoResult<Self> {{\n                    Ok(Self {{\n                        item: C::from_row(row)?,\n                        relation_key: row.get(C::columns().len())?,\n                    }})\n                }}\n            }}\n\n            struct DinocoPartitionedChildRow<C> {{\n                item: C,\n                relation_key: {local_key_ty},\n            }}\n\n            impl<C> dinoco::DinocoRow for DinocoPartitionedChildRow<C>\n            where\n                C: dinoco::Projection<{target_model}>,\n            {{\n                fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> dinoco::DinocoResult<Self> {{\n                    Ok(Self {{\n                        item: C::from_row(row)?,\n                        relation_key: row.get(C::columns().len())?,\n                    }})\n                }}\n            }}\n\n            let keys = item_keys.iter().flatten().cloned().collect::<Vec<_>>();\n\n            if keys.is_empty() {{\n                return Ok(Box::new(|_: &mut [P]| {{}}) as dinoco::IncludeApplier<'a, P>);\n            }}\n\n            let join_statement = dinoco_engine::SelectStatement::new()\n                .from({join_table_name:?})\n                .select(&[{current_join_column:?}, {target_join_column:?}])\n                .condition(dinoco_engine::Expression::Column({current_join_column:?}.to_string()).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));\n\n            let adapter = client.read_adapter(matches!(read_mode, dinoco::ReadMode::Primary));\n            let (join_sql, join_params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &join_statement);\n            let join_rows = adapter.query_as::<DinocoJoinRow>(&join_sql, &join_params).await?;\n            let target_ids = join_rows.iter().map(|row| row.{target_join_column}.clone()).collect::<Vec<_>>();\n\n            if target_ids.is_empty() {{\n                return Ok(Box::new(|items: &mut [P]| {{\n                    for item in items.iter_mut() {{\n                        relation_field(item).clear();\n                    }}\n                }}) as dinoco::IncludeApplier<'a, P>);\n            }}\n\n            let base_statement = include.statement.clone().unwrap_or_else(|| dinoco_engine::SelectStatement::new().from({statement_table:?}).select(C::columns()));\n\n            if base_statement.limit.is_some() || base_statement.skip.is_some() {{\n                let mut statement = base_statement.clone();\n                let mut select_columns = statement.select.clone();\n\n                if select_columns.is_empty() {{\n                    select_columns = C::columns()\n                        .iter()\n                        .map(|column| format!(\"{{}}.{{}}\", {statement_table:?}, column))\n                        .collect::<Vec<_>>();\n                }} else {{\n                    select_columns = select_columns\n                        .into_iter()\n                        .map(|column| {{\n                            if column.contains('.') || column.contains(' ') || column.contains('(') || column.contains(')') || column.contains(',') {{\n                                column\n                            }} else {{\n                                format!(\"{{}}.{{}}\", {statement_table:?}, column)\n                            }}\n                        }})\n                        .collect::<Vec<_>>();\n                }}\n\n                select_columns.push(format!(\"{{}}.{{}}\", {join_table_name:?}, {current_join_column:?}));\n                statement.select = select_columns;\n                statement.conditions.push(dinoco_engine::Expression::Column(format!(\"{{}}.{{}}\", {join_table_name:?}, {current_join_column:?})).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));\n\n                let target_table_ident = adapter.dialect().identifier({statement_table:?});\n                let join_table_ident = adapter.dialect().identifier({join_table_name:?});\n                statement.from = format!(\n                    \"{{}} INNER JOIN {{}} ON {{}}.{{}} = {{}}.{{}}\",\n                    target_table_ident,\n                    join_table_ident,\n                    target_table_ident,\n                    adapter.dialect().identifier({remote_key_ident:?}),\n                    join_table_ident,\n                    adapter.dialect().identifier({target_join_column:?}),\n                );\n\n                let partition_column = format!(\"{{}}.{{}}\", {join_table_name:?}, {current_join_column:?});\n                let (sql, params) = dinoco_engine::QueryBuilder::build_partitioned_select(\n                    adapter.dialect(),\n                    &statement,\n                    &partition_column,\n                    \"__dinoco_row_num\",\n                );\n                let child_rows = adapter.query_as::<DinocoPartitionedChildRow<C>>(&sql, &params).await?;\n                let relation_keys = child_rows.iter().map(|row| row.relation_key.clone()).collect::<Vec<_>>();\n                let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();\n\n                C::load_includes(&mut children, &include.includes, client, read_mode).await?;\n\n                let mut grouped: HashMap<{local_key_ty}, Vec<C>> = HashMap::new();\n\n                for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {{\n                    grouped.entry(relation_key).or_default().push(child);\n                }}\n\n                return Ok(Box::new(move |items: &mut [P]| {{\n                    for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {{\n                        *relation_field(item) = key.and_then(|key| grouped.get(&key).cloned()).unwrap_or_default();\n                    }}\n                }}) as dinoco::IncludeApplier<'a, P>);\n            }}\n\n            let mut statement = base_statement;\n            let mut select_columns = statement.select.clone();\n\n            if select_columns.is_empty() {{\n                select_columns = C::columns().iter().map(|column| column.to_string()).collect::<Vec<_>>();\n            }}\n\n            select_columns.push({remote_key_ident:?}.to_string());\n            statement.select = select_columns;\n            statement.conditions.push(dinoco_engine::Expression::Column({remote_key_ident:?}.to_string()).in_values(target_ids.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));\n\n            let (sql, params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &statement);\n            let child_rows = adapter.query_as::<DinocoChildRow<C>>(&sql, &params).await?;\n            let relation_keys = child_rows.iter().map(|row| row.relation_key.clone()).collect::<Vec<_>>();\n            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();\n\n            C::load_includes(&mut children, &include.includes, client, read_mode).await?;\n\n            let mut child_map: HashMap<{remote_key_ty}, C> = HashMap::new();\n\n            for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {{\n                child_map.insert(relation_key, child);\n            }}\n\n            let mut grouped: HashMap<{local_key_ty}, Vec<C>> = HashMap::new();\n\n            for join_row in join_rows {{\n                if let Some(child) = child_map.get(&join_row.{target_join_column}) {{\n                    grouped.entry(join_row.{current_join_column}.clone()).or_default().push(child.clone());\n                }}\n            }}\n\n            Ok(Box::new(move |items: &mut [P]| {{\n                for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {{\n                    *relation_field(item) = key.and_then(|key| grouped.get(&key).cloned()).unwrap_or_default();\n                }}\n            }}) as dinoco::IncludeApplier<'a, P>)\n        }})\n    }}\n}}\n\n"
-    )
+    let template = r#"impl __MODEL__ {
+    pub fn __LOADER__<'a, P, C, A>(
+        item_keys: Vec<Option<__LOCAL_KEY_TY__>>,
+        include: &'a dinoco::IncludeNode,
+        client: &'a dinoco::DinocoClient<A>,
+        read_mode: dinoco::ReadMode,
+        relation_field: impl Fn(&mut P) -> &mut Vec<C> + Copy + 'a,
+    ) -> dinoco::IncludeLoaderFuture<'a, P>
+    where
+        A: dinoco::DinocoAdapter,
+        C: dinoco::Projection<__TARGET_MODEL__> + Clone,
+    {
+        Box::pin(async move {
+            use std::collections::HashMap;
+
+            #[derive(Debug, Clone, dinoco::Rowable)]
+            struct DinocoJoinRow {
+                __CURRENT_JOIN_COLUMN__: __LOCAL_KEY_TY__,
+                __TARGET_JOIN_COLUMN__: __REMOTE_KEY_TY__,
+            }
+
+            struct DinocoChildRow<C> {
+                item: C,
+                relation_key: __REMOTE_KEY_TY__,
+            }
+
+            impl<C> dinoco::DinocoRow for DinocoChildRow<C>
+            where
+                C: dinoco::Projection<__TARGET_MODEL__>,
+            {
+                fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> dinoco::DinocoResult<Self> {
+                    Ok(Self {
+                        item: C::from_row(row)?,
+                        relation_key: row.get(C::columns().len())?,
+                    })
+                }
+            }
+
+            struct DinocoPartitionedChildRow<C> {
+                item: C,
+                relation_key: __LOCAL_KEY_TY__,
+            }
+
+            impl<C> dinoco::DinocoRow for DinocoPartitionedChildRow<C>
+            where
+                C: dinoco::Projection<__TARGET_MODEL__>,
+            {
+                fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> dinoco::DinocoResult<Self> {
+                    Ok(Self {
+                        item: C::from_row(row)?,
+                        relation_key: row.get(C::columns().len())?,
+                    })
+                }
+            }
+
+            let keys = item_keys.iter().flatten().cloned().collect::<Vec<_>>();
+
+            if keys.is_empty() {
+                return Ok(Box::new(|_: &mut [P]| {}) as dinoco::IncludeApplier<'a, P>);
+            }
+
+            let join_statement = dinoco_engine::SelectStatement::new()
+                .from("__JOIN_TABLE_NAME__")
+                .select(&["__CURRENT_JOIN_COLUMN__", "__TARGET_JOIN_COLUMN__"])
+                .condition(dinoco_engine::Expression::Column("__CURRENT_JOIN_COLUMN__".to_string()).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));
+
+            let adapter = client.read_adapter(false);
+            let (join_sql, join_params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &join_statement);
+            let join_rows = adapter.query_as::<DinocoJoinRow>(&join_sql, &join_params).await?;
+            let target_ids = join_rows.iter().map(|row| row.__TARGET_JOIN_COLUMN__.clone()).collect::<Vec<_>>();
+
+            if target_ids.is_empty() {
+                return Ok(Box::new(move |items: &mut [P]| {
+                    for item in items.iter_mut() {
+                        relation_field(item).clear();
+                    }
+                }) as dinoco::IncludeApplier<'a, P>);
+            }
+
+            let base_statement = include.statement.clone().unwrap_or_else(|| dinoco_engine::SelectStatement::new().from("__STATEMENT_TABLE__").select(C::columns()));
+
+            if base_statement.limit.is_some() || base_statement.skip.is_some() {
+                let mut statement = base_statement.clone();
+                let mut select_columns = statement.select.clone();
+
+                if select_columns.is_empty() {
+                    select_columns = C::columns()
+                        .iter()
+                        .map(|column| format!("{}.{}", "__STATEMENT_TABLE__", column))
+                        .collect::<Vec<_>>();
+                } else {
+                    select_columns = select_columns
+                        .into_iter()
+                        .map(|column| {
+                            if column.contains('.') || column.contains(' ') || column.contains('(') || column.contains(')') || column.contains(',') {
+                                column
+                            } else {
+                                format!("{}.{}", "__STATEMENT_TABLE__", column)
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                }
+
+                select_columns.push(format!("{}.{}", "__JOIN_TABLE_NAME__", "__CURRENT_JOIN_COLUMN__"));
+                statement.select = select_columns;
+                statement.conditions.push(dinoco_engine::Expression::Column(format!("{}.{}", "__JOIN_TABLE_NAME__", "__CURRENT_JOIN_COLUMN__")).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));
+
+                let target_table_ident = adapter.dialect().identifier("__STATEMENT_TABLE__");
+                let join_table_ident = adapter.dialect().identifier("__JOIN_TABLE_NAME__");
+                statement.from = format!(
+                    "{} INNER JOIN {} ON {}.{} = {}.{}",
+                    target_table_ident,
+                    join_table_ident,
+                    target_table_ident,
+                    adapter.dialect().identifier("__REMOTE_KEY_IDENT__"),
+                    join_table_ident,
+                    adapter.dialect().identifier("__TARGET_JOIN_COLUMN__"),
+                );
+
+                let partition_column = format!("{}.{}", "__JOIN_TABLE_NAME__", "__CURRENT_JOIN_COLUMN__");
+                let (sql, params) = dinoco_engine::QueryBuilder::build_partitioned_select(
+                    adapter.dialect(),
+                    &statement,
+                    &partition_column,
+                    "__dinoco_row_num",
+                );
+                let child_rows = adapter.query_as::<DinocoPartitionedChildRow<C>>(&sql, &params).await?;
+                let relation_keys = child_rows.iter().map(|row| row.relation_key.clone()).collect::<Vec<_>>();
+                let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
+
+                C::load_includes(&mut children, &include.includes, client, read_mode).await?;
+                C::load_counts(&mut children, &include.counts, client, read_mode).await?;
+
+                let mut grouped: HashMap<__LOCAL_KEY_TY__, Vec<C>> = HashMap::new();
+
+                for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {
+                    grouped.entry(relation_key).or_default().push(child);
+                }
+
+                return Ok(Box::new(move |items: &mut [P]| {
+                    for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {
+                        *relation_field(item) = key.and_then(|key| grouped.remove(&key)).unwrap_or_default();
+                    }
+                }) as dinoco::IncludeApplier<'a, P>);
+            }
+
+            let mut statement = base_statement;
+            let mut select_columns = statement.select.clone();
+
+            if select_columns.is_empty() {
+                select_columns = C::columns().iter().map(|column| column.to_string()).collect::<Vec<_>>();
+            }
+
+            select_columns.push("__REMOTE_KEY_IDENT__".to_string());
+            statement.select = select_columns;
+            statement.conditions.push(dinoco_engine::Expression::Column("__REMOTE_KEY_IDENT__".to_string()).in_values(target_ids.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));
+
+            let (sql, params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &statement);
+            let child_rows = adapter.query_as::<DinocoChildRow<C>>(&sql, &params).await?;
+            let relation_keys = child_rows.iter().map(|row| row.relation_key.clone()).collect::<Vec<_>>();
+            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
+
+            C::load_includes(&mut children, &include.includes, client, read_mode).await?;
+            C::load_counts(&mut children, &include.counts, client, read_mode).await?;
+
+            let mut child_map: HashMap<__REMOTE_KEY_TY__, C> = HashMap::new();
+
+            for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {
+                child_map.insert(relation_key, child);
+            }
+
+            let mut grouped: HashMap<__LOCAL_KEY_TY__, Vec<C>> = HashMap::new();
+
+            for join_row in join_rows {
+                if let Some(child) = child_map.get(&join_row.__TARGET_JOIN_COLUMN__) {
+                    grouped.entry(join_row.__CURRENT_JOIN_COLUMN__.clone()).or_default().push(child.clone());
+                }
+            }
+
+            Ok(Box::new(move |items: &mut [P]| {
+                for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {
+                    *relation_field(item) = key.and_then(|key| grouped.remove(&key)).unwrap_or_default();
+                }
+            }) as dinoco::IncludeApplier<'a, P>)
+        })
+    }
+}
+
+"#;
+
+    template
+        .replace("__MODEL__", model_name)
+        .replace("__LOADER__", loader_name)
+        .replace("__LOCAL_KEY_TY__", local_key_ty)
+        .replace("__REMOTE_KEY_TY__", remote_key_ty)
+        .replace("__TARGET_MODEL__", target_model)
+        .replace("__REMOTE_KEY_IDENT__", remote_key_ident)
+        .replace("__STATEMENT_TABLE__", statement_table)
+        .replace("__JOIN_TABLE_NAME__", join_table_name)
+        .replace("__CURRENT_JOIN_COLUMN__", current_join_column)
+        .replace("__TARGET_JOIN_COLUMN__", target_join_column)
+}
+
+fn render_relation_count_loader(
+    model_name: &str,
+    loader_name: &str,
+    local_key_ty: &str,
+    remote_key_ident: &str,
+    statement_table: &str,
+) -> String {
+    let template = r#"impl __MODEL__ {
+    pub fn __LOADER__<'a, P, A>(
+        item_keys: Vec<Option<__LOCAL_KEY_TY__>>,
+        count: &'a dinoco::CountNode,
+        client: &'a dinoco::DinocoClient<A>,
+        _read_mode: dinoco::ReadMode,
+        relation_field: impl Fn(&mut P) -> &mut usize + Copy + 'a,
+    ) -> dinoco::IncludeLoaderFuture<'a, P>
+    where
+        A: dinoco::DinocoAdapter,
+    {
+        Box::pin(async move {
+            use std::collections::HashMap;
+
+            #[derive(Debug, Clone, dinoco::Rowable)]
+            struct DinocoRelationCountRow {
+                __REMOTE_KEY_IDENT__: __LOCAL_KEY_TY__,
+            }
+
+            let keys = item_keys.iter().flatten().cloned().collect::<Vec<_>>();
+
+            if keys.is_empty() {
+                return Ok(Box::new(|_: &mut [P]| {}) as dinoco::IncludeApplier<'a, P>);
+            }
+
+            let adapter = client.read_adapter(false);
+            let mut statement = count.statement.clone().unwrap_or_else(|| {
+                dinoco_engine::SelectStatement::new().from("__STATEMENT_TABLE__").select(&["__REMOTE_KEY_IDENT__"])
+            });
+            statement.select = vec!["__REMOTE_KEY_IDENT__".to_string()];
+            statement.conditions.push(dinoco_engine::Expression::Column("__REMOTE_KEY_IDENT__".to_string()).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));
+
+            let rows = if statement.limit.is_some() || statement.skip.is_some() {
+                let (sql, params) = dinoco_engine::QueryBuilder::build_partitioned_select(
+                    adapter.dialect(),
+                    &statement,
+                    "__REMOTE_KEY_IDENT__",
+                    "__dinoco_row_num",
+                );
+                adapter.query_as::<DinocoRelationCountRow>(&sql, &params).await?
+            } else {
+                let (sql, params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &statement);
+                adapter.query_as::<DinocoRelationCountRow>(&sql, &params).await?
+            };
+
+            let mut grouped: HashMap<__LOCAL_KEY_TY__, usize> = HashMap::new();
+
+            for row in rows {
+                *grouped.entry(row.__REMOTE_KEY_IDENT__).or_default() += 1;
+            }
+
+            Ok(Box::new(move |items: &mut [P]| {
+                for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {
+                    *relation_field(item) = key.and_then(|key| grouped.remove(&key)).unwrap_or(0);
+                }
+            }) as dinoco::IncludeApplier<'a, P>)
+        })
+    }
+}
+
+"#;
+
+    template
+        .replace("__MODEL__", model_name)
+        .replace("__LOADER__", loader_name)
+        .replace("__LOCAL_KEY_TY__", local_key_ty)
+        .replace("__REMOTE_KEY_IDENT__", remote_key_ident)
+        .replace("__STATEMENT_TABLE__", statement_table)
+}
+
+fn render_many_to_many_count_loader(
+    model_name: &str,
+    loader_name: &str,
+    local_key_ty: &str,
+    remote_key_ty: &str,
+    remote_key_ident: &str,
+    statement_table: &str,
+    join_table_name: &str,
+    current_join_column: &str,
+    target_join_column: &str,
+) -> String {
+    let template = r#"impl __MODEL__ {
+    pub fn __LOADER__<'a, P, A>(
+        item_keys: Vec<Option<__LOCAL_KEY_TY__>>,
+        count: &'a dinoco::CountNode,
+        client: &'a dinoco::DinocoClient<A>,
+        _read_mode: dinoco::ReadMode,
+        relation_field: impl Fn(&mut P) -> &mut usize + Copy + 'a,
+    ) -> dinoco::IncludeLoaderFuture<'a, P>
+    where
+        A: dinoco::DinocoAdapter,
+    {
+        Box::pin(async move {
+            use std::collections::{HashMap, HashSet};
+
+            #[derive(Debug, Clone, dinoco::Rowable)]
+            struct DinocoJoinRow {
+                __CURRENT_JOIN_COLUMN__: __LOCAL_KEY_TY__,
+                __TARGET_JOIN_COLUMN__: __REMOTE_KEY_TY__,
+            }
+
+            #[derive(Debug, Clone, dinoco::Rowable)]
+            struct DinocoRelationCountRow {
+                __REMOTE_KEY_IDENT__: __REMOTE_KEY_TY__,
+            }
+
+            #[derive(Debug, Clone, dinoco::Rowable)]
+            struct DinocoPartitionedCountRow {
+                __CURRENT_JOIN_COLUMN__: __LOCAL_KEY_TY__,
+            }
+
+            let keys = item_keys.iter().flatten().cloned().collect::<Vec<_>>();
+
+            if keys.is_empty() {
+                return Ok(Box::new(|_: &mut [P]| {}) as dinoco::IncludeApplier<'a, P>);
+            }
+
+            let adapter = client.read_adapter(false);
+            let join_statement = dinoco_engine::SelectStatement::new()
+                .from("__JOIN_TABLE_NAME__")
+                .select(&["__CURRENT_JOIN_COLUMN__", "__TARGET_JOIN_COLUMN__"])
+                .condition(dinoco_engine::Expression::Column("__CURRENT_JOIN_COLUMN__".to_string()).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));
+            let (join_sql, join_params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &join_statement);
+            let join_rows = adapter.query_as::<DinocoJoinRow>(&join_sql, &join_params).await?;
+            let target_ids = join_rows.iter().map(|row| row.__TARGET_JOIN_COLUMN__.clone()).collect::<Vec<_>>();
+
+            if target_ids.is_empty() {
+                return Ok(Box::new(move |items: &mut [P]| {
+                    for item in items.iter_mut() {
+                        *relation_field(item) = 0;
+                    }
+                }) as dinoco::IncludeApplier<'a, P>);
+            }
+
+            let mut statement = count.statement.clone().unwrap_or_else(|| {
+                dinoco_engine::SelectStatement::new().from("__STATEMENT_TABLE__").select(&["__REMOTE_KEY_IDENT__"])
+            });
+
+            if statement.limit.is_some() || statement.skip.is_some() {
+                let mut select_columns = statement.select.clone();
+
+                if select_columns.is_empty() {
+                    select_columns = vec![format!("{}.{}", "__STATEMENT_TABLE__", "__REMOTE_KEY_IDENT__")];
+                } else {
+                    select_columns = select_columns
+                        .into_iter()
+                        .map(|column| {
+                            if column.contains('.') || column.contains(' ') || column.contains('(') || column.contains(')') || column.contains(',') {
+                                column
+                            } else {
+                                format!("{}.{}", "__STATEMENT_TABLE__", column)
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                }
+
+                select_columns.push(format!("{}.{}", "__JOIN_TABLE_NAME__", "__CURRENT_JOIN_COLUMN__"));
+                statement.select = select_columns;
+                statement.conditions.push(dinoco_engine::Expression::Column(format!("{}.{}", "__JOIN_TABLE_NAME__", "__CURRENT_JOIN_COLUMN__")).in_values(keys.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));
+
+                let target_table_ident = adapter.dialect().identifier("__STATEMENT_TABLE__");
+                let join_table_ident = adapter.dialect().identifier("__JOIN_TABLE_NAME__");
+                statement.from = format!(
+                    "{} INNER JOIN {} ON {}.{} = {}.{}",
+                    target_table_ident,
+                    join_table_ident,
+                    target_table_ident,
+                    adapter.dialect().identifier("__REMOTE_KEY_IDENT__"),
+                    join_table_ident,
+                    adapter.dialect().identifier("__TARGET_JOIN_COLUMN__"),
+                );
+
+                let partition_column = format!("{}.{}", "__JOIN_TABLE_NAME__", "__CURRENT_JOIN_COLUMN__");
+                let (sql, params) = dinoco_engine::QueryBuilder::build_partitioned_select(
+                    adapter.dialect(),
+                    &statement,
+                    &partition_column,
+                    "__dinoco_row_num",
+                );
+                let rows = adapter.query_as::<DinocoPartitionedCountRow>(&sql, &params).await?;
+                let mut grouped: HashMap<__LOCAL_KEY_TY__, usize> = HashMap::new();
+
+                for row in rows {
+                    *grouped.entry(row.__CURRENT_JOIN_COLUMN__).or_default() += 1;
+                }
+
+                return Ok(Box::new(move |items: &mut [P]| {
+                    for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {
+                        *relation_field(item) = key.and_then(|key| grouped.remove(&key)).unwrap_or(0);
+                    }
+                }) as dinoco::IncludeApplier<'a, P>);
+            }
+
+            statement.select = vec!["__REMOTE_KEY_IDENT__".to_string()];
+            statement.conditions.push(dinoco_engine::Expression::Column("__REMOTE_KEY_IDENT__".to_string()).in_values(target_ids.iter().cloned().map(dinoco::IntoDinocoValue::into_dinoco_value).collect()));
+            let (sql, params) = dinoco_engine::QueryBuilder::build_select(adapter.dialect(), &statement);
+            let rows = adapter.query_as::<DinocoRelationCountRow>(&sql, &params).await?;
+            let allowed_ids = rows.into_iter().map(|row| row.__REMOTE_KEY_IDENT__).collect::<HashSet<_>>();
+            let mut grouped: HashMap<__LOCAL_KEY_TY__, usize> = HashMap::new();
+
+            for join_row in join_rows {
+                if allowed_ids.contains(&join_row.__TARGET_JOIN_COLUMN__) {
+                    *grouped.entry(join_row.__CURRENT_JOIN_COLUMN__).or_default() += 1;
+                }
+            }
+
+            Ok(Box::new(move |items: &mut [P]| {
+                for (item, key) in items.iter_mut().zip(item_keys.into_iter()) {
+                    *relation_field(item) = key.and_then(|key| grouped.remove(&key)).unwrap_or(0);
+                }
+            }) as dinoco::IncludeApplier<'a, P>)
+        })
+    }
+}
+
+"#;
+
+    template
+        .replace("__MODEL__", model_name)
+        .replace("__LOADER__", loader_name)
+        .replace("__LOCAL_KEY_TY__", local_key_ty)
+        .replace("__REMOTE_KEY_TY__", remote_key_ty)
+        .replace("__REMOTE_KEY_IDENT__", remote_key_ident)
+        .replace("__STATEMENT_TABLE__", statement_table)
+        .replace("__JOIN_TABLE_NAME__", join_table_name)
+        .replace("__CURRENT_JOIN_COLUMN__", current_join_column)
+        .replace("__TARGET_JOIN_COLUMN__", target_join_column)
 }

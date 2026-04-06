@@ -56,6 +56,15 @@ pub trait QueryBuilder: AdapterDialect {
         (sql, params)
     }
 
+    fn build_count(&self, stmt: &SelectStatement) -> Query {
+        let (inner_sql, params) = self.build_select(stmt);
+        let mut sql = String::with_capacity(inner_sql.len() + 64);
+
+        let _ = write!(sql, "SELECT COUNT(*) FROM ({inner_sql}) AS {}", self.identifier("__dinoco_count"));
+
+        (sql, params)
+    }
+
     fn build_partitioned_select(
         &self,
         stmt: &SelectStatement,
@@ -131,7 +140,7 @@ pub trait QueryBuilder: AdapterDialect {
         }
 
         sql.push_str(" ORDER BY ");
-        render_query_identifier_into(self, partition_column, &mut sql);
+        render_query_identifier_into(self, outer_partition_column(partition_column), &mut sql);
         let _ = write!(sql, ", {}", row_alias);
 
         (sql, params)
@@ -154,7 +163,7 @@ pub trait QueryBuilder: AdapterDialect {
 
             push_joined(buf, row, ", ", |b, value| {
                 params.push(value.clone());
-                b.push_str(&self.bind_param(params.len()));
+                b.push_str(&self.bind_value(params.len(), value));
             });
 
             buf.push(')');
@@ -179,7 +188,7 @@ pub trait QueryBuilder: AdapterDialect {
 
                 render_query_identifier_into(self, column, buf);
 
-                let _ = write!(buf, " = {}", self.bind_param(params.len()));
+                let _ = write!(buf, " = {}", self.bind_value(params.len(), value));
             });
 
             if !stmt.conditions.is_empty() {
@@ -212,7 +221,7 @@ pub trait QueryBuilder: AdapterDialect {
 
                     params.push(value.clone());
 
-                    let _ = write!(buf, " THEN {}", self.bind_param(params.len()));
+                    let _ = write!(buf, " THEN {}", self.bind_value(params.len(), value));
                 }
             }
 
@@ -260,6 +269,10 @@ pub trait QueryBuilder: AdapterDialect {
 
         (sql, params)
     }
+}
+
+fn outer_partition_column(partition_column: &str) -> &str {
+    partition_column.rsplit('.').next().unwrap_or(partition_column)
 }
 
 impl<T: AdapterDialect> QueryBuilder for T {}

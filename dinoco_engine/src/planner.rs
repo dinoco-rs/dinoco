@@ -435,14 +435,22 @@ pub fn extract_relations(
                     });
                 }
             }
-            ParsedRelation::ManyToMany(Some(relation_name)) => {
+            ParsedRelation::ManyToMany(relation_name) => {
                 let target_table_name = match &field.field_type {
                     ParsedFieldType::Relation(name) => name.clone(),
                     _ => continue,
                 };
 
                 if new_table.name <= target_table_name {
-                    let safe_rel_name = format!("_{}", relation_name.replace("\"", ""));
+                    let Some(safe_rel_name) = build_many_to_many_join_table_name(
+                        new_table,
+                        field,
+                        &target_table_name,
+                        relation_name.as_deref(),
+                        all_tables,
+                    ) else {
+                        continue;
+                    };
 
                     if !processed_m2m.insert(safe_rel_name.clone()) {
                         continue;
@@ -573,4 +581,81 @@ pub fn extract_relations(
     }
 
     (fk_steps, join_tables)
+}
+
+fn build_many_to_many_join_table_name(
+    current_table: &ParsedTable,
+    current_field: &ParsedField,
+    target_table_name: &str,
+    relation_name: Option<&str>,
+    all_tables: &[ParsedTable],
+) -> Option<String> {
+    if let Some(relation_name) = relation_name {
+        return Some(format!("_{}", relation_name.replace('"', "")));
+    }
+
+    if current_table.name == target_table_name {
+        let anchor_field =
+            find_many_to_many_counterpart(current_table, current_field, target_table_name, relation_name, all_tables)
+                .map(|field| if current_field.name <= field.name { current_field } else { field })
+                .unwrap_or(current_field);
+
+        return Some(format!("_{}{}", current_table.name, pascal_case(&anchor_field.name)));
+    }
+
+    if current_table.name.as_str() < target_table_name {
+        return Some(format!("_{}{}", current_table.name, pascal_case(&current_field.name)));
+    }
+
+    let counterpart =
+        find_many_to_many_counterpart(current_table, current_field, target_table_name, relation_name, all_tables)?;
+
+    Some(format!("_{}{}", target_table_name, pascal_case(&counterpart.name)))
+}
+
+fn find_many_to_many_counterpart<'a>(
+    current_table: &ParsedTable,
+    current_field: &ParsedField,
+    target_table_name: &str,
+    relation_name: Option<&str>,
+    all_tables: &'a [ParsedTable],
+) -> Option<&'a ParsedField> {
+    let target_table = all_tables.iter().find(|table| table.name == target_table_name)?;
+
+    target_table.fields.iter().find(|candidate| {
+        if !matches!(candidate.field_type, ParsedFieldType::Relation(ref target) if target == &current_table.name) {
+            return false;
+        }
+
+        if current_table.name == target_table_name && candidate.name == current_field.name {
+            return false;
+        }
+
+        matches!(
+            &candidate.relation,
+            ParsedRelation::ManyToMany(candidate_relation_name)
+                if candidate_relation_name.as_deref() == relation_name
+        )
+    })
+}
+
+fn pascal_case(value: &str) -> String {
+    let mut output = String::new();
+    let mut uppercase_next = true;
+
+    for ch in value.chars() {
+        if ch == '_' || ch == '-' || ch == ' ' {
+            uppercase_next = true;
+            continue;
+        }
+
+        if uppercase_next {
+            output.extend(ch.to_uppercase());
+            uppercase_next = false;
+        } else {
+            output.push(ch);
+        }
+    }
+
+    output
 }

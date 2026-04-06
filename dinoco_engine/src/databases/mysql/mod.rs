@@ -1,10 +1,14 @@
 use chrono::{Datelike, Timelike};
 use std::sync::Arc;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
-use crate::{ConstraintError, DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
+use crate::{
+    ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
+    DinocoRow, DinocoValue,
+};
 
 mod dialect;
 mod handler;
@@ -18,6 +22,7 @@ static MYSQL_DIALECT: MySqlDialect = MySqlDialect;
 pub struct MySqlAdapter {
     pub url: String,
     pub client: Arc<Pool>,
+    pub query_logger: DinocoQueryLogger,
 }
 
 #[async_trait]
@@ -28,23 +33,47 @@ impl DinocoAdapter for MySqlAdapter {
         &MYSQL_DIALECT
     }
 
-    async fn connect(url: String) -> DinocoResult<Self> {
-        Ok(Self { client: Arc::new(Pool::new(url.as_str())), url })
+    async fn connect(url: String, config: DinocoClientConfig) -> DinocoResult<Self> {
+        Ok(Self { client: Arc::new(Pool::new(url.as_str())), query_logger: config.query_logger, url })
     }
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
-        let params = Positional(params.iter().cloned().map(Into::into).collect());
+        let logged_params = params.to_vec();
+        let params = Positional(logged_params.iter().cloned().map(Into::into).collect());
 
         let mut conn = self.client.get_conn().await?;
+        let started_at = Instant::now();
 
         conn.exec_drop(query, params).await?;
+        self.query_logger.log(DinocoQueryLog {
+            adapter: "mysql",
+            duration: started_at.elapsed(),
+            params: logged_params,
+            query: query.to_string(),
+        });
+
+        Ok(())
+    }
+
+    async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
+        for statement in sql_content.split(';') {
+            let clean_statement = statement.trim();
+
+            if clean_statement.is_empty() {
+                continue;
+            }
+
+            self.execute(clean_statement, &[]).await?;
+        }
 
         Ok(())
     }
 
     async fn query_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>> {
-        let params = Positional(params.iter().cloned().map(Into::into).collect());
+        let logged_params = params.to_vec();
+        let params = Positional(logged_params.iter().cloned().map(Into::into).collect());
         let mut conn = self.client.get_conn().await?;
+        let started_at = Instant::now();
 
         let db_rows: Vec<Row> = conn.exec(query, params).await?;
         let mut results = Vec::with_capacity(db_rows.len());
@@ -52,6 +81,13 @@ impl DinocoAdapter for MySqlAdapter {
         for db_row in db_rows {
             results.push(T::from_row(&db_row)?);
         }
+
+        self.query_logger.log(DinocoQueryLog {
+            adapter: "mysql",
+            duration: started_at.elapsed(),
+            params: logged_params,
+            query: query.to_string(),
+        });
 
         Ok(results)
     }
@@ -64,6 +100,7 @@ impl From<DinocoValue> for Value {
             DinocoValue::Integer(i) => Value::Int(i),
             DinocoValue::Float(f) => Value::Double(f),
             DinocoValue::String(s) => Value::Bytes(s.into_bytes()),
+            DinocoValue::Enum(_, s) => Value::Bytes(s.into_bytes()),
             DinocoValue::Boolean(b) => Value::Int(if b { 1 } else { 0 }),
             DinocoValue::Json(v) => Value::Bytes(v.to_string().into_bytes()),
             DinocoValue::Bytes(v) => Value::Bytes(v),

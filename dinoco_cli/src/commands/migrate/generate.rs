@@ -10,13 +10,14 @@ use inquire::{Confirm, Text};
 use dinoco_codegen::generate_models;
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
 use dinoco_engine::{
-    DinocoAdapter, DinocoAdapterHandler, DinocoError, DinocoResult, MigrationExecutor, MySqlAdapter, PostgresAdapter,
-    SafetyLevel, SqliteAdapter, calculate_diff,
+    DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoError, DinocoResult, MigrationExecutor,
+    MySqlAdapter, PostgresAdapter, SafetyLevel, SqliteAdapter, calculate_diff,
 };
 
+use crate::utils::{env_prompt_bool, env_prompt_string};
 use crate::{
     create_migration_table, insert_migration, mark_migration_applied, read_latest_local_schema, to_snake_case,
-    write_migration_schema, write_migration_schema_source,
+    write_migration_schema,
 };
 
 pub async fn generate_migrate(apply: bool) -> DinocoResult<()> {
@@ -100,7 +101,7 @@ pub async fn generate_migrate(apply: bool) -> DinocoResult<()> {
 
 async fn execute_migrate<T>(
     pb: &ProgressBar,
-    schema_source: &str,
+    _schema_source: &str,
     parsed_schema: ParsedSchema,
     current_state: Option<ParsedSchema>,
     database_url: String,
@@ -109,7 +110,7 @@ async fn execute_migrate<T>(
 where
     T: DinocoAdapter + DinocoAdapterHandler + MigrationExecutor,
 {
-    let adapter = T::connect(database_url.clone()).await?;
+    let adapter = T::connect(database_url.clone(), DinocoClientConfig::default()).await?;
 
     pb.set_message("Calculating schema diff...");
 
@@ -146,7 +147,6 @@ where
     fs::create_dir_all(&migration_dir)?;
     fs::write(format!("{migration_dir}/migration.sql"), sqls.join("\n\n"))?;
     write_migration_schema(&migration_name, &parsed_schema)?;
-    write_migration_schema_source(&migration_name, schema_source)?;
     create_migration_table(&adapter).await?;
     insert_migration(&adapter, &migration_name).await?;
 
@@ -237,14 +237,20 @@ fn confirm_plan(safety_alerts: &[SafetyLevel]) -> DinocoResult<bool> {
         "Do you want to continue with this migration?"
     };
 
-    Confirm::new(confirm_message).with_default(false).prompt().map_err(|err| DinocoError::ParseError(err.to_string()))
+    match env_prompt_bool("DINOCO_CLI_MIGRATE_CONFIRM") {
+        Some(confirm) => Ok(confirm),
+        None => Confirm::new(confirm_message).with_default(false).prompt(),
+    }
+    .map_err(|err| DinocoError::ParseError(err.to_string()))
 }
 
 fn prompt_migration_name() -> DinocoResult<String> {
     loop {
-        let input = Text::new("Enter a name for the new migration (for example: AddedTesting):")
-            .prompt()
-            .map_err(|err| DinocoError::ParseError(err.to_string()))?;
+        let input = match env_prompt_string("DINOCO_CLI_MIGRATION_NAME") {
+            Some(name) => Ok(name),
+            None => Text::new("Enter a name for the new migration (for example: AddedTesting):").prompt(),
+        }
+        .map_err(|err| DinocoError::ParseError(err.to_string()))?;
 
         let trimmed = input.trim();
 
@@ -255,7 +261,7 @@ fn prompt_migration_name() -> DinocoResult<String> {
         }
 
         let snake_name = to_snake_case(trimmed);
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
         let proposed_name = format!("{}_{}", timestamp, snake_name);
         let migration_dir = format!("dinoco/migrations/{proposed_name}");
 
@@ -278,8 +284,16 @@ async fn apply_generated_migration<T>(adapter: &T, migration_name: &str, sqls: &
 where
     T: DinocoAdapter + DinocoAdapterHandler,
 {
-    for sql in sqls {
-        adapter.execute(sql, &[]).await?;
+    for (index, sql) in sqls.iter().enumerate() {
+        if let Err(err) = adapter.execute(sql, &[]).await {
+            return Err(DinocoError::ParseError(format!(
+                "Failed to apply migration statement {}/{}.\nSQL: {}\nCause: {}",
+                index + 1,
+                sqls.len(),
+                sql,
+                err
+            )));
+        }
     }
 
     mark_migration_applied(adapter, migration_name).await?;

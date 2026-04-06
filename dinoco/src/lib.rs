@@ -9,23 +9,30 @@ mod model;
 
 pub use dinoco_derives::{Extend, Rowable};
 pub use dinoco_engine::{
-    DinocoAdapter, DinocoClient, DinocoError, DinocoGenericRow, DinocoResult, DinocoRow, DinocoValue, OrderDirection,
+    AdapterDialect, DinocoAdapter, DinocoClient, DinocoClientConfig, DinocoError, DinocoGenericRow, DinocoQueryLog,
+    DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions, DinocoResult, DinocoRow, DinocoValue,
+    MySqlAdapter, OrderDirection, PostgresAdapter, SqliteAdapter,
 };
 pub use uuid::Uuid;
 
 pub use chrono::{DateTime as DateTimeUtc, NaiveDate, Utc};
 pub use futures;
+pub use serde;
 pub use serde_json::Value as JsonValue;
 
-pub use data::{IncludeNode, OrderBy, ReadMode};
-pub use execution::{execute_delete, execute_first, execute_insert, execute_many, execute_update, execute_update_many};
-pub use fields::{RelationField, RelationQuery, ScalarField};
+pub use data::{CountNode, IncludeNode, OrderBy, ReadMode};
+pub use execution::{
+    execute_connection_updates, execute_count, execute_delete, execute_first, execute_insert,
+    execute_insert_relation_links, execute_many, execute_relation_writes, execute_update, execute_update_many,
+};
+pub use fields::{RelationField, RelationMutationWhere, RelationQuery, RelationScalarField, ScalarField};
 pub use ids::{snowflake, uuid_v7};
 pub use methods::{
-    Delete, DeleteMany, FindFirst, FindMany, Insert, InsertMany, Update, UpdateMany, delete, delete_many, find_first,
-    find_many, insert_into, insert_many, update, update_many,
+    Count, Delete, DeleteMany, FindFirst, FindMany, Insert, InsertMany, Update, UpdateMany, count, delete, delete_many,
+    find_first, find_many, insert_into, insert_many, update, update_many,
 };
 pub use model::{
-    IncludeApplier, IncludeLoaderFuture, InsertModel, InsertRelation, IntoDinocoValue, IntoIncludeNode, Model,
-    Projection, ScalarFieldValue, UpdateModel,
+    ConnectionUpdatePlan, IncludeApplier, IncludeLoaderFuture, InsertConnection, InsertModel, InsertRelation,
+    IntoCountNode, IntoDinocoValue, IntoIncludeNode, Model, Projection, RelationLinkPlan, RelationMutationModel,
+    RelationMutationTarget, RelationWriteAction, RelationWritePlan, ScalarFieldValue, UpdateModel,
 };

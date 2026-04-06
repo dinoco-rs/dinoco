@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use deadpool_sqlite::{Config, Pool, Runtime};
 use rusqlite::types::{ToSqlOutput, Value};
@@ -10,7 +11,10 @@ mod handler;
 mod migration;
 mod row;
 
-use crate::{ConstraintError, DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
+use crate::{
+    ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
+    DinocoRow, DinocoValue,
+};
 
 pub use dialect::SqliteDialect;
 
@@ -19,6 +23,7 @@ static SQLITE_DIALECT: SqliteDialect = SqliteDialect;
 pub struct SqliteAdapter {
     pub url: String,
     pub pool: Arc<Pool>,
+    pub query_logger: DinocoQueryLogger,
 }
 
 #[async_trait]
@@ -29,17 +34,20 @@ impl DinocoAdapter for SqliteAdapter {
         &SQLITE_DIALECT
     }
 
-    async fn connect(url: String) -> DinocoResult<Self> {
+    async fn connect(url: String, config: DinocoClientConfig) -> DinocoResult<Self> {
         let cfg = Config::new(&url);
         let pool = cfg.create_pool(Runtime::Tokio1).map_err(DinocoError::from)?;
 
-        Ok(Self { url, pool: Arc::new(pool) })
+        Ok(Self { url, pool: Arc::new(pool), query_logger: config.query_logger })
     }
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
         let conn = self.pool.get().await.map_err(DinocoError::from)?;
         let query_owned = query.to_string();
         let params_owned = params.to_vec();
+        let logged_query = query.to_string();
+        let logged_params = params.to_vec();
+        let started_at = Instant::now();
 
         conn.interact(move |conn| {
             let params_refs: Vec<&dyn rusqlite::ToSql> =
@@ -50,6 +58,26 @@ impl DinocoAdapter for SqliteAdapter {
         .await
         .map_err(DinocoError::from)?
         .map_err(DinocoError::from)?;
+        self.query_logger.log(DinocoQueryLog {
+            adapter: "sqlite",
+            duration: started_at.elapsed(),
+            params: logged_params,
+            query: logged_query,
+        });
+
+        Ok(())
+    }
+
+    async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
+        for statement in sql_content.split(';') {
+            let clean_statement = statement.trim();
+
+            if clean_statement.is_empty() {
+                continue;
+            }
+
+            self.execute(clean_statement, &[]).await?;
+        }
 
         Ok(())
     }
@@ -62,6 +90,9 @@ impl DinocoAdapter for SqliteAdapter {
         let conn = self.pool.get().await.map_err(DinocoError::from)?;
         let query_owned = query.to_string();
         let params_owned = params.to_vec();
+        let logged_query = query.to_string();
+        let logged_params = params.to_vec();
+        let started_at = Instant::now();
 
         let results = conn
             .interact(move |conn| -> DinocoResult<Vec<T>> {
@@ -81,6 +112,13 @@ impl DinocoAdapter for SqliteAdapter {
             .await
             .map_err(DinocoError::from)??;
 
+        self.query_logger.log(DinocoQueryLog {
+            adapter: "sqlite",
+            duration: started_at.elapsed(),
+            params: logged_params,
+            query: logged_query,
+        });
+
         Ok(results)
     }
 }
@@ -93,6 +131,7 @@ impl rusqlite::ToSql for DinocoValue {
             DinocoValue::Float(f) => Ok(ToSqlOutput::Owned(Value::Real(*f))),
             DinocoValue::Boolean(b) => Ok(ToSqlOutput::Owned(Value::Integer(if *b { 1 } else { 0 }))),
             DinocoValue::String(s) => Ok(ToSqlOutput::Owned(Value::Text(s.clone()))),
+            DinocoValue::Enum(_, s) => Ok(ToSqlOutput::Owned(Value::Text(s.clone()))),
             DinocoValue::Json(v) => Ok(ToSqlOutput::Owned(Value::Text(v.to_string()))),
             DinocoValue::Bytes(v) => Ok(ToSqlOutput::Owned(Value::Blob(v.clone()))),
             DinocoValue::DateTime(dt) => Ok(ToSqlOutput::Owned(Value::Text(dt.to_string()))),

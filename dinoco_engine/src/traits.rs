@@ -3,7 +3,7 @@ use dinoco_compiler::ParsedSchema;
 
 use crate::{
     ColumnDefinition, DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex, DatabaseParsedTable,
-    DinocoError, DinocoResult, DinocoValue, MigrationStep,
+    DinocoClientConfig, DinocoError, DinocoResult, DinocoValue, MigrationStep,
 };
 
 #[async_trait]
@@ -12,9 +12,19 @@ pub trait DinocoAdapter: Sized {
 
     fn dialect(&self) -> &Self::Dialect;
 
-    async fn connect(url: String) -> DinocoResult<Self>;
+    async fn connect(url: String, config: DinocoClientConfig) -> DinocoResult<Self>;
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()>;
+    async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
+        let clean_sql = sql_content.trim();
+
+        if clean_sql.is_empty() {
+            return Ok(());
+        }
+
+        self.execute(clean_sql, &[]).await
+    }
+
     async fn query_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>>;
 }
 
@@ -31,6 +41,11 @@ pub trait DinocoAdapterHandler: Sized {
 
 pub trait AdapterDialect {
     fn bind_param(&self, index: usize) -> String;
+    fn bind_value(&self, index: usize, value: &DinocoValue) -> String {
+        let _ = value;
+
+        self.bind_param(index)
+    }
     fn identifier(&self, v: &str) -> String;
     fn literal_string(&self, v: &str) -> String;
     fn column_type(&self, t: &ColumnDefinition, is_primary: bool, auto_increment: bool) -> String;

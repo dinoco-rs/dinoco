@@ -1,6 +1,6 @@
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression};
 
-use crate::{FindMany, IntoIncludeNode, Model, OrderBy, Projection};
+use crate::{FindMany, IntoCountNode, IntoIncludeNode, Model, OrderBy, Projection};
 
 #[derive(Debug, Clone)]
 pub struct FindFirst<M, S = M> {
@@ -56,6 +56,14 @@ where
         Self { inner: self.inner.includes(closure) }
     }
 
+    pub fn count<F, I>(self, closure: F) -> Self
+    where
+        F: FnOnce(M::Include) -> I,
+        I: IntoCountNode,
+    {
+        Self { inner: self.inner.count(closure) }
+    }
+
     pub fn read_in_primary(self) -> Self {
         Self { inner: self.inner.read_in_primary() }
     }
@@ -71,6 +79,7 @@ where
             let mut rows = crate::execute_many::<M, S, A>(
                 self.inner.statement.limit(1),
                 &self.inner.includes,
+                &self.inner.counts,
                 self.inner.read_mode,
                 client,
             )

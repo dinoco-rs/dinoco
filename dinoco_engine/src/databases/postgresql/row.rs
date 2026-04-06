@@ -1,7 +1,24 @@
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
-use tokio_postgres::{Row, types::Type};
+use tokio_postgres::Row;
+use tokio_postgres::types::{FromSql, Kind, Type};
 
 use crate::{DinocoError, DinocoGenericRow, DinocoResult, DinocoValue};
+
+struct PostgresEnumText(String);
+
+impl<'a> FromSql<'a> for PostgresEnumText {
+    fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        if !Self::accepts(ty) {
+            return Err(format!("Unsupported postgres enum type {:?}", ty).into());
+        }
+
+        Ok(Self(std::str::from_utf8(raw)?.to_string()))
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        matches!(ty.kind(), Kind::Enum(_))
+    }
+}
 
 impl DinocoGenericRow for Row {
     fn get_value(&self, idx: usize) -> DinocoResult<DinocoValue> {
@@ -51,6 +68,10 @@ impl DinocoGenericRow for Row {
                 .map(DinocoValue::DateTime)
                 .unwrap_or(DinocoValue::Null)),
 
+            _ if matches!(col.kind(), Kind::Enum(_)) => Ok(self
+                .try_get::<_, Option<PostgresEnumText>>(idx)?
+                .map(|value| DinocoValue::String(value.0))
+                .unwrap_or(DinocoValue::Null)),
             _ => Err(DinocoError::ParseError(format!("Unsupported postgres type {:?} at column {}", col, idx))),
         }
     }

@@ -27,6 +27,6 @@ pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
     };
 
     format!(
-        "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoResult}};\nuse ::dinoco_engine::{{{adapter}}};\n\npub mod models;\npub use models::*;\n\npub async fn create_connection() -> DinocoResult<DinocoClient<{adapter}>> {{\n    DinocoClient::<{adapter}>::new({database_url}, {read_replicas}).await\n}}\n"
+        "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoClientConfig, DinocoResult, {adapter}}};\n\npub mod models;\npub use models::*;\n\npub async fn create_connection(config: DinocoClientConfig) -> DinocoResult<DinocoClient<{adapter}>> {{\n    DinocoClient::<{adapter}>::new({database_url}, {read_replicas}, config).await\n}}\n"
     )
 }

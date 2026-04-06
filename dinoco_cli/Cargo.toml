@@ -21,3 +21,6 @@ dinoco_formatter = { path = "../dinoco_formatter" }
 dinoco_engine = { path = "../dinoco_engine" }
 dinoco_compiler = { path = "../dinoco_compiler" }
 dinoco_derives = { path = "../dinoco_derives" }
+
+[dev-dependencies]
+uuid = { version = "1.18.1", features = ["v7"] }

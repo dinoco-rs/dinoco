@@ -8,7 +8,9 @@ use indicatif::ProgressBar;
 
 use dinoco_codegen::generate_models;
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
+use dinoco_engine::{
+    DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter,
+};
 
 use crate::{
     create_migration_table, execute_migration_file, get_all_migrations, local_migration_names, mark_migration_applied,
@@ -73,7 +75,7 @@ pub async fn run_migrations() -> DinocoResult<()> {
     pb.set_message(format!("Connecting to {:?}...", database));
 
     match database {
-        Database::Postgresql => match PostgresAdapter::connect(url).await {
+        Database::Postgresql => match PostgresAdapter::connect(url, DinocoClientConfig::default()).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
                 execute_run(adapter, &pb, parsed).await?;
@@ -84,7 +86,7 @@ pub async fn run_migrations() -> DinocoResult<()> {
                 println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
             }
         },
-        Database::Mysql => match MySqlAdapter::connect(url).await {
+        Database::Mysql => match MySqlAdapter::connect(url, DinocoClientConfig::default()).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
                 execute_run(adapter, &pb, parsed).await?;
@@ -95,7 +97,7 @@ pub async fn run_migrations() -> DinocoResult<()> {
                 println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
             }
         },
-        Database::Sqlite => match SqliteAdapter::connect(url).await {
+        Database::Sqlite => match SqliteAdapter::connect(url, DinocoClientConfig::default()).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
                 execute_run(adapter, &pb, parsed).await?;
@@ -113,7 +115,7 @@ pub async fn run_migrations() -> DinocoResult<()> {
 
 async fn execute_run<T>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()>
 where
-    T: DinocoAdapter + DinocoAdapterHandler,
+    T: DinocoAdapter + DinocoAdapterHandler + Sync,
 {
     pb.set_message("Checking migration history...");
 

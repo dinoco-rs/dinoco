@@ -2,8 +2,8 @@ mod common;
 
 use dinoco_derives::Rowable;
 use dinoco_engine::{
-    DinocoAdapter, DinocoAdapterHandler, DinocoClient, MySqlAdapter, MySqlDialect, OrderDirection, PostgresAdapter,
-    PostgresDialect, QueryBuilder, SelectStatement, SqliteAdapter, SqliteDialect,
+    DinocoAdapter, DinocoAdapterHandler, DinocoClient, DinocoClientConfig, MySqlAdapter, MySqlDialect, OrderDirection,
+    PostgresAdapter, PostgresDialect, QueryBuilder, SelectStatement, SqliteAdapter, SqliteDialect,
 };
 
 use crate::common::{mysql_url, postgres_url, sqlite_url, unique_name};
@@ -18,8 +18,9 @@ struct RankedEvent {
 
 #[tokio::test]
 async fn sqlite_window_function_query_runs_with_partitioned_select() {
-    let client =
-        DinocoClient::<SqliteAdapter>::new(sqlite_url("window"), vec![]).await.expect("sqlite client should connect");
+    let client = DinocoClient::<SqliteAdapter>::new(sqlite_url("window"), vec![], DinocoClientConfig::default())
+        .await
+        .expect("sqlite client should connect");
     let table = unique_name("events");
 
     client.primary().reset_database().await.expect("sqlite database should reset");
@@ -29,8 +30,9 @@ async fn sqlite_window_function_query_runs_with_partitioned_select() {
 
 #[tokio::test]
 async fn postgres_window_function_query_runs_with_partitioned_select() {
-    let client =
-        DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![]).await.expect("postgres client should connect");
+    let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default())
+        .await
+        .expect("postgres client should connect");
     let table = unique_name("events");
 
     client.primary().reset_database().await.expect("postgres database should reset");
@@ -40,7 +42,9 @@ async fn postgres_window_function_query_runs_with_partitioned_select() {
 
 #[tokio::test]
 async fn mysql_window_function_query_runs_with_partitioned_select() {
-    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![]).await.expect("mysql client should connect");
+    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default())
+        .await
+        .expect("mysql client should connect");
     let table = unique_name("events");
 
     client.primary().reset_database().await.expect("mysql database should reset");

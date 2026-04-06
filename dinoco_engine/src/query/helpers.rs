@@ -70,7 +70,7 @@ pub fn render_expression_into<D: AdapterDialect + ?Sized>(
         Expression::Value(value) => {
             params.push(value.clone());
 
-            buf.push_str(&dialect.bind_param(params.len()));
+            buf.push_str(&dialect.bind_value(params.len(), value));
         }
         Expression::Raw(value) => buf.push_str(value),
         Expression::IsNull(inner) => {
@@ -103,7 +103,28 @@ pub fn render_expression_into<D: AdapterDialect + ?Sized>(
             push_joined(buf, values, ", ", |b, value| {
                 params.push(value.clone());
 
-                b.push_str(&dialect.bind_param(params.len()));
+                b.push_str(&dialect.bind_value(params.len(), value));
+            });
+
+            buf.push_str("))");
+        }
+        Expression::NotIn { expr, values } => {
+            if values.is_empty() {
+                buf.push_str("(1 = 1)");
+
+                return;
+            }
+
+            buf.push('(');
+
+            render_expression_into(dialect, expr, params, buf);
+
+            buf.push_str(" NOT IN (");
+
+            push_joined(buf, values, ", ", |b, value| {
+                params.push(value.clone());
+
+                b.push_str(&dialect.bind_value(params.len(), value));
             });
 
             buf.push_str("))");

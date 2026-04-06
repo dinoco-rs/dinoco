@@ -2,12 +2,15 @@ use std::marker::PhantomData;
 
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression, SelectStatement};
 
-use crate::{IncludeNode, IntoIncludeNode, Model, OrderBy, Projection, ReadMode, execute_many};
+use crate::{
+    CountNode, IncludeNode, IntoCountNode, IntoIncludeNode, Model, OrderBy, Projection, ReadMode, execute_many,
+};
 
 #[derive(Debug, Clone)]
 pub struct FindMany<M, S = M> {
     pub statement: SelectStatement,
     pub includes: Vec<IncludeNode>,
+    pub counts: Vec<CountNode>,
     pub read_mode: ReadMode,
     marker: PhantomData<fn() -> (M, S)>,
 }
@@ -19,6 +22,7 @@ where
     FindMany {
         statement: SelectStatement::new().from(M::table_name()).select(M::columns()),
         includes: Vec::new(),
+        counts: Vec::new(),
         read_mode: ReadMode::ReplicaPreferred,
         marker: PhantomData,
     }
@@ -35,7 +39,13 @@ where
     {
         self.statement = self.statement.select(NS::columns());
 
-        FindMany { statement: self.statement, includes: self.includes, read_mode: self.read_mode, marker: PhantomData }
+        FindMany {
+            statement: self.statement,
+            includes: self.includes,
+            counts: self.counts,
+            read_mode: self.read_mode,
+            marker: PhantomData,
+        }
     }
 
     pub fn cond<F>(mut self, closure: F) -> Self
@@ -80,6 +90,16 @@ where
         self
     }
 
+    pub fn count<F, I>(mut self, closure: F) -> Self
+    where
+        F: FnOnce(M::Include) -> I,
+        I: IntoCountNode,
+    {
+        self.counts.push(closure(M::Include::default()).into_count_node());
+
+        self
+    }
+
     pub fn read_in_primary(mut self) -> Self {
         self.read_mode = ReadMode::Primary;
 
@@ -93,6 +113,6 @@ where
     where
         A: DinocoAdapter,
     {
-        async move { execute_many::<M, S, A>(self.statement, &self.includes, self.read_mode, client).await }
+        async move { execute_many::<M, S, A>(self.statement, &self.includes, &self.counts, self.read_mode, client).await }
     }
 }

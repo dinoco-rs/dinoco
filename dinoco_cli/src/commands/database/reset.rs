@@ -9,7 +9,11 @@ use inquire::Confirm;
 
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig};
 use dinoco_compiler::{compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
+use dinoco_engine::{
+    DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter,
+};
+
+use crate::utils::env_prompt_bool;
 
 pub async fn reset_database() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
@@ -82,7 +86,7 @@ pub async fn reset_database() -> DinocoResult<()> {
     pb.set_message(format!("Connecting to {:?}...", db_type));
 
     match db_type {
-        Database::Postgresql => match PostgresAdapter::connect(url).await {
+        Database::Postgresql => match PostgresAdapter::connect(url, DinocoClientConfig::default()).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
                 execute_reset(adapter, &pb).await?;
@@ -93,7 +97,7 @@ pub async fn reset_database() -> DinocoResult<()> {
                 println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
             }
         },
-        Database::Mysql => match MySqlAdapter::connect(url).await {
+        Database::Mysql => match MySqlAdapter::connect(url, DinocoClientConfig::default()).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
                 execute_reset(adapter, &pb).await?;
@@ -104,7 +108,7 @@ pub async fn reset_database() -> DinocoResult<()> {
                 println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
             }
         },
-        Database::Sqlite => match SqliteAdapter::connect(url).await {
+        Database::Sqlite => match SqliteAdapter::connect(url, DinocoClientConfig::default()).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
                 execute_reset(adapter, &pb).await?;
@@ -126,7 +130,10 @@ where
 {
     pb.finish_and_clear();
 
-    match Confirm::new("Are you sure you want to reset the database?").with_default(false).prompt() {
+    match match env_prompt_bool("DINOCO_CLI_DATABASE_RESET_CONFIRM") {
+        Some(confirm) => Ok(confirm),
+        None => Confirm::new("Are you sure you want to reset the database?").with_default(false).prompt(),
+    } {
         Ok(true) => {
             println!("{} {}", "⚠".yellow().bold(), "Resetting database...".yellow());
         }

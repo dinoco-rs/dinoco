@@ -1,7 +1,9 @@
 mod common;
 
+use dinoco_compiler::compile;
 use dinoco_engine::{
-    DinocoAdapterHandler, DinocoClient, MigrationExecutor, MySqlAdapter, PostgresAdapter, SqliteAdapter,
+    DinocoAdapterHandler, DinocoClient, DinocoClientConfig, MigrationExecutor, MigrationStep, MySqlAdapter,
+    PostgresAdapter, SqliteAdapter, calculate_diff,
 };
 
 use crate::common::{
@@ -14,7 +16,7 @@ async fn sqlite_migration_builds_and_applies_schema() {
     let prefix = unique_name("mig");
     let schema = migration_schema(&prefix);
     let steps = migration_steps(&prefix);
-    let client = DinocoClient::<SqliteAdapter>::new(sqlite_url("migrations"), vec![])
+    let client = DinocoClient::<SqliteAdapter>::new(sqlite_url("migrations"), vec![], DinocoClientConfig::default())
         .await
         .expect("sqlite client should connect");
 
@@ -47,8 +49,9 @@ async fn postgres_migration_builds_and_applies_schema() {
     let prefix = unique_name("mig");
     let schema = migration_schema(&prefix);
     let steps = migration_steps(&prefix);
-    let client =
-        DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![]).await.expect("postgres client should connect");
+    let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default())
+        .await
+        .expect("postgres client should connect");
 
     client.primary().reset_database().await.expect("postgres database should reset");
     let sqls = client.primary().build_migration(&steps, &schema, false);
@@ -84,7 +87,9 @@ async fn mysql_migration_builds_and_applies_schema() {
     let prefix = unique_name("mig");
     let schema = migration_schema(&prefix);
     let steps = migration_steps(&prefix);
-    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![]).await.expect("mysql client should connect");
+    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default())
+        .await
+        .expect("mysql client should connect");
 
     client.primary().reset_database().await.expect("mysql database should reset");
     let sqls = client.primary().build_migration(&steps, &schema, false);
@@ -125,6 +130,7 @@ fn postgres_alter_enum_migration_rebuilds_type_when_variants_are_removed() {
             .build()
             .expect("pool should build"),
         ),
+        query_logger: dinoco_engine::DinocoQueryLogger::disabled(),
     };
 
     let sqls = adapter.build_migration(&[alter_enum_step(&prefix)], &schema, false);
@@ -136,11 +142,44 @@ fn postgres_alter_enum_migration_rebuilds_type_when_variants_are_removed() {
 }
 
 #[test]
+fn calculate_diff_creates_join_table_for_unnamed_many_to_many() {
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Post {
+    id Integer @id @default(autoincrement())
+    title String
+    tags Tag[]
+}
+
+model Tag {
+    id Integer @id @default(autoincrement())
+    name String
+    posts Post[]
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let diff = calculate_diff(&None, &parsed);
+
+    assert!(diff.steps.iter().any(|step| matches!(
+        step,
+        MigrationStep::CreateTable(table) if table.database_name == "_PostTags"
+    )));
+}
+
+#[test]
 fn mysql_alter_enum_migration_cleans_up_rows_before_modifying_column() {
     let prefix = unique_name("enum");
     let schema = alter_enum_schema(&prefix);
     let url = mysql_url();
-    let adapter = MySqlAdapter { url: url.clone(), client: std::sync::Arc::new(mysql_async::Pool::new(url.as_str())) };
+    let adapter = MySqlAdapter {
+        url: url.clone(),
+        client: std::sync::Arc::new(mysql_async::Pool::new(url.as_str())),
+        query_logger: dinoco_engine::DinocoQueryLogger::disabled(),
+    };
 
     let sqls = adapter.build_migration(&[alter_enum_step(&prefix)], &schema, false);
 
@@ -159,6 +198,7 @@ fn sqlite_alter_enum_migration_rebuilds_the_table() {
                 .create_pool(deadpool_sqlite::Runtime::Tokio1)
                 .expect("pool should build"),
         ),
+        query_logger: dinoco_engine::DinocoQueryLogger::disabled(),
     };
 
     let sqls = adapter.build_migration(&[alter_enum_step(&prefix)], &schema, false);

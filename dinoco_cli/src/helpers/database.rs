@@ -95,7 +95,7 @@ pub async fn mark_migration_applied<T: DinocoAdapter>(adapter: &T, name: &str) -
     let dialect = adapter.dialect();
     let stmt = UpdateStatement::new()
         .table(MIGRATIONS_TABLE)
-        .set("applied_at", Utc::now().to_rfc3339())
+        .set("applied_at", DinocoValue::DateTime(Utc::now()))
         .set("rollback_at", DinocoValue::Null)
         .condition(Expression::Column("name".to_string()).eq(name.to_string()));
 

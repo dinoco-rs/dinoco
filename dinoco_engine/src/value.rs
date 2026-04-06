@@ -9,6 +9,7 @@ pub enum DinocoValue {
     Integer(i64),
     Float(f64),
     String(String),
+    Enum(String, String),
     Boolean(bool),
 
     Bytes(Vec<u8>),
@@ -72,6 +73,7 @@ impl TryFrom<DinocoValue> for String {
     fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
         match value {
             DinocoValue::String(s) => Ok(s),
+            DinocoValue::Enum(_, s) => Ok(s),
             DinocoValue::Bytes(b) => String::from_utf8(b).map_err(|_| DinocoError::ParseError("Invalid UTF-8".into())),
             DinocoValue::DateTime(dt) => Ok(dt.to_rfc3339()),
             DinocoValue::Date(date) => Ok(date.to_string()),
@@ -123,6 +125,7 @@ impl TryFrom<DinocoValue> for Vec<u8> {
         match value {
             DinocoValue::Bytes(b) => Ok(b),
             DinocoValue::String(s) => Ok(s.into_bytes()),
+            DinocoValue::Enum(_, s) => Ok(s.into_bytes()),
             _ => Err(DinocoError::ParseError("Expected bytes".into())),
         }
     }

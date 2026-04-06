@@ -1,10 +1,19 @@
-use crate::{AdapterDialect, ColumnDefinition, ColumnType};
+use crate::{AdapterDialect, ColumnDefinition, ColumnType, DinocoValue};
 
 pub struct PostgresDialect;
 
 impl AdapterDialect for PostgresDialect {
     fn bind_param(&self, index: usize) -> String {
         format!("${}", index)
+    }
+
+    fn bind_value(&self, index: usize, value: &DinocoValue) -> String {
+        match value {
+            DinocoValue::Enum(type_name, _) => {
+                format!("{}::{}", self.bind_param(index), self.identifier(type_name))
+            }
+            _ => self.bind_param(index),
+        }
     }
 
     fn identifier(&self, v: &str) -> String {

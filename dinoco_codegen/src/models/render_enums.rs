@@ -1,6 +1,6 @@
 use dinoco_compiler::ParsedSchema;
 
-use super::helpers::pascal_case;
+use super::helpers::enum_variant_name;
 
 const GENERATED_FILE_BANNER: &str = "// ==============================================================\n\
 // =================== DINOCO MANAGED FILE =======================\n\
@@ -17,18 +17,20 @@ pub(crate) fn render_enums(schema: &ParsedSchema) -> String {
     output.push_str(GENERATED_FILE_LINTS);
 
     for item in &schema.enums {
-        output.push_str("#[derive(Debug, Clone, PartialEq, Eq)]\n");
+        output.push_str("#[derive(Debug, Clone, PartialEq, Eq, dinoco::serde::Serialize, dinoco::serde::Deserialize)]\n");
+        output.push_str("#[serde(crate = \"dinoco::serde\")]\n");
         output.push_str(&format!("pub enum {} {{\n", item.name));
 
         for value in &item.values {
-            output.push_str(&format!("    {},\n", pascal_case(value)));
+            output.push_str(&format!("    #[serde(rename = {:?})]\n", value));
+            output.push_str(&format!("    {},\n", enum_variant_name(value)));
         }
 
         output.push_str("}\n\n");
         if let Some(first_value) = item.values.first() {
             output.push_str(&format!("impl Default for {} {{\n", item.name));
             output.push_str("    fn default() -> Self {\n");
-            output.push_str(&format!("        Self::{}\n", pascal_case(first_value)));
+            output.push_str(&format!("        Self::{}\n", enum_variant_name(first_value)));
             output.push_str("    }\n");
             output.push_str("}\n\n");
         }
@@ -37,6 +39,7 @@ pub(crate) fn render_enums(schema: &ParsedSchema) -> String {
         output.push_str("    fn try_from(value: dinoco::DinocoValue) -> Result<Self, Self::Error> {\n");
         output.push_str("        let value = match value {\n");
         output.push_str("            dinoco::DinocoValue::String(value) => value,\n");
+        output.push_str("            dinoco::DinocoValue::Enum(_, value) => value,\n");
         output.push_str("            dinoco::DinocoValue::Bytes(value) => String::from_utf8(value)\n");
         output.push_str(
             "                .map_err(|_| dinoco::DinocoError::ParseError(\"Invalid UTF-8 enum value\".into()))?,\n",
@@ -48,7 +51,7 @@ pub(crate) fn render_enums(schema: &ParsedSchema) -> String {
         output.push_str("        match value.as_str() {\n");
 
         for value in &item.values {
-            output.push_str(&format!("            {:?} => Ok(Self::{}),\n", value, pascal_case(value)));
+            output.push_str(&format!("            {:?} => Ok(Self::{}),\n", value, enum_variant_name(value)));
         }
 
         output.push_str(&format!(
@@ -60,10 +63,10 @@ pub(crate) fn render_enums(schema: &ParsedSchema) -> String {
         output.push_str("}\n\n");
         output.push_str(&format!("impl dinoco::IntoDinocoValue for {} {{\n", item.name));
         output.push_str("    fn into_dinoco_value(self) -> dinoco::DinocoValue {\n");
-        output.push_str("        dinoco::DinocoValue::String(match self {\n");
+        output.push_str(&format!("        dinoco::DinocoValue::Enum({:?}.to_string(), match self {{\n", item.name));
 
         for value in &item.values {
-            output.push_str(&format!("            Self::{} => {:?}.to_string(),\n", pascal_case(value), value));
+            output.push_str(&format!("            Self::{} => {:?}.to_string(),\n", enum_variant_name(value), value));
         }
 
         output.push_str("        })\n");

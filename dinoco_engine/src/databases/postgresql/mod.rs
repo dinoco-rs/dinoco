@@ -2,13 +2,17 @@ use async_trait::async_trait;
 
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Instant;
 
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 
 use tokio_postgres::NoTls;
 use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql_checked};
 
-use crate::{ConstraintError, DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
+use crate::{
+    ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
+    DinocoRow, DinocoValue,
+};
 
 mod dialect;
 mod handler;
@@ -22,6 +26,7 @@ static POSTGRES_DIALECT: PostgresDialect = PostgresDialect;
 pub struct PostgresAdapter {
     pub url: String,
     pub client: Arc<Pool>,
+    pub query_logger: DinocoQueryLogger,
 }
 
 #[async_trait]
@@ -32,21 +37,49 @@ impl DinocoAdapter for PostgresAdapter {
         &POSTGRES_DIALECT
     }
 
-    async fn connect(url: String) -> DinocoResult<Self> {
+    async fn connect(url: String, config: DinocoClientConfig) -> DinocoResult<Self> {
         let pg_config = tokio_postgres::Config::from_str(&url).map_err(|e| DinocoError::from(e))?;
 
         let mgr = Manager::from_config(pg_config, NoTls, ManagerConfig { recycling_method: RecyclingMethod::Fast });
 
         let pool = Pool::builder(mgr).max_size(16).build().map_err(|e| DinocoError::from(e))?;
 
-        Ok(Self { url, client: Arc::new(pool) })
+        Ok(Self { url, client: Arc::new(pool), query_logger: config.query_logger })
     }
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
         let pg_params: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p as _).collect();
         let client = self.client.get().await.map_err(|e| DinocoError::from(e))?;
+        let started_at = Instant::now();
 
         client.execute(query, &pg_params).await?;
+        self.query_logger.log(DinocoQueryLog {
+            adapter: "postgresql",
+            duration: started_at.elapsed(),
+            params: params.to_vec(),
+            query: query.to_string(),
+        });
+
+        Ok(())
+    }
+
+    async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
+        let clean_sql = sql_content.trim();
+
+        if clean_sql.is_empty() {
+            return Ok(());
+        }
+
+        let client = self.client.get().await.map_err(|e| DinocoError::from(e))?;
+        let started_at = Instant::now();
+
+        client.batch_execute(clean_sql).await?;
+        self.query_logger.log(DinocoQueryLog {
+            adapter: "postgresql",
+            duration: started_at.elapsed(),
+            params: Vec::new(),
+            query: clean_sql.to_string(),
+        });
 
         Ok(())
     }
@@ -54,6 +87,7 @@ impl DinocoAdapter for PostgresAdapter {
     async fn query_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>> {
         let pg_params: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p as _).collect();
         let client = self.client.get().await.map_err(|e| DinocoError::from(e))?;
+        let started_at = Instant::now();
 
         let db_rows = client.query(query, &pg_params).await?;
         let mut results = Vec::with_capacity(db_rows.len());
@@ -61,6 +95,13 @@ impl DinocoAdapter for PostgresAdapter {
         for db_row in db_rows {
             results.push(T::from_row(&db_row)?);
         }
+
+        self.query_logger.log(DinocoQueryLog {
+            adapter: "postgresql",
+            duration: started_at.elapsed(),
+            params: params.to_vec(),
+            query: query.to_string(),
+        });
 
         Ok(results)
     }
@@ -73,7 +114,8 @@ impl ToSql for DinocoValue {
             DinocoValue::Integer(i) => i.to_sql(ty, out),
             DinocoValue::Float(f) => f.to_sql(ty, out),
             DinocoValue::Boolean(b) => b.to_sql(ty, out),
-            DinocoValue::String(s) => s.to_sql(ty, out),
+            DinocoValue::String(s) => s.as_str().to_sql(ty, out),
+            DinocoValue::Enum(_, s) => s.as_str().to_sql(ty, out),
             DinocoValue::Json(v) => Json(v).to_sql(ty, out),
             DinocoValue::Bytes(v) => v.to_sql(ty, out),
             DinocoValue::DateTime(dt) => dt.to_sql(ty, out),

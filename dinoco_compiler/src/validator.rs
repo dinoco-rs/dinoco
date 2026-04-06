@@ -596,7 +596,13 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                 let back_relation_fields: Vec<_> = target_ast_table
                     .fields
                     .iter()
-                    .filter(|f| if let FieldType::Custom(m) = &f.field_type { m == &current_table_name } else { false })
+                    .filter(|f| {
+                        if target_ast_table.name == ast_table.name && f.name == ast_field.name {
+                            return false;
+                        }
+
+                        if let FieldType::Custom(m) = &f.field_type { m == &current_table_name } else { false }
+                    })
                     .collect();
 
                 if back_relation_fields.len() > 1 && current_rel_name.is_none() {

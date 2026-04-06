@@ -44,6 +44,19 @@ fn postgres_query_builder_builds_select_with_filters_order_and_pagination() {
 }
 
 #[test]
+fn postgres_query_builder_casts_native_enum_params() {
+    let dialect = PostgresDialect;
+    let statement = SelectStatement::new().select(&["id", "role"]).from("users").condition(
+        Expression::Column("role".to_string()).eq(DinocoValue::Enum("Role".to_string(), "ADMIN".to_string())),
+    );
+
+    let (sql, params) = dialect.build_select(&statement);
+
+    assert_eq!(sql, "SELECT \"id\", \"role\" FROM \"users\" WHERE (\"role\" = $1::\"Role\")");
+    assert_eq!(params, vec![DinocoValue::Enum("Role".to_string(), "ADMIN".to_string())]);
+}
+
+#[test]
 fn mysql_query_builder_builds_select_with_filters_order_and_pagination() {
     let dialect = MySqlDialect;
     let statement = SelectStatement::new()
@@ -58,6 +71,111 @@ fn mysql_query_builder_builds_select_with_filters_order_and_pagination() {
 
     assert_eq!(sql, "SELECT `id`, `email` FROM `users` WHERE (`active` = ?) ORDER BY `id` DESC LIMIT ? OFFSET ?");
     assert_eq!(params, vec![DinocoValue::Boolean(true), DinocoValue::Integer(5), DinocoValue::Integer(10)]);
+}
+
+#[test]
+fn sqlite_query_builder_builds_count_from_filtered_paginated_select() {
+    let dialect = SqliteDialect;
+    let statement = SelectStatement::new()
+        .select(&["id", "email"])
+        .from("users")
+        .condition(Expression::Column("active".to_string()).eq(true))
+        .order_by("id", OrderDirection::Desc)
+        .limit(5)
+        .skip(10);
+
+    let (sql, params) = dialect.build_count(&statement);
+
+    assert_eq!(
+        sql,
+        "SELECT COUNT(*) FROM (SELECT \"id\", \"email\" FROM \"users\" WHERE (\"active\" = ?1) ORDER BY \"id\" DESC LIMIT ?2 OFFSET ?3) AS \"__dinoco_count\""
+    );
+    assert_eq!(params, vec![DinocoValue::Boolean(true), DinocoValue::Integer(5), DinocoValue::Integer(10)]);
+}
+
+#[test]
+fn postgres_query_builder_builds_count_from_filtered_paginated_select() {
+    let dialect = PostgresDialect;
+    let statement = SelectStatement::new()
+        .select(&["id", "email"])
+        .from("users")
+        .condition(Expression::Column("active".to_string()).eq(true))
+        .order_by("id", OrderDirection::Desc)
+        .limit(5)
+        .skip(10);
+
+    let (sql, params) = dialect.build_count(&statement);
+
+    assert_eq!(
+        sql,
+        "SELECT COUNT(*) FROM (SELECT \"id\", \"email\" FROM \"users\" WHERE (\"active\" = $1) ORDER BY \"id\" DESC LIMIT $2 OFFSET $3) AS \"__dinoco_count\""
+    );
+    assert_eq!(params, vec![DinocoValue::Boolean(true), DinocoValue::Integer(5), DinocoValue::Integer(10)]);
+}
+
+#[test]
+fn mysql_query_builder_builds_count_from_filtered_paginated_select() {
+    let dialect = MySqlDialect;
+    let statement = SelectStatement::new()
+        .select(&["id", "email"])
+        .from("users")
+        .condition(Expression::Column("active".to_string()).eq(true))
+        .order_by("id", OrderDirection::Desc)
+        .limit(5)
+        .skip(10);
+
+    let (sql, params) = dialect.build_count(&statement);
+
+    assert_eq!(
+        sql,
+        "SELECT COUNT(*) FROM (SELECT `id`, `email` FROM `users` WHERE (`active` = ?) ORDER BY `id` DESC LIMIT ? OFFSET ?) AS `__dinoco_count`"
+    );
+    assert_eq!(params, vec![DinocoValue::Boolean(true), DinocoValue::Integer(5), DinocoValue::Integer(10)]);
+}
+
+#[test]
+fn sqlite_query_builder_builds_select_with_in_and_not_in_filters() {
+    let dialect = SqliteDialect;
+    let statement = SelectStatement::new()
+        .select(&["id", "email"])
+        .from("users")
+        .condition(
+            Expression::Column("id".to_string()).in_values(vec![DinocoValue::Integer(1), DinocoValue::Integer(2)]),
+        )
+        .condition(
+            Expression::Column("email".to_string())
+                .not_in_values(vec![DinocoValue::from("blocked@dinoco.dev"), DinocoValue::from("hidden@dinoco.dev")]),
+        );
+
+    let (sql, params) = dialect.build_select(&statement);
+
+    assert_eq!(
+        sql,
+        "SELECT \"id\", \"email\" FROM \"users\" WHERE (\"id\" IN (?1, ?2)) AND (\"email\" NOT IN (?3, ?4))"
+    );
+    assert_eq!(
+        params,
+        vec![
+            DinocoValue::Integer(1),
+            DinocoValue::Integer(2),
+            DinocoValue::from("blocked@dinoco.dev"),
+            DinocoValue::from("hidden@dinoco.dev"),
+        ]
+    );
+}
+
+#[test]
+fn sqlite_query_builder_builds_empty_in_and_not_in_filters() {
+    let dialect = SqliteDialect;
+    let statement = SelectStatement::new()
+        .from("users")
+        .condition(Expression::Column("id".to_string()).in_values(vec![]))
+        .condition(Expression::Column("email".to_string()).not_in_values(vec![]));
+
+    let (sql, params) = dialect.build_select(&statement);
+
+    assert_eq!(sql, "SELECT * FROM \"users\" WHERE (1 = 0) AND (1 = 1)");
+    assert!(params.is_empty());
 }
 
 #[test]
