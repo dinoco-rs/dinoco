@@ -57,6 +57,12 @@ pub fn format_table(table: &Table, config: &FormatterConfig) -> String {
         }
     }
 
+    for decorator in get_model_decorators(table) {
+        out.push_str(&indent);
+        out.push_str(&decorator);
+        out.push('\n');
+    }
+
     out.push_str("}\n\n");
     out
 }
@@ -130,6 +136,20 @@ fn get_decorators_string(field: &Field) -> String {
     }
 
     decorators.join(" ")
+}
+
+fn get_model_decorators(table: &Table) -> Vec<String> {
+    let mut decorators = Vec::new();
+
+    if let Some(mapped_name) = &table.mapped_name {
+        decorators.push(format!("@@table_name(\"{}\")", mapped_name));
+    }
+
+    if !table.primary_key_fields.is_empty() {
+        decorators.push(format!("@@ids([{}])", table.primary_key_fields.join(", ")));
+    }
+
+    decorators
 }
 
 fn format_default_value(dv: &FieldDefaultValue) -> String {

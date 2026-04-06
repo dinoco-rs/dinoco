@@ -16,14 +16,7 @@ pub struct DinocoCompilerError {
 
 impl Default for DinocoCompilerError {
     fn default() -> Self {
-        Self {
-            message: "".to_string(),
-
-            start_line: 0,
-            start_column: 0,
-            end_line: 0,
-            end_column: 0,
-        }
+        Self { message: "".to_string(), start_line: 0, start_column: 0, end_line: 0, end_column: 0 }
     }
 }
 
@@ -74,6 +67,10 @@ pub enum ConfigValue<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table<'a> {
     pub name: String,
+    pub mapped_name: Option<String>,
+    pub mapped_name_span: Option<Span<'a>>,
+    pub primary_key_fields: Vec<String>,
+    pub primary_key_fields_span: Option<Span<'a>>,
     pub fields: Vec<Field<'a>>,
     pub span: Span<'a>,
 
@@ -155,11 +152,7 @@ pub enum FunctionCall {
 
 impl FunctionCall {
     pub fn is_func(data: &str) -> bool {
-        if let Some((_name, params_and_rest)) = data.split_once('(') {
-            params_and_rest.ends_with(')')
-        } else {
-            false
-        }
+        if let Some((_name, params_and_rest)) = data.split_once('(') { params_and_rest.ends_with(')') } else { false }
     }
 
     pub fn from_string(data: &str) -> DinocoCompilerResult<Self> {

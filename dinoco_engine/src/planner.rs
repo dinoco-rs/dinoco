@@ -5,6 +5,74 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{MigrationPlan, MigrationStep, SafetyLevel, is_destructive_cast};
 
+fn primary_key_type(table: &ParsedTable, field_name: &str) -> Option<ParsedFieldType> {
+    table.fields.iter().find(|field| field.name == field_name).map(|field| field.field_type.clone())
+}
+
+fn primary_key_constraint_name(table_name: &str) -> Option<String> {
+    Some(format!("pk_{}", table_name))
+}
+
+fn push_safety_alert(alerts: &mut Vec<SafetyLevel>, alert: SafetyLevel) {
+    let exists = alerts.iter().any(|item| match (item, &alert) {
+        (SafetyLevel::Warning(left), SafetyLevel::Warning(right)) => left == right,
+        (SafetyLevel::Destructive(left), SafetyLevel::Destructive(right)) => left == right,
+        _ => false,
+    });
+
+    if !exists {
+        alerts.push(alert);
+    }
+}
+
+fn diff_primary_key(
+    old_table: &ParsedTable,
+    new_table: &ParsedTable,
+    alerts: &mut Vec<SafetyLevel>,
+) -> Vec<MigrationStep> {
+    if old_table.primary_key_fields == new_table.primary_key_fields {
+        return Vec::new();
+    }
+
+    let old_primary_key = if old_table.primary_key_fields.is_empty() {
+        "(none)".to_string()
+    } else {
+        old_table.primary_key_fields.join(", ")
+    };
+    let new_primary_key = if new_table.primary_key_fields.is_empty() {
+        "(none)".to_string()
+    } else {
+        new_table.primary_key_fields.join(", ")
+    };
+
+    push_safety_alert(
+        alerts,
+        SafetyLevel::Destructive(format!(
+            "Primary key changed on table '{}': [{}] -> [{}]. This can fail if existing data violates the new primary key or dependent relations still use the old key.",
+            new_table.database_name, old_primary_key, new_primary_key
+        )),
+    );
+
+    let mut steps = Vec::new();
+
+    if !old_table.primary_key_fields.is_empty() {
+        steps.push(MigrationStep::DropPrimaryKey {
+            table_name: old_table.database_name.clone(),
+            constraint_name: primary_key_constraint_name(&old_table.database_name),
+        });
+    }
+
+    if !new_table.primary_key_fields.is_empty() {
+        steps.push(MigrationStep::AddPrimaryKey {
+            table_name: new_table.database_name.clone(),
+            columns: new_table.primary_key_fields.clone(),
+            constraint_name: primary_key_constraint_name(&new_table.database_name),
+        });
+    }
+
+    steps
+}
+
 pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSchema) -> MigrationPlan {
     let old_schema =
         old_schema.clone().unwrap_or(ParsedSchema { config: new_schema.config.clone(), enums: vec![], tables: vec![] });
@@ -20,6 +88,7 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
     let mut add_column_steps = Vec::new();
     let mut drop_column_steps = Vec::new();
     let mut alter_column_steps = Vec::new();
+    let mut primary_key_steps = Vec::new();
     let mut create_index_steps = Vec::new();
     let mut add_fk_steps = Vec::new();
     let mut created_table_names = HashSet::new();
@@ -63,6 +132,23 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
 
     for (name, new_table) in &new_map {
         if let Some(old_table) = old_map.get(name) {
+            if old_table.database_name != new_table.database_name {
+                push_safety_alert(
+                    &mut safety_alerts,
+                    SafetyLevel::Warning(format!(
+                        "Table '{}' will be renamed to '{}'. Existing queries or raw SQL using the old physical table name may need updates.",
+                        old_table.database_name, new_table.database_name
+                    )),
+                );
+                created_table_names.insert(new_table.database_name.clone());
+                create_table_steps.push(MigrationStep::RenameTable {
+                    old_name: old_table.database_name.clone(),
+                    new_name: new_table.database_name.clone(),
+                });
+            }
+
+            primary_key_steps.extend(diff_primary_key(old_table, new_table, &mut safety_alerts));
+
             for step in diff_columns(old_table, new_table, &mut safety_alerts) {
                 match step {
                     MigrationStep::AddColumn { .. } => add_column_steps.push(step),
@@ -76,7 +162,7 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
             }
         } else {
             create_table_steps.push(MigrationStep::CreateTable((*new_table).clone()));
-            created_table_names.insert((*name).clone());
+            created_table_names.insert(new_table.database_name.clone());
         }
 
         let (relations_steps, join_tables) =
@@ -99,7 +185,7 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
             new_join_tables_map.insert(join_table.name.clone(), join_table.clone());
 
             if !old_map.contains_key(&join_table.name) && !old_join_tables.contains_key(&join_table.name) {
-                created_table_names.insert(join_table.name.clone());
+                created_table_names.insert(join_table.database_name.clone());
                 create_table_steps.push(MigrationStep::CreateTable(join_table));
             }
         }
@@ -111,10 +197,10 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
                 if let ParsedRelation::ManyToOne(_, local_cols, _, _, _)
                 | ParsedRelation::OneToOneOwner(_, local_cols, _, _, _) = &field.relation
                 {
-                    if let Some(local_col) = local_cols.first() {
+                    if !local_cols.is_empty() {
                         drop_fk_steps.push(MigrationStep::DropForeignKey {
-                            table_name: old_table.name.clone(),
-                            constraint_name: format!("fk_{}_{}", old_table.name, local_col),
+                            table_name: old_table.database_name.clone(),
+                            constraint_name: format!("fk_{}_{}", old_table.database_name, local_cols.join("_")),
                         });
                     }
                 }
@@ -130,12 +216,13 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
 
     for name in old_map.keys() {
         if !new_map.contains_key(name) {
+            let old_table = old_map.get(name).unwrap();
             safety_alerts.push(SafetyLevel::Destructive(format!(
                 "Dropping table '{}'. All records will be permanently deleted.",
-                name
+                old_table.database_name
             )));
 
-            drop_table_steps.push(MigrationStep::DropTable((*name).clone()));
+            drop_table_steps.push(MigrationStep::DropTable(old_table.database_name.clone()));
         }
     }
 
@@ -149,13 +236,13 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
     final_steps.extend(drop_column_steps);
     final_steps.extend(add_column_steps);
     final_steps.extend(alter_column_steps);
+    final_steps.extend(primary_key_steps);
     final_steps.extend(create_index_steps);
     final_steps.extend(add_fk_steps);
     final_steps.extend(drop_enum_steps);
 
     MigrationPlan { steps: final_steps, safety_alerts }
 }
-
 fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut Vec<SafetyLevel>) -> Vec<MigrationStep> {
     let mut steps = Vec::new();
 
@@ -174,26 +261,31 @@ fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut V
             let type_changed = old_field.field_type != new_field.field_type;
             let became_required = old_field.is_optional && !new_field.is_optional;
             let default_value = old_field.default_value != new_field.default_value;
-            let primary_key = old_field.is_primary_key != new_field.is_primary_key;
             let unique = old_field.is_unique != new_field.is_unique;
 
-            if type_changed || became_required || default_value || primary_key || unique {
+            if type_changed || became_required || default_value || unique {
                 if type_changed && is_destructive_cast(&old_field.field_type, &new_field.field_type) {
-                    alerts.push(SafetyLevel::Destructive(format!(
-                        "Incompatible type change in '{}.{}': {:?} -> {:?}",
-                        new_table.name, name, old_field.field_type, new_field.field_type
-                    )));
+                    push_safety_alert(
+                        alerts,
+                        SafetyLevel::Destructive(format!(
+                            "Incompatible type change in '{}.{}': {:?} -> {:?}. Existing values may not be convertible.",
+                            new_table.database_name, name, old_field.field_type, new_field.field_type
+                        )),
+                    );
                 }
 
                 if became_required && new_field.default_value == ParsedFieldDefault::NotDefined {
-                    alerts.push(SafetyLevel::Warning(format!(
-                        "Column '{}.{}' was made NOT NULL without a default value. This will fail if the table contains data.",
-                        new_table.name, name
-                    )));
+                    push_safety_alert(
+                        alerts,
+                        SafetyLevel::Warning(format!(
+                            "Column '{}.{}' was changed from optional to required without a default value. This migration can fail if existing rows contain NULL.",
+                            new_table.database_name, name
+                        )),
+                    );
                 }
 
                 steps.push(MigrationStep::AlterColumn {
-                    table_name: new_table.name.clone(),
+                    table_name: new_table.database_name.clone(),
                     old_field: (*old_field).clone(),
                     new_field: (*new_field).clone(),
                 });
@@ -225,7 +317,7 @@ fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut V
                 && d.relation == add_f.relation
         }) {
             steps.push(MigrationStep::RenameColumn {
-                table_name: new_table.name.clone(),
+                table_name: new_table.database_name.clone(),
                 old_name: drop_f.name.clone(),
                 new_name: add_f.name.clone(),
             });
@@ -233,10 +325,10 @@ fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut V
             if let ParsedRelation::ManyToOne(_, local_cols, _, _, _)
             | ParsedRelation::OneToOneOwner(_, local_cols, _, _, _) = &drop_f.relation
             {
-                if let Some(local_col) = local_cols.first() {
+                if !local_cols.is_empty() {
                     steps.push(MigrationStep::DropForeignKey {
-                        table_name: old_table.name.clone(),
-                        constraint_name: format!("fk_{}_{}", old_table.name, local_col),
+                        table_name: old_table.database_name.clone(),
+                        constraint_name: format!("fk_{}_{}", old_table.database_name, local_cols.join("_")),
                     });
                 }
             }
@@ -248,7 +340,20 @@ fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut V
 
     for add_f in added_fields {
         if !resolved_adds.contains(&add_f.name) {
-            steps.push(MigrationStep::AddColumn { table_name: new_table.name.clone(), field: add_f.clone() });
+            if !add_f.is_optional
+                && add_f.default_value == ParsedFieldDefault::NotDefined
+                && old_table.fields.iter().any(|field| !matches!(field.field_type, ParsedFieldType::Relation(..)))
+            {
+                push_safety_alert(
+                    alerts,
+                    SafetyLevel::Warning(format!(
+                        "Adding required column '{}.{}' without a default value can fail on tables that already contain rows.",
+                        new_table.database_name, add_f.name
+                    )),
+                );
+            }
+
+            steps.push(MigrationStep::AddColumn { table_name: new_table.database_name.clone(), field: add_f.clone() });
         }
     }
 
@@ -257,20 +362,24 @@ fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut V
             if let ParsedRelation::ManyToOne(_, local_cols, _, _, _)
             | ParsedRelation::OneToOneOwner(_, local_cols, _, _, _) = &drop_f.relation
             {
-                if let Some(local_col) = local_cols.first() {
+                if !local_cols.is_empty() {
                     steps.push(MigrationStep::DropForeignKey {
-                        table_name: old_table.name.clone(),
-                        constraint_name: format!("fk_{}_{}", old_table.name, local_col),
+                        table_name: old_table.database_name.clone(),
+                        constraint_name: format!("fk_{}_{}", old_table.database_name, local_cols.join("_")),
                     });
                 }
             }
 
-            alerts.push(SafetyLevel::Destructive(format!(
-                "Dropping column '{}.{}'. All data in this column will be lost.",
-                old_table.name, drop_f.name
-            )));
+            push_safety_alert(
+                alerts,
+                SafetyLevel::Destructive(format!(
+                    "Dropping column '{}.{}'. All data stored in this column will be permanently lost.",
+                    old_table.database_name, drop_f.name
+                )),
+            );
 
-            steps.push(MigrationStep::DropColumn { table_name: old_table.name.clone(), field: drop_f.clone() });
+            steps
+                .push(MigrationStep::DropColumn { table_name: old_table.database_name.clone(), field: drop_f.clone() });
         }
     }
 
@@ -305,20 +414,24 @@ pub fn extract_relations(
                     continue;
                 }
 
-                if let (Some(local_col), Some(ref_col)) = (local_cols.first(), ref_cols.first()) {
+                if !local_cols.is_empty() && local_cols.len() == ref_cols.len() {
                     let ref_table = match &field.field_type {
                         ParsedFieldType::Relation(name) => name.clone(),
                         _ => field.field_type.to_string(),
                     };
 
                     fk_steps.push(MigrationStep::AddForeignKey {
-                        table_name: new_table.name.clone(),
-                        columns: vec![local_col.clone()],
-                        referenced_table: ref_table,
-                        referenced_columns: vec![ref_col.clone()],
+                        table_name: new_table.database_name.clone(),
+                        columns: local_cols.clone(),
+                        referenced_table: all_tables
+                            .iter()
+                            .find(|table| table.name == ref_table)
+                            .map(|table| table.database_name.clone())
+                            .unwrap_or(ref_table),
+                        referenced_columns: ref_cols.clone(),
                         on_delete: on_delete.clone(),
                         on_update: on_update.clone(),
-                        constraint_name: format!("fk_{}_{}", new_table.name, local_col),
+                        constraint_name: format!("fk_{}_{}", new_table.database_name, local_cols.join("_")),
                     });
                 }
             }
@@ -335,55 +448,79 @@ pub fn extract_relations(
                         continue;
                     }
 
-                    let t1_clean = new_table.name.replace("\"", "").to_lowercase();
-                    let t2_clean = target_table_name.replace("\"", "").to_lowercase();
+                    let t1_clean = new_table.database_name.replace("\"", "").to_lowercase();
+                    let t2_clean = all_tables
+                        .iter()
+                        .find(|table| table.name == target_table_name)
+                        .map(|table| table.database_name.replace("\"", "").to_lowercase())
+                        .unwrap_or_else(|| target_table_name.replace("\"", "").to_lowercase());
 
-                    let mut col_a = format!("{}_id", t1_clean);
-                    let mut col_b = format!("{}_id", t2_clean);
+                    let target_table = all_tables.iter().find(|t| t.name == target_table_name);
+                    let current_primary_keys = new_table.primary_key_fields.clone();
+                    let target_primary_keys =
+                        target_table.map(|table| table.primary_key_fields.clone()).unwrap_or_default();
 
-                    if col_a == col_b {
-                        col_a = format!("{}_A_id", t1_clean);
-                        col_b = format!("{}_B_id", t1_clean);
+                    let self_relation = new_table.name == target_table_name;
+                    let current_join_columns = current_primary_keys
+                        .iter()
+                        .map(|field_name| {
+                            if self_relation {
+                                format!("{}_A_{}", t1_clean, field_name)
+                            } else {
+                                format!("{}_{}", t1_clean, field_name)
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    let target_join_columns = target_primary_keys
+                        .iter()
+                        .map(|field_name| {
+                            if self_relation {
+                                format!("{}_B_{}", t1_clean, field_name)
+                            } else {
+                                format!("{}_{}", t2_clean, field_name)
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
+                    let mut join_fields = Vec::new();
+                    for (column_name, field_name) in current_join_columns.iter().zip(current_primary_keys.iter()) {
+                        join_fields.push(ParsedField {
+                            name: column_name.clone(),
+                            field_type: primary_key_type(new_table, field_name).unwrap_or(ParsedFieldType::Integer),
+                            is_primary_key: false,
+                            is_optional: false,
+                            is_unique: false,
+                            is_list: false,
+                            relation: ParsedRelation::NotDefined,
+                            default_value: ParsedFieldDefault::NotDefined,
+                        });
                     }
 
-                    let pk_a_type = new_table
-                        .fields
-                        .iter()
-                        .find(|f| f.is_primary_key)
-                        .map(|f| f.field_type.clone())
-                        .unwrap_or(ParsedFieldType::Integer);
-
-                    let pk_b_type = all_tables
-                        .iter()
-                        .find(|t| t.name == target_table_name)
-                        .and_then(|t| t.fields.iter().find(|f| f.is_primary_key))
-                        .map(|f| f.field_type.clone())
-                        .unwrap_or(ParsedFieldType::Integer);
+                    if let Some(target_table) = target_table {
+                        for (column_name, field_name) in target_join_columns.iter().zip(target_primary_keys.iter()) {
+                            join_fields.push(ParsedField {
+                                name: column_name.clone(),
+                                field_type: primary_key_type(target_table, field_name)
+                                    .unwrap_or(ParsedFieldType::Integer),
+                                is_primary_key: false,
+                                is_optional: false,
+                                is_unique: false,
+                                is_list: false,
+                                relation: ParsedRelation::NotDefined,
+                                default_value: ParsedFieldDefault::NotDefined,
+                            });
+                        }
+                    }
 
                     let join_table = ParsedTable {
                         name: safe_rel_name.clone(),
-                        fields: vec![
-                            ParsedField {
-                                name: col_a.clone(),
-                                field_type: pk_a_type,
-                                is_primary_key: true,
-                                is_optional: false,
-                                is_unique: false,
-                                is_list: false,
-                                relation: ParsedRelation::NotDefined,
-                                default_value: ParsedFieldDefault::NotDefined,
-                            },
-                            ParsedField {
-                                name: col_b.clone(),
-                                field_type: pk_b_type,
-                                is_primary_key: true,
-                                is_optional: false,
-                                is_unique: false,
-                                is_list: false,
-                                relation: ParsedRelation::NotDefined,
-                                default_value: ParsedFieldDefault::NotDefined,
-                            },
-                        ],
+                        database_name: safe_rel_name.clone(),
+                        primary_key_fields: current_join_columns
+                            .iter()
+                            .chain(target_join_columns.iter())
+                            .cloned()
+                            .collect(),
+                        fields: join_fields,
                     };
 
                     join_tables.push(join_table.clone());
@@ -394,29 +531,38 @@ pub fn extract_relations(
 
                     fk_steps.push(MigrationStep::AddForeignKey {
                         table_name: safe_rel_name.clone(),
-                        columns: vec![col_a.clone()],
-                        referenced_table: new_table.name.clone(),
-                        referenced_columns: vec!["id".to_string()],
+                        columns: current_join_columns.clone(),
+                        referenced_table: new_table.database_name.clone(),
+                        referenced_columns: new_table.primary_key_fields.clone(),
                         on_delete: Some(ReferentialAction::Cascade),
                         on_update: Some(ReferentialAction::Cascade),
-                        constraint_name: format!("fk_{}_{}", safe_rel_name, col_a),
+                        constraint_name: format!("fk_{}_{}", safe_rel_name, current_join_columns.join("_")),
                     });
 
                     fk_steps.push(MigrationStep::AddForeignKey {
                         table_name: safe_rel_name.clone(),
-                        columns: vec![col_b.clone()],
-                        referenced_table: target_table_name.clone(),
-                        referenced_columns: vec!["id".to_string()],
+                        columns: target_join_columns.clone(),
+                        referenced_table: all_tables
+                            .iter()
+                            .find(|table| table.name == target_table_name)
+                            .map(|table| table.database_name.clone())
+                            .unwrap_or(target_table_name.clone()),
+                        referenced_columns: all_tables
+                            .iter()
+                            .find(|table| table.name == target_table_name)
+                            .map(|table| table.primary_key_fields.clone())
+                            .unwrap_or_else(|| vec!["id".to_string()]),
                         on_delete: Some(ReferentialAction::Cascade),
                         on_update: Some(ReferentialAction::Cascade),
-                        constraint_name: format!("fk_{}_{}", safe_rel_name, col_b),
+                        constraint_name: format!("fk_{}_{}", safe_rel_name, target_join_columns.join("_")),
                     });
 
-                    let index_name = format!("{}_{}_idx", safe_rel_name.replace("\"", ""), col_b);
+                    let index_name =
+                        format!("{}_{}_idx", safe_rel_name.replace("\"", ""), target_join_columns.join("_"));
 
                     fk_steps.push(MigrationStep::CreateIndex {
                         table_name: safe_rel_name.clone(),
-                        columns: vec![col_b],
+                        columns: target_join_columns,
                         index_name,
                         is_unique: false,
                     });

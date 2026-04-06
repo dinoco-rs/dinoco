@@ -10,6 +10,7 @@
 		{ "include": "#enum_declaration" },
 		{ "include": "#primitive_fields" },
 		{ "include": "#custom_fields" },
+		{ "include": "#model_decorators" },
 		{ "include": "#decorators" },
 		{ "include": "#named_parameters" },
 		{ "include": "#functions" },
@@ -59,9 +60,60 @@
 				"3": { "name": "keyword.operator.modifier.dinoco" }
 			}
 		},
+		"model_decorators": {
+			"patterns": [
+				{
+					"begin": "(@@)(ids)(\\s*\\()",
+					"beginCaptures": {
+						"1": { "name": "punctuation.definition.decorator.dinoco" },
+						"2": { "name": "entity.name.function.decorator.dinoco" },
+						"3": { "name": "punctuation.section.group.begin.dinoco" }
+					},
+					"end": "(\\))",
+					"endCaptures": {
+						"1": { "name": "punctuation.section.group.end.dinoco" }
+					},
+					"patterns": [
+						{
+							"match": "(\\[|\\]|,)",
+							"name": "punctuation.separator.array.dinoco"
+						},
+						{
+							"match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\b",
+							"name": "constant.language.dinoco"
+						}
+					]
+				},
+				{
+					"begin": "(@@)(table_name)(\\s*\\()",
+					"beginCaptures": {
+						"1": { "name": "punctuation.definition.decorator.dinoco" },
+						"2": { "name": "entity.name.function.decorator.dinoco" },
+						"3": { "name": "punctuation.section.group.begin.dinoco" }
+					},
+					"end": "(\\))",
+					"endCaptures": {
+						"1": { "name": "punctuation.section.group.end.dinoco" }
+					},
+					"patterns": [
+						{ "include": "#strings" }
+					]
+				},
+				{
+					"match": "(@@)([a-zA-Z_][a-zA-Z0-9_]*)",
+					"captures": {
+						"1": { "name": "punctuation.definition.decorator.dinoco" },
+						"2": { "name": "entity.name.function.decorator.dinoco" }
+					}
+				}
+			]
+		},
 		"decorators": {
-			"match": "@[a-zA-Z_][a-zA-Z0-9_]*",
-			"name": "entity.name.function.decorator.dinoco"
+			"match": "(@)([a-zA-Z_][a-zA-Z0-9_]*)",
+			"captures": {
+				"1": { "name": "punctuation.definition.decorator.dinoco" },
+				"2": { "name": "entity.name.function.decorator.dinoco" }
+			}
 		},
 		"named_parameters": {
 			"match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=:)",

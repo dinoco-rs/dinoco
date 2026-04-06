@@ -22,6 +22,9 @@ pub(crate) fn resolve_relation<'a>(
         return None;
     };
     let target_table = schema.tables.iter().find(|item| item.name == *target_model_name)?;
+    if table.primary_key_fields.len() != 1 || target_table.primary_key_fields.len() != 1 {
+        return None;
+    }
 
     match &field.relation {
         ParsedRelation::OneToMany(_) | ParsedRelation::OneToOneInverse(_) => {
@@ -39,7 +42,12 @@ pub(crate) fn resolve_relation<'a>(
                     | (
                         ParsedRelation::OneToOneInverse(current_name),
                         ParsedRelation::OneToOneOwner(target_name, _, references, _, _),
-                    ) => current_name == target_name && references.first().is_some_and(|value| value == "id"),
+                    ) => {
+                        current_name == target_name
+                            && references.first().is_some_and(|value| {
+                                table.primary_key_fields.first().is_some_and(|primary_key| value == primary_key)
+                            })
+                    }
                     _ => false,
                 }
             })?;
@@ -58,7 +66,7 @@ pub(crate) fn resolve_relation<'a>(
             let remote_key_field = target_table.fields.iter().find(|item| item.name == remote_key_name)?;
 
             Some(ResolvedRelation {
-                target_table_name: &target_table.name,
+                target_table_name: &target_table.database_name,
                 local_key_field,
                 remote_key_field,
                 cardinality,
@@ -72,7 +80,7 @@ pub(crate) fn resolve_relation<'a>(
             let remote_key_field = target_table.fields.iter().find(|item| item.name == *remote_key_name)?;
 
             Some(ResolvedRelation {
-                target_table_name: &target_table.name,
+                target_table_name: &target_table.database_name,
                 local_key_field,
                 remote_key_field,
                 cardinality: RelationCardinality::OptionalOne,
@@ -81,11 +89,16 @@ pub(crate) fn resolve_relation<'a>(
         ParsedRelation::ManyToMany(Some(relation_name)) => {
             let (join_table_name, current_join_column, target_join_column) =
                 many_to_many_join_data(&table.name, target_model_name, relation_name);
-            let local_key_field = table.fields.iter().find(|item| item.is_primary_key)?;
-            let remote_key_field = target_table.fields.iter().find(|item| item.is_primary_key)?;
+            let local_key_field = table
+                .fields
+                .iter()
+                .find(|item| table.primary_key_fields.first().is_some_and(|primary_key| &item.name == primary_key))?;
+            let remote_key_field = target_table.fields.iter().find(|item| {
+                target_table.primary_key_fields.first().is_some_and(|primary_key| &item.name == primary_key)
+            })?;
 
             Some(ResolvedRelation {
-                target_table_name: &target_table.name,
+                target_table_name: &target_table.database_name,
                 local_key_field,
                 remote_key_field,
                 cardinality: RelationCardinality::ManyToMany {

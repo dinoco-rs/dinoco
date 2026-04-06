@@ -38,6 +38,8 @@ pub struct ParsedEnum {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedTable {
     pub name: String,
+    pub database_name: String,
+    pub primary_key_fields: Vec<String>,
     pub fields: Vec<ParsedField>,
 }
 
@@ -125,7 +127,9 @@ pub enum ParsedFieldDefault {
 impl ConnectionUrl {
     pub fn is_valid(&self) -> bool {
         match self {
-            ConnectionUrl::Literal(url) => url.starts_with("postgresql://") || url.starts_with("mysql://") || url.starts_with("file:"),
+            ConnectionUrl::Literal(url) => {
+                url.starts_with("postgresql://") || url.starts_with("mysql://") || url.starts_with("file:")
+            }
             ConnectionUrl::Env(_) => true,
         }
     }

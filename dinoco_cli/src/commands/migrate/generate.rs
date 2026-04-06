@@ -16,7 +16,7 @@ use dinoco_engine::{
 
 use crate::{
     create_migration_table, insert_migration, mark_migration_applied, read_latest_local_schema, to_snake_case,
-    write_migration_schema,
+    write_migration_schema, write_migration_schema_source,
 };
 
 pub async fn generate_migrate(apply: bool) -> DinocoResult<()> {
@@ -88,9 +88,11 @@ pub async fn generate_migrate(apply: bool) -> DinocoResult<()> {
     pb.set_message(format!("Connecting to {:?}...", database));
 
     match database {
-        Database::Postgresql => execute_migrate::<PostgresAdapter>(&pb, parsed, current_state, url, apply).await?,
-        Database::Mysql => execute_migrate::<MySqlAdapter>(&pb, parsed, current_state, url, apply).await?,
-        Database::Sqlite => execute_migrate::<SqliteAdapter>(&pb, parsed, current_state, url, apply).await?,
+        Database::Postgresql => {
+            execute_migrate::<PostgresAdapter>(&pb, &source, parsed, current_state, url, apply).await?
+        }
+        Database::Mysql => execute_migrate::<MySqlAdapter>(&pb, &source, parsed, current_state, url, apply).await?,
+        Database::Sqlite => execute_migrate::<SqliteAdapter>(&pb, &source, parsed, current_state, url, apply).await?,
     }
 
     Ok(())
@@ -98,6 +100,7 @@ pub async fn generate_migrate(apply: bool) -> DinocoResult<()> {
 
 async fn execute_migrate<T>(
     pb: &ProgressBar,
+    schema_source: &str,
     parsed_schema: ParsedSchema,
     current_state: Option<ParsedSchema>,
     database_url: String,
@@ -143,6 +146,7 @@ where
     fs::create_dir_all(&migration_dir)?;
     fs::write(format!("{migration_dir}/migration.sql"), sqls.join("\n\n"))?;
     write_migration_schema(&migration_name, &parsed_schema)?;
+    write_migration_schema_source(&migration_name, schema_source)?;
     create_migration_table(&adapter).await?;
     insert_migration(&adapter, &migration_name).await?;
 

@@ -47,6 +47,109 @@ fn parse_field_type(data: &str) -> FieldType {
     }
 }
 
+fn parse_decorator_array(value: &str) -> Vec<String> {
+    value
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn parse_model_decorator<'a>(
+    token: Pair<'a, Rule>,
+    mapped_name: &mut Option<String>,
+    mapped_name_span: &mut Option<pest::Span<'a>>,
+    primary_key_fields: &mut Vec<String>,
+    primary_key_fields_span: &mut Option<pest::Span<'a>>,
+) -> DinocoCompilerResult<()> {
+    let decorator_span = token.as_span();
+    let mut attr_name = String::new();
+    let mut param_value: Option<String> = None;
+    let mut has_args = false;
+
+    for attr_token in token.into_inner() {
+        match attr_token.as_rule() {
+            Rule::ident => attr_name = attr_token.as_str().to_string(),
+            Rule::paren_open => has_args = true,
+            Rule::param => param_value = Some(attr_token.as_str().to_string()),
+            _ => {}
+        }
+    }
+
+    match (attr_name.as_str(), has_args) {
+        ("ids", false) => Err(format_span_error(
+            "@@ids requires an array argument e.g: @@ids([fieldA, fieldB])".to_string(),
+            decorator_span,
+        )),
+        ("ids", true) => {
+            let Some(value) = param_value else {
+                return Err(format_span_error(
+                    "@@ids requires an array argument e.g: @@ids([fieldA, fieldB])".to_string(),
+                    decorator_span,
+                ));
+            };
+
+            if !value.trim().starts_with('[') || !value.trim().ends_with(']') {
+                return Err(format_span_error(
+                    "@@ids expects an array of field names e.g: @@ids([fieldA, fieldB])".to_string(),
+                    decorator_span,
+                ));
+            }
+
+            if !primary_key_fields.is_empty() {
+                return Err(format_span_error(
+                    "Duplicate '@@ids'. A model can only define one composite primary key.".to_string(),
+                    decorator_span,
+                ));
+            }
+
+            *primary_key_fields = parse_decorator_array(&value);
+            *primary_key_fields_span = Some(decorator_span);
+
+            if primary_key_fields.is_empty() {
+                return Err(format_span_error("@@ids must contain at least one field.".to_string(), decorator_span));
+            }
+
+            Ok(())
+        }
+        ("table_name", false) => Err(format_span_error(
+            "@@table_name requires a string argument e.g: @@table_name(\"users\")".to_string(),
+            decorator_span,
+        )),
+        ("table_name", true) => {
+            let Some(value) = param_value else {
+                return Err(format_span_error(
+                    "@@table_name requires a string argument e.g: @@table_name(\"users\")".to_string(),
+                    decorator_span,
+                ));
+            };
+
+            if !value.starts_with('"') || !value.ends_with('"') {
+                return Err(format_span_error("@@table_name expects a string argument.".to_string(), decorator_span));
+            }
+
+            if mapped_name.is_some() {
+                return Err(format_span_error(
+                    "Duplicate '@@table_name'. A model can only define one mapped table name.".to_string(),
+                    decorator_span,
+                ));
+            }
+
+            *mapped_name = Some(value[1..value.len() - 1].to_string());
+            *mapped_name_span = Some(decorator_span);
+
+            Ok(())
+        }
+        (unknown, _) => {
+            Err(format_span_error(format!("Attribute '@@{}' does not exist on model.", unknown), decorator_span))
+        }
+    }
+}
+
 fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompilerResult<Field<'a>> {
     let span = field_pair.as_span();
     let mut f_inner = field_pair.into_inner();
@@ -124,7 +227,10 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompile
 
                             if named_params.contains_key(&param_name) {
                                 return Err(format_span_error(
-                                    format!("Duplicate argument '{}' in @relation. Each argument can only be defined once.", param_name),
+                                    format!(
+                                        "Duplicate argument '{}' in @relation. Each argument can only be defined once.",
+                                        param_name
+                                    ),
                                     decorator_span,
                                 ));
                             }
@@ -136,17 +242,18 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompile
                 }
 
                 match (attr_name.as_str(), has_args) {
-                    ("id", true) => return Err(format_span_error("@id does not accept arguments".to_string(), decorator_span)),
+                    ("id", true) => {
+                        return Err(format_span_error("@id does not accept arguments".to_string(), decorator_span));
+                    }
                     ("id", false) => is_primary_key = true,
 
-                    ("unique", true) => return Err(format_span_error("@unique does not accept arguments".to_string(), decorator_span)),
+                    ("unique", true) => {
+                        return Err(format_span_error("@unique does not accept arguments".to_string(), decorator_span));
+                    }
                     ("unique", false) => is_unique = true,
 
                     ("relation", true) => {
-                        relation = Some(Relation {
-                            named_params,
-                            span: decorator_span,
-                        });
+                        relation = Some(Relation { named_params, span: decorator_span });
                     }
                     ("relation", false) => {
                         return Err(format_span_error(
@@ -155,7 +262,12 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompile
                         ));
                     }
 
-                    ("default", false) => return Err(format_span_error("@default must be used as a function or value".to_string(), decorator_span)),
+                    ("default", false) => {
+                        return Err(format_span_error(
+                            "@default must be used as a function or value".to_string(),
+                            decorator_span,
+                        ));
+                    }
                     ("default", true) => {
                         if let Some(value_str) = param_value {
                             if FunctionCall::is_func(&value_str) {
@@ -177,7 +289,12 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompile
                             ));
                         }
                     }
-                    (unknown, _) => return Err(format_span_error(format!("Attribute '@{}' does not exist.", unknown), decorator_span)),
+                    (unknown, _) => {
+                        return Err(format_span_error(
+                            format!("Attribute '@{}' does not exist.", unknown),
+                            decorator_span,
+                        ));
+                    }
                 }
             }
             _ => {}
@@ -206,6 +323,10 @@ fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoCompi
     let span = table_record.as_span();
 
     let mut name = String::new();
+    let mut mapped_name = None;
+    let mut mapped_name_span = None;
+    let mut primary_key_fields = Vec::new();
+    let mut primary_key_fields_span = None;
     let mut fields = vec![];
 
     let mut comments = vec![];
@@ -229,6 +350,13 @@ fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoCompi
                     ));
                 }
             }
+            Rule::model_decorator => parse_model_decorator(
+                pair,
+                &mut mapped_name,
+                &mut mapped_name_span,
+                &mut primary_key_fields,
+                &mut primary_key_fields_span,
+            )?,
             Rule::field => fields.push(parse_field(pair, i)?),
             _ => {}
         }
@@ -237,8 +365,11 @@ fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoCompi
     Ok(Table {
         position,
         total_fields,
-
         name,
+        mapped_name,
+        mapped_name_span,
+        primary_key_fields,
+        primary_key_fields_span,
         fields,
         span,
         comments,
@@ -282,14 +413,7 @@ fn parse_enum<'a>(enum_record: Pair<'a, Rule>, position: usize) -> DinocoCompile
         return Err(format_span_error(format!("Enum '{}' must have at least one value.", name), span));
     }
 
-    Ok(Enum {
-        total_blocks,
-        position,
-        comments,
-        name,
-        values,
-        span,
-    })
+    Ok(Enum { total_blocks, position, comments, name, values, span })
 }
 
 fn parse_config<'a>(config_record: Pair<'a, Rule>, position: usize) -> DinocoCompilerResult<Config<'a>> {
@@ -308,13 +432,7 @@ fn parse_config<'a>(config_record: Pair<'a, Rule>, position: usize) -> DinocoCom
         }
     }
 
-    Ok(Config {
-        total_fields,
-        position,
-        comments,
-        fields,
-        span,
-    })
+    Ok(Config { total_fields, position, comments, fields, span })
 }
 
 fn parse_config_field<'a>(field_record: Pair<'a, Rule>, position: usize) -> DinocoCompilerResult<ConfigField<'a>> {
@@ -337,13 +455,7 @@ fn parse_config_field<'a>(field_record: Pair<'a, Rule>, position: usize) -> Dino
         }
     }
 
-    Ok(ConfigField {
-        position,
-        comments,
-        name,
-        value,
-        span,
-    })
+    Ok(ConfigField { position, comments, name, value, span })
 }
 
 fn parse_config_value<'a>(value_record: Pair<'a, Rule>) -> DinocoCompilerResult<ConfigValue<'a>> {
@@ -408,7 +520,9 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoCompilerResult<Schema<'a>> 
     let mut parsed = DinocoParser::parse(Rule::schema, raw_input).map_err(|e| {
         let (start_line, start_column, end_line, end_column) = match e.line_col {
             pest::error::LineColLocation::Pos((line, col)) => (line, col, line, col + 1),
-            pest::error::LineColLocation::Span((start_line, start_col), (end_line, end_col)) => (start_line, start_col, end_line, end_col),
+            pest::error::LineColLocation::Span((start_line, start_col), (end_line, end_col)) => {
+                (start_line, start_col, end_line, end_col)
+            }
         };
 
         let err = e
@@ -430,6 +544,7 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoCompilerResult<Schema<'a>> 
                     Rule::array_open => "an opening bracket '['",
                     Rule::array_close => "a closing bracket ']'",
                     Rule::decorator_prefix => "the decorator symbol '@'",
+                    Rule::model_decorator_prefix => "the model decorator symbol '@@'",
                     Rule::array_separator => "a comma ','",
                     Rule::named_separator => "a colon ':'",
                     Rule::config_separator => "an equals sign '='",
@@ -443,6 +558,7 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoCompilerResult<Schema<'a>> 
 
                     Rule::function => "a function call (e.g., env(\"...\"))",
                     Rule::decorator => "a decorator (e.g., @id or @default(...))",
+                    Rule::model_decorator => "a model decorator (e.g., @@ids([...]) or @@table_name(\"...\"))",
                     Rule::param => "a valid parameter (string, number, boolean, or function)",
                     Rule::field_type => "a field type (e.g., String, Int, or a Model name)",
                     Rule::field => "a field declaration (e.g., name String @id)",
@@ -472,13 +588,7 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoCompilerResult<Schema<'a>> 
             .message()
             .to_string();
 
-        vec![DinocoCompilerError {
-            message: err,
-            start_line,
-            start_column,
-            end_line,
-            end_column,
-        }]
+        vec![DinocoCompilerError { message: err, start_line, start_column, end_line, end_column }]
     })?;
 
     let schema_record = parsed.next().unwrap();
@@ -503,29 +613,14 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoCompilerResult<Schema<'a>> 
         }
     }
 
-    Ok(Schema {
-        tables,
-        enums,
-        configs,
-        span,
-        comments,
-        total_blocks,
-    })
+    Ok(Schema { tables, enums, configs, span, comments, total_blocks })
 }
 
 pub fn format_span_error(message: String, span: pest::Span) -> Vec<DinocoCompilerError> {
     let (start_line, start_column) = span.start_pos().line_col();
     let (end_line, end_column) = span.end_pos().line_col();
 
-    vec![DinocoCompilerError {
-        message: format!("{}", message),
-
-        start_line,
-        start_column,
-
-        end_line,
-        end_column,
-    }]
+    vec![DinocoCompilerError { message: format!("{}", message), start_line, start_column, end_line, end_column }]
 }
 
 pub fn format_span_errors(data: Vec<(String, pest::Span)>) -> Vec<DinocoCompilerError> {

@@ -7,12 +7,11 @@ use colored::*;
 use indicatif::ProgressBar;
 
 use dinoco_codegen::generate_models;
-use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, compile, render_error};
+use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
 use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
 
 use crate::{
-    create_migration_table, execute_migration_file, get_all_migrations, get_last_migration,
-    latest_local_migration_name, local_migration_names, mark_migration_applied, read_migration_schema,
+    create_migration_table, execute_migration_file, get_all_migrations, local_migration_names, mark_migration_applied,
 };
 
 pub async fn run_migrations() -> DinocoResult<()> {
@@ -77,7 +76,7 @@ pub async fn run_migrations() -> DinocoResult<()> {
         Database::Postgresql => match PostgresAdapter::connect(url).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-                execute_run(adapter, &pb).await?;
+                execute_run(adapter, &pb, parsed).await?;
             }
             Err(err) => {
                 pb.finish_and_clear();
@@ -88,7 +87,7 @@ pub async fn run_migrations() -> DinocoResult<()> {
         Database::Mysql => match MySqlAdapter::connect(url).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-                execute_run(adapter, &pb).await?;
+                execute_run(adapter, &pb, parsed).await?;
             }
             Err(err) => {
                 pb.finish_and_clear();
@@ -99,7 +98,7 @@ pub async fn run_migrations() -> DinocoResult<()> {
         Database::Sqlite => match SqliteAdapter::connect(url).await {
             Ok(adapter) => {
                 pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-                execute_run(adapter, &pb).await?;
+                execute_run(adapter, &pb, parsed).await?;
             }
             Err(err) => {
                 pb.finish_and_clear();
@@ -112,7 +111,7 @@ pub async fn run_migrations() -> DinocoResult<()> {
     Ok(())
 }
 
-async fn execute_run<T>(adapter: T, pb: &ProgressBar) -> DinocoResult<()>
+async fn execute_run<T>(adapter: T, pb: &ProgressBar, parsed_schema: ParsedSchema) -> DinocoResult<()>
 where
     T: DinocoAdapter + DinocoAdapterHandler,
 {
@@ -165,15 +164,7 @@ where
         println!("    {} Applied successfully.", "✔".green());
     }
 
-    if let Some(migration) = get_last_migration(&adapter).await? {
-        let parsed_schema = read_migration_schema(&migration.name)?;
-
-        generate_models(parsed_schema);
-    } else if let Some(migration_name) = latest_local_migration_name()? {
-        let parsed_schema = read_migration_schema(&migration_name)?;
-
-        generate_models(parsed_schema);
-    }
+    generate_models(parsed_schema);
 
     println!("\n{} {}", "✔".green().bold(), "All pending migrations were applied successfully.".white());
 

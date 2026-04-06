@@ -156,6 +156,24 @@ impl LanguageServer for LspServer {
             return Ok(Some(CompletionResponse::Array(completions)));
         }
 
+        if last_word.starts_with("@@") || prefix_up_to_cursor.ends_with("@@") {
+            completions.extend(vec![
+                create_snippet_completion(
+                    "@@ids",
+                    CompletionItemKind::PROPERTY,
+                    "Composite primary key",
+                    "ids([$0])",
+                ),
+                create_snippet_completion(
+                    "@@table_name",
+                    CompletionItemKind::PROPERTY,
+                    "Custom table name",
+                    "table_name(\"$0\")",
+                ),
+            ]);
+            return Ok(Some(CompletionResponse::Array(completions)));
+        }
+
         if last_word.starts_with('@') || prefix_up_to_cursor.ends_with('@') {
             completions.extend(vec![
                 create_completion("@id", CompletionItemKind::PROPERTY, "Primary Key", "id"),

@@ -2,7 +2,8 @@ use pest::Span;
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    ConnectionUrl, Database, ParsedConfig, ParsedEnum, ParsedField, ParsedFieldDefault, ParsedFieldType, ParsedRelation, ParsedSchema, ParsedTable, ReferentialAction,
+    ConnectionUrl, Database, ParsedConfig, ParsedEnum, ParsedField, ParsedFieldDefault, ParsedFieldType,
+    ParsedRelation, ParsedSchema, ParsedTable, ReferentialAction,
     ast::*,
     parser::{format_span_error, format_span_errors},
 };
@@ -19,13 +20,24 @@ pub fn validate_schema(schema: &Schema) -> DinocoCompilerResult<ParsedSchema> {
     Ok(ParsedSchema { enums, config, tables })
 }
 
+fn table_primary_key_fields<'a>(table: &'a Table<'a>) -> Vec<&'a str> {
+    if !table.primary_key_fields.is_empty() {
+        table.primary_key_fields.iter().map(|field| field.as_str()).collect()
+    } else {
+        table.fields.iter().filter(|field| field.is_primary_key).map(|field| field.name.as_str()).collect()
+    }
+}
+
 fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerResult<ParsedConfig> {
     if configs.is_empty() {
         return Err(format_span_error("Your schema must define a 'config { ... }' block.".to_string(), schema_span));
     }
 
     if configs.len() > 1 {
-        return Err(format_span_error("Your schema must define only one 'config { ... }' block.".to_string(), schema_span));
+        return Err(format_span_error(
+            "Your schema must define only one 'config { ... }' block.".to_string(),
+            schema_span,
+        ));
     }
 
     fn parse_function(x: &Vec<ConfigValue<'_>>, span: Span) -> DinocoCompilerResult<ConnectionUrl> {
@@ -46,10 +58,9 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerR
     let mut keys = HashSet::new();
 
     for field in &config.fields {
-        let value = field
-            .value
-            .as_ref()
-            .ok_or_else(|| format_span_error(format!("The config field '{}' is missing a value.", field.name), field.span))?;
+        let value = field.value.as_ref().ok_or_else(|| {
+            format_span_error(format!("The config field '{}' is missing a value.", field.name), field.span)
+        })?;
 
         match field.name.as_str() {
             "database" => {
@@ -77,7 +88,10 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerR
                     ConfigValue::String(url_str, _) => {
                         let conn = ConnectionUrl::Literal(url_str.clone());
                         if !conn.is_valid() {
-                            return Err(format_span_error("Database connection URL must start with a valid protocol.".to_string(), field.span));
+                            return Err(format_span_error(
+                                "Database connection URL must start with a valid protocol.".to_string(),
+                                field.span,
+                            ));
                         }
 
                         database_url = Some(conn);
@@ -87,7 +101,12 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerR
                         database_url = Some(parse_function(args, field.span)?);
                     }
 
-                    _ => return Err(format_span_error("'database_url' must be string or env().".to_string(), field.span)),
+                    _ => {
+                        return Err(format_span_error(
+                            "'database_url' must be string or env().".to_string(),
+                            field.span,
+                        ));
+                    }
                 }
             }
             "read_replicas" => {
@@ -101,7 +120,10 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerR
                             ConfigValue::String(s, _) => {
                                 let conn = ConnectionUrl::Literal(s.clone());
                                 if !conn.is_valid() {
-                                    return Err(format_span_error("Replica connection URLS must start with a valid protocol.".to_string(), field.span));
+                                    return Err(format_span_error(
+                                        "Replica connection URLS must start with a valid protocol.".to_string(),
+                                        field.span,
+                                    ));
                                 }
 
                                 read_replicas.push(conn)
@@ -109,25 +131,35 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerR
                             ConfigValue::Function { name, args, .. } if name == "env" => {
                                 read_replicas.push(parse_function(args, field.span)?);
                             }
-                            _ => return Err(format_span_error("Replicas must be an array of strings or env().".to_string(), field.span)),
+                            _ => {
+                                return Err(format_span_error(
+                                    "Replicas must be an array of strings or env().".to_string(),
+                                    field.span,
+                                ));
+                            }
                         }
                     }
                 } else {
-                    return Err(format_span_error("'read_replicas' must be an array of connection URLs.".to_string(), field.span));
+                    return Err(format_span_error(
+                        "'read_replicas' must be an array of connection URLs.".to_string(),
+                        field.span,
+                    ));
                 }
             }
-            _ => return Err(format_span_error(format!("'{}' is not a valid configuration key.", field.name), field.span)),
+            _ => {
+                return Err(format_span_error(
+                    format!("'{}' is not a valid configuration key.", field.name),
+                    field.span,
+                ));
+            }
         }
     }
 
     let database = database.ok_or_else(|| format_span_error("'database' is required.".to_string(), config.span))?;
-    let database_url = database_url.ok_or_else(|| format_span_error("'database_url' is required.".to_string(), config.span))?;
+    let database_url =
+        database_url.ok_or_else(|| format_span_error("'database_url' is required.".to_string(), config.span))?;
 
-    Ok(ParsedConfig {
-        database,
-        database_url,
-        read_replicas,
-    })
+    Ok(ParsedConfig { database, database_url, read_replicas })
 }
 
 fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> DinocoCompilerResult<Vec<ParsedEnum>> {
@@ -145,32 +177,74 @@ fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> Din
             let value = v.as_str();
 
             if !enum_values.insert(value) {
-                return Err(format_span_error(format!("Duplicate value '{}' in enum '{}'.", value, _enum.name), _enum.span));
+                return Err(format_span_error(
+                    format!("Duplicate value '{}' in enum '{}'.", value, _enum.name),
+                    _enum.span,
+                ));
             }
 
             parsed_values.push(value.to_string());
         }
 
-        parsed_enums.push(ParsedEnum {
-            name: _enum.name.clone(),
-            values: parsed_values,
-        });
+        parsed_enums.push(ParsedEnum { name: _enum.name.clone(), values: parsed_values });
     }
 
     Ok(parsed_enums)
 }
 
-fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names: &mut HashSet<&'a str>) -> DinocoCompilerResult<Vec<ParsedTable>> {
+fn validate_tables<'a>(
+    tables: &'a Vec<Table>,
+    enums: &'a Vec<ParsedEnum>,
+    names: &mut HashSet<&'a str>,
+) -> DinocoCompilerResult<Vec<ParsedTable>> {
     let mut parsed_tables = vec![];
+    let mut database_names = HashSet::new();
 
     for table in tables {
         if !names.insert(table.name.as_str()) {
             return Err(format_span_error(format!("Name '{}' is already in use", table.name), table.span));
         }
 
+        let database_name = table.mapped_name.clone().unwrap_or_else(|| table.name.clone());
+        if !database_names.insert(database_name.clone()) {
+            return Err(format_span_error(format!("Table name '{}' is already in use.", database_name), table.span));
+        }
+
         let mut field_names = HashSet::new();
-        let mut has_primary_key = false;
+        let mut explicit_primary_key = None;
         let mut parsed_fields = vec![];
+        let declared_primary_key_fields = table_primary_key_fields(table);
+
+        if !table.primary_key_fields.is_empty() {
+            for field in &table.fields {
+                if field.is_primary_key {
+                    return Err(format_span_errors(vec![
+                        ("Field-level @id cannot be used together with @@ids([...]).".to_string(), field.span),
+                        (
+                            "Remove @@ids([...]) or convert the primary key definition to a single style.".to_string(),
+                            table.primary_key_fields_span.unwrap_or(table.span),
+                        ),
+                    ]));
+                }
+            }
+
+            let mut seen_primary_fields = HashSet::new();
+            for primary_key_field in &table.primary_key_fields {
+                if !seen_primary_fields.insert(primary_key_field) {
+                    return Err(format_span_error(
+                        format!("Field '{}' is duplicated in @@ids([...]).", primary_key_field),
+                        table.primary_key_fields_span.unwrap_or(table.span),
+                    ));
+                }
+
+                if !table.fields.iter().any(|field| field.name == *primary_key_field) {
+                    return Err(format_span_error(
+                        format!("Field '{}' was not found in model '{}'.", primary_key_field, table.name),
+                        table.primary_key_fields_span.unwrap_or(table.span),
+                    ));
+                }
+            }
+        }
 
         for field in &table.fields {
             if !field_names.insert(&field.name) {
@@ -178,11 +252,11 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
             }
 
             if field.is_primary_key {
-                if has_primary_key {
+                if explicit_primary_key.is_some() {
                     return Err(format_span_error("Multiple primary keys (@id) found.".to_string(), field.span));
                 }
 
-                has_primary_key = true;
+                explicit_primary_key = Some(field.name.as_str());
             }
 
             let mut parsed_field = ParsedField {
@@ -291,25 +365,40 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
                                 ));
                             }
 
-                            if matches!(function, FunctionCall::AutoIncrement) && !field.is_primary_key {
-                                return Err(format_span_error("Autoincrement is only supported on primary key fields (@id).".to_string(), field.span));
+                            if matches!(function, FunctionCall::AutoIncrement)
+                                && !declared_primary_key_fields
+                                    .iter()
+                                    .any(|primary_key_field| *primary_key_field == field.name)
+                            {
+                                return Err(format_span_error(
+                                    "Autoincrement is only supported on primary key fields (@id or @@ids([...]))."
+                                        .to_string(),
+                                    field.span,
+                                ));
                             }
                         }
 
                         FunctionCall::Uuid => {
                             if !matches!(field.field_type, FieldType::String) {
-                                return Err(format_span_error("UUID is only supported for String fields.".to_string(), field.span));
+                                return Err(format_span_error(
+                                    "UUID is only supported for String fields.".to_string(),
+                                    field.span,
+                                ));
                             }
                         }
                         FunctionCall::Now => {
                             if !matches!(field.field_type, FieldType::DateTime) {
-                                return Err(format_span_error("now() is only supported for DateTime fields.".to_string(), field.span));
+                                return Err(format_span_error(
+                                    "now() is only supported for DateTime fields.".to_string(),
+                                    field.span,
+                                ));
                             }
                         }
 
                         FunctionCall::Env(..) => {
                             return Err(format_span_error(
-                                "Unsupported @default() function. Supported: snowflake(), uuid(), autoincrement().".to_string(),
+                                "Unsupported @default() function. Supported: snowflake(), uuid(), autoincrement()."
+                                    .to_string(),
                                 field.span,
                             ));
                         }
@@ -321,7 +410,10 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
                     if let ParsedFieldType::Enum(name) = &parsed_field.field_type {
                         let _enum = enums.iter().find(|e| e.name == *name).unwrap();
                         if !_enum.values.contains(&val) {
-                            return Err(format_span_error(format!("Invalid default value '{}' for enum '{}'", val, name), field.span));
+                            return Err(format_span_error(
+                                format!("Invalid default value '{}' for enum '{}'", val, name),
+                                field.span,
+                            ));
                         }
 
                         parsed_field.default_value = ParsedFieldDefault::EnumValue(val.to_string())
@@ -334,12 +426,17 @@ fn validate_tables<'a>(tables: &'a Vec<Table>, enums: &'a Vec<ParsedEnum>, names
             parsed_fields.push(parsed_field);
         }
 
-        if !has_primary_key {
-            return Err(format_span_error("This table must have a primary key (@id).".to_string(), table.span));
+        if declared_primary_key_fields.is_empty() {
+            return Err(format_span_error(
+                "This table must have a primary key (@id or @@ids([...])).".to_string(),
+                table.span,
+            ));
         }
 
         parsed_tables.push(ParsedTable {
             name: table.name.clone(),
+            database_name,
+            primary_key_fields: declared_primary_key_fields.iter().map(|field| (*field).to_string()).collect(),
             fields: parsed_fields,
         })
     }
@@ -372,25 +469,36 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
         !f.is_empty() || !r.is_empty()
     }
 
-    fn validate_types_and_keys(ast_field: &Field<'_>, ast_table: &Table, target_ast_table: &Table) -> DinocoCompilerResult<()> {
+    fn validate_types_and_keys(
+        ast_field: &Field<'_>,
+        ast_table: &Table,
+        target_ast_table: &Table,
+    ) -> DinocoCompilerResult<()> {
         let (fields, references) = get_relation_fields_and_references(ast_field);
 
         if fields.len() != references.len() {
-            return Err(format_span_error("fields and references arrays must have the same length.".into(), ast_field.span));
+            return Err(format_span_error(
+                "fields and references arrays must have the same length.".into(),
+                ast_field.span,
+            ));
         }
 
-        for (local_f, remote_f) in fields.iter().zip(references.iter()) {
-            let local_ast_field = ast_table
-                .fields
-                .iter()
-                .find(|f| &f.name == local_f)
-                .ok_or_else(|| format_span_error(format!("Field '{}' not found in model '{}'.", local_f, ast_table.name), ast_field.span))?;
+        let target_primary_key_fields = table_primary_key_fields(target_ast_table);
 
-            let remote_ast_field = target_ast_table
-                .fields
-                .iter()
-                .find(|f| &f.name == remote_f)
-                .ok_or_else(|| format_span_error(format!("Field '{}' not found in model '{}'.", remote_f, target_ast_table.name), ast_field.span))?;
+        for (local_f, remote_f) in fields.iter().zip(references.iter()) {
+            let local_ast_field = ast_table.fields.iter().find(|f| &f.name == local_f).ok_or_else(|| {
+                format_span_error(
+                    format!("Field '{}' not found in model '{}'.", local_f, ast_table.name),
+                    ast_field.span,
+                )
+            })?;
+
+            let remote_ast_field = target_ast_table.fields.iter().find(|f| &f.name == remote_f).ok_or_else(|| {
+                format_span_error(
+                    format!("Field '{}' not found in model '{}'.", remote_f, target_ast_table.name),
+                    ast_field.span,
+                )
+            })?;
 
             if local_ast_field.field_type != remote_ast_field.field_type {
                 return Err(format_span_error(
@@ -402,10 +510,10 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                 ));
             }
 
-            if !remote_ast_field.is_unique && !remote_ast_field.is_primary_key {
+            if !target_primary_key_fields.iter().any(|field| field == remote_f) {
                 return Err(format_span_error(
                     format!(
-                        "The `references` field '{}' on model '{}' must be marked as @unique or @id.",
+                        "The `references` field '{}' on model '{}' must belong to the model primary key (@id or @@ids([...])).",
                         remote_f, target_ast_table.name
                     ),
                     ast_field.span,
@@ -415,8 +523,14 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
         Ok(())
     }
 
-    fn get_referential_actions(field: &Field<'_>) -> DinocoCompilerResult<(Option<ReferentialAction>, Option<ReferentialAction>)> {
-        fn parse_action(action_value: Option<&String>, action_name: &str, span: pest::Span) -> DinocoCompilerResult<Option<ReferentialAction>> {
+    fn get_referential_actions(
+        field: &Field<'_>,
+    ) -> DinocoCompilerResult<(Option<ReferentialAction>, Option<ReferentialAction>)> {
+        fn parse_action(
+            action_value: Option<&String>,
+            action_name: &str,
+            span: pest::Span,
+        ) -> DinocoCompilerResult<Option<ReferentialAction>> {
             match action_value {
                 Some(val) => match val.as_str() {
                     "Cascade" => Ok(Some(ReferentialAction::Cascade)),
@@ -500,7 +614,8 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                     entry.push(ast_field.name.clone());
 
                     if entry.len() > 1 {
-                        let fields_with_same_name: Vec<&Field> = ast_table.fields.iter().filter(|f| entry.contains(&f.name)).collect();
+                        let fields_with_same_name: Vec<&Field> =
+                            ast_table.fields.iter().filter(|f| entry.contains(&f.name)).collect();
 
                         let is_self_relation = fields_with_same_name.iter().all(|f| {
                             if let FieldType::Custom(target) = &f.field_type {
@@ -546,7 +661,10 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                                         ),
                                         ast_field.span,
                                     ),
-                                    (format!("You need to define or fix the relation name here to match {}.", name), candidate.span),
+                                    (
+                                        format!("You need to define or fix the relation name here to match {}.", name),
+                                        candidate.span,
+                                    ),
                                 ]));
                             } else {
                                 return Err(format_span_errors(vec![
@@ -558,7 +676,10 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                                         ast_field.span,
                                     ),
                                     (
-                                        format!("Add a field here pointing to '{}' with @relation(name: {}).", current_table_name, name),
+                                        format!(
+                                            "Add a field here pointing to '{}' with @relation(name: {}).",
+                                            current_table_name, name
+                                        ),
                                         target_ast_table.span,
                                     ),
                                 ]));
@@ -568,7 +689,10 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                 } else {
                     if back_relation_fields.is_empty() {
                         return Err(format_span_error(
-                            format!("Missing back-relation field on model '{}' pointing back to '{}'.", target_model_name, current_table_name),
+                            format!(
+                                "Missing back-relation field on model '{}' pointing back to '{}'.",
+                                target_model_name, current_table_name
+                            ),
                             ast_field.span,
                         ));
                     }
@@ -584,7 +708,10 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
 
                 if is_local_list && is_remote_list {
                     if has_fields_or_references(ast_field) {
-                        return Err(format_span_error("Many-to-Many relations cannot define 'fields' or 'references'.".into(), ast_field.span));
+                        return Err(format_span_error(
+                            "Many-to-Many relations cannot define 'fields' or 'references'.".into(),
+                            ast_field.span,
+                        ));
                     }
 
                     parsed_rel = ParsedRelation::ManyToMany(current_rel_name);
@@ -621,19 +748,27 @@ fn validate_relations(parsed_tables: &mut Vec<ParsedTable>, schema_tables: &[Tab
                         validate_types_and_keys(ast_field, ast_table, target_ast_table)?;
 
                         let (fields, references) = get_relation_fields_and_references(ast_field);
+                        let local_primary_key_fields = table_primary_key_fields(ast_table);
 
                         for local_f in &fields {
                             let lf = ast_table.fields.iter().find(|f| &f.name == local_f).unwrap();
 
-                            if !lf.is_unique && !lf.is_primary_key {
+                            if !lf.is_unique
+                                && !lf.is_primary_key
+                                && !local_primary_key_fields.iter().any(|field| field == local_f)
+                            {
                                 return Err(format_span_error(
-                                    format!("Field '{}' must have a @unique constraint to form a valid One-to-One relation.", local_f),
+                                    format!(
+                                        "Field '{}' must have a @unique constraint to form a valid One-to-One relation.",
+                                        local_f
+                                    ),
                                     ast_field.span,
                                 ));
                             }
                         }
 
-                        parsed_rel = ParsedRelation::OneToOneOwner(current_rel_name, fields, references, on_delete, on_update);
+                        parsed_rel =
+                            ParsedRelation::OneToOneOwner(current_rel_name, fields, references, on_delete, on_update);
                     } else {
                         parsed_rel = ParsedRelation::OneToOneInverse(current_rel_name);
                     }

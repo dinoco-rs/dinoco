@@ -15,6 +15,7 @@ paren_close = { ")" }
 array_open = { "[" }
 array_close = { "]" }
 decorator_prefix = { "@" }
+model_decorator_prefix = { "@@" }
 array_separator = { "," }
 named_separator = { ":" }
 config_separator = { "=" }
@@ -32,12 +33,18 @@ decorator = {
     decorator_prefix ~ ident ~ 
     (paren_open ~ INLINE_WHITESPACE* ~ ((named_param | param) ~ (array_separator ~ INLINE_WHITESPACE*  ~ (named_param | param))*)? ~ INLINE_WHITESPACE* ~ paren_close)? ~ INLINE_WHITESPACE*
 }
+model_decorator = ${
+    INLINE_WHITESPACE* ~ model_decorator_prefix ~ ident ~
+    (paren_open ~ INLINE_WHITESPACE* ~ ((named_param | param) ~ (array_separator ~ INLINE_WHITESPACE* ~ (named_param | param))*)? ~ INLINE_WHITESPACE* ~ paren_close)? ~
+    INLINE_WHITESPACE* ~ COMMENT* ~ NEWLINE*
+}
 
 named_array = { array_open ~ INLINE_WHITESPACE* ~ ident ~ INLINE_WHITESPACE* ~  (array_separator ~ INLINE_WHITESPACE* ~ ident)* ~ array_close }
 named_value = { named_array | ident | string_literal }
 named_param = { ident ~ named_separator ~ INLINE_WHITESPACE* ~ named_value }
 
-param = { function | string_literal | boolean_literal | number_literal | ident | COMMENT }
+decorator_array = { array_open ~ INLINE_WHITESPACE* ~ ident ~ INLINE_WHITESPACE* ~ (array_separator ~ INLINE_WHITESPACE* ~ ident)* ~ INLINE_WHITESPACE* ~ array_close }
+param = { function | string_literal | boolean_literal | number_literal | ident | decorator_array | COMMENT }
 
 config_array = { array_open ~ (config_array_value ~ (array_separator ~ config_array_value?)*)? ~ array_close }
 config_array_value = { string_literal | function | config_object | config_field | COMMENT }
@@ -51,7 +58,7 @@ field_type = @{ ident }
 
 field = ${ ident ~ INLINE_WHITESPACE* ~ field_type ~ (array_open ~ array_close)? ~ field_optional? ~ (INLINE_WHITESPACE* ~ decorator)* ~ COMMENT* ~ NEWLINE* }
 
-model_block = { model_keyword ~ ident ~ block_open ~ (field | COMMENT)* ~ block_close }
+model_block = { model_keyword ~ INLINE_WHITESPACE* ~ ident ~ INLINE_WHITESPACE* ~ block_open ~ (field | model_decorator | COMMENT)* ~ block_close }
 enum_block = ${ enum_keyword ~ INLINE_WHITESPACE* ~ ident ~ INLINE_WHITESPACE* ~ block_open ~ WHITESPACE* ~ (ident | COMMENT | WHITESPACE)* ~ WHITESPACE* ~ block_close }
 config_block = { config_keyword ~ block_open ~ (config_field | COMMENT)* ~ block_close }
 

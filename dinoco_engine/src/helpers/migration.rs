@@ -5,14 +5,14 @@ use dinoco_compiler::{
 
 pub fn invert_step(step: &MigrationStep, schema: &ParsedSchema) -> Vec<MigrationStep> {
     match step {
-        MigrationStep::CreateTable(table) => vec![MigrationStep::DropTable(table.name.clone())],
+        MigrationStep::CreateTable(table) => vec![MigrationStep::DropTable(table.database_name.clone())],
         MigrationStep::RenameTable { old_name, new_name } => {
             vec![MigrationStep::RenameTable { old_name: new_name.clone(), new_name: old_name.clone() }]
         }
         MigrationStep::DropTable(name) => schema
             .tables
             .iter()
-            .find(|table| table.name == *name)
+            .find(|table| table.database_name == *name)
             .cloned()
             .map(MigrationStep::CreateTable)
             .into_iter()
@@ -60,15 +60,8 @@ pub fn invert_step(step: &MigrationStep, schema: &ParsedSchema) -> Vec<Migration
             let columns = schema
                 .tables
                 .iter()
-                .find(|table| table.name == *table_name)
-                .map(|table| {
-                    table
-                        .fields
-                        .iter()
-                        .filter(|field| field.is_primary_key)
-                        .map(|field| field.name.clone())
-                        .collect::<Vec<_>>()
-                })
+                .find(|table| table.database_name == *table_name)
+                .map(|table| table.primary_key_fields.clone())
                 .unwrap_or_default();
 
             if columns.is_empty() {
@@ -108,7 +101,7 @@ pub fn invert_steps(steps: &[MigrationStep], schema: &ParsedSchema) -> Vec<Migra
 }
 
 fn find_foreign_key_in_schema(table_name: &str, constraint_name: &str, schema: &ParsedSchema) -> Option<MigrationStep> {
-    let table = schema.tables.iter().find(|table| table.name == table_name)?;
+    let table = schema.tables.iter().find(|table| table.database_name == table_name)?;
 
     table.fields.iter().find_map(|field| {
         let (columns, referenced_columns, on_delete, on_update) = match &field.relation {
@@ -119,14 +112,19 @@ fn find_foreign_key_in_schema(table_name: &str, constraint_name: &str, schema: &
             _ => return None,
         };
 
-        let expected_constraint = columns.first().map(|column| format!("fk_{}_{}", table_name, column))?;
+        let expected_constraint = (!columns.is_empty()).then(|| format!("fk_{}_{}", table_name, columns.join("_")))?;
 
         if expected_constraint != constraint_name {
             return None;
         }
 
         let referenced_table = match &field.field_type {
-            ParsedFieldType::Relation(name) => name.clone(),
+            ParsedFieldType::Relation(name) => schema
+                .tables
+                .iter()
+                .find(|table_item| table_item.name == *name)
+                .map(|table_item| table_item.database_name.clone())
+                .unwrap_or_else(|| name.clone()),
             other => other.to_string(),
         };
 
@@ -149,7 +147,7 @@ pub fn render_column_definition<D: AdapterDialect>(
     inline_primary_key: bool,
 ) -> String {
     let mut definition = map_field_to_definition(field, dialect, &schema.enums);
-    definition.primary_key = inline_primary_key && field.is_primary_key;
+    definition.primary_key = inline_primary_key;
 
     let mut parts = vec![
         dialect.identifier(&field.name),
@@ -178,12 +176,24 @@ pub fn render_create_table_sql<D: AdapterDialect>(table: &ParsedTable, dialect: 
         .filter(|field| !matches!(field.field_type, ParsedFieldType::Relation(..)))
         .collect::<Vec<_>>();
 
-    let primary_key_columns = data_fields.iter().filter(|field| field.is_primary_key).collect::<Vec<_>>();
+    let primary_key_columns = table
+        .primary_key_fields
+        .iter()
+        .filter_map(|field_name| data_fields.iter().find(|field| &field.name == field_name).copied())
+        .collect::<Vec<_>>();
     let inline_primary_key = primary_key_columns.len() <= 1;
 
     let mut definitions = data_fields
         .iter()
-        .map(|field| render_column_definition(field, dialect, schema, inline_primary_key))
+        .map(|field| {
+            render_column_definition(
+                field,
+                dialect,
+                schema,
+                inline_primary_key
+                    && table.primary_key_fields.iter().any(|primary_key_field| primary_key_field == &field.name),
+            )
+        })
         .collect::<Vec<_>>();
 
     if !inline_primary_key && !primary_key_columns.is_empty() {
@@ -196,7 +206,7 @@ pub fn render_create_table_sql<D: AdapterDialect>(table: &ParsedTable, dialect: 
         ));
     }
 
-    format!("CREATE TABLE {} ({})", dialect.identifier(&table.name), definitions.join(", "))
+    format!("CREATE TABLE {} ({})", dialect.identifier(&table.database_name), definitions.join(", "))
 }
 
 pub fn render_sqlite_create_table_sql<D: AdapterDialect>(
@@ -205,7 +215,7 @@ pub fn render_sqlite_create_table_sql<D: AdapterDialect>(
     schema: &ParsedSchema,
 ) -> String {
     let base_sql = render_create_table_sql(table, dialect, schema);
-    let inline_fks = sqlite_inline_foreign_keys(table, dialect);
+    let inline_fks = sqlite_inline_foreign_keys(table, dialect, schema);
 
     if inline_fks.is_empty() {
         base_sql
@@ -235,9 +245,14 @@ pub fn render_sqlite_rebuild_table_sql_with_copy_mappings<D: AdapterDialect>(
     schema: &ParsedSchema,
     copy_mappings: &[(String, String)],
 ) -> Vec<String> {
-    let temp_table_name = format!("__dinoco_rebuild_{}", table.name);
+    let temp_table_name = format!("__dinoco_rebuild_{}", table.database_name);
     let mut sqls = vec![render_sqlite_create_table_sql(
-        &ParsedTable { name: temp_table_name.clone(), fields: table.fields.clone() },
+        &ParsedTable {
+            name: temp_table_name.clone(),
+            database_name: temp_table_name.clone(),
+            primary_key_fields: table.primary_key_fields.clone(),
+            fields: table.fields.clone(),
+        },
         dialect,
         schema,
     )];
@@ -254,15 +269,15 @@ pub fn render_sqlite_rebuild_table_sql_with_copy_mappings<D: AdapterDialect>(
             dialect.identifier(&temp_table_name),
             target_columns_sql,
             source_columns_sql,
-            dialect.identifier(&table.name)
+            dialect.identifier(&table.database_name)
         ));
     }
 
-    sqls.push(format!("DROP TABLE {}", dialect.identifier(&table.name)));
+    sqls.push(format!("DROP TABLE {}", dialect.identifier(&table.database_name)));
     sqls.push(format!(
         "ALTER TABLE {} RENAME TO {}",
         dialect.identifier(&temp_table_name),
-        dialect.identifier(&table.name)
+        dialect.identifier(&table.database_name)
     ));
 
     sqls
@@ -380,10 +395,14 @@ pub fn find_enum_columns<'a>(schema: &'a ParsedSchema, enum_name: &str) -> Vec<(
 }
 
 pub fn find_table_in_schema<'a>(schema: &'a ParsedSchema, table_name: &str) -> Option<&'a ParsedTable> {
-    schema.tables.iter().find(|table| table.name == table_name)
+    schema.tables.iter().find(|table| table.database_name == table_name)
 }
 
-pub fn sqlite_inline_foreign_keys<D: AdapterDialect>(table: &ParsedTable, dialect: &D) -> Vec<String> {
+pub fn sqlite_inline_foreign_keys<D: AdapterDialect>(
+    table: &ParsedTable,
+    dialect: &D,
+    schema: &ParsedSchema,
+) -> Vec<String> {
     table
         .fields
         .iter()
@@ -397,9 +416,16 @@ pub fn sqlite_inline_foreign_keys<D: AdapterDialect>(table: &ParsedTable, dialec
 
                 Some(format!(
                     "CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}){}{}",
-                    dialect.identifier(&format!("fk_{}_{}", table.name, columns.first()?)),
+                    dialect.identifier(&format!("fk_{}_{}", table.database_name, columns.join("_"))),
                     render_identifier_list(&columns.iter().map(|column| column.as_str()).collect::<Vec<_>>(), dialect),
-                    dialect.identifier(referenced_table),
+                    dialect.identifier(
+                        &schema
+                            .tables
+                            .iter()
+                            .find(|table_item| table_item.name == referenced_table)
+                            .map(|table_item| table_item.database_name.clone())
+                            .unwrap_or_else(|| referenced_table.to_string()),
+                    ),
                     render_identifier_list(
                         &referenced_columns.iter().map(|column| column.as_str()).collect::<Vec<_>>(),
                         dialect

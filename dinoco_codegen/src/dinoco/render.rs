@@ -31,6 +31,12 @@ pub fn render_schema(schema: &ParsedSchema) -> String {
             output.push('\n');
         }
 
+        for attribute in render_table_attributes(table) {
+            output.push_str("    ");
+            output.push_str(&attribute);
+            output.push('\n');
+        }
+
         output.push_str("}\n\n");
     }
 
@@ -53,6 +59,20 @@ fn render_config(schema: &ParsedSchema) -> String {
     output.push_str("}\n");
 
     output
+}
+
+fn render_table_attributes(table: &dinoco_compiler::ParsedTable) -> Vec<String> {
+    let mut attributes = Vec::new();
+
+    if table.database_name != table.name {
+        attributes.push(format!("@@table_name(\"{}\")", table.database_name));
+    }
+
+    if table.primary_key_fields.len() > 1 {
+        attributes.push(format!("@@ids([{}])", table.primary_key_fields.join(", ")));
+    }
+
+    attributes
 }
 
 fn render_field(field: &ParsedField) -> String {
