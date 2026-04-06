@@ -1,8 +1,8 @@
 use std::future::Future;
 
-use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoResult, QueryBuilder, SelectStatement};
+use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoResult, InsertStatement, QueryBuilder, SelectStatement};
 
-use crate::{Model, Projection, ReadMode};
+use crate::{InsertModel, Model, Projection, ReadMode};
 
 pub fn execute_many<'a, M, S, A>(
     statement: SelectStatement,
@@ -42,5 +42,30 @@ where
         let mut rows = execute_many::<M, S, A>(statement, &[], read_mode, client).await?;
 
         Ok(rows.drain(..).next())
+    }
+}
+
+pub fn execute_insert<'a, M, A>(
+    items: Vec<M>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    M: InsertModel + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let statement = InsertStatement::new()
+            .into(M::table_name())
+            .columns(M::insert_columns())
+            .values(items.into_iter().map(M::into_insert_row).collect());
+
+        let adapter = client.primary();
+        let (sql, params) = adapter.dialect().build_insert(&statement);
+
+        adapter.execute(&sql, &params).await
     }
 }

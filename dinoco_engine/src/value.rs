@@ -134,6 +134,13 @@ impl TryFrom<DinocoValue> for DateTime<Utc> {
     fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
         match value {
             DinocoValue::DateTime(dt) => Ok(dt),
+            DinocoValue::String(value) => parse_datetime_string(&value),
+            DinocoValue::Bytes(value) => {
+                let value =
+                    String::from_utf8(value).map_err(|_| DinocoError::ParseError("Invalid UTF-8 datetime".into()))?;
+
+                parse_datetime_string(&value)
+            }
             _ => Err(DinocoError::ParseError("Expected DateTime<Utc>".into())),
         }
     }
@@ -145,7 +152,43 @@ impl TryFrom<DinocoValue> for NaiveDate {
     fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
         match value {
             DinocoValue::Date(date) => Ok(date),
+            DinocoValue::String(value) => parse_date_string(&value),
+            DinocoValue::Bytes(value) => {
+                let value =
+                    String::from_utf8(value).map_err(|_| DinocoError::ParseError("Invalid UTF-8 date".into()))?;
+
+                parse_date_string(&value)
+            }
             _ => Err(DinocoError::ParseError("Expected NaiveDate".into())),
         }
     }
+}
+
+pub(crate) fn parse_datetime_string(value: &str) -> Result<DateTime<Utc>, DinocoError> {
+    if let Ok(datetime) = DateTime::parse_from_rfc3339(value) {
+        return Ok(datetime.with_timezone(&Utc));
+    }
+
+    if let Ok(datetime) = DateTime::parse_from_rfc2822(value) {
+        return Ok(datetime.with_timezone(&Utc));
+    }
+
+    let val = value.trim();
+    let val = val.strip_suffix(" UTC").unwrap_or(val);
+    let val = val.strip_suffix("Z").unwrap_or(val);
+
+    let formats = ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S"];
+
+    for format in formats {
+        if let Ok(datetime) = chrono::NaiveDateTime::parse_from_str(val, format) {
+            return Ok(DateTime::<Utc>::from_naive_utc_and_offset(datetime, Utc));
+        }
+    }
+
+    Err(DinocoError::ParseError(format!("Expected DateTime<Utc>, got '{}'", value)))
+}
+
+pub(crate) fn parse_date_string(value: &str) -> Result<NaiveDate, DinocoError> {
+    NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d")
+        .map_err(|_| DinocoError::ParseError(format!("Expected NaiveDate, got '{}'", value)))
 }

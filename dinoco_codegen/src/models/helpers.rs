@@ -1,4 +1,4 @@
-use dinoco_compiler::{ConnectionUrl, ParsedField, ParsedFieldType};
+use dinoco_compiler::{ConnectionUrl, FunctionCall, ParsedField, ParsedFieldDefault, ParsedFieldType};
 
 pub(crate) fn render_connection_url(url: &ConnectionUrl) -> String {
     match url {
@@ -113,4 +113,62 @@ pub(crate) fn pascal_case(value: &str) -> String {
     }
 
     output
+}
+
+pub(crate) fn default_value_expr(field: &ParsedField, enum_names: &[String]) -> String {
+    if field.is_optional {
+        return "None".to_string();
+    }
+
+    if field.is_list {
+        return "Vec::new()".to_string();
+    }
+
+    match &field.default_value {
+        ParsedFieldDefault::String(value) => format!("{value:?}.to_string()"),
+        ParsedFieldDefault::Boolean(value) => value.to_string(),
+        ParsedFieldDefault::Integer(value) => value.to_string(),
+        ParsedFieldDefault::Float(value) => value.to_string(),
+        ParsedFieldDefault::EnumValue(value) => render_enum_expr(field, value, enum_names),
+        ParsedFieldDefault::Function(function) => match function {
+            FunctionCall::Uuid => "dinoco::uuid_v7().to_string()".to_string(),
+            FunctionCall::Snowflake => "dinoco::snowflake()".to_string(),
+            FunctionCall::AutoIncrement => "0".to_string(),
+            FunctionCall::Now => match field.field_type {
+                ParsedFieldType::Date => "dinoco::Utc::now().date_naive()".to_string(),
+                _ => "dinoco::Utc::now()".to_string(),
+            },
+            FunctionCall::Env(_) => default_expr_by_type(field, enum_names),
+        },
+        ParsedFieldDefault::NotDefined => default_expr_by_type(field, enum_names),
+    }
+}
+
+fn default_expr_by_type(field: &ParsedField, enum_names: &[String]) -> String {
+    match &field.field_type {
+        ParsedFieldType::String => "String::new()".to_string(),
+        ParsedFieldType::Boolean => "false".to_string(),
+        ParsedFieldType::Integer => "0".to_string(),
+        ParsedFieldType::Float => "0.0".to_string(),
+        ParsedFieldType::Json => "dinoco::JsonValue::Null".to_string(),
+        ParsedFieldType::DateTime => "dinoco::Utc::now()".to_string(),
+        ParsedFieldType::Date => "dinoco::Utc::now().date_naive()".to_string(),
+        ParsedFieldType::Enum(name) => {
+            if enum_names.iter().any(|item| item == name) {
+                format!("<super::enums::{name} as Default>::default()")
+            } else {
+                "String::new()".to_string()
+            }
+        }
+        ParsedFieldType::Relation(_) => unreachable!(),
+    }
+}
+
+fn render_enum_expr(field: &ParsedField, value: &str, enum_names: &[String]) -> String {
+    match &field.field_type {
+        ParsedFieldType::Enum(name) if enum_names.iter().any(|item| item == name) => {
+            format!("super::enums::{name}::{}", pascal_case(value))
+        }
+        _ => format!("{value:?}.to_string()"),
+    }
 }

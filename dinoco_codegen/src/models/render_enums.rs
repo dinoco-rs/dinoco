@@ -25,6 +25,13 @@ pub(crate) fn render_enums(schema: &ParsedSchema) -> String {
         }
 
         output.push_str("}\n\n");
+        if let Some(first_value) = item.values.first() {
+            output.push_str(&format!("impl Default for {} {{\n", item.name));
+            output.push_str("    fn default() -> Self {\n");
+            output.push_str(&format!("        Self::{}\n", pascal_case(first_value)));
+            output.push_str("    }\n");
+            output.push_str("}\n\n");
+        }
         output.push_str(&format!("impl TryFrom<dinoco::DinocoValue> for {} {{\n", item.name));
         output.push_str("    type Error = dinoco::DinocoError;\n\n");
         output.push_str("    fn try_from(value: dinoco::DinocoValue) -> Result<Self, Self::Error> {\n");

@@ -30,6 +30,11 @@ pub trait Projection<M: Model>: DinocoRow {
     }
 }
 
+pub trait InsertModel: Model {
+    fn insert_columns() -> &'static [&'static str];
+    fn into_insert_row(self) -> Vec<DinocoValue>;
+}
+
 pub trait IntoDinocoValue {
     fn into_dinoco_value(self) -> DinocoValue;
 }
@@ -101,5 +106,17 @@ impl IntoDinocoValue for chrono::DateTime<chrono::Utc> {
 impl IntoDinocoValue for chrono::NaiveDate {
     fn into_dinoco_value(self) -> DinocoValue {
         DinocoValue::Date(self)
+    }
+}
+
+impl<T> IntoDinocoValue for Option<T>
+where
+    T: IntoDinocoValue,
+{
+    fn into_dinoco_value(self) -> DinocoValue {
+        match self {
+            Some(value) => value.into_dinoco_value(),
+            None => DinocoValue::Null,
+        }
     }
 }
