@@ -27,5 +27,5 @@ pub use methods::{
 };
 pub use model::{
     IncludeApplier, IncludeLoaderFuture, InsertModel, InsertRelation, IntoDinocoValue, IntoIncludeNode, Model,
-    Projection, UpdateModel,
+    Projection, ScalarFieldValue, UpdateModel,
 };

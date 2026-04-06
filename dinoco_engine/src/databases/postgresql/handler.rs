@@ -39,28 +39,28 @@ impl DinocoAdapterHandler for PostgresAdapter {
     async fn fetch_columns(&self, table_name: String) -> DinocoResult<Vec<DatabaseColumn>> {
         let query = "
             SELECT
-                column_name::text AS name,
+                c.column_name::text AS name,
                 CASE
-                    WHEN data_type = 'USER-DEFINED' THEN udt_name::text
-                    ELSE data_type::text
+                    WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name::text
+                    ELSE c.data_type::text
                 END AS db_type,
-                (is_nullable = 'YES') AS nullable,
+                (c.is_nullable = 'YES') AS nullable,
                 COALESCE((tc.constraint_type = 'PRIMARY KEY'), false) AS is_primary_key,
-                column_default::text AS default_value,
+                c.column_default::text AS default_value,
                 NULL::text AS enum_values
-            FROM information_schema.columns
+            FROM information_schema.columns AS c
             LEFT JOIN information_schema.key_column_usage kcu
-              ON kcu.table_schema = columns.table_schema
-             AND kcu.table_name = columns.table_name
-             AND kcu.column_name = columns.column_name
+              ON kcu.table_schema = c.table_schema
+             AND kcu.table_name = c.table_name
+             AND kcu.column_name = c.column_name
             LEFT JOIN information_schema.table_constraints tc
               ON tc.table_schema = kcu.table_schema
              AND tc.table_name = kcu.table_name
              AND tc.constraint_name = kcu.constraint_name
              AND tc.constraint_type = 'PRIMARY KEY'
-            WHERE table_schema = 'public'
-              AND table_name = $1
-            ORDER BY ordinal_position;
+            WHERE c.table_schema = 'public'
+              AND c.table_name = $1
+            ORDER BY c.ordinal_position;
         ";
 
         self.query_as::<DatabaseColumn>(query, &[DinocoValue::from(table_name)]).await

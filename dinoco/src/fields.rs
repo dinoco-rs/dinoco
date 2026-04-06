@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use dinoco_engine::{Expression, OrderDirection, SelectStatement};
 
-use crate::{IncludeNode, IntoDinocoValue, IntoIncludeNode, Model, OrderBy, Projection};
+use crate::{IncludeNode, IntoIncludeNode, Model, OrderBy, Projection, ScalarFieldValue};
 
 #[derive(Debug)]
 pub struct ScalarField<T> {
@@ -31,44 +31,44 @@ impl<T> ScalarField<T> {
 
     pub fn eq<V>(self, value: V) -> Expression
     where
-        V: IntoDinocoValue,
+        V: ScalarFieldValue<T>,
     {
-        Expression::Column(self.name.to_string()).eq(value.into_dinoco_value())
+        Expression::Column(self.name.to_string()).eq(value.into_scalar_field_value())
     }
 
     pub fn neq<V>(self, value: V) -> Expression
     where
-        V: IntoDinocoValue,
+        V: ScalarFieldValue<T>,
     {
-        Expression::Column(self.name.to_string()).neq(value.into_dinoco_value())
+        Expression::Column(self.name.to_string()).neq(value.into_scalar_field_value())
     }
 
     pub fn gt<V>(self, value: V) -> Expression
     where
-        V: IntoDinocoValue,
+        V: ScalarFieldValue<T>,
     {
-        Expression::Column(self.name.to_string()).gt(value.into_dinoco_value())
+        Expression::Column(self.name.to_string()).gt(value.into_scalar_field_value())
     }
 
     pub fn gte<V>(self, value: V) -> Expression
     where
-        V: IntoDinocoValue,
+        V: ScalarFieldValue<T>,
     {
-        Expression::Column(self.name.to_string()).gte(value.into_dinoco_value())
+        Expression::Column(self.name.to_string()).gte(value.into_scalar_field_value())
     }
 
     pub fn lt<V>(self, value: V) -> Expression
     where
-        V: IntoDinocoValue,
+        V: ScalarFieldValue<T>,
     {
-        Expression::Column(self.name.to_string()).lt(value.into_dinoco_value())
+        Expression::Column(self.name.to_string()).lt(value.into_scalar_field_value())
     }
 
     pub fn lte<V>(self, value: V) -> Expression
     where
-        V: IntoDinocoValue,
+        V: ScalarFieldValue<T>,
     {
-        Expression::Column(self.name.to_string()).lte(value.into_dinoco_value())
+        Expression::Column(self.name.to_string()).lte(value.into_scalar_field_value())
     }
 
     pub fn asc(self) -> OrderBy {

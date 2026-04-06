@@ -1,0 +1,23 @@
+error[E0277]: the trait bound `Team: Projection<User>` is not satisfied
+ --> tests/ui/fail/type_safe_find_wrong_projection.rs:9:42
+  |
+9 |     let _ = find_many::<User>().select::<Team>();
+  |                                 ------   ^^^^ unsatisfied trait bound
+  |                                 |
+  |                                 required by a bound introduced by this call
+  |
+help: the trait `Projection<User>` is not implemented for `Team`
+      but trait `Projection<Team>` is implemented for it
+ --> tests/ui/fail/../common.rs
+  |
+  | impl Projection<Team> for Team {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `Team`, found `User`
+note: required by a bound in `FindMany::<M, S>::select`
+ --> src/methods/find_many.rs
+  |
+  |     pub fn select<NS>(mut self) -> FindMany<M, NS>
+  |            ------ required by a bound in this associated function
+  |     where
+  |         NS: Projection<M>,
+  |             ^^^^^^^^^^^^^ required by this bound in `FindMany::<M, S>::select`

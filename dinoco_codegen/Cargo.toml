@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 dinoco_compiler = { path = "../dinoco_compiler" }
+
+[dev-dependencies]
+tempfile = "3.23.0"

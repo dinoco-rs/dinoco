@@ -55,6 +55,10 @@ pub trait IntoDinocoValue {
     fn into_dinoco_value(self) -> DinocoValue;
 }
 
+pub trait ScalarFieldValue<T> {
+    fn into_scalar_field_value(self) -> DinocoValue;
+}
+
 pub trait IntoIncludeNode {
     fn into_include_node(self) -> IncludeNode;
 }
@@ -122,6 +126,21 @@ impl IntoDinocoValue for chrono::DateTime<chrono::Utc> {
 impl IntoDinocoValue for chrono::NaiveDate {
     fn into_dinoco_value(self) -> DinocoValue {
         DinocoValue::Date(self)
+    }
+}
+
+impl<T> ScalarFieldValue<T> for T
+where
+    T: IntoDinocoValue,
+{
+    fn into_scalar_field_value(self) -> DinocoValue {
+        self.into_dinoco_value()
+    }
+}
+
+impl ScalarFieldValue<String> for &str {
+    fn into_scalar_field_value(self) -> DinocoValue {
+        self.into_dinoco_value()
     }
 }
 

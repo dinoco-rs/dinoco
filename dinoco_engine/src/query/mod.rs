@@ -12,7 +12,7 @@ pub use insert::*;
 pub use select::*;
 pub use update::*;
 
-use crate::AdapterDialect;
+use crate::{AdapterDialect, DinocoValue};
 use std::fmt::Write;
 
 pub trait QueryBuilder: AdapterDialect {
@@ -52,6 +52,87 @@ pub trait QueryBuilder: AdapterDialect {
         }
 
         append_limit_skip(self, &mut sql, &mut params, stmt.limit, stmt.skip);
+
+        (sql, params)
+    }
+
+    fn build_partitioned_select(
+        &self,
+        stmt: &SelectStatement,
+        partition_column: &str,
+        row_number_alias: &str,
+    ) -> Query {
+        let mut sql = String::with_capacity(512);
+        let mut params = Vec::new();
+
+        sql.push_str("SELECT * FROM (SELECT ");
+
+        if stmt.select.is_empty() {
+            sql.push('*');
+        } else {
+            push_joined(&mut sql, &stmt.select, ", ", |buf, column| {
+                render_query_identifier_into(self, column, buf);
+            });
+        }
+
+        sql.push_str(", ROW_NUMBER() OVER (PARTITION BY ");
+        render_query_identifier_into(self, partition_column, &mut sql);
+
+        sql.push_str(" ORDER BY ");
+
+        if stmt.order_by.is_empty() {
+            if let Some(first_column) = stmt.select.first() {
+                render_query_identifier_into(self, first_column, &mut sql);
+            } else {
+                render_query_identifier_into(self, partition_column, &mut sql);
+            }
+        } else {
+            push_joined(&mut sql, &stmt.order_by, ", ", |buf, (column, direction)| {
+                let dir = match direction {
+                    OrderDirection::Asc => "ASC",
+                    OrderDirection::Desc => "DESC",
+                };
+
+                let _ = write!(buf, "{} {}", self.identifier(column), dir);
+            });
+        }
+
+        let _ = write!(sql, ") AS {} FROM ", self.identifier(row_number_alias));
+        render_query_identifier_into(self, &stmt.from, &mut sql);
+
+        if !stmt.conditions.is_empty() {
+            sql.push_str(" WHERE ");
+            render_condition_group_into(self, &stmt.conditions, &mut params, " AND ", &mut sql);
+        }
+
+        let _ = write!(sql, ") AS {} WHERE ", self.identifier("__dinoco_partitioned"));
+
+        let row_alias = self.identifier(row_number_alias);
+
+        match (stmt.skip, stmt.limit) {
+            (Some(skip), Some(limit)) => {
+                params.push(DinocoValue::Integer(skip as i64));
+                let lower = self.bind_param(params.len());
+                params.push(DinocoValue::Integer((skip + limit) as i64));
+                let upper = self.bind_param(params.len());
+                let _ = write!(sql, "{row_alias} > {lower} AND {row_alias} <= {upper}");
+            }
+            (Some(skip), None) => {
+                params.push(DinocoValue::Integer(skip as i64));
+                let lower = self.bind_param(params.len());
+                let _ = write!(sql, "{row_alias} > {lower}");
+            }
+            (None, Some(limit)) => {
+                params.push(DinocoValue::Integer(limit as i64));
+                let upper = self.bind_param(params.len());
+                let _ = write!(sql, "{row_alias} <= {upper}");
+            }
+            (None, None) => sql.push_str("1 = 1"),
+        }
+
+        sql.push_str(" ORDER BY ");
+        render_query_identifier_into(self, partition_column, &mut sql);
+        let _ = write!(sql, ", {}", row_alias);
 
         (sql, params)
     }

@@ -1,0 +1,5 @@
+error[E0609]: no field `execute` on type `dinoco::Delete<User>`
+  --> tests/ui/fail/delete_without_cond.rs:15:30
+   |
+15 |     let _ = delete::<User>().execute;
+   |                              ^^^^^^^ unknown field

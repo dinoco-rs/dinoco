@@ -145,10 +145,8 @@ fn map_sqlite_constraint_error(error: &rusqlite::Error) -> Option<ConstraintErro
     if normalized.starts_with("unique constraint failed:") {
         let targets = parse_sqlite_constraint_targets(&message, "UNIQUE constraint failed:");
         let table = targets.first().and_then(|target| target.split('.').next()).map(str::to_string);
-        let columns = targets
-            .into_iter()
-            .map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string())
-            .collect();
+        let columns =
+            targets.into_iter().map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string()).collect();
 
         return Some(ConstraintError::unique(table, columns, None, message));
     }
@@ -156,10 +154,8 @@ fn map_sqlite_constraint_error(error: &rusqlite::Error) -> Option<ConstraintErro
     if normalized.starts_with("not null constraint failed:") {
         let targets = parse_sqlite_constraint_targets(&message, "NOT NULL constraint failed:");
         let table = targets.first().and_then(|target| target.split('.').next()).map(str::to_string);
-        let columns = targets
-            .into_iter()
-            .map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string())
-            .collect();
+        let columns =
+            targets.into_iter().map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string()).collect();
 
         return Some(ConstraintError::not_null(table, columns, None, message));
     }
@@ -169,7 +165,8 @@ fn map_sqlite_constraint_error(error: &rusqlite::Error) -> Option<ConstraintErro
     }
 
     if normalized.starts_with("check constraint failed:") {
-        let constraint = message.split_once(':').map(|(_, rest)| rest.trim().to_string()).filter(|item| !item.is_empty());
+        let constraint =
+            message.split_once(':').map(|(_, rest)| rest.trim().to_string()).filter(|item| !item.is_empty());
 
         return Some(ConstraintError::check(None, Vec::new(), constraint, message));
     }

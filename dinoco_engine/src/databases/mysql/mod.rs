@@ -100,30 +100,17 @@ fn map_mysql_constraint_error(error: &mysql_async::Error) -> Option<ConstraintEr
     let message = server_error.message.clone();
 
     match server_error.code {
-        1062 => Some(ConstraintError::unique(
-            None,
-            Vec::new(),
-            extract_mysql_constraint_name(&message),
-            message,
-        )),
+        1062 => Some(ConstraintError::unique(None, Vec::new(), extract_mysql_constraint_name(&message), message)),
         1048 => Some(ConstraintError::not_null(
             None,
             extract_mysql_column_name(&message).into_iter().collect(),
             None,
             message,
         )),
-        1451 | 1452 => Some(ConstraintError::foreign_key(
-            None,
-            Vec::new(),
-            extract_mysql_constraint_name(&message),
-            message,
-        )),
-        3819 | 4025 => Some(ConstraintError::check(
-            None,
-            Vec::new(),
-            extract_mysql_constraint_name(&message),
-            message,
-        )),
+        1451 | 1452 => {
+            Some(ConstraintError::foreign_key(None, Vec::new(), extract_mysql_constraint_name(&message), message))
+        }
+        3819 | 4025 => Some(ConstraintError::check(None, Vec::new(), extract_mysql_constraint_name(&message), message)),
         _ => None,
     }
 }
