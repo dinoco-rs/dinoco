@@ -1,4 +1,4 @@
-use dinoco_engine::{DinocoRow, DinocoValue};
+use dinoco_engine::{DinocoRow, DinocoValue, Expression};
 
 use crate::IncludeNode;
 
@@ -33,6 +33,22 @@ pub trait Projection<M: Model>: DinocoRow {
 pub trait InsertModel: Model {
     fn insert_columns() -> &'static [&'static str];
     fn into_insert_row(self) -> Vec<DinocoValue>;
+    fn validate_insert(&self) -> dinoco_engine::DinocoResult<()> {
+        Ok(())
+    }
+}
+
+pub trait UpdateModel: Model {
+    fn update_columns() -> &'static [&'static str];
+    fn into_update_row(self) -> Vec<DinocoValue>;
+    fn update_identity_conditions(&self) -> Vec<Expression>;
+    fn validate_update(&self) -> dinoco_engine::DinocoResult<()> {
+        Ok(())
+    }
+}
+
+pub trait InsertRelation<R>: InsertModel {
+    fn bind_relation(&self, item: &mut R);
 }
 
 pub trait IntoDinocoValue {

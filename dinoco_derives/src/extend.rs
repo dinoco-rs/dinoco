@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
 use syn::parse_macro_input;
 
 use crate::shared::{named_fields, runtime_crate};
@@ -21,6 +21,29 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let scalar_fields = fields.iter().filter(|field| !is_relation_field(&field.ty)).collect::<Vec<_>>();
     let relation_fields = fields.iter().filter(|field| is_relation_field(&field.ty)).collect::<Vec<_>>();
+
+    let scalar_field_validations = scalar_fields.iter().map(|field| {
+        let ident = field.ident.as_ref().unwrap();
+        let ty = &field.ty;
+        let span = ident.span();
+
+        quote_spanned! {span=>
+            let _ = |model: &#model| {
+                let _: &#ty = &model.#ident;
+            };
+        }
+    });
+
+    let relation_field_validations = relation_fields.iter().map(|field| {
+        let ident = field.ident.as_ref().unwrap();
+        let span = ident.span();
+
+        quote_spanned! {span=>
+            let _ = |include: &<#model as #crate_path::Model>::Include| {
+                let _ = include.#ident();
+            };
+        }
+    });
 
     let field_names =
         scalar_fields.iter().filter_map(|field| field.ident.as_ref()).map(|ident| quote! { stringify!(#ident) });
@@ -104,6 +127,9 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 Projection as _,
                 ReadMode as _,
             };
+
+            #(#scalar_field_validations)*
+            #(#relation_field_validations)*
         };
 
         impl #crate_path::Projection<#model> for #name {

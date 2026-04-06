@@ -130,15 +130,12 @@ impl<T> RelationField<T> {
 
     pub fn cond<F>(self, closure: F) -> RelationQuery<T>
     where
-        T: Model + Projection<T>,
+        T: Model,
         F: FnOnce(T::Where) -> Expression,
     {
         RelationQuery {
             name: self.name,
-            statement: SelectStatement::new()
-                .from(T::table_name())
-                .select(T::columns())
-                .condition(closure(T::Where::default())),
+            statement: SelectStatement::new().from(T::table_name()).condition(closure(T::Where::default())),
             includes: Vec::new(),
             marker: PhantomData,
         }
@@ -146,11 +143,11 @@ impl<T> RelationField<T> {
 
     pub fn take(self, value: usize) -> RelationQuery<T>
     where
-        T: Model + Projection<T>,
+        T: Model,
     {
         RelationQuery {
             name: self.name,
-            statement: SelectStatement::new().from(T::table_name()).select(T::columns()).limit(value),
+            statement: SelectStatement::new().from(T::table_name()).limit(value),
             includes: Vec::new(),
             marker: PhantomData,
         }
@@ -158,11 +155,11 @@ impl<T> RelationField<T> {
 
     pub fn skip(self, value: usize) -> RelationQuery<T>
     where
-        T: Model + Projection<T>,
+        T: Model,
     {
         RelationQuery {
             name: self.name,
-            statement: SelectStatement::new().from(T::table_name()).select(T::columns()).skip(value),
+            statement: SelectStatement::new().from(T::table_name()).skip(value),
             includes: Vec::new(),
             marker: PhantomData,
         }

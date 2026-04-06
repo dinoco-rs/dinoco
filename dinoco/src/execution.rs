@@ -1,8 +1,11 @@
 use std::future::Future;
 
-use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoResult, InsertStatement, QueryBuilder, SelectStatement};
+use dinoco_engine::{
+    DeleteStatement, DinocoAdapter, DinocoClient, DinocoResult, InsertStatement, QueryBuilder, SelectStatement,
+    UpdateStatement,
+};
 
-use crate::{InsertModel, Model, Projection, ReadMode};
+use crate::{InsertModel, Model, Projection, ReadMode, UpdateModel};
 
 pub fn execute_many<'a, M, S, A>(
     statement: SelectStatement,
@@ -58,6 +61,10 @@ where
             return Ok(());
         }
 
+        for item in &items {
+            item.validate_insert()?;
+        }
+
         let statement = InsertStatement::new()
             .into(M::table_name())
             .columns(M::insert_columns())
@@ -65,6 +72,75 @@ where
 
         let adapter = client.primary();
         let (sql, params) = adapter.dialect().build_insert(&statement);
+
+        adapter.execute(&sql, &params).await
+    }
+}
+
+pub fn execute_update<'a, A>(
+    statement: UpdateStatement,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    A: DinocoAdapter,
+{
+    async move {
+        let adapter = client.primary();
+        let (sql, params) = adapter.dialect().build_update(&statement);
+
+        adapter.execute(&sql, &params).await
+    }
+}
+
+pub fn execute_update_many<'a, M, A>(
+    items: Vec<M>,
+    conditions: Vec<dinoco_engine::Expression>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    M: UpdateModel + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        for item in &items {
+            item.validate_update()?;
+        }
+
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let mut statement = UpdateStatement::new().table(M::table_name());
+
+        for item in items {
+            let mut batch_conditions = item.update_identity_conditions();
+            batch_conditions.extend(conditions.clone());
+
+            statement = statement.batch(dinoco_engine::UpdateBatchItem {
+                conditions: batch_conditions,
+                values: M::update_columns()
+                    .iter()
+                    .copied()
+                    .zip(item.into_update_row().into_iter())
+                    .map(|(column, value)| (column.to_string(), value))
+                    .collect(),
+            });
+        }
+
+        execute_update(statement, client).await
+    }
+}
+
+pub fn execute_delete<'a, A>(
+    statement: DeleteStatement,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    A: DinocoAdapter,
+{
+    async move {
+        let adapter = client.primary();
+        let (sql, params) = adapter.dialect().build_delete(&statement);
 
         adapter.execute(&sql, &params).await
     }

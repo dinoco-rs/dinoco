@@ -1,7 +1,7 @@
 use std::fs::{create_dir_all, write};
 use std::path::Path;
 
-use dinoco_compiler::{FunctionCall, ParsedFieldDefault, ParsedFieldType, ParsedSchema, ParsedTable};
+use dinoco_compiler::{FunctionCall, ParsedFieldDefault, ParsedFieldType, ParsedRelation, ParsedSchema, ParsedTable};
 
 use super::helpers::{
     default_value_expr, filter_type, relation_fields, relation_target, rust_scalar_type, scalar_fields, to_snake_case,
@@ -69,6 +69,16 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
         .copied()
         .filter(|field| !matches!(field.default_value, ParsedFieldDefault::Function(FunctionCall::AutoIncrement)))
         .collect::<Vec<_>>();
+    let update_fields = scalar_fields
+        .iter()
+        .copied()
+        .filter(|field| !table.primary_key_fields.iter().any(|primary_key| primary_key == &field.name))
+        .collect::<Vec<_>>();
+    let primary_key_fields = scalar_fields
+        .iter()
+        .copied()
+        .filter(|field| table.primary_key_fields.iter().any(|primary_key| primary_key == &field.name))
+        .collect::<Vec<_>>();
     let relation_fields = relation_fields(fields);
     let relation_imports = relation_fields
         .iter()
@@ -86,7 +96,7 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
     output.push_str(GENERATED_FILE_LINTS);
 
     output.push_str(
-        "use dinoco::{InsertModel, IntoDinocoValue, Model, Projection, RelationField, Rowable, ScalarField};\n",
+        "use dinoco::{InsertModel, IntoDinocoValue, Model, Projection, RelationField, Rowable, ScalarField, UpdateModel};\n",
     );
 
     if !relation_imports.is_empty() {
@@ -155,6 +165,52 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
     }
 
     output.push_str("        ]\n");
+    output.push_str("    }\n\n");
+    output.push_str("    fn validate_insert(&self) -> dinoco::DinocoResult<()> {\n");
+
+    let insert_validations = render_insert_validations(table, &insert_fields);
+    if insert_validations.is_empty() {
+        output.push_str("        Ok(())\n");
+    } else {
+        output.push_str(&insert_validations);
+        output.push_str("        Ok(())\n");
+    }
+
+    output.push_str("    }\n");
+    output.push_str("}\n\n");
+    output.push_str(&format!("impl UpdateModel for {} {{\n", name));
+    output.push_str("    fn update_columns() -> &'static [&'static str] {\n");
+    output.push_str("        &[\n");
+
+    for field in &update_fields {
+        output.push_str(&format!("            \"{}\",\n", field.name));
+    }
+
+    output.push_str("        ]\n");
+    output.push_str("    }\n\n");
+    output.push_str("    fn into_update_row(self) -> Vec<dinoco::DinocoValue> {\n");
+    output.push_str("        vec![\n");
+
+    for field in &update_fields {
+        output.push_str(&format!("            self.{}.into_dinoco_value(),\n", field.name));
+    }
+
+    output.push_str("        ]\n");
+    output.push_str("    }\n\n");
+    output.push_str("    fn update_identity_conditions(&self) -> Vec<dinoco_engine::Expression> {\n");
+    output.push_str("        vec![\n");
+
+    for field in &primary_key_fields {
+        output.push_str(&format!(
+            "            dinoco_engine::Expression::Column({:?}.to_string()).eq(self.{}.clone().into_dinoco_value()),\n",
+            field.name, field.name
+        ));
+    }
+
+    output.push_str("        ]\n");
+    output.push_str("    }\n\n");
+    output.push_str("    fn validate_update(&self) -> dinoco::DinocoResult<()> {\n");
+    output.push_str("        Ok(())\n");
     output.push_str("    }\n");
     output.push_str("}\n\n");
     output.push_str(&format!("impl Default for {}Where {{\n", name));
@@ -183,6 +239,7 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
 
     output.push_str("}\n\n");
     output.push_str(&render_relation_loaders(table, schema));
+    output.push_str(&render_insert_relations(table, schema));
     output.push_str(&format!("impl Model for {} {{\n", name));
     output.push_str(&format!("    type Include = {}Include;\n", name));
     output.push_str(&format!("    type Where = {}Where;\n\n", name));
@@ -190,6 +247,35 @@ fn render_model(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String
     output.push_str(&format!("        \"{}\"\n", table.database_name));
     output.push_str("    }\n");
     output.push_str("}\n");
+
+    output
+}
+
+fn render_insert_validations(table: &ParsedTable, insert_fields: &[&dinoco_compiler::ParsedField]) -> String {
+    let mut output = String::new();
+
+    for field in insert_fields {
+        if field.is_optional || !matches!(field.default_value, ParsedFieldDefault::NotDefined) {
+            continue;
+        }
+
+        let model_name = &table.name;
+        let field_name = &field.name;
+
+        match field.field_type {
+            ParsedFieldType::String => {
+                output.push_str(&format!(
+                    "        if self.{field_name}.trim().is_empty() {{\n            return Err(dinoco::DinocoError::ParseError(\"Field '{model_name}.{field_name}' is required for insert and cannot be empty\".to_string()));\n        }}\n"
+                ));
+            }
+            ParsedFieldType::Json => {
+                output.push_str(&format!(
+                    "        if matches!(self.{field_name}, dinoco::JsonValue::Null) {{\n            return Err(dinoco::DinocoError::ParseError(\"Field '{model_name}.{field_name}' is required for insert and cannot be null\".to_string()));\n        }}\n"
+                ));
+            }
+            _ => {}
+        }
+    }
 
     output
 }
@@ -245,6 +331,47 @@ fn render_relation_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String
         };
 
         output.push_str(&block);
+    }
+
+    output
+}
+
+fn render_insert_relations(table: &ParsedTable, schema: &ParsedSchema) -> String {
+    let Some(primary_key_name) = table.primary_key_fields.first() else {
+        return String::new();
+    };
+    let Some(primary_key_field) = table.fields.iter().find(|field| &field.name == primary_key_name) else {
+        return String::new();
+    };
+
+    if !matches!(
+        primary_key_field.default_value,
+        ParsedFieldDefault::Function(FunctionCall::Uuid | FunctionCall::Snowflake)
+    ) {
+        return String::new();
+    }
+
+    let mut output = String::new();
+
+    for field in relation_fields(&table.fields) {
+        if !matches!(field.relation, ParsedRelation::OneToMany(_) | ParsedRelation::OneToOneInverse(_)) {
+            continue;
+        }
+
+        let Some(relation) = resolve_relation(table, field, schema) else {
+            continue;
+        };
+
+        let target_model = relation_target(field);
+
+        output.push_str(&format!("impl dinoco::InsertRelation<{}> for {} {{\n", target_model, table.name));
+        output.push_str(&format!("    fn bind_relation(&self, item: &mut {}) {{\n", target_model));
+        output.push_str(&format!(
+            "        item.{} = self.{}.clone();\n",
+            relation.remote_key_field.name, relation.local_key_field.name
+        ));
+        output.push_str("    }\n");
+        output.push_str("}\n\n");
     }
 
     output

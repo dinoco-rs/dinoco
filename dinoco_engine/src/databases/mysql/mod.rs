@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
-use crate::{DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
+use crate::{ConstraintError, DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
 
 mod dialect;
 mod handler;
@@ -85,6 +85,74 @@ impl From<DinocoValue> for Value {
 
 impl From<mysql_async::Error> for DinocoError {
     fn from(e: mysql_async::Error) -> Self {
+        if let Some(error) = map_mysql_constraint_error(&e) {
+            return Self::Constraint(error);
+        }
+
         Self::MySql(e)
     }
+}
+
+fn map_mysql_constraint_error(error: &mysql_async::Error) -> Option<ConstraintError> {
+    let mysql_async::Error::Server(server_error) = error else {
+        return None;
+    };
+    let message = server_error.message.clone();
+
+    match server_error.code {
+        1062 => Some(ConstraintError::unique(
+            None,
+            Vec::new(),
+            extract_mysql_constraint_name(&message),
+            message,
+        )),
+        1048 => Some(ConstraintError::not_null(
+            None,
+            extract_mysql_column_name(&message).into_iter().collect(),
+            None,
+            message,
+        )),
+        1451 | 1452 => Some(ConstraintError::foreign_key(
+            None,
+            Vec::new(),
+            extract_mysql_constraint_name(&message),
+            message,
+        )),
+        3819 | 4025 => Some(ConstraintError::check(
+            None,
+            Vec::new(),
+            extract_mysql_constraint_name(&message),
+            message,
+        )),
+        _ => None,
+    }
+}
+
+fn extract_mysql_constraint_name(message: &str) -> Option<String> {
+    extract_quoted_segments(message).into_iter().last()
+}
+
+fn extract_mysql_column_name(message: &str) -> Option<String> {
+    extract_quoted_segments(message).into_iter().next()
+}
+
+fn extract_quoted_segments(message: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+
+    for ch in message.chars() {
+        match ch {
+            '\'' if in_quote => {
+                segments.push(current.clone());
+                current.clear();
+                in_quote = false;
+            }
+            '\'' => in_quote = true,
+            _ if in_quote => current.push(ch),
+            _ => {}
+        }
+    }
+
+    segments
 }

@@ -8,7 +8,7 @@ use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql_checked};
 
-use crate::{DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
+use crate::{ConstraintError, DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
 
 mod dialect;
 mod handler;
@@ -90,6 +90,10 @@ impl ToSql for DinocoValue {
 
 impl From<tokio_postgres::Error> for DinocoError {
     fn from(e: tokio_postgres::Error) -> Self {
+        if let Some(error) = map_postgres_constraint_error(&e) {
+            return Self::Constraint(error);
+        }
+
         Self::Postgres(e)
     }
 }
@@ -103,5 +107,22 @@ impl From<deadpool_postgres::PoolError> for DinocoError {
 impl From<deadpool_postgres::BuildError> for DinocoError {
     fn from(e: deadpool_postgres::BuildError) -> Self {
         Self::ConnectionError(format!("Failed to build connection pool: {}", e))
+    }
+}
+
+fn map_postgres_constraint_error(error: &tokio_postgres::Error) -> Option<ConstraintError> {
+    let db_error = error.as_db_error()?;
+    let code = db_error.code().code();
+    let table = db_error.table().map(str::to_string);
+    let columns = db_error.column().map(|item| vec![item.to_string()]).unwrap_or_default();
+    let constraint = db_error.constraint().map(str::to_string);
+    let message = db_error.message().to_string();
+
+    match code {
+        "23505" => Some(ConstraintError::unique(table, columns, constraint, message)),
+        "23503" => Some(ConstraintError::foreign_key(table, columns, constraint, message)),
+        "23502" => Some(ConstraintError::not_null(table, columns, constraint, message)),
+        "23514" => Some(ConstraintError::check(table, columns, constraint, message)),
+        _ => None,
     }
 }

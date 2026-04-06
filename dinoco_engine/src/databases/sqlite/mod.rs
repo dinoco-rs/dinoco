@@ -10,7 +10,7 @@ mod handler;
 mod migration;
 mod row;
 
-use crate::{DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
+use crate::{ConstraintError, DinocoAdapter, DinocoError, DinocoResult, DinocoRow, DinocoValue};
 
 pub use dialect::SqliteDialect;
 
@@ -127,6 +127,63 @@ impl From<deadpool_sqlite::InteractError> for DinocoError {
 
 impl From<rusqlite::Error> for DinocoError {
     fn from(e: rusqlite::Error) -> Self {
+        if let Some(error) = map_sqlite_constraint_error(&e) {
+            return Self::Constraint(error);
+        }
+
         Self::Sqlite(e)
     }
+}
+
+fn map_sqlite_constraint_error(error: &rusqlite::Error) -> Option<ConstraintError> {
+    let rusqlite::Error::SqliteFailure(_, message) = error else {
+        return None;
+    };
+    let message = message.clone()?;
+    let normalized = message.to_ascii_lowercase();
+
+    if normalized.starts_with("unique constraint failed:") {
+        let targets = parse_sqlite_constraint_targets(&message, "UNIQUE constraint failed:");
+        let table = targets.first().and_then(|target| target.split('.').next()).map(str::to_string);
+        let columns = targets
+            .into_iter()
+            .map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string())
+            .collect();
+
+        return Some(ConstraintError::unique(table, columns, None, message));
+    }
+
+    if normalized.starts_with("not null constraint failed:") {
+        let targets = parse_sqlite_constraint_targets(&message, "NOT NULL constraint failed:");
+        let table = targets.first().and_then(|target| target.split('.').next()).map(str::to_string);
+        let columns = targets
+            .into_iter()
+            .map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string())
+            .collect();
+
+        return Some(ConstraintError::not_null(table, columns, None, message));
+    }
+
+    if normalized.starts_with("foreign key constraint failed") {
+        return Some(ConstraintError::foreign_key(None, Vec::new(), None, message));
+    }
+
+    if normalized.starts_with("check constraint failed:") {
+        let constraint = message.split_once(':').map(|(_, rest)| rest.trim().to_string()).filter(|item| !item.is_empty());
+
+        return Some(ConstraintError::check(None, Vec::new(), constraint, message));
+    }
+
+    None
+}
+
+fn parse_sqlite_constraint_targets(message: &str, prefix: &str) -> Vec<String> {
+    message
+        .strip_prefix(prefix)
+        .unwrap_or(message)
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect()
 }
