@@ -167,8 +167,7 @@ fn render_enum_expr(field: &ParsedField, value: &str, enum_names: &[String]) -> 
 fn is_rust_keyword(value: &str) -> bool {
     matches!(
         value,
-        "as"
-            | "break"
+        "as" | "break"
             | "const"
             | "continue"
             | "crate"

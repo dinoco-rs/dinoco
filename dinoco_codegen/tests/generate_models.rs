@@ -65,7 +65,9 @@ model Post {
         fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
 
     assert!(model_file.contains("pub struct Post"));
-    assert!(model_file.contains("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize, Rowable)]"));
+    assert!(
+        model_file.contains("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize, Rowable)]")
+    );
     assert!(model_file.contains("#[serde(crate = \"dinoco::serde\")]"));
     assert!(model_file.contains("fn validate_insert(&self) -> dinoco::DinocoResult<()>"));
     assert!(model_file.contains("Field 'Post.name' is required for insert and cannot be empty"));
@@ -269,7 +271,10 @@ model Task {
         fs::read_to_string(temp_dir.path().join("dinoco/models/task.rs")).expect("generated task model should exist");
 
     assert!(enum_file.contains("pub enum Status"));
-    assert!(enum_file.contains("#[derive(Debug, Clone, PartialEq, Eq, dinoco::serde::Serialize, dinoco::serde::Deserialize)]"));
+    assert!(
+        enum_file
+            .contains("#[derive(Debug, Clone, PartialEq, Eq, dinoco::serde::Serialize, dinoco::serde::Deserialize)]")
+    );
     assert!(enum_file.contains("#[serde(crate = \"dinoco::serde\")]"));
     assert!(enum_file.contains("    #[serde(rename = \"IN_PROGRESS\")]"));
     assert!(enum_file.contains("    IN_PROGRESS,"));

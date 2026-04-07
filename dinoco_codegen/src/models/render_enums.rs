@@ -17,7 +17,8 @@ pub(crate) fn render_enums(schema: &ParsedSchema) -> String {
     output.push_str(GENERATED_FILE_LINTS);
 
     for item in &schema.enums {
-        output.push_str("#[derive(Debug, Clone, PartialEq, Eq, dinoco::serde::Serialize, dinoco::serde::Deserialize)]\n");
+        output
+            .push_str("#[derive(Debug, Clone, PartialEq, Eq, dinoco::serde::Serialize, dinoco::serde::Deserialize)]\n");
         output.push_str("#[serde(crate = \"dinoco::serde\")]\n");
         output.push_str(&format!("pub enum {} {{\n", item.name));
 

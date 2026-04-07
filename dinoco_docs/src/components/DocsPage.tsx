@@ -29,9 +29,10 @@ const DocsPage: React.FC = () => {
 			versionName: routeParams.versionName,
 			groupShortName: routeParams.groupShortName,
 			itemShortName: routeParams.itemShortName,
+			subItemShortName: routeParams.subItemShortName,
 			locale,
 		});
-	}, [locale, routeParams.groupShortName, routeParams.itemShortName, routeParams.versionName]);
+	}, [locale, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName, routeParams.versionName]);
 
 	useEffect(() => {
 		if (resolved === undefined) {
@@ -70,7 +71,7 @@ const DocsPage: React.FC = () => {
 
 		link.href =
 			theme === 'dark'
-				? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/dracula.min.css'
+				? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
 				: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
 	}, [theme]);
 

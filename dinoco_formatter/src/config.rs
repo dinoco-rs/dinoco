@@ -169,7 +169,8 @@ fn format_config_value(value: &ConfigValue, indent_level: usize, base_indent: &s
         }
 
         ConfigValue::Function { name, args, .. } => {
-            let args_str = args.iter().map(|v| format_config_value(v, indent_level, base_indent)).collect::<Vec<_>>().join(", ");
+            let args_str =
+                args.iter().map(|v| format_config_value(v, indent_level, base_indent)).collect::<Vec<_>>().join(", ");
             format!("{}({})", name, args_str)
         }
     }

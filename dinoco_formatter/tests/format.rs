@@ -1,5 +1,5 @@
-use dinoco_formatter::{FormatterConfig, format_from_ast, format_from_raw};
 use dinoco_compiler::compile_only_ast;
+use dinoco_formatter::{FormatterConfig, format_from_ast, format_from_raw};
 
 #[test]
 fn format_from_raw_returns_canonical_schema() {

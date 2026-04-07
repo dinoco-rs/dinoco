@@ -28,6 +28,7 @@ const NavItem = ({
 	onClose: () => void;
 }) => {
 	const hasSubItems = item.subItems !== undefined && item.subItems.length > 0;
+	const firstSubItem = hasSubItems ? item.subItems![0] : undefined;
 	const isItemActive = currentItem.shortName === item.shortName;
 	const isChildActive = hasSubItems && item.subItems!.some(sub => sub.shortName === currentItem.shortName);
 
@@ -43,20 +44,36 @@ const NavItem = ({
 		<li className="relative">
 			<div className="flex items-center justify-between">
 				{hasSubItems ? (
-					<button
-						onClick={() => setIsOpen(!isOpen)}
+					<div
 						className={clsx(
-							'flex w-full cursor-pointer items-center justify-between border-l -ml-[1px] pl-4 py-1.5 text-sm transition-colors text-left',
+							'flex items-center border-l -ml-[1px] text-sm transition-colors',
 							isItemActive || isChildActive
-								? 'border-dinoco-brand font-semibold text-dinoco-brand dark:border-dinoco-cyan dark:text-dinoco-cyan'
-								: 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-white',
+								? 'border-dinoco-brand dark:border-dinoco-cyan'
+								: 'border-transparent hover:border-slate-300 dark:hover:border-slate-600',
 						)}
-						aria-expanded={isOpen}
 					>
-						<span>{item.name}</span>
+						<Link
+							href={buildDocsPath(currentVersionName, currentGroup.shortName, item.shortName, firstSubItem?.shortName)}
+							onClick={onClose}
+							className={clsx(
+								'block min-w-0 flex-1 cursor-pointer pl-4 py-1.5 text-left',
+								isItemActive || isChildActive
+									? 'font-semibold text-dinoco-brand dark:text-dinoco-cyan'
+									: 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
+							)}
+						>
+							{item.name}
+						</Link>
 
-						<FiChevronDown size={14} className={clsx('text-slate-400 transition-transform duration-200 dark:text-slate-500', isOpen ? 'rotate-180' : '')} />
-					</button>
+						<button
+							onClick={() => setIsOpen(!isOpen)}
+							className="cursor-pointer px-3 py-2 text-slate-400 transition-colors hover:text-slate-900 dark:text-slate-500 dark:hover:text-white"
+							aria-expanded={isOpen}
+							aria-label={isOpen ? 'Fechar subitens' : 'Abrir subitens'}
+						>
+							<FiChevronDown size={14} className={clsx('transition-transform duration-200', isOpen ? 'rotate-180' : '')} />
+						</button>
+					</div>
 				) : (
 					<Link
 						href={buildDocsPath(currentVersionName, currentGroup.shortName, item.shortName)}
@@ -80,7 +97,7 @@ const NavItem = ({
 						return (
 							<li key={subItem.shortName}>
 								<Link
-									href={buildDocsPath(currentVersionName, currentGroup.shortName, subItem.shortName)}
+									href={buildDocsPath(currentVersionName, currentGroup.shortName, item.shortName, subItem.shortName)}
 									onClick={onClose}
 									className={clsx(
 										'block cursor-pointer border-l -ml-[1px] pl-4 py-1.5 text-sm transition-colors',
@@ -100,7 +117,7 @@ const NavItem = ({
 	);
 };
 
-const DocsSidebar: React.FC<DocsSidebarProps> = ({ currentGroup, currentItem, locale, currentVersionName, groups, sections, isOpen, onClose }) => {
+const DocsSidebar: React.FC<DocsSidebarProps> = ({ currentGroup, currentItem, currentVersionName, sections, isOpen, onClose }) => {
 	return (
 		<>
 			{isOpen && <div className="fixed inset-0 z-[60] cursor-pointer bg-dark-950/60 backdrop-blur-sm lg:hidden" onClick={onClose} />}

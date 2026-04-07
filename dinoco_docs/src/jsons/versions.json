@@ -15,10 +15,8 @@
 							"title": "Comece",
 							"items": [
 								{
-									"shortName": "cli",
+									"shortName": "dinoco-client",
 									"name": "Dinoco Client",
-									"description": "Visao geral do client, setup e fluxo de consultas.",
-									"mdxPath": "v0.0.1/pt/orm/cli.mdx",
 									"inPage": ["Visao geral", "Instalacao", "Primeira consulta", "Proximos passos"],
 									"subItems": [
 										{
@@ -129,18 +127,16 @@
 				"name": "Dinoco Supersonic",
 				"shortName": "supersonic",
 				"icon": "rocket",
-				"status": "comingSoon",
 				"languages": {
 					"pt": [
 						{
-							"title": "Runtime",
+							"title": "Primeiros passos",
 							"items": [
 								{
-									"shortName": "overview",
-									"name": "Visao geral",
-									"description": "Arquitetura, workers e deployment do runtime.",
-									"mdxPath": "v0.0.1/pt/supersonic/overview.mdx",
-									"inPage": ["Arquitetura", "Workers", "Escalonamento", "Deploy"]
+									"shortName": "introduction",
+									"name": "Introducao",
+									"mdxPath": "v0.0.1/pt/supersonic/introduction.mdx",
+									"inPage": ["Em construção"]
 								}
 							]
 						}
@@ -151,18 +147,16 @@
 				"name": "DinocoDB",
 				"shortName": "dinocodb",
 				"icon": "box",
-				"status": "comingSoon",
 				"languages": {
 					"pt": [
 						{
-							"title": "Banco",
+							"title": "Primeiros passos",
 							"items": [
 								{
 									"shortName": "introduction",
 									"name": "Introducao",
-									"description": "Como o DinocoDB se encaixa na stack da plataforma.",
 									"mdxPath": "v0.0.1/pt/dinocodb/introduction.mdx",
-									"inPage": ["Conceito", "Conexao", "Replicacao", "Operacao"]
+									"inPage": ["Em construção"]
 								}
 							]
 						}

@@ -95,6 +95,22 @@ export type ResolvedDocsPath = {
 	version: DocsVersion;
 };
 
+function resolveEntryItem(entry: DocsItem, subItemShortName?: string): { item: DocsItem; parentItem?: DocsItem } {
+	if (entry.subItems === undefined || entry.subItems.length === 0) {
+		return {
+			item: entry,
+		};
+	}
+
+	const matchedSubItem = subItemShortName === undefined ? undefined : entry.subItems.find(subItem => subItem.shortName === subItemShortName);
+	const fallbackSubItem = matchedSubItem ?? entry.subItems[0];
+
+	return {
+		item: fallbackSubItem,
+		parentItem: entry,
+	};
+}
+
 function fallbackLocale(locale: DocsLocale, version: DocsVersion): DocsLocale {
 	const localeSet = getAvailableLocales(version.name);
 
@@ -164,6 +180,7 @@ export function getItemByShortName(
 	locale: DocsLocale,
 	groupShortName?: string,
 	itemShortName?: string,
+	subItemShortName?: string,
 ): {
 	group: DocsGroup;
 	item: DocsItem;
@@ -185,23 +202,29 @@ export function getItemByShortName(
 	}
 
 	if (itemShortName === undefined) {
+		const resolvedEntry = resolveEntryItem(firstItem);
+
 		return {
 			group,
-			item: firstItem,
+			item: resolvedEntry.item,
+			parentItem: resolvedEntry.parentItem,
 			sections,
 		};
 	}
 
 	for (const entry of items) {
 		if (entry.shortName === itemShortName) {
+			const resolvedEntry = resolveEntryItem(entry, subItemShortName);
+
 			return {
 				group,
-				item: entry,
+				item: resolvedEntry.item,
+				parentItem: resolvedEntry.parentItem,
 				sections,
 			};
 		}
 
-		const subItem = entry.subItems?.find(child => child.shortName === itemShortName);
+		const subItem = entry.subItems?.find(child => child.shortName === itemShortName || child.shortName === subItemShortName);
 
 		if (subItem !== undefined) {
 			return {
@@ -213,15 +236,20 @@ export function getItemByShortName(
 		}
 	}
 
+	const resolvedEntry = resolveEntryItem(firstItem);
+
 	return {
 		group,
-		item: firstItem,
+		item: resolvedEntry.item,
+		parentItem: resolvedEntry.parentItem,
 		sections,
 	};
 }
 
-export function buildDocsPath(versionName: string, groupShortName: string, itemShortName: string): string {
-	return `/${versionName}/${groupShortName}/${itemShortName}`;
+export function buildDocsPath(versionName: string, groupShortName: string, itemShortName: string, subItemShortName?: string): string {
+	return subItemShortName === undefined
+		? `/${versionName}/${groupShortName}/${itemShortName}`
+		: `/${versionName}/${groupShortName}/${itemShortName}/${subItemShortName}`;
 }
 
 export function getFirstDocsPath(versionName: string, locale: DocsLocale): string {
@@ -238,6 +266,7 @@ export function resolveDocsPath(params: {
 	groupShortName?: string;
 	itemShortName?: string;
 	locale: DocsLocale;
+	subItemShortName?: string;
 	versionName?: string;
 }): ResolvedDocsPath | undefined {
 	const version = getVersionByName(params.versionName ?? getDefaultVersionName()) ?? getVersionByName(getDefaultVersionName());
@@ -247,7 +276,7 @@ export function resolveDocsPath(params: {
 	}
 
 	const resolvedLocale = fallbackLocale(params.locale, version);
-	const resolved = getItemByShortName(version.name, resolvedLocale, params.groupShortName, params.itemShortName);
+	const resolved = getItemByShortName(version.name, resolvedLocale, params.groupShortName, params.itemShortName, params.subItemShortName);
 
 	if (resolved === undefined) {
 		return undefined;
@@ -257,7 +286,7 @@ export function resolveDocsPath(params: {
 		group: resolved.group,
 		item: resolved.item,
 		parentItem: resolved.parentItem,
-		path: buildDocsPath(version.name, resolved.group.shortName, resolved.item.shortName),
+		path: buildDocsPath(version.name, resolved.group.shortName, resolved.parentItem?.shortName ?? resolved.item.shortName, resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName),
 		sections: resolved.sections,
 		version,
 	};
@@ -266,6 +295,7 @@ export function resolveDocsPath(params: {
 export function parseDocsPath(pathname: string): {
 	groupShortName?: string;
 	itemShortName?: string;
+	subItemShortName?: string;
 	versionName?: string;
 } {
 	const segments = pathname.split('/').filter(Boolean);
@@ -274,5 +304,6 @@ export function parseDocsPath(pathname: string): {
 		versionName: segments[0],
 		groupShortName: segments[1],
 		itemShortName: segments[2],
+		subItemShortName: segments[3],
 	};
 }

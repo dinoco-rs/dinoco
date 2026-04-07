@@ -4,14 +4,8 @@ import { type DocsLocale, useDocs } from './useDocs';
 
 const messages = {
 	pt: {
-		consumerLabel: 'Consumindo via',
-		consumerOptions: {
-			api: 'API',
-			cli: 'CLI',
-			sdk: 'SDK',
-		},
 		description: 'Documentação oficial',
-		donate: 'Doar',
+		donate: 'Apoiar',
 		github: 'GitHub',
 		localeLabel: 'Idioma',
 		locales: {
@@ -21,15 +15,15 @@ const messages = {
 			docs: 'Docs',
 			examples: 'Exemplos',
 			guides: 'Guias',
-			reference: 'Referencia',
+			reference: 'Referência',
 		},
 		themeDark: 'Modo escuro',
 		themeLight: 'Modo claro',
-		versionLabel: 'Versao',
-		constructionBadge: 'Em construcao',
-		constructionDescription:
-			'Esta area ainda esta sendo estruturada. O conteudo aqui serve como base inicial de navegacao e sera expandido nas proximas iteracoes.',
-		inPageLabel: 'Nesta pagina',
+		versionLabel: 'Versão',
+		constructionBadge: 'Em construção',
+		constructionTitle: 'Conteúdo em desenvolvimento',
+		constructionDescription: 'Esta seção da documentação ainda está em desenvolvimento. Volte em breve para conferir as novidades!',
+		inPageLabel: 'Nesta página',
 	},
 } as const;
 

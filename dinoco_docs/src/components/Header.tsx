@@ -69,9 +69,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 			versionName: routeParams.versionName ?? version,
 			groupShortName: routeParams.groupShortName ?? consumer,
 			itemShortName: routeParams.itemShortName,
+			subItemShortName: routeParams.subItemShortName,
 			locale,
 		});
-	}, [consumer, locale, routeParams.groupShortName, routeParams.itemShortName, routeParams.versionName, version]);
+	}, [consumer, locale, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName, routeParams.versionName, version]);
 
 	const displayedVersion = currentResolved?.version.name ?? version;
 	const displayedConsumer = currentResolved?.group.shortName ?? consumer;
@@ -104,6 +105,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 			versionName: nextVersion,
 			groupShortName: nextConsumer,
 			itemShortName: routeParams.itemShortName,
+			subItemShortName: routeParams.subItemShortName,
 			locale: nextLocale,
 		});
 		if (resolved === undefined) return;
@@ -112,7 +114,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 		setLocale(nextLocale);
 		setConsumer(resolved.group.shortName);
 
-		router.push(buildDocsPath(resolved.version.name, resolved.group.shortName, resolved.item.shortName));
+		router.push(buildDocsPath(resolved.version.name, resolved.group.shortName, resolved.parentItem?.shortName ?? resolved.item.shortName, resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName));
 	};
 
 	const currentConsumerObj = consumerOptions.find(o => o.shortName === displayedConsumer);
