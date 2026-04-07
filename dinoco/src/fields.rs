@@ -1,12 +1,18 @@
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use dinoco_engine::{Expression, OrderDirection, SelectStatement};
+use dinoco_engine::{Expression, OrderDirection, SelectStatement, UpdateOperation};
 
 use crate::{
     CountNode, IncludeNode, IntoCountNode, IntoIncludeNode, Model, OrderBy, Projection, RelationMutationTarget,
     ScalarFieldValue,
 };
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldUpdate {
+    pub column: &'static str,
+    pub operation: UpdateOperation,
+}
 
 #[derive(Debug)]
 pub struct ScalarField<T> {
@@ -30,6 +36,12 @@ pub struct RelationScalarField<T> {
 #[derive(Debug)]
 pub struct RelationMutationWhere<W> {
     inner: W,
+}
+
+#[derive(Debug)]
+pub struct UpdateField<T> {
+    pub name: &'static str,
+    marker: PhantomData<fn() -> T>,
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +146,79 @@ impl ScalarField<String> {
 
     pub fn ends_with(self, value: impl Into<String>) -> Expression {
         Expression::Column(self.name.to_string()).like(format!("%{}", value.into()))
+    }
+}
+
+impl<T> UpdateField<T> {
+    pub const fn new(name: &'static str) -> Self {
+        Self { name, marker: PhantomData }
+    }
+
+    pub fn set<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<T>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Set(value.into_scalar_field_value()) }
+    }
+}
+
+impl UpdateField<i64> {
+    pub fn increment<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<i64>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Increment(value.into_scalar_field_value()) }
+    }
+
+    pub fn decrement<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<i64>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Decrement(value.into_scalar_field_value()) }
+    }
+
+    pub fn multiply<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<i64>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Multiply(value.into_scalar_field_value()) }
+    }
+
+    pub fn division<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<i64>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Division(value.into_scalar_field_value()) }
+    }
+}
+
+impl UpdateField<f64> {
+    pub fn increment<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<f64>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Increment(value.into_scalar_field_value()) }
+    }
+
+    pub fn decrement<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<f64>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Decrement(value.into_scalar_field_value()) }
+    }
+
+    pub fn multiply<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<f64>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Multiply(value.into_scalar_field_value()) }
+    }
+
+    pub fn division<V>(self, value: V) -> FieldUpdate
+    where
+        V: ScalarFieldValue<f64>,
+    {
+        FieldUpdate { column: self.name, operation: UpdateOperation::Division(value.into_scalar_field_value()) }
     }
 }
 
@@ -320,6 +405,14 @@ impl<T> Clone for RelationScalarField<T> {
 impl<W> RelationMutationWhere<W> {
     pub const fn new(inner: W) -> Self {
         Self { inner }
+    }
+}
+
+impl<T> Copy for UpdateField<T> {}
+
+impl<T> Clone for UpdateField<T> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 

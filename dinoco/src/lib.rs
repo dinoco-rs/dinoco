@@ -22,17 +22,20 @@ pub use serde_json::Value as JsonValue;
 
 pub use data::{CountNode, IncludeNode, OrderBy, ReadMode};
 pub use execution::{
-    execute_connection_updates, execute_count, execute_delete, execute_first, execute_insert,
+    execute_connection_updates, execute_count, execute_delete, execute_find_and_update, execute_first, execute_insert,
     execute_insert_relation_links, execute_many, execute_relation_writes, execute_update, execute_update_many,
 };
-pub use fields::{RelationField, RelationMutationWhere, RelationQuery, RelationScalarField, ScalarField};
+pub use fields::{
+    FieldUpdate, RelationField, RelationMutationWhere, RelationQuery, RelationScalarField, ScalarField, UpdateField,
+};
 pub use ids::{snowflake, uuid_v7};
 pub use methods::{
-    Count, Delete, DeleteMany, FindFirst, FindMany, Insert, InsertMany, Update, UpdateMany, count, delete, delete_many,
-    find_first, find_many, insert_into, insert_many, update, update_many,
+    Count, Delete, DeleteMany, FindAndUpdate, FindFirst, FindMany, Insert, InsertMany, Update, UpdateMany, count,
+    delete, delete_many, find_and_update, find_first, find_many, insert_into, insert_many, update, update_many,
 };
 pub use model::{
-    ConnectionUpdatePlan, IncludeApplier, IncludeLoaderFuture, InsertConnection, InsertModel, InsertRelation,
-    IntoCountNode, IntoDinocoValue, IntoIncludeNode, Model, Projection, RelationLinkPlan, RelationMutationModel,
-    RelationMutationTarget, RelationWriteAction, RelationWritePlan, ScalarFieldValue, UpdateModel,
+    ConnectionUpdatePlan, FindAndUpdateModel, IncludeApplier, IncludeLoaderFuture, InsertConnection, InsertModel,
+    InsertRelation, IntoCountNode, IntoDinocoValue, IntoIncludeNode, Model, Projection, RelationLinkPlan,
+    RelationMutationModel, RelationMutationTarget, RelationWriteAction, RelationWritePlan, ScalarFieldValue,
+    UpdateModel,
 };

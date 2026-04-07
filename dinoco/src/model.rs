@@ -60,6 +60,12 @@ pub trait UpdateModel: Model {
     }
 }
 
+pub trait FindAndUpdateModel: UpdateModel + Projection<Self> {
+    type Update: Default;
+
+    fn primary_key_columns() -> &'static [&'static str];
+}
+
 pub trait InsertRelation<R>: InsertModel {
     fn bind_relation(&self, _item: &mut R) {}
 

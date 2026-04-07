@@ -6,7 +6,7 @@ use dinoco_engine::{
 };
 
 use crate::{
-    ConnectionUpdatePlan, InsertModel, Model, Projection, ReadMode, RelationLinkPlan, RelationWriteAction,
+    ConnectionUpdatePlan, FieldUpdate, InsertModel, Model, Projection, ReadMode, RelationLinkPlan, RelationWriteAction,
     RelationWritePlan, UpdateModel,
 };
 
@@ -192,7 +192,7 @@ where
 pub fn execute_update<'a, A>(
     statement: UpdateStatement,
     client: &'a DinocoClient<A>,
-) -> impl Future<Output = DinocoResult<()>> + 'a
+) -> impl Future<Output = DinocoResult<u64>> + 'a
 where
     A: DinocoAdapter,
 {
@@ -200,7 +200,7 @@ where
         let adapter = client.primary();
         let (sql, params) = adapter.dialect().build_update(&statement);
 
-        adapter.execute(&sql, &params).await
+        adapter.execute_result(&sql, &params).await.map(|result| result.affected_rows)
     }
 }
 
@@ -239,7 +239,83 @@ where
             });
         }
 
-        execute_update(statement, client).await
+        execute_update(statement, client).await.map(|_| ())
+    }
+}
+
+pub fn execute_find_and_update<'a, M, S, A>(
+    conditions: Vec<dinoco_engine::Expression>,
+    updates: Vec<FieldUpdate>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<S>> + 'a
+where
+    M: crate::FindAndUpdateModel + 'a,
+    S: Projection<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        if conditions.is_empty() {
+            return Err(DinocoError::ParseError("find_and_update() requires at least one cond().".to_string()));
+        }
+
+        if updates.is_empty() {
+            return Err(DinocoError::ParseError("find_and_update() requires at least one update().".to_string()));
+        }
+
+        let primary_keys = M::primary_key_columns();
+
+        if primary_keys.len() != 1 {
+            return Err(DinocoError::ParseError(
+                "find_and_update() currently supports only single-column primary keys.".to_string(),
+            ));
+        }
+
+        let primary_key = primary_keys[0];
+        let adapter = client.primary();
+        let target_id = query_first_id(adapter, M::table_name(), primary_key, conditions.clone()).await?;
+        let Some(target_id) = target_id else {
+            return Err(DinocoError::RecordNotFound(format!(
+                "No record matched the condition for table '{}'.",
+                M::table_name()
+            )));
+        };
+
+        let mut statement = UpdateStatement::new().table(M::table_name()).target_first_match(primary_keys);
+
+        for condition in conditions.clone() {
+            statement = statement.condition(condition);
+        }
+
+        for update in updates {
+            statement = match update.operation {
+                dinoco_engine::UpdateOperation::Set(value) => statement.set(update.column, value),
+                dinoco_engine::UpdateOperation::Increment(value) => statement.increment(update.column, value),
+                dinoco_engine::UpdateOperation::Decrement(value) => statement.decrement(update.column, value),
+                dinoco_engine::UpdateOperation::Multiply(value) => statement.multiply(update.column, value),
+                dinoco_engine::UpdateOperation::Division(value) => statement.division(update.column, value),
+            };
+        }
+
+        let affected_rows = execute_update(statement, client).await?;
+
+        if affected_rows == 0 {
+            return Err(DinocoError::RecordNotFound(format!(
+                "No record matched the condition for table '{}'.",
+                M::table_name()
+            )));
+        }
+
+        let statement = SelectStatement::new()
+            .from(M::table_name())
+            .select(S::columns())
+            .condition(dinoco_engine::Expression::Column(primary_key.to_string()).eq(target_id));
+
+        execute_first::<M, S, A>(statement, ReadMode::Primary, client).await?.ok_or_else(|| {
+            DinocoError::RecordNotFound(format!(
+                "Updated record from table '{}' could not be loaded after write.",
+                M::table_name()
+            ))
+        })
     }
 }
 
@@ -379,6 +455,27 @@ where
     let rows = adapter.query_as::<DinocoValueRow>(&sql, &params).await?;
 
     Ok(rows.into_iter().map(|row| row.value).collect())
+}
+
+async fn query_first_id<A>(
+    adapter: &A,
+    table_name: &str,
+    select_column: &str,
+    conditions: Vec<dinoco_engine::Expression>,
+) -> DinocoResult<Option<dinoco_engine::DinocoValue>>
+where
+    A: DinocoAdapter,
+{
+    let mut statement = SelectStatement::new().from(table_name).select(&[select_column]).limit(1);
+
+    for condition in conditions {
+        statement = statement.condition(condition);
+    }
+
+    let (sql, params) = adapter.dialect().build_select(&statement);
+    let mut rows = adapter.query_as::<DinocoValueRow>(&sql, &params).await?;
+
+    Ok(rows.drain(..).next().map(|row| row.value))
 }
 
 async fn query_pairs<A>(

@@ -1,10 +1,12 @@
 use chrono::TimeZone;
 
 use dinoco::{
-    DateTimeUtc, DinocoAdapter, DinocoClient, DinocoResult, DinocoValue, InsertModel, IntoDinocoValue, Model,
-    NaiveDate, Projection, Rowable, ScalarField, UpdateModel, Utc,
+    DateTimeUtc, DinocoAdapter, DinocoClient, DinocoResult, DinocoValue, FindAndUpdateModel, InsertModel,
+    IntoDinocoValue, Model, NaiveDate, Projection, Rowable, ScalarField, UpdateField, UpdateModel, Utc,
 };
-use dinoco::{delete, delete_many, find_first, find_many, insert_into, insert_many, update, update_many};
+use dinoco::{
+    delete, delete_many, find_and_update, find_first, find_many, insert_into, insert_many, update, update_many,
+};
 use dinoco_engine::{MySqlAdapter, PostgresAdapter, SqliteAdapter};
 
 mod common;
@@ -23,6 +25,12 @@ struct Record {
     note: Option<String>,
 }
 
+#[derive(Debug, Clone, Rowable)]
+struct RecordNameProjection {
+    name: String,
+    score: f64,
+}
+
 struct RecordWhere {
     id: ScalarField<i64>,
     name: ScalarField<String>,
@@ -35,6 +43,16 @@ struct RecordWhere {
 }
 
 struct RecordInclude {}
+
+struct RecordUpdate {
+    name: UpdateField<String>,
+    email: UpdateField<String>,
+    active: UpdateField<bool>,
+    score: UpdateField<f64>,
+    joined_on: UpdateField<NaiveDate>,
+    created_at: UpdateField<DateTimeUtc<Utc>>,
+    note: UpdateField<Option<String>>,
+}
 
 #[tokio::test]
 async fn sqlite_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
@@ -237,13 +255,29 @@ async fn exercise_crud_flow<A: DinocoAdapter>(client: &DinocoClient<A>) -> Dinoc
         .execute(client)
         .await?;
 
+    let projected = find_and_update::<Record>()
+        .cond(|x| x.id.eq(2_i64))
+        .update(|x| x.name.set("Ana Atomic"))
+        .update(|x| x.score.increment(0.5_f64))
+        .update(|x| x.note.set(None::<String>))
+        .returning::<RecordNameProjection>()
+        .execute(client)
+        .await?;
+
     let updated = find_many::<Record>().order_by(|x| x.id.asc()).execute(client).await?;
 
     assert_eq!(updated[0].email, "matheus-updated@dinoco.dev");
-    assert_eq!(updated[1].name, "Ana Batch");
-    assert_eq!(updated[1].note.as_deref(), Some("batch"));
+    assert_eq!(projected.name, "Ana Atomic");
+    assert!((projected.score - 9.25).abs() < f64::EPSILON);
+    assert_eq!(updated[1].name, "Ana Atomic");
+    assert_eq!(updated[1].note, None);
     assert_eq!(updated[2].created_at, datetime(2026, 4, 13, 14, 20, 0));
     assert_eq!(updated[2].note, None);
+
+    let missing =
+        find_and_update::<Record>().cond(|x| x.id.eq(999_i64)).update(|x| x.name.set("missing")).execute(client).await;
+
+    assert!(matches!(missing, Err(dinoco::DinocoError::RecordNotFound(_))));
 
     delete::<Record>().cond(|x| x.id.eq(1_i64)).execute(client).await?;
     delete_many::<Record>().cond(|x| x.active.eq(false)).execute(client).await?;
@@ -281,6 +315,12 @@ fn datetime(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32
 impl Projection<Record> for Record {
     fn columns() -> &'static [&'static str] {
         &["id", "name", "email", "active", "score", "joined_on", "created_at", "note"]
+    }
+}
+
+impl Projection<Record> for RecordNameProjection {
+    fn columns() -> &'static [&'static str] {
+        &["name", "score"]
     }
 }
 
@@ -325,6 +365,14 @@ impl UpdateModel for Record {
     }
 }
 
+impl FindAndUpdateModel for Record {
+    type Update = RecordUpdate;
+
+    fn primary_key_columns() -> &'static [&'static str] {
+        &["id"]
+    }
+}
+
 impl Model for Record {
     type Include = RecordInclude;
     type Where = RecordWhere;
@@ -345,6 +393,20 @@ impl Default for RecordWhere {
             joined_on: ScalarField::new("joined_on"),
             created_at: ScalarField::new("created_at"),
             note: ScalarField::new("note"),
+        }
+    }
+}
+
+impl Default for RecordUpdate {
+    fn default() -> Self {
+        Self {
+            name: UpdateField::new("name"),
+            email: UpdateField::new("email"),
+            active: UpdateField::new("active"),
+            score: UpdateField::new("score"),
+            joined_on: UpdateField::new("joined_on"),
+            created_at: UpdateField::new("created_at"),
+            note: UpdateField::new("note"),
         }
     }
 }
