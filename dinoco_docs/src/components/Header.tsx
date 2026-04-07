@@ -320,7 +320,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 						onClick={() => closeOtherMenus('mobileConsumer')}
 						className="flex w-full cursor-pointer items-center justify-between rounded-md border border-light-300 bg-light-100 px-4 py-2.5 text-sm font-semibold transition-colors dark:border-[#242424] dark:bg-[#161616] dark:text-white"
 					>
-						<div className="flex items-center gap-2">
+						<div className="flex items-center gap-2 text-slate-600">
 							<CurrentConsumerIcon />
 
 							<span>{currentConsumerLabel}</span>
