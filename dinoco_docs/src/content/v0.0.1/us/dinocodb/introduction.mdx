@@ -1,0 +1,21 @@
+# Concept
+
+DinocoDB provides the platform data layer with a focus on low latency and operational control.
+
+## Connection
+
+```ts
+const connection = createConnection({
+	url: process.env.DINOCO_DATABASE_URL,
+});
+```
+
+## Replication
+
+- Split reads and writes by workload.
+- Monitor hot replicas.
+- Keep failover windows short.
+
+## Operations
+
+Standardize backup, restore, and observability from day one.

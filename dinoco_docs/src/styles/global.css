@@ -1,0 +1,38 @@
+@import 'tailwindcss';
+
+@theme {
+	--color-dinoco-brand: #00a2e8;
+	--color-dinoco-deep: #005a82;
+	--color-dinoco-cyan: #00ffff;
+
+	--color-dark-950: #050505;
+	--color-dark-900: #0c0c0c;
+	--color-dark-800: #161616;
+	--color-dark-700: #242424;
+
+	--color-light-50: #ffffff;
+	--color-light-100: #f8fafc;
+	--color-light-200: #f1f5f9;
+	--color-light-300: #e2e8f0;
+
+	--font-bungee: 'Bungee', sans-serif;
+	--font-montserrat: 'Montserrat', sans-serif;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+	body {
+		@apply bg-light-50 text-slate-800 dark:bg-dark-950 dark:text-slate-300 antialiased transition-colors duration-300;
+	}
+}
+
+@layer components {
+	.dinoco-code-block .hljs {
+		@apply m-0 block overflow-x-auto bg-[#282a36] p-0 text-sm leading-7;
+	}
+
+	.dinoco-code-block .hljs-subst {
+		color: inherit;
+	}
+}

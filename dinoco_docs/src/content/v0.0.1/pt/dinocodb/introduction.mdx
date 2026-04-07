@@ -1,0 +1,21 @@
+# Conceito
+
+DinocoDB entrega a camada de dados da plataforma com foco em baixa latencia e controle operacional.
+
+## Conexao
+
+```ts
+const connection = createConnection({
+	url: process.env.DINOCO_DATABASE_URL,
+});
+```
+
+## Replicacao
+
+- Separe leitura e escrita por workload.
+- Monitore replicas quentes.
+- Garanta janelas de failover pequenas.
+
+## Operacao
+
+Padronize backup, restore e observabilidade desde o inicio.

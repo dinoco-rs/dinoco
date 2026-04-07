@@ -1,0 +1,23 @@
+# dinoco doctor
+
+O `dinoco doctor` concentra checagens de ambiente para acelerar onboarding e reduzir erros de setup.
+
+## Diagnostico
+
+Ele verifica binarios, versao do projeto, variaveis de ambiente e consistencia basica do workspace.
+
+```bash
+dinoco doctor
+```
+
+## Checks
+
+Os checks devem ser simples de ler, com status claro para dependencias ausentes, schema invalido ou versoes divergentes.
+
+## Erros comuns
+
+Os problemas mais comuns sao binario nao encontrado, `DATABASE_URL` ausente e artefatos gerados desatualizados.
+
+## Correcao
+
+Use a saida do comando como guia para corrigir o ambiente antes de seguir para migrate, generate ou studio.

@@ -1,0 +1,44 @@
+# Model
+
+The schema is where you define models, relations, and generated types for the application.
+
+## Fields
+
+- Use primitive types for basic data.
+- Mark keys and uniqueness in the model itself.
+- Document defaults to keep the schema readable.
+
+## Relations
+
+```prisma
+model User {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  posts Post[]
+}
+```
+
+## Dinoco schema
+
+```dinoco
+config {
+  provider = "postgres"
+}
+
+model User {
+  id Integer @id @default(autoincrement())
+  email String @unique
+  profile Profile?
+
+  @@table_name("users")
+}
+
+model Profile {
+  id Integer @id
+  bio String?
+}
+```
+
+## Generate
+
+After editing the schema, run generate to refresh the client and type layer.

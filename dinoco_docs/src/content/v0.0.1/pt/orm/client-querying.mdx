@@ -1,0 +1,36 @@
+# Consultas
+
+O client foi pensado para deixar leituras e escritas previsiveis, com tipagem forte e encadeamento simples.
+
+## FindMany
+
+Use `findMany` para listar registros e carregar campos relacionados de forma explicita.
+
+```ts
+const users = await db.user.findMany({
+	include: {
+		profile: true,
+	},
+});
+```
+
+## Filtros
+
+Filtros compostos ajudam a representar regras mais proximas do dominio, reduzindo logica espalhada pela aplicacao.
+
+```ts
+const activeUsers = await db.user.findMany({
+	where: {
+		active: true,
+		role: 'ADMIN',
+	},
+});
+```
+
+## Ordenacao
+
+Ordene resultados diretamente na consulta para manter a API consistente entre paginas, paines e jobs.
+
+## Paginacao
+
+Prefira paginacao por cursor quando a lista cresce rapido e precisa de navegacao estavel ao longo do tempo.
