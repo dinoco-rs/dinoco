@@ -11,7 +11,7 @@ use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql
 
 use crate::{
     ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
-    DinocoRow, DinocoValue,
+    DinocoRow, DinocoValue, ExecutionResult,
 };
 
 mod dialect;
@@ -47,12 +47,12 @@ impl DinocoAdapter for PostgresAdapter {
         Ok(Self { url, client: Arc::new(pool), query_logger: config.query_logger })
     }
 
-    async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
+    async fn execute_result(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<ExecutionResult> {
         let pg_params: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p as _).collect();
         let client = self.client.get().await.map_err(|e| DinocoError::from(e))?;
         let started_at = Instant::now();
 
-        client.execute(query, &pg_params).await?;
+        let affected_rows = client.execute(query, &pg_params).await?;
         self.query_logger.log(DinocoQueryLog {
             adapter: "postgresql",
             duration: started_at.elapsed(),
@@ -60,7 +60,7 @@ impl DinocoAdapter for PostgresAdapter {
             query: query.to_string(),
         });
 
-        Ok(())
+        Ok(ExecutionResult { affected_rows })
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {

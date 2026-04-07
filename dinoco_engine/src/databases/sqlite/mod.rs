@@ -13,7 +13,7 @@ mod row;
 
 use crate::{
     ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
-    DinocoRow, DinocoValue,
+    DinocoRow, DinocoValue, ExecutionResult,
 };
 
 pub use dialect::SqliteDialect;
@@ -41,7 +41,7 @@ impl DinocoAdapter for SqliteAdapter {
         Ok(Self { url, pool: Arc::new(pool), query_logger: config.query_logger })
     }
 
-    async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
+    async fn execute_result(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<ExecutionResult> {
         let conn = self.pool.get().await.map_err(DinocoError::from)?;
         let query_owned = query.to_string();
         let params_owned = params.to_vec();
@@ -49,15 +49,16 @@ impl DinocoAdapter for SqliteAdapter {
         let logged_params = params.to_vec();
         let started_at = Instant::now();
 
-        conn.interact(move |conn| {
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let affected_rows = conn
+            .interact(move |conn| {
+                let params_refs: Vec<&dyn rusqlite::ToSql> =
+                    params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
-            conn.execute(&query_owned, params_refs.as_slice())
-        })
-        .await
-        .map_err(DinocoError::from)?
-        .map_err(DinocoError::from)?;
+                conn.execute(&query_owned, params_refs.as_slice())
+            })
+            .await
+            .map_err(DinocoError::from)?
+            .map_err(DinocoError::from)?;
         self.query_logger.log(DinocoQueryLog {
             adapter: "sqlite",
             duration: started_at.elapsed(),
@@ -65,7 +66,7 @@ impl DinocoAdapter for SqliteAdapter {
             query: logged_query,
         });
 
-        Ok(())
+        Ok(ExecutionResult { affected_rows: affected_rows as u64 })
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {

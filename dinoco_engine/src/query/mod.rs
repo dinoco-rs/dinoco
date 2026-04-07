@@ -180,18 +180,52 @@ pub trait QueryBuilder: AdapterDialect {
 
         render_query_identifier_into(self, &stmt.table, &mut sql);
 
+        if stmt.target.is_some() {
+            sql.push_str(" AS ");
+            sql.push_str(&self.identifier("__dinoco_update"));
+        }
+
         sql.push_str(" SET ");
 
         if stmt.batches.is_empty() {
-            push_joined(&mut sql, &stmt.sets, ", ", |buf, (column, value)| {
-                params.push(value.clone());
+            let assignments = merge_update_assignments(&stmt.sets);
 
+            push_joined(&mut sql, &assignments, ", ", |buf, (column, assignments)| {
                 render_query_identifier_into(self, column, buf);
-
-                let _ = write!(buf, " = {}", self.bind_value(params.len(), value));
+                buf.push_str(" = ");
+                render_update_assignment_chain_into(self, column, assignments, &mut params, buf);
             });
 
-            if !stmt.conditions.is_empty() {
+            if let Some(target) = &stmt.target {
+                sql.push_str(" WHERE EXISTS (SELECT 1 FROM (SELECT ");
+                push_joined(&mut sql, &target.primary_keys, ", ", |buf, column| {
+                    render_query_identifier_into(self, column, buf);
+                });
+                sql.push_str(" FROM ");
+                render_query_identifier_into(self, &stmt.table, &mut sql);
+
+                if !stmt.conditions.is_empty() {
+                    sql.push_str(" WHERE ");
+                    render_condition_group_into(self, &stmt.conditions, &mut params, " AND ", &mut sql);
+                }
+
+                sql.push_str(" LIMIT 1) AS ");
+                let target_alias = self.identifier("__dinoco_target");
+                sql.push_str(&target_alias);
+                sql.push_str(" WHERE ");
+
+                push_joined(&mut sql, &target.primary_keys, " AND ", |buf, column| {
+                    let _ = write!(
+                        buf,
+                        "{}.{} = {}.{}",
+                        self.identifier("__dinoco_update"),
+                        self.identifier(column),
+                        target_alias,
+                        self.identifier(column)
+                    );
+                });
+                sql.push(')');
+            } else if !stmt.conditions.is_empty() {
                 sql.push_str(" WHERE ");
 
                 render_condition_group_into(self, &stmt.conditions, &mut params, " AND ", &mut sql);
@@ -276,3 +310,56 @@ fn outer_partition_column(partition_column: &str) -> &str {
 }
 
 impl<T: AdapterDialect> QueryBuilder for T {}
+
+fn merge_update_assignments(assignments: &[crate::UpdateAssignment]) -> Vec<(String, Vec<crate::UpdateOperation>)> {
+    let mut grouped = Vec::<(String, Vec<crate::UpdateOperation>)>::new();
+
+    for assignment in assignments {
+        if let Some((_, operations)) = grouped.iter_mut().find(|(column, _)| column == &assignment.column) {
+            operations.push(assignment.operation.clone());
+            continue;
+        }
+
+        grouped.push((assignment.column.clone(), vec![assignment.operation.clone()]));
+    }
+
+    grouped
+}
+
+fn render_update_assignment_chain_into<D: AdapterDialect + ?Sized>(
+    dialect: &D,
+    column: &str,
+    assignments: &[crate::UpdateOperation],
+    params: &mut Vec<DinocoValue>,
+    buf: &mut String,
+) {
+    let mut expr = dialect.identifier(column);
+
+    for assignment in assignments {
+        match assignment {
+            crate::UpdateOperation::Set(value) => {
+                params.push(value.clone());
+                expr = dialect.bind_value(params.len(), value);
+            }
+            crate::UpdateOperation::Increment(value) => {
+                params.push(value.clone());
+                expr = format!("({expr} + {})", dialect.bind_value(params.len(), value));
+            }
+            crate::UpdateOperation::Decrement(value) => {
+                params.push(value.clone());
+                expr = format!("({expr} - {})", dialect.bind_value(params.len(), value));
+            }
+            crate::UpdateOperation::Multiply(value) => {
+                params.push(value.clone());
+                expr = format!("({expr} * {})", dialect.bind_value(params.len(), value));
+            }
+            crate::UpdateOperation::Division(value) => {
+                params.push(value.clone());
+                let cast_expr = dialect.cast_numeric_for_division(&expr);
+                expr = format!("({cast_expr} / {})", dialect.bind_value(params.len(), value));
+            }
+        }
+    }
+
+    buf.push_str(&expr);
+}

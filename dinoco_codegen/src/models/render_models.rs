@@ -116,7 +116,7 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     output.push_str(GENERATED_FILE_LINTS);
 
     output.push_str(
-        "use dinoco::{InsertModel, AdapterDialect, IntoDinocoValue, Model, Projection, RelationField, RelationMutationWhere, RelationScalarField, RelationWritePlan, RelationMutationModel, Rowable, ScalarField, UpdateModel};\n",
+        "use dinoco::{AdapterDialect, FindAndUpdateModel, InsertModel, IntoDinocoValue, Model, Projection, RelationField, RelationMutationModel, RelationMutationWhere, RelationScalarField, RelationWritePlan, Rowable, ScalarField, UpdateField, UpdateModel};\n",
     );
 
     if !relation_imports.is_empty() {
@@ -153,6 +153,13 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
 
     for field in &scalar_fields {
         output.push_str(&format!("    pub {}: ScalarField<{}>,\n", field.name, filter_type(field, enum_names)));
+    }
+
+    output.push_str("}\n\n");
+    output.push_str(&format!("pub struct {}Update {{\n", name));
+
+    for field in &update_fields {
+        output.push_str(&format!("    pub {}: UpdateField<{}>,\n", field.name, filter_type(field, enum_names)));
     }
 
     output.push_str("}\n\n");
@@ -247,6 +254,17 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     output.push_str("        }\n");
     output.push_str("    }\n");
     output.push_str("}\n\n");
+    output.push_str(&format!("impl Default for {}Update {{\n", name));
+    output.push_str("    fn default() -> Self {\n");
+    output.push_str("        Self {\n");
+
+    for field in &update_fields {
+        output.push_str(&format!("            {}: UpdateField::new(\"{}\"),\n", field.name, field.name));
+    }
+
+    output.push_str("        }\n");
+    output.push_str("    }\n");
+    output.push_str("}\n\n");
     output.push_str(&format!("impl Default for {}Include {{\n", name));
     output.push_str("    fn default() -> Self {\n");
     output.push_str("        Self {}\n");
@@ -334,6 +352,19 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
 
     output.push_str("            _ => None,\n");
     output.push_str("        }\n");
+    output.push_str("    }\n");
+    output.push_str("}\n");
+    output.push_str("\n");
+    output.push_str(&format!("impl FindAndUpdateModel for {} {{\n", name));
+    output.push_str(&format!("    type Update = {}Update;\n\n", name));
+    output.push_str("    fn primary_key_columns() -> &'static [&'static str] {\n");
+    output.push_str("        &[\n");
+
+    for field in &primary_key_fields {
+        output.push_str(&format!("            \"{}\",\n", field.name));
+    }
+
+    output.push_str("        ]\n");
     output.push_str("    }\n");
     output.push_str("}\n");
 

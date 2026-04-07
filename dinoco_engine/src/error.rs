@@ -24,6 +24,7 @@ pub enum DinocoError {
     TaskJoin(tokio::task::JoinError),
     ParseError(String),
     ConnectionError(String),
+    RecordNotFound(String),
     TypeMismatch,
     ColumnNotFound,
 }
@@ -67,6 +68,7 @@ impl std::fmt::Display for DinocoError {
             Self::TaskJoin(e) => write!(f, "Async task join error: {}", e),
             Self::ParseError(msg) => write!(f, "Data parse error: {}", msg),
             Self::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
+            Self::RecordNotFound(msg) => write!(f, "Record not found: {}", msg),
 
             Self::TypeMismatch => write!(f, "Row type mismatch.",),
             Self::ColumnNotFound => write!(f, "Column not found.",),

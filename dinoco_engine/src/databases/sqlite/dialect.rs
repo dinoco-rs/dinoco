@@ -7,6 +7,10 @@ impl AdapterDialect for SqliteDialect {
         format!("?{}", index)
     }
 
+    fn cast_numeric_for_division(&self, expr: &str) -> String {
+        format!("CAST({expr} AS REAL)")
+    }
+
     fn identifier(&self, v: &str) -> String {
         let escaped = v.replace('"', "\"\"");
         format!("\"{}\"", escaped)

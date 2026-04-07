@@ -196,6 +196,66 @@ fn sqlite_query_builder_builds_batched_update() {
 }
 
 #[test]
+fn sqlite_query_builder_builds_atomic_find_and_update_statement() {
+    let dialect = SqliteDialect;
+    let statement = UpdateStatement::new()
+        .table("users")
+        .target_first_match(&["id"])
+        .condition(Expression::Column("email".to_string()).eq("ana@dinoco.dev"))
+        .set("name", "Ana Atomic")
+        .increment("score", 1.5_f64);
+
+    let (sql, params) = dialect.build_update(&statement);
+
+    assert_eq!(
+        sql,
+        "UPDATE \"users\" AS \"__dinoco_update\" SET \"name\" = ?1, \"score\" = (\"score\" + ?2) WHERE EXISTS (SELECT 1 FROM (SELECT \"id\" FROM \"users\" WHERE (\"email\" = ?3) LIMIT 1) AS \"__dinoco_target\" WHERE \"__dinoco_update\".\"id\" = \"__dinoco_target\".\"id\")"
+    );
+    assert_eq!(
+        params,
+        vec![DinocoValue::from("Ana Atomic"), DinocoValue::Float(1.5), DinocoValue::from("ana@dinoco.dev"),]
+    );
+}
+
+#[test]
+fn sqlite_query_builder_composes_multiple_operations_for_same_column() {
+    let dialect = SqliteDialect;
+    let statement = UpdateStatement::new()
+        .table("users")
+        .target_first_match(&["id"])
+        .condition(Expression::Column("id".to_string()).eq(1_i64))
+        .increment("age", 1_i64)
+        .multiply("age", 2_i64);
+
+    let (sql, params) = dialect.build_update(&statement);
+
+    assert_eq!(
+        sql,
+        "UPDATE \"users\" AS \"__dinoco_update\" SET \"age\" = ((\"age\" + ?1) * ?2) WHERE EXISTS (SELECT 1 FROM (SELECT \"id\" FROM \"users\" WHERE (\"id\" = ?3) LIMIT 1) AS \"__dinoco_target\" WHERE \"__dinoco_update\".\"id\" = \"__dinoco_target\".\"id\")"
+    );
+    assert_eq!(params, vec![DinocoValue::Integer(1), DinocoValue::Integer(2), DinocoValue::Integer(1)]);
+}
+
+#[test]
+fn sqlite_query_builder_casts_division_to_real_expression() {
+    let dialect = SqliteDialect;
+    let statement = UpdateStatement::new()
+        .table("users")
+        .target_first_match(&["id"])
+        .condition(Expression::Column("id".to_string()).eq(1_i64))
+        .increment("age", 1_i64)
+        .division("age", 2_i64);
+
+    let (sql, params) = dialect.build_update(&statement);
+
+    assert_eq!(
+        sql,
+        "UPDATE \"users\" AS \"__dinoco_update\" SET \"age\" = (CAST((\"age\" + ?1) AS REAL) / ?2) WHERE EXISTS (SELECT 1 FROM (SELECT \"id\" FROM \"users\" WHERE (\"id\" = ?3) LIMIT 1) AS \"__dinoco_target\" WHERE \"__dinoco_update\".\"id\" = \"__dinoco_target\".\"id\")"
+    );
+    assert_eq!(params, vec![DinocoValue::Integer(1), DinocoValue::Integer(2), DinocoValue::Integer(1)]);
+}
+
+#[test]
 fn postgres_query_builder_builds_partitioned_select_with_window_function() {
     let dialect = PostgresDialect;
     let statement = SelectStatement::new()

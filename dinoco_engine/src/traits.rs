@@ -6,15 +6,23 @@ use crate::{
     DinocoClientConfig, DinocoError, DinocoResult, DinocoValue, MigrationStep,
 };
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExecutionResult {
+    pub affected_rows: u64,
+}
+
 #[async_trait]
-pub trait DinocoAdapter: Sized {
+pub trait DinocoAdapter: Sized + Sync {
     type Dialect: AdapterDialect;
 
     fn dialect(&self) -> &Self::Dialect;
 
     async fn connect(url: String, config: DinocoClientConfig) -> DinocoResult<Self>;
 
-    async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()>;
+    async fn execute_result(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<ExecutionResult>;
+    async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
+        self.execute_result(query, params).await.map(|_| ())
+    }
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
         let clean_sql = sql_content.trim();
 
@@ -45,6 +53,9 @@ pub trait AdapterDialect {
         let _ = value;
 
         self.bind_param(index)
+    }
+    fn cast_numeric_for_division(&self, expr: &str) -> String {
+        expr.to_string()
     }
     fn identifier(&self, v: &str) -> String;
     fn literal_string(&self, v: &str) -> String;

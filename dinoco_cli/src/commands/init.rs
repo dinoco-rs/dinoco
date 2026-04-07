@@ -88,6 +88,7 @@ pub fn init_command() {
         Ok(url) => url,
         Err(_) => {
             println!("\n{} {}", "✖".red().bold(), "Input cancelled.".white());
+
             return;
         }
     };
@@ -100,6 +101,7 @@ pub fn init_command() {
         Ok(val) => val,
         Err(_) => {
             println!("\n{} {}", "✖".red().bold(), "Replica configuration cancelled.".white());
+
             return;
         }
     };
@@ -191,6 +193,6 @@ pub fn init_command() {
     println!(
         "\n{} {}",
         "📚 Next steps: Check out the documentation at".bright_black(),
-        "https://dinoco.io/docs".cyan().underline()
+        "https://docs.dinoco.io".cyan().underline()
     );
 }

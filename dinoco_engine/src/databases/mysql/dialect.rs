@@ -7,6 +7,10 @@ impl AdapterDialect for MySqlDialect {
         "?".to_string()
     }
 
+    fn cast_numeric_for_division(&self, expr: &str) -> String {
+        format!("CAST({expr} AS DOUBLE)")
+    }
+
     fn identifier(&self, v: &str) -> String {
         let escaped = v.replace('`', "``");
         format!("`{}`", escaped)

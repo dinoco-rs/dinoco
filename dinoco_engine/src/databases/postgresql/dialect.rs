@@ -7,6 +7,10 @@ impl AdapterDialect for PostgresDialect {
         format!("${}", index)
     }
 
+    fn cast_numeric_for_division(&self, expr: &str) -> String {
+        format!("CAST({expr} AS DOUBLE PRECISION)")
+    }
+
     fn bind_value(&self, index: usize, value: &DinocoValue) -> String {
         match value {
             DinocoValue::Enum(type_name, _) => {

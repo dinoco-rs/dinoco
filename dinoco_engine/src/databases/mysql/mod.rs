@@ -7,7 +7,7 @@ use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
 use crate::{
     ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
-    DinocoRow, DinocoValue,
+    DinocoRow, DinocoValue, ExecutionResult,
 };
 
 mod dialect;
@@ -37,7 +37,7 @@ impl DinocoAdapter for MySqlAdapter {
         Ok(Self { client: Arc::new(Pool::new(url.as_str())), query_logger: config.query_logger, url })
     }
 
-    async fn execute(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<()> {
+    async fn execute_result(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<ExecutionResult> {
         let logged_params = params.to_vec();
         let params = Positional(logged_params.iter().cloned().map(Into::into).collect());
 
@@ -45,6 +45,7 @@ impl DinocoAdapter for MySqlAdapter {
         let started_at = Instant::now();
 
         conn.exec_drop(query, params).await?;
+        let affected_rows = conn.affected_rows();
         self.query_logger.log(DinocoQueryLog {
             adapter: "mysql",
             duration: started_at.elapsed(),
@@ -52,7 +53,7 @@ impl DinocoAdapter for MySqlAdapter {
             query: query.to_string(),
         });
 
-        Ok(())
+        Ok(ExecutionResult { affected_rows })
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
