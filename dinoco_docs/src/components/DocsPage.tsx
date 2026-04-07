@@ -14,6 +14,8 @@ function toAnchorId(value: string): string {
 
 const DocsPage: React.FC = () => {
 	const locale = useDocs(state => state.locale);
+	const theme = useDocs(state => state.theme);
+
 	const setConsumer = useDocs(state => state.setConsumer);
 	const setVersion = useDocs(state => state.setVersion);
 	const intl = useIntl();
@@ -55,6 +57,22 @@ const DocsPage: React.FC = () => {
 			document.body.style.overflow = 'unset';
 		};
 	}, [isSidebarOpen]);
+
+	useEffect(() => {
+		let link = document.getElementById('hljs-theme') as HTMLLinkElement;
+
+		if (!link) {
+			link = document.createElement('link');
+			link.id = 'hljs-theme';
+			link.rel = 'stylesheet';
+			document.head.appendChild(link);
+		}
+
+		link.href =
+			theme === 'dark'
+				? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/dracula.min.css'
+				: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+	}, [theme]);
 
 	if (resolved === undefined) {
 		return null;

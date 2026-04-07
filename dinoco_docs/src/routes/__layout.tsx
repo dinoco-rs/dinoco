@@ -2,7 +2,8 @@ import { useEffect, type JSX } from 'react';
 import { TuonoScripts } from 'tuono';
 import type { TuonoLayoutProps } from 'tuono';
 
-import 'highlight.js/styles/base16/dracula.css';
+// import 'highlight.js/styles/base16/dracula.css';
+
 import '../styles/global.css';
 import { getSystemTheme, useDocs } from '../hooks/useDocs';
 
