@@ -31,7 +31,9 @@ pub fn init_command() {
 
     let database_prompt = match env_prompt_string("DINOCO_CLI_INIT_DATABASE") {
         Some(database) => Ok(database),
-        None => Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL"]).prompt().map(str::to_string),
+        None => Select::new("Which database will you use?", vec!["PostgreSQL", "MySQL", "Sqlite"])
+            .prompt()
+            .map(str::to_string),
     };
     let database = match database_prompt {
         Ok(db) => db,

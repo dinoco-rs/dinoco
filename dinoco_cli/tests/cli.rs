@@ -51,6 +51,30 @@ fn init_command_creates_schema_from_automated_answers() {
     assert!(schema.contains("env(\"DATABASE_URL_REPLICA_2\")"));
 }
 
+#[test]
+fn init_command_supports_sqlite_from_automated_answers() {
+    let project = TestDir::new();
+
+    let output = run_cli(
+        project.path(),
+        ["init"],
+        &[
+            ("DINOCO_CLI_INIT_DATABASE", "Sqlite"),
+            ("DINOCO_CLI_INIT_CONNECTION_TYPE", "Static string"),
+            ("DINOCO_CLI_INIT_CONNECTION_URL", "file:./dinoco/database.sqlite"),
+            ("DINOCO_CLI_INIT_WITH_REPLICAS", "false"),
+        ],
+    );
+
+    let schema_path = project.path().join("dinoco/schema.dinoco");
+    let schema = fs::read_to_string(&schema_path).expect("schema should be created");
+
+    assert!(output.contains("Your Dinoco environment was successfully created"));
+    assert!(schema.contains("database = \"sqlite\""));
+    assert!(schema.contains("database_url = \"file:./dinoco/database.sqlite\""));
+    assert!(!schema.contains("read_replicas"));
+}
+
 #[tokio::test]
 async fn cli_commands_cover_full_sqlite_flow() {
     let apply_project = TestDir::new();
@@ -103,6 +127,14 @@ async fn cli_commands_cover_full_sqlite_flow() {
     assert!(!run_project.path().join("dinoco/models/user.rs").exists());
 
     let pending_migration = latest_migration_name(run_project.path());
+    let generate_client =
+        DinocoClient::<SqliteAdapter>::new(run_database_url.clone(), vec![], DinocoClientConfig::default())
+            .await
+            .expect("sqlite client should connect");
+    let tables_after_generate = generate_client.primary().fetch_tables().await.expect("tables should load");
+
+    assert!(!tables_after_generate.iter().any(|table| table.name == "_dinoco_migrations"));
+
     let run_output = run_cli(run_project.path(), ["migrate", "run"], &[("DATABASE_URL", run_database_url.as_str())]);
 
     assert!(
@@ -171,6 +203,31 @@ async fn cli_commands_cover_full_sqlite_flow() {
     let tables_after_reset = run_client.primary().fetch_tables().await.expect("tables should load after reset");
 
     assert!(tables_after_reset.is_empty());
+}
+
+#[test]
+fn generate_apply_cleans_up_failed_sqlite_migration() {
+    let project = TestDir::new();
+    let database_path = project.path().join("readonly.sqlite");
+
+    fs::write(&database_path, "").expect("sqlite file should exist");
+    write_schema(project.path(), INITIAL_SCHEMA);
+
+    let database_url = format!("file:{}?mode=ro", database_path.display());
+    let output = run_cli(
+        project.path(),
+        ["migrate", "generate", "--apply"],
+        &[("DATABASE_URL", database_url.as_str()), ("DINOCO_CLI_MIGRATION_NAME", "InitialUsers")],
+    );
+
+    assert!(output.contains("Applying the migration to the primary database"));
+    assert!(
+        !project.path().join("dinoco/migrations").exists()
+            || fs::read_dir(project.path().join("dinoco/migrations"))
+                .expect("migrations dir should be readable")
+                .next()
+                .is_none()
+    );
 }
 
 #[test]

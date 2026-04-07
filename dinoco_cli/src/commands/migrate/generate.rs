@@ -16,8 +16,7 @@ use dinoco_engine::{
 
 use crate::utils::{env_prompt_bool, env_prompt_string};
 use crate::{
-    create_migration_table, insert_migration, mark_migration_applied, read_latest_local_schema, to_snake_case,
-    write_migration_schema,
+    create_migration_table, mark_migration_applied, read_latest_local_schema, to_snake_case, write_migration_schema,
 };
 
 pub async fn generate_migrate(apply: bool) -> DinocoResult<()> {
@@ -147,27 +146,39 @@ where
     fs::create_dir_all(&migration_dir)?;
     fs::write(format!("{migration_dir}/migration.sql"), sqls.join("\n\n"))?;
     write_migration_schema(&migration_name, &parsed_schema)?;
-    create_migration_table(&adapter).await?;
-    insert_migration(&adapter, &migration_name).await?;
-
-    println!("{} {}", "✔".green().bold(), "Migration files generated successfully.".white());
 
     if apply {
         println!("{} {}", "→".cyan().bold(), "Applying the migration to the primary database...".dimmed());
 
-        apply_generated_migration(&adapter, &migration_name, &sqls).await?;
+        if let Err(err) = apply_generated_migration(&adapter, &migration_name, &sqls).await {
+            cleanup_generated_migration(&migration_name)?;
+
+            return Err(err);
+        }
 
         println!("{} {}", "→".cyan().bold(), "Generating Rust models...".dimmed());
 
         generate_models(parsed_schema);
 
+        println!("{} {}", "✔".green().bold(), "Migration files generated successfully.".white());
         println!("{} {}", "✔".green().bold(), "Rust models generated successfully.".white());
     } else {
+        println!("{} {}", "✔".green().bold(), "Migration files generated successfully.".white());
         println!(
             "{} {}",
             "ℹ".blue(),
             "Migration generated only. Use `--apply` to apply it now, or `dinoco migrate run` later.".bright_black()
         );
+    }
+
+    Ok(())
+}
+
+fn cleanup_generated_migration(migration_name: &str) -> DinocoResult<()> {
+    let migration_dir = Path::new("dinoco/migrations").join(migration_name);
+
+    if migration_dir.exists() {
+        fs::remove_dir_all(&migration_dir)?;
     }
 
     Ok(())
@@ -284,6 +295,8 @@ async fn apply_generated_migration<T>(adapter: &T, migration_name: &str, sqls: &
 where
     T: DinocoAdapter + DinocoAdapterHandler,
 {
+    create_migration_table(adapter).await?;
+
     for (index, sql) in sqls.iter().enumerate() {
         if let Err(err) = adapter.execute(sql, &[]).await {
             return Err(DinocoError::ParseError(format!(
