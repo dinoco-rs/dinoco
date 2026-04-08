@@ -50,6 +50,36 @@ struct MemberWhere {
 struct MemberInclude {}
 
 #[derive(Debug, Clone, Rowable)]
+struct AutoTeam {
+    id: i64,
+    name: String,
+}
+
+struct AutoTeamWhere {
+    id: ScalarField<i64>,
+    name: ScalarField<String>,
+}
+
+#[derive(Default)]
+struct AutoTeamInclude {}
+
+#[derive(Debug, Clone, Rowable)]
+struct AutoMember {
+    id: i64,
+    name: String,
+    teamId: i64,
+}
+
+struct AutoMemberWhere {
+    id: ScalarField<i64>,
+    name: ScalarField<String>,
+    teamId: ScalarField<i64>,
+}
+
+#[derive(Default)]
+struct AutoMemberInclude {}
+
+#[derive(Debug, Clone, Rowable)]
 struct Article {
     id: String,
     title: String,
@@ -94,6 +124,48 @@ struct ArticleLabelWhere {
 }
 
 struct ArticleLabelInclude {}
+
+#[derive(Debug, Clone, Rowable)]
+struct AutoArticle {
+    id: i64,
+    title: String,
+}
+
+struct AutoArticleWhere {
+    id: ScalarField<i64>,
+    title: ScalarField<String>,
+}
+
+#[derive(Default)]
+struct AutoArticleInclude {}
+
+#[derive(Debug, Clone, Rowable)]
+struct AutoLabel {
+    id: i64,
+    name: String,
+}
+
+struct AutoLabelWhere {
+    id: ScalarField<i64>,
+    name: ScalarField<String>,
+}
+
+#[derive(Default)]
+struct AutoLabelInclude {}
+
+#[derive(Debug, Clone, Rowable)]
+struct AutoArticleLabel {
+    article_id: i64,
+    label_id: i64,
+}
+
+struct AutoArticleLabelWhere {
+    article_id: ScalarField<i64>,
+    label_id: ScalarField<i64>,
+}
+
+#[derive(Default)]
+struct AutoArticleLabelInclude {}
 
 #[derive(Debug, Clone, Rowable)]
 struct User {
@@ -211,6 +283,35 @@ async fn mysql_relation_insert_binds_foreign_keys_for_single_and_many() -> Dinoc
 }
 
 #[tokio::test]
+async fn postgres_relation_insert_with_autoincrement_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
+    let _lock = common::lock_postgres().await;
+    let client =
+        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+            .await?;
+
+    drop_auto_team_tables_postgres(&client).await?;
+    create_auto_team_tables_postgres(&client).await?;
+    exercise_relation_insert_flow_autoincrement(&client).await?;
+    drop_auto_team_tables_postgres(&client).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn mysql_relation_insert_with_autoincrement_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
+    let _lock = common::lock_mysql().await;
+    let client =
+        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+
+    drop_auto_team_tables_mysql(&client).await?;
+    create_auto_team_tables_mysql(&client).await?;
+    exercise_relation_insert_flow_autoincrement(&client).await?;
+    drop_auto_team_tables_mysql(&client).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn sqlite_many_to_many_insert_with_relation_and_update_connect_disconnect_work() -> DinocoResult<()> {
     let client = DinocoClient::<SqliteAdapter>::new(
         common::sqlite_url("many-to-many-adapters"),
@@ -249,6 +350,35 @@ async fn mysql_many_to_many_insert_with_relation_and_update_connect_disconnect_w
     create_article_tables_mysql(&client).await?;
     exercise_many_to_many_flow(&client).await?;
     drop_article_tables_mysql(&client).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_many_to_many_insert_with_relation_supports_autoincrement_ids() -> DinocoResult<()> {
+    let _lock = common::lock_postgres().await;
+    let client =
+        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+            .await?;
+
+    drop_auto_article_tables_postgres(&client).await?;
+    create_auto_article_tables_postgres(&client).await?;
+    exercise_many_to_many_flow_autoincrement(&client).await?;
+    drop_auto_article_tables_postgres(&client).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn mysql_many_to_many_insert_with_relation_supports_autoincrement_ids() -> DinocoResult<()> {
+    let _lock = common::lock_mysql().await;
+    let client =
+        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+
+    drop_auto_article_tables_mysql(&client).await?;
+    create_auto_article_tables_mysql(&client).await?;
+    exercise_many_to_many_flow_autoincrement(&client).await?;
+    drop_auto_article_tables_mysql(&client).await?;
 
     Ok(())
 }
@@ -427,6 +557,59 @@ async fn create_team_tables_mysql(client: &DinocoClient<MySqlAdapter>) -> Dinoco
         .await
 }
 
+async fn drop_auto_team_tables_postgres(client: &DinocoClient<PostgresAdapter>) -> DinocoResult<()> {
+    client.primary().execute(r#"DROP TABLE IF EXISTS "auto_members""#, &[]).await?;
+    client.primary().execute(r#"DROP TABLE IF EXISTS "auto_teams""#, &[]).await
+}
+
+async fn create_auto_team_tables_postgres(client: &DinocoClient<PostgresAdapter>) -> DinocoResult<()> {
+    client
+        .primary()
+        .execute(
+            r#"CREATE TABLE "auto_teams" (
+                "id" BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "name" TEXT NOT NULL
+            )"#,
+            &[],
+        )
+        .await?;
+
+    client
+        .primary()
+        .execute(
+            r#"CREATE TABLE "auto_members" (
+                "id" BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "name" TEXT NOT NULL,
+                "teamId" BIGINT NOT NULL
+            )"#,
+            &[],
+        )
+        .await
+}
+
+async fn drop_auto_team_tables_mysql(client: &DinocoClient<MySqlAdapter>) -> DinocoResult<()> {
+    client.primary().execute("DROP TABLE IF EXISTS `auto_members`", &[]).await?;
+    client.primary().execute("DROP TABLE IF EXISTS `auto_teams`", &[]).await
+}
+
+async fn create_auto_team_tables_mysql(client: &DinocoClient<MySqlAdapter>) -> DinocoResult<()> {
+    client
+        .primary()
+        .execute(
+            "CREATE TABLE `auto_teams` (`id` BIGINT AUTO_INCREMENT PRIMARY KEY, `name` VARCHAR(255) NOT NULL)",
+            &[],
+        )
+        .await?;
+
+    client
+        .primary()
+        .execute(
+            "CREATE TABLE `auto_members` (`id` BIGINT AUTO_INCREMENT PRIMARY KEY, `name` VARCHAR(255) NOT NULL, `teamId` BIGINT NOT NULL)",
+            &[],
+        )
+        .await
+}
+
 async fn drop_article_tables_sqlite(client: &DinocoClient<SqliteAdapter>) -> DinocoResult<()> {
     client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{ARTICLE_LABELS_TABLE}""#), &[]).await?;
     client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{LABELS_TABLE}""#), &[]).await?;
@@ -490,6 +673,76 @@ async fn create_article_tables_mysql(client: &DinocoClient<MySqlAdapter>) -> Din
         .primary()
         .execute(
             "CREATE TABLE `_ArticleLabels` (`article_id` VARCHAR(255) NOT NULL, `label_id` VARCHAR(255) NOT NULL, PRIMARY KEY (`article_id`, `label_id`))",
+            &[],
+        )
+        .await
+}
+
+async fn drop_auto_article_tables_postgres(client: &DinocoClient<PostgresAdapter>) -> DinocoResult<()> {
+    client.primary().execute(r#"DROP TABLE IF EXISTS "auto_article_labels""#, &[]).await?;
+    client.primary().execute(r#"DROP TABLE IF EXISTS "auto_labels""#, &[]).await?;
+    client.primary().execute(r#"DROP TABLE IF EXISTS "auto_articles""#, &[]).await
+}
+
+async fn create_auto_article_tables_postgres(client: &DinocoClient<PostgresAdapter>) -> DinocoResult<()> {
+    client
+        .primary()
+        .execute(
+            r#"CREATE TABLE "auto_articles" (
+                "id" BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "title" TEXT NOT NULL
+            )"#,
+            &[],
+        )
+        .await?;
+    client
+        .primary()
+        .execute(
+            r#"CREATE TABLE "auto_labels" (
+                "id" BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "name" TEXT NOT NULL
+            )"#,
+            &[],
+        )
+        .await?;
+    client
+        .primary()
+        .execute(
+            r#"CREATE TABLE "auto_article_labels" (
+                "article_id" BIGINT NOT NULL,
+                "label_id" BIGINT NOT NULL,
+                PRIMARY KEY ("article_id", "label_id")
+            )"#,
+            &[],
+        )
+        .await
+}
+
+async fn drop_auto_article_tables_mysql(client: &DinocoClient<MySqlAdapter>) -> DinocoResult<()> {
+    client.primary().execute("DROP TABLE IF EXISTS `auto_article_labels`", &[]).await?;
+    client.primary().execute("DROP TABLE IF EXISTS `auto_labels`", &[]).await?;
+    client.primary().execute("DROP TABLE IF EXISTS `auto_articles`", &[]).await
+}
+
+async fn create_auto_article_tables_mysql(client: &DinocoClient<MySqlAdapter>) -> DinocoResult<()> {
+    client
+        .primary()
+        .execute(
+            "CREATE TABLE `auto_articles` (`id` BIGINT AUTO_INCREMENT PRIMARY KEY, `title` VARCHAR(255) NOT NULL)",
+            &[],
+        )
+        .await?;
+    client
+        .primary()
+        .execute(
+            "CREATE TABLE `auto_labels` (`id` BIGINT AUTO_INCREMENT PRIMARY KEY, `name` VARCHAR(255) NOT NULL)",
+            &[],
+        )
+        .await?;
+    client
+        .primary()
+        .execute(
+            "CREATE TABLE `auto_article_labels` (`article_id` BIGINT NOT NULL, `label_id` BIGINT NOT NULL, PRIMARY KEY (`article_id`, `label_id`))",
             &[],
         )
         .await
@@ -632,6 +885,40 @@ where
     Ok(())
 }
 
+async fn exercise_relation_insert_flow_autoincrement<A>(client: &DinocoClient<A>) -> DinocoResult<()>
+where
+    A: DinocoAdapter,
+{
+    let created_team = insert_into::<AutoTeam>()
+        .values(AutoTeam { id: 0, name: "Dinoco".to_string() })
+        .with_relation(AutoMember { id: 0, name: "Matheus".to_string(), teamId: 0 })
+        .returning::<AutoTeam>()
+        .execute(client)
+        .await?;
+
+    let created_many = insert_many::<AutoTeam>()
+        .values(vec![
+            AutoTeam { id: 0, name: "Platform".to_string() },
+            AutoTeam { id: 0, name: "Compiler".to_string() },
+        ])
+        .with_relation(vec![
+            AutoMember { id: 0, name: "Ana".to_string(), teamId: 0 },
+            AutoMember { id: 0, name: "Caio".to_string(), teamId: 0 },
+        ])
+        .returning::<AutoTeam>()
+        .execute(client)
+        .await?;
+
+    assert_eq!(created_team.id, 1);
+    assert_eq!(created_many.iter().map(|item| item.id).collect::<Vec<_>>(), vec![2, 3]);
+
+    let members = find_many::<AutoMember>().order_by(|x| x.id.asc()).execute(client).await?;
+
+    assert_eq!(members.iter().map(|item| item.teamId).collect::<Vec<_>>(), vec![1, 2, 3]);
+
+    Ok(())
+}
+
 async fn exercise_many_to_many_flow<A>(client: &DinocoClient<A>) -> DinocoResult<()>
 where
     A: DinocoAdapter,
@@ -677,6 +964,40 @@ where
             (&"article-3".to_string(), &"label-3".to_string()),
         ]
     );
+
+    Ok(())
+}
+
+async fn exercise_many_to_many_flow_autoincrement<A>(client: &DinocoClient<A>) -> DinocoResult<()>
+where
+    A: DinocoAdapter,
+{
+    let created_article = insert_into::<AutoArticle>()
+        .values(AutoArticle { id: 0, title: "Dinoco Connect".to_string() })
+        .with_relation(AutoLabel { id: 0, name: "orm".to_string() })
+        .returning::<AutoArticle>()
+        .execute(client)
+        .await?;
+
+    let created_many = insert_many::<AutoArticle>()
+        .values(vec![
+            AutoArticle { id: 0, title: "Dinoco Insert Many".to_string() },
+            AutoArticle { id: 0, title: "Dinoco Disconnect".to_string() },
+        ])
+        .with_relation(vec![
+            AutoLabel { id: 0, name: "rust".to_string() },
+            AutoLabel { id: 0, name: "mysql".to_string() },
+        ])
+        .returning::<AutoArticle>()
+        .execute(client)
+        .await?;
+
+    assert_eq!(created_article.id, 1);
+    assert_eq!(created_many.iter().map(|item| item.id).collect::<Vec<_>>(), vec![2, 3]);
+
+    let rows = find_many::<AutoArticleLabel>().order_by(|x| x.article_id.asc()).execute(client).await?;
+
+    assert_eq!(rows.iter().map(|row| (row.article_id, row.label_id)).collect::<Vec<_>>(), vec![(1, 1), (2, 2), (3, 3)]);
 
     Ok(())
 }
@@ -876,6 +1197,30 @@ impl Projection<Member> for Member {
     }
 }
 
+impl Projection<AutoTeam> for AutoTeam {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+
+impl Projection<AutoMember> for AutoMember {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name", "teamId"]
+    }
+}
+
+impl Default for AutoTeamWhere {
+    fn default() -> Self {
+        Self { id: ScalarField::new("id"), name: ScalarField::new("name") }
+    }
+}
+
+impl Default for AutoMemberWhere {
+    fn default() -> Self {
+        Self { id: ScalarField::new("id"), name: ScalarField::new("name"), teamId: ScalarField::new("teamId") }
+    }
+}
+
 impl Projection<Article> for Article {
     fn columns() -> &'static [&'static str] {
         &["id", "title"]
@@ -891,6 +1236,42 @@ impl Projection<Label> for Label {
 impl Projection<ArticleLabel> for ArticleLabel {
     fn columns() -> &'static [&'static str] {
         &["article_id", "label_id"]
+    }
+}
+
+impl Projection<AutoArticle> for AutoArticle {
+    fn columns() -> &'static [&'static str] {
+        &["id", "title"]
+    }
+}
+
+impl Projection<AutoLabel> for AutoLabel {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+
+impl Projection<AutoArticleLabel> for AutoArticleLabel {
+    fn columns() -> &'static [&'static str] {
+        &["article_id", "label_id"]
+    }
+}
+
+impl Default for AutoArticleWhere {
+    fn default() -> Self {
+        Self { id: ScalarField::new("id"), title: ScalarField::new("title") }
+    }
+}
+
+impl Default for AutoLabelWhere {
+    fn default() -> Self {
+        Self { id: ScalarField::new("id"), name: ScalarField::new("name") }
+    }
+}
+
+impl Default for AutoArticleLabelWhere {
+    fn default() -> Self {
+        Self { article_id: ScalarField::new("article_id"), label_id: ScalarField::new("label_id") }
     }
 }
 
@@ -940,6 +1321,42 @@ impl InsertModel for Member {
     }
 }
 
+impl InsertModel for AutoTeam {
+    fn insert_columns() -> &'static [&'static str] {
+        &["name"]
+    }
+
+    fn into_insert_row(self) -> Vec<DinocoValue> {
+        vec![self.name.into()]
+    }
+
+    fn insert_identity_conditions(&self) -> Vec<dinoco_engine::Expression> {
+        vec![dinoco_engine::Expression::Column("id".to_string()).eq(self.id)]
+    }
+
+    fn auto_increment_primary_key_column() -> Option<&'static str> {
+        Some("id")
+    }
+}
+
+impl InsertModel for AutoMember {
+    fn insert_columns() -> &'static [&'static str] {
+        &["name", "teamId"]
+    }
+
+    fn into_insert_row(self) -> Vec<DinocoValue> {
+        vec![self.name.into(), self.teamId.into()]
+    }
+
+    fn insert_identity_conditions(&self) -> Vec<dinoco_engine::Expression> {
+        vec![dinoco_engine::Expression::Column("id".to_string()).eq(self.id)]
+    }
+
+    fn auto_increment_primary_key_column() -> Option<&'static str> {
+        Some("id")
+    }
+}
+
 impl InsertModel for Article {
     fn insert_columns() -> &'static [&'static str] {
         &["id", "title"]
@@ -981,6 +1398,59 @@ impl InsertModel for ArticleLabel {
         vec![
             dinoco_engine::Expression::Column("article_id".to_string()).eq(self.article_id.clone()),
             dinoco_engine::Expression::Column("label_id".to_string()).eq(self.label_id.clone()),
+        ]
+    }
+}
+
+impl InsertModel for AutoArticle {
+    fn insert_columns() -> &'static [&'static str] {
+        &["title"]
+    }
+
+    fn into_insert_row(self) -> Vec<DinocoValue> {
+        vec![self.title.into()]
+    }
+
+    fn insert_identity_conditions(&self) -> Vec<dinoco_engine::Expression> {
+        vec![dinoco_engine::Expression::Column("id".to_string()).eq(self.id)]
+    }
+
+    fn auto_increment_primary_key_column() -> Option<&'static str> {
+        Some("id")
+    }
+}
+
+impl InsertModel for AutoLabel {
+    fn insert_columns() -> &'static [&'static str] {
+        &["name"]
+    }
+
+    fn into_insert_row(self) -> Vec<DinocoValue> {
+        vec![self.name.into()]
+    }
+
+    fn insert_identity_conditions(&self) -> Vec<dinoco_engine::Expression> {
+        vec![dinoco_engine::Expression::Column("id".to_string()).eq(self.id)]
+    }
+
+    fn auto_increment_primary_key_column() -> Option<&'static str> {
+        Some("id")
+    }
+}
+
+impl InsertModel for AutoArticleLabel {
+    fn insert_columns() -> &'static [&'static str] {
+        &["article_id", "label_id"]
+    }
+
+    fn into_insert_row(self) -> Vec<DinocoValue> {
+        vec![self.article_id.into(), self.label_id.into()]
+    }
+
+    fn insert_identity_conditions(&self) -> Vec<dinoco_engine::Expression> {
+        vec![
+            dinoco_engine::Expression::Column("article_id".to_string()).eq(self.article_id),
+            dinoco_engine::Expression::Column("label_id".to_string()).eq(self.label_id),
         ]
     }
 }
@@ -1033,6 +1503,12 @@ impl InsertRelation<Member> for Team {
     }
 }
 
+impl InsertRelation<AutoMember> for AutoTeam {
+    fn bind_relation(&self, item: &mut AutoMember) {
+        item.teamId = self.id;
+    }
+}
+
 impl InsertConnection<Member> for Team {
     fn connection_updates(&self, item: &Member) -> Vec<dinoco::ConnectionUpdatePlan> {
         vec![dinoco::ConnectionUpdatePlan {
@@ -1054,7 +1530,19 @@ impl InsertRelation<Label> for Article {
     }
 }
 
+impl InsertRelation<AutoLabel> for AutoArticle {
+    fn relation_links(&self, item: &AutoLabel) -> Vec<RelationLinkPlan> {
+        vec![RelationLinkPlan {
+            table_name: "auto_article_labels",
+            columns: &["article_id", "label_id"],
+            row: vec![self.id.into(), item.id.into()],
+        }]
+    }
+}
+
 impl InsertConnection<Label> for Article {}
+impl InsertConnection<AutoMember> for AutoTeam {}
+impl InsertConnection<AutoLabel> for AutoArticle {}
 
 impl UpdateModel for Article {
     fn update_columns() -> &'static [&'static str] {
@@ -1133,6 +1621,24 @@ impl Model for Member {
     }
 }
 
+impl Model for AutoTeam {
+    type Include = AutoTeamInclude;
+    type Where = AutoTeamWhere;
+
+    fn table_name() -> &'static str {
+        "auto_teams"
+    }
+}
+
+impl Model for AutoMember {
+    type Include = AutoMemberInclude;
+    type Where = AutoMemberWhere;
+
+    fn table_name() -> &'static str {
+        "auto_members"
+    }
+}
+
 impl Model for Article {
     type Include = ArticleInclude;
     type Where = ArticleWhere;
@@ -1157,6 +1663,33 @@ impl Model for ArticleLabel {
 
     fn table_name() -> &'static str {
         ARTICLE_LABELS_TABLE
+    }
+}
+
+impl Model for AutoArticle {
+    type Include = AutoArticleInclude;
+    type Where = AutoArticleWhere;
+
+    fn table_name() -> &'static str {
+        "auto_articles"
+    }
+}
+
+impl Model for AutoLabel {
+    type Include = AutoLabelInclude;
+    type Where = AutoLabelWhere;
+
+    fn table_name() -> &'static str {
+        "auto_labels"
+    }
+}
+
+impl Model for AutoArticleLabel {
+    type Include = AutoArticleLabelInclude;
+    type Where = AutoArticleLabelWhere;
+
+    fn table_name() -> &'static str {
+        "auto_article_labels"
     }
 }
 

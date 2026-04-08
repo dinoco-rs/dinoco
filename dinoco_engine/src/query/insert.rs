@@ -5,6 +5,7 @@ pub struct InsertStatement {
     pub table: String,
     pub columns: Vec<String>,
     pub rows: Vec<Vec<DinocoValue>>,
+    pub returning: Vec<String>,
 }
 
 impl InsertStatement {
@@ -29,6 +30,11 @@ impl InsertStatement {
 
     pub fn values(mut self, rows: Vec<Vec<DinocoValue>>) -> Self {
         self.rows.extend(rows);
+        self
+    }
+
+    pub fn returning(mut self, columns: &[&str]) -> Self {
+        self.returning = columns.iter().map(|column| column.to_string()).collect();
         self
     }
 }

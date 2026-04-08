@@ -55,6 +55,7 @@ impl DinocoAdapter for SqliteAdapter {
                     params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
                 conn.execute(&query_owned, params_refs.as_slice())
+                    .map(|affected_rows| (affected_rows, conn.last_insert_rowid()))
             })
             .await
             .map_err(DinocoError::from)?
@@ -66,7 +67,10 @@ impl DinocoAdapter for SqliteAdapter {
             query: logged_query,
         });
 
-        Ok(ExecutionResult { affected_rows: affected_rows as u64 })
+        Ok(ExecutionResult {
+            affected_rows: affected_rows.0 as u64,
+            last_insert_id: Some(affected_rows.1),
+        })
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {

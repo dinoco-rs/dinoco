@@ -35,6 +35,10 @@ impl AdapterDialect for PostgresDialect {
         true
     }
 
+    fn supports_insert_returning(&self) -> bool {
+        true
+    }
+
     fn column_type(&self, col: &ColumnDefinition, is_primary: bool, auto_increment: bool) -> String {
         let mut base_type = match &col.col_type {
             ColumnType::Integer => "BIGINT".to_string(),

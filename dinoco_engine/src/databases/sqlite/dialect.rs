@@ -49,4 +49,8 @@ impl AdapterDialect for SqliteDialect {
 
         base_type
     }
+
+    fn supports_insert_returning(&self) -> bool {
+        true
+    }
 }

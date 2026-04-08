@@ -9,6 +9,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ExecutionResult {
     pub affected_rows: u64,
+    pub last_insert_id: Option<i64>,
 }
 
 #[async_trait]
@@ -65,6 +66,10 @@ pub trait AdapterDialect {
     }
 
     fn supports_native_enums(&self) -> bool {
+        false
+    }
+
+    fn supports_insert_returning(&self) -> bool {
         false
     }
 }

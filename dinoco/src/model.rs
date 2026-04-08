@@ -47,6 +47,14 @@ pub trait InsertModel: Model {
     fn insert_columns() -> &'static [&'static str];
     fn into_insert_row(self) -> Vec<DinocoValue>;
     fn insert_identity_conditions(&self) -> Vec<Expression>;
+    fn auto_increment_primary_key_column() -> Option<&'static str> {
+        None
+    }
+    fn auto_increment_identity_conditions(id: i64) -> Vec<Expression> {
+        Self::auto_increment_primary_key_column()
+            .map(|column| vec![Expression::Column(column.to_string()).eq(DinocoValue::Integer(id))])
+            .unwrap_or_default()
+    }
     fn validate_insert(&self) -> dinoco_engine::DinocoResult<()> {
         Ok(())
     }

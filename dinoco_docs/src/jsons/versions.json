@@ -24,7 +24,14 @@
 									"shortName": "first-steps",
 									"name": "Primeiros passos",
 									"mdxPath": "v0.0.1/pt/orm/first-steps.mdx",
-									"inPage": ["Introdução ao Dinoco", "A Experiência Prisma em Rust", "Pilares do Projeto", "Onde nos posicionamos?"]
+									"inPage": [
+										"Primeiros passos",
+										{
+											"title": "Como funciona?",
+											"items": ["1. Defina seu schema e sua conexão", "2. Crie a migração", "3. Consulta com DinocoClient"]
+										},
+										"Próximos passos"
+									]
 								}
 							]
 						}

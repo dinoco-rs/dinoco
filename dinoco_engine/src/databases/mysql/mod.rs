@@ -46,6 +46,7 @@ impl DinocoAdapter for MySqlAdapter {
 
         conn.exec_drop(query, params).await?;
         let affected_rows = conn.affected_rows();
+        let last_insert_id = conn.last_insert_id().map(|value| value as i64);
         self.query_logger.log(DinocoQueryLog {
             adapter: "mysql",
             duration: started_at.elapsed(),
@@ -53,7 +54,7 @@ impl DinocoAdapter for MySqlAdapter {
             query: query.to_string(),
         });
 
-        Ok(ExecutionResult { affected_rows })
+        Ok(ExecutionResult { affected_rows, last_insert_id })
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {

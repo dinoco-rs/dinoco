@@ -93,6 +93,9 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
         .copied()
         .filter(|field| table.primary_key_fields.iter().any(|primary_key| primary_key == &field.name))
         .collect::<Vec<_>>();
+    let auto_increment_primary_key_field = primary_key_fields.iter().copied().find(|field| {
+        matches!(field.default_value, ParsedFieldDefault::Function(FunctionCall::AutoIncrement))
+    });
     let relation_fields = relation_fields(fields);
     let relation_imports = relation_fields
         .iter()
@@ -208,6 +211,11 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
 
     output.push_str("        ]\n");
     output.push_str("    }\n\n");
+    if let Some(field) = auto_increment_primary_key_field {
+        output.push_str("    fn auto_increment_primary_key_column() -> Option<&'static str> {\n");
+        output.push_str(&format!("        Some({:?})\n", field.name));
+        output.push_str("    }\n\n");
+    }
     output.push_str("    fn validate_insert(&self) -> dinoco::DinocoResult<()> {\n");
 
     let insert_validations = render_insert_validations(table, &insert_fields);

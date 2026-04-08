@@ -1,7 +1,8 @@
 use std::future::Future;
 
 use dinoco_engine::{
-    DeleteStatement, DinocoAdapter, DinocoClient, DinocoError, DinocoGenericRow, DinocoResult, DinocoRow,
+    AdapterDialect, DeleteStatement, DinocoAdapter, DinocoClient, DinocoError, DinocoGenericRow, DinocoResult,
+    DinocoRow,
     InsertStatement, QueryBuilder, SelectStatement, UpdateStatement,
 };
 
@@ -110,25 +111,7 @@ where
     M: InsertModel + 'a,
     A: DinocoAdapter,
 {
-    async move {
-        if items.is_empty() {
-            return Ok(());
-        }
-
-        for item in &items {
-            item.validate_insert()?;
-        }
-
-        let statement = InsertStatement::new()
-            .into(M::table_name())
-            .columns(M::insert_columns())
-            .values(items.into_iter().map(M::into_insert_row).collect());
-
-        let adapter = client.primary();
-        let (sql, params) = adapter.dialect().build_insert(&statement);
-
-        adapter.execute(&sql, &params).await
-    }
+    async move { execute_insert_result::<M, A>(items, client).await.map(|_| ()) }
 }
 
 pub fn execute_insert_returning<'a, M, S, A>(
@@ -141,9 +124,97 @@ where
     A: DinocoAdapter,
 {
     async move {
+        let adapter = client.primary();
+
+        if M::auto_increment_primary_key_column().is_some() && adapter.dialect().supports_insert_returning() {
+            if items.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            for item in &items {
+                item.validate_insert()?;
+            }
+
+            let statement = InsertStatement::new()
+                .into(M::table_name())
+                .columns(M::insert_columns())
+                .values(items.into_iter().map(M::into_insert_row).collect())
+                .returning(S::columns());
+            let (sql, params) = adapter.dialect().build_insert(&statement);
+
+            return adapter.query_as::<S>(&sql, &params).await;
+        }
+
+        if M::auto_increment_primary_key_column().is_some() {
+            let result = execute_insert_result::<M, A>(items, client).await?;
+            let first_id = result.last_insert_id.ok_or_else(|| {
+                DinocoError::ParseError(format!(
+                    "Adapter did not return the generated autoincrement id for table '{}'.",
+                    M::table_name()
+                ))
+            })?;
+            let identity_conditions = (0..result.affected_rows)
+                .map(|offset| M::auto_increment_identity_conditions(first_id + offset as i64))
+                .collect::<Vec<_>>();
+
+            return load_many_by_conditions::<M, S, A>(identity_conditions, client).await;
+        }
+
         let identity_conditions = items.iter().map(InsertModel::insert_identity_conditions).collect::<Vec<_>>();
 
         execute_insert::<M, A>(items, client).await?;
+        load_many_by_conditions::<M, S, A>(identity_conditions, client).await
+    }
+}
+
+async fn execute_insert_result<M, A>(items: Vec<M>, client: &DinocoClient<A>) -> DinocoResult<dinoco_engine::ExecutionResult>
+where
+    M: InsertModel,
+    A: DinocoAdapter,
+{
+    if items.is_empty() {
+        return Ok(dinoco_engine::ExecutionResult::default());
+    }
+
+    for item in &items {
+        item.validate_insert()?;
+    }
+
+    let statement = InsertStatement::new()
+        .into(M::table_name())
+        .columns(M::insert_columns())
+        .values(items.into_iter().map(M::into_insert_row).collect());
+
+    let adapter = client.primary();
+    let (sql, params) = adapter.dialect().build_insert(&statement);
+
+    adapter.execute_result(&sql, &params).await
+}
+
+pub(crate) fn execute_reload_by_identity<'a, M, S, A>(
+    item: &'a M,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<S>> + 'a
+where
+    M: InsertModel + 'a,
+    S: Projection<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move { load_one_by_conditions::<M, S, A>(item.insert_identity_conditions(), client).await }
+}
+
+pub(crate) fn execute_reload_many_by_identity<'a, M, S, A>(
+    items: &'a [M],
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<Vec<S>>> + 'a
+where
+    M: InsertModel + 'a,
+    S: Projection<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        let identity_conditions = items.iter().map(InsertModel::insert_identity_conditions).collect::<Vec<_>>();
+
         load_many_by_conditions::<M, S, A>(identity_conditions, client).await
     }
 }

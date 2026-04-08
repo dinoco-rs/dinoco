@@ -10,12 +10,19 @@ type MdxModule = {
 
 type DocsItemData = {
 	description: string;
-	inPage: string[];
+	inPage: DocsInPageItemData[];
 	mdxPath: string;
 	name: string;
 	shortName: string;
 	subItems?: DocsItemData[];
 };
+
+export type DocsInPageItemData =
+	| string
+	| {
+			items?: DocsInPageItemData[];
+			title: string;
+	  };
 
 type DocsSectionData = {
 	items: DocsItemData[];

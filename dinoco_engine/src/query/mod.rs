@@ -169,6 +169,14 @@ pub trait QueryBuilder: AdapterDialect {
             buf.push(')');
         });
 
+        if !stmt.returning.is_empty() {
+            sql.push_str(" RETURNING ");
+
+            push_joined(&mut sql, &stmt.returning, ", ", |buf, column| {
+                render_query_identifier_into(self, column, buf);
+            });
+        }
+
         (sql, params)
     }
 

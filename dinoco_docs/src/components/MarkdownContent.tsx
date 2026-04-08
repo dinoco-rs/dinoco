@@ -3,10 +3,8 @@ import clsx from 'clsx';
 import type { MarkdownContentProps, MdxComponentProps, MdxCodeProps } from '../types';
 
 const shikiVariables = {
-	'--shiki-light': '#24292e',
-	'--shiki-dark': '#e1e4e8',
 	'--shiki-light-bg': '#fff',
-	'--shiki-dark-bg': '#24292e',
+	'--shiki-dark-bg': '#101010',
 } as React.CSSProperties;
 
 function getNodeText(node: React.ReactNode): string {
@@ -38,18 +36,12 @@ function normalizeLanguageClassName(className?: string): string {
 }
 
 function getLanguageLabel(language: string): string {
-	if (language === 'ts') return 'TypeScript';
-	if (language === 'js') return 'JavaScript';
-	if (language === 'tsx') return 'TSX';
-	if (language === 'jsx') return 'JSX';
 	if (language === 'bash' || language === 'shellscript' || language === 'sh') return 'Bash';
 	if (language === 'json') return 'JSON';
-	if (language === 'yaml') return 'YAML';
 	if (language === 'toml') return 'TOML';
 	if (language === 'sql') return 'SQL';
 	if (language === 'rust') return 'Rust';
 	if (language === 'dinoco') return 'Dinoco';
-	if (language === 'txt' || language === 'plaintext') return 'Texto';
 
 	return language.toUpperCase();
 }

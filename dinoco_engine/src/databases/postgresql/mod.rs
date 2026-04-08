@@ -60,7 +60,7 @@ impl DinocoAdapter for PostgresAdapter {
             query: query.to_string(),
         });
 
-        Ok(ExecutionResult { affected_rows })
+        Ok(ExecutionResult { affected_rows, last_insert_id: None })
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
