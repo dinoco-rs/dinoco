@@ -1,0 +1,150 @@
+export const title = "insert_many";
+
+# insert_many
+
+バッチ挿入に使用されます。
+
+---
+
+## できること
+
+- `.values(Vec<M>)`: バッチで挿入するレコードを定義します。
+- `.with_relation(Vec<R>)`: 各親要素に対して正確に1つの新しいリレーションを挿入します。
+- `.with_relations(Vec<Vec<R>>)`: 各親要素に対して複数の新しいリレーションを挿入します。
+- `.with_connection(Vec<R>)`: 挿入された各親要素に対して、正確に1つの既存のリレーションを接続します。
+- `.with_connections(Vec<Vec<R>>)`: 挿入された各親要素に対して複数の既存のリレーションを接続します。通常、多対多のシナリオで使用されます。
+- `.returning::<T>()`: 挿入された要素の型付きリストに返り値を変更します。
+- `.execute(&client)`: バッチ操作を実行します。
+
+## 戻り値
+
+`.returning::<T>()` を使用しない場合、戻り値は次のようになります。
+
+```rust
+DinocoResult<()>
+```
+
+`.returning::<T>()` を使用する場合、戻り値は次のようになります。
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## 基本例
+
+```rust
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: "u1".into(), email: "a@acme.com".into(), name: "A".into() },
+        User { id: "u2".into(), email: "b@acme.com".into(), name: "B".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## 戻り値付きの例
+
+```rust
+let created = dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## `with_relation(...)` の例
+
+各親要素が作成され、接続される必要がある場合は、`with_relation(...)` を使用します。
+
+```rust
+dinoco::insert_many::<Post>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_relation(vec![
+        Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## `with_relations(...)` の例
+
+各親レコードが複数の子要素を持つ場合、`with_relations(...)` を使用します。レコードは自動的に作成され、リンクされます。
+
+```rust
+dinoco::insert_many::<Post>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_relation(vec![
+        vec![
+			Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        	Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+		],
+
+		vec![Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() }]
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## `with_connection(...)` の例
+
+各親要素が正確に1つの既存のレコードに接続される必要がある場合は、`with_connection(...)` を使用します。
+
+```rust
+dinoco::insert_many::<Team>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_connection(vec![
+        Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## `with_connections(...)` の例
+
+各親要素が複数の既存のレコードに接続される必要がある場合は、`with_connections(...)` を使用します。
+これは、多対多のリレーションシップでよくあるユースケースです。
+
+```rust
+dinoco::insert_many::<Article>()
+    .values(vec![
+        Article { id: "article-11".into(), title: "Connect Multiple".into() },
+        Article { id: "article-12".into(), title: "Connect Batch".into() },
+    ])
+    .with_connections(vec![
+        vec![
+            Label { id: "label-11".into(), name: "orm".into() },
+            Label { id: "label-12".into(), name: "rust".into() },
+        ],
+        vec![
+            Label { id: "label-10".into(), name: "backend".into() },
+        ],
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## 注意事項
+
+- `with_relation(...)` と `with_relations(...)` は、親要素がすでにメモリ内に既知のIDを持っている場合に最適に機能します。
+- `with_connection(...)` と `with_connections(...)` は、既存のリレーションを接続するためのものです。
+- `with_connection(...)` は `values(...)` と同じ数の要素を必要とします。
+- `with_connections(...)` は、メインベクターに関して同じ数のグループを必要とします。
+
+## 次のステップ
+
+- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): 単一の挿入。
+- [**`update::<M>()`**](/v0.0.1/orm/update): フィルター付きの更新。

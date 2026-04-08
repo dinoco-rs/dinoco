@@ -1,20 +1,26 @@
-use serde_json::Value;
+use std::fs;
+use std::path::Path;
+
 use tuono_lib::{Request, Response};
 
 use tuono_lib::axum::http::{HeaderMap, StatusCode, header};
 
 fn get_latest_version_path() -> String {
-    let versions: Value =
-        serde_json::from_str(include_str!("../jsons/versions.json")).expect("Failed to parse versions.json");
+    let versions_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/jsons/versions");
 
-    let version_name = versions
-        .as_array()
-        .and_then(|entries| entries.first())
-        .and_then(|entry| entry.get("name"))
-        .and_then(Value::as_str)
-        .unwrap();
+    let mut versions = fs::read_dir(versions_path)
+        .expect("Failed to read versions directory")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect::<Vec<_>>();
 
-    format!("/{version_name}")
+    versions.sort();
+
+    format!(
+        "/{}",
+        versions.last().expect("No versions found in src/jsons/versions")
+    )
 }
 
 #[tuono_lib::handler]

@@ -90,7 +90,7 @@ function MarkdownPre({ children, className, ...props }: MdxComponentProps): Reac
 	return (
 		<div {...props} style={shikiVariables} className={clsx('mb-6 overflow-hidden rounded-xl border border-light-300 bg-light-50 shadow-sm dark:border-[#242424] dark:bg-[#0c0c0c]', className)}>
 			<div className="flex items-center justify-between border-b border-light-300 bg-light-100 px-4 py-2.5 dark:border-[#242424] dark:bg-[#050505]">
-				<span className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">{languageLabel}</span>
+				<p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">{languageLabel}</p>
 
 				<button
 					type="button"
@@ -155,6 +155,47 @@ const MarkdownContent: React.FC<MarkdownContentProps> = ({ component: Content })
 			>
 				{children}
 			</blockquote>
+		),
+		table: ({ children, className, ...props }: MdxComponentProps) => (
+			<div className="mb-6 overflow-x-auto rounded-xl border border-light-300 bg-white shadow-sm dark:border-[#242424] dark:bg-[#0c0c0c]">
+				<table {...props} className={clsx('min-w-full border-collapse text-left text-sm text-slate-600 dark:text-slate-300', className)}>
+					{children}
+				</table>
+			</div>
+		),
+		thead: ({ children, className, ...props }: MdxComponentProps) => (
+			<thead {...props} className={clsx('bg-light-100 dark:bg-[#111111]', className)}>
+				{children}
+			</thead>
+		),
+		tbody: ({ children, className, ...props }: MdxComponentProps) => (
+			<tbody {...props} className={className}>
+				{children}
+			</tbody>
+		),
+		tr: ({ children, className, ...props }: MdxComponentProps) => (
+			<tr {...props} className={clsx('border-t border-light-300 dark:border-[#242424]', className)}>
+				{children}
+			</tr>
+		),
+		th: ({ children, className, ...props }: MdxComponentProps) => (
+			<th
+				{...props}
+				className={clsx(
+					'border-l border-light-300 px-4 py-3 font-semibold tracking-tight text-slate-900 first:border-l-0 dark:border-[#242424] dark:text-white',
+					className,
+				)}
+			>
+				{children}
+			</th>
+		),
+		td: ({ children, className, ...props }: MdxComponentProps) => (
+			<td
+				{...props}
+				className={clsx('border-l border-light-300 px-4 py-3 align-top first:border-l-0 dark:border-[#242424]', className)}
+			>
+				{children}
+			</td>
 		),
 		a: ({ children, className, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
 			<a

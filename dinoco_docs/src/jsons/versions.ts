@@ -1,11 +1,14 @@
 import React from 'react';
 
-import versionsData from './versions.json';
+import v0_0_1 from './versions/v0.0.1';
 
-export type DocsLocale = 'pt';
+export type DocsLocale = 'pt-br' | 'en-us' | 'ru-ru' | 'ja-jp' | 'ko-kr' | 'de-de' | 'it-it' | 'zh-cn' | 'fr-fr';
+export const SUPPORTED_LOCALES: DocsLocale[] = ['pt-br', 'en-us', 'ru-ru', 'ja-jp', 'ko-kr', 'de-de', 'it-it', 'zh-cn', 'fr-fr'];
+type RawDocsLocale = DocsLocale | 'pt';
 
 type MdxModule = {
 	default: React.ComponentType<{ components?: Record<string, React.ElementType> }>;
+	title?: string;
 };
 
 type DocsItemData = {
@@ -31,20 +34,21 @@ type DocsSectionData = {
 
 type DocsGroupData = {
 	icon: string;
-	languages: Partial<Record<DocsLocale, DocsSectionData[]>>;
+	languages: Partial<Record<RawDocsLocale, DocsSectionData[]>>;
 	name: string;
 	shortName: string;
 	status?: 'comingSoon';
 };
 
 type DocsVersionData = {
-	description: Record<DocsLocale, string>;
+	description: Partial<Record<RawDocsLocale, string>>;
 	groups: DocsGroupData[];
 	name: string;
 };
 
 export type DocsItem = Omit<DocsItemData, 'subItems'> & {
 	component: React.ComponentType<{ components?: Record<string, React.ElementType> }>;
+	documentTitle: string;
 	subItems?: DocsItem[];
 };
 
@@ -75,20 +79,50 @@ function getMdxComponent(path: string) {
 	return mdxModules[`../content/${path}`]?.default ?? (() => null);
 }
 
+function getMdxTitle(path: string) {
+	return mdxModules[`../content/${path}`]?.title;
+}
+
 function mapItem(item: DocsItemData): DocsItem {
 	return {
 		...item,
 		component: getMdxComponent(item.mdxPath),
+		documentTitle: getMdxTitle(item.mdxPath) ?? item.name,
 		subItems: item.subItems?.map(mapItem),
 	};
 }
 
-export const versions: DocsVersion[] = (versionsData as DocsVersionData[]).map(version => ({
+function normalizeLocaleKey(locale: string): DocsLocale | undefined {
+	if (locale === 'pt') {
+		return 'pt-br';
+	}
+
+	return SUPPORTED_LOCALES.includes(locale as DocsLocale) ? (locale as DocsLocale) : undefined;
+}
+
+function normalizeLocalizedRecord<T>(record: Partial<Record<RawDocsLocale, T>>): Partial<Record<DocsLocale, T>> {
+	return Object.fromEntries(
+		Object.entries(record).flatMap(([locale, value]) => {
+			const normalized = normalizeLocaleKey(locale);
+
+			if (normalized === undefined || value === undefined) {
+				return [];
+			}
+
+			return [[normalized, value] as const];
+		}),
+	) as Partial<Record<DocsLocale, T>>;
+}
+
+const versionsData: DocsVersionData[] = [v0_0_1 as DocsVersionData];
+
+export const versions: DocsVersion[] = versionsData.map(version => ({
 	...version,
+	description: normalizeLocalizedRecord(version.description),
 	groups: version.groups.map(group => ({
 		...group,
 		languages: Object.fromEntries(
-			Object.entries(group.languages).map(([locale, sections]) => [
+			Object.entries(normalizeLocalizedRecord(group.languages)).map(([locale, sections]) => [
 				locale,
 				(sections ?? []).map(section => ({
 					...section,
@@ -131,7 +165,7 @@ function fallbackLocale(locale: DocsLocale, version: DocsVersion): DocsLocale {
 		return locale;
 	}
 
-	return localeSet[0] ?? 'pt';
+	return localeSet[0] ?? 'pt-br';
 }
 
 export function getLatestVersionName(): string {
@@ -155,7 +189,19 @@ export function getVersionByName(versionName: string): DocsVersion | undefined {
 }
 
 export function getAvailableLocales(versionName: string): DocsLocale[] {
-	return getVersionByName(versionName) === undefined ? ['pt'] : ['pt'];
+	const version = getVersionByName(versionName);
+
+	if (version === undefined) {
+		return ['pt-br'];
+	}
+
+	return SUPPORTED_LOCALES.filter(locale =>
+		version.groups.some(group => {
+			const localizedSections = group.languages[locale];
+
+			return localizedSections !== undefined && localizedSections.length > 0;
+		}),
+	);
 }
 
 export function getGroupsForVersion(versionName: string, locale: DocsLocale): DocsGroup[] {
@@ -168,21 +214,17 @@ export function getGroupsForVersion(versionName: string, locale: DocsLocale): Do
 	const resolvedLocale = fallbackLocale(locale, version);
 
 	return version.groups.filter(group => {
-		const localizedSections = group.languages[resolvedLocale] ?? group.languages.pt;
+		const localizedSections = group.languages[resolvedLocale] ?? group.languages['pt-br'];
 
 		return localizedSections !== undefined && localizedSections.length > 0;
 	});
 }
 
 export function getLocalizedSections(group: DocsGroup, locale: DocsLocale): DocsSection[] {
-	return group.languages[locale] ?? group.languages.pt ?? [];
+	return group.languages[locale] ?? group.languages['pt-br'] ?? [];
 }
 
-export function getGroupByShortName(
-	versionName: string,
-	locale: DocsLocale,
-	groupShortName?: string,
-): DocsGroup | undefined {
+export function getGroupByShortName(versionName: string, locale: DocsLocale, groupShortName?: string): DocsGroup | undefined {
 	const groups = getGroupsForVersion(versionName, locale);
 
 	if (groupShortName === undefined) {
@@ -198,12 +240,14 @@ export function getItemByShortName(
 	groupShortName?: string,
 	itemShortName?: string,
 	subItemShortName?: string,
-): {
-	group: DocsGroup;
-	item: DocsItem;
-	parentItem?: DocsItem;
-	sections: DocsSection[];
-} | undefined {
+):
+	| {
+			group: DocsGroup;
+			item: DocsItem;
+			parentItem?: DocsItem;
+			sections: DocsSection[];
+	  }
+	| undefined {
 	const group = getGroupByShortName(versionName, locale, groupShortName);
 
 	if (group === undefined) {
@@ -264,9 +308,7 @@ export function getItemByShortName(
 }
 
 export function buildDocsPath(versionName: string, groupShortName: string, itemShortName: string, subItemShortName?: string): string {
-	return subItemShortName === undefined
-		? `/${versionName}/${groupShortName}/${itemShortName}`
-		: `/${versionName}/${groupShortName}/${itemShortName}/${subItemShortName}`;
+	return subItemShortName === undefined ? `/${versionName}/${groupShortName}/${itemShortName}` : `/${versionName}/${groupShortName}/${itemShortName}/${subItemShortName}`;
 }
 
 export function getFirstDocsPath(versionName: string, locale: DocsLocale): string {
@@ -300,12 +342,7 @@ function flattenSectionItems(versionName: string, groupShortName: string, sectio
 	);
 }
 
-export function getAdjacentDocsItems(params: {
-	currentItemShortName: string;
-	groupShortName: string;
-	sections: DocsSection[];
-	versionName: string;
-}): {
+export function getAdjacentDocsItems(params: { currentItemShortName: string; groupShortName: string; sections: DocsSection[]; versionName: string }): {
 	next?: DocsNavigationItem;
 	previous?: DocsNavigationItem;
 } {
@@ -322,12 +359,7 @@ export function getAdjacentDocsItems(params: {
 	};
 }
 
-export function getLatestVersionPath(params: {
-	groupShortName?: string;
-	itemShortName?: string;
-	locale: DocsLocale;
-	subItemShortName?: string;
-}): string {
+export function getLatestVersionPath(params: { groupShortName?: string; itemShortName?: string; locale: DocsLocale; subItemShortName?: string }): string {
 	const latestVersionName = getLatestVersionName();
 	const resolved = resolveDocsPath({
 		versionName: latestVersionName,
@@ -340,13 +372,7 @@ export function getLatestVersionPath(params: {
 	return resolved?.path ?? getFirstDocsPath(latestVersionName, params.locale);
 }
 
-export function resolveDocsPath(params: {
-	groupShortName?: string;
-	itemShortName?: string;
-	locale: DocsLocale;
-	subItemShortName?: string;
-	versionName?: string;
-}): ResolvedDocsPath | undefined {
+export function resolveDocsPath(params: { groupShortName?: string; itemShortName?: string; locale: DocsLocale; subItemShortName?: string; versionName?: string }): ResolvedDocsPath | undefined {
 	const version = getVersionByName(params.versionName ?? getDefaultVersionName()) ?? getVersionByName(getDefaultVersionName());
 
 	if (version === undefined) {
@@ -364,7 +390,12 @@ export function resolveDocsPath(params: {
 		group: resolved.group,
 		item: resolved.item,
 		parentItem: resolved.parentItem,
-		path: buildDocsPath(version.name, resolved.group.shortName, resolved.parentItem?.shortName ?? resolved.item.shortName, resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName),
+		path: buildDocsPath(
+			version.name,
+			resolved.group.shortName,
+			resolved.parentItem?.shortName ?? resolved.item.shortName,
+			resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName,
+		),
 		sections: resolved.sections,
 		version,
 	};

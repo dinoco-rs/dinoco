@@ -175,6 +175,15 @@ const DocsPage: React.FC = () => {
 	}, [resolved, router, setConsumer, setVersion]);
 
 	useEffect(() => {
+		if (resolved === undefined) {
+			document.title = 'Dinoco';
+			return;
+		}
+
+		document.title = `${resolved.item.documentTitle} | Dinoco`;
+	}, [resolved]);
+
+	useEffect(() => {
 		if (isSidebarOpen) {
 			document.body.style.overflow = 'hidden';
 		} else {

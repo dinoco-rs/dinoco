@@ -1,0 +1,149 @@
+export const title = "insert_many";
+
+# insert_many
+
+Utilizzato per inserimenti in batch.
+
+---
+
+## Cosa puoi fare
+
+- `.values(Vec<M>)`: definisce i record da inserire in batch.
+- `.with_relation(Vec<R>)`: inserisce esattamente una nuova entità correlata per ogni elemento padre.
+- `.with_relations(Vec<Vec<R>>)` : inserisce più nuove entità correlate per ogni elemento padre.
+- `.with_connection(Vec<R>)`: connette esattamente una relazione già esistente per ogni elemento padre inserito.
+- `.with_connections(Vec<Vec<R>>)` : connette più relazioni già esistenti per ogni elemento padre inserito, tipicamente in scenari Many-to-Many.
+- `.returning::<T>()`: cambia il valore di ritorno in una lista tipizzata degli elementi inseriti.
+- `.execute(&client)`: esegue l'operazione in batch.
+
+## Valore di ritorno
+
+Senza `.returning::<T>()`, il valore di ritorno è:
+
+```rust
+DinocoResult<()>
+```
+
+Con `.returning::<T>()`, il valore di ritorno diventa:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Esempio semplice
+
+```rust
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: "u1".into(), email: "a@acme.com".into(), name: "A".into() },
+        User { id: "u2".into(), email: "b@acme.com".into(), name: "B".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con ritorno
+
+```rust
+let created = dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con `with_relation(...)`
+
+Usa `with_relation(...)` quando ogni elemento padre deve essere creato e connesso.
+
+```rust
+dinoco::insert_many::<Post>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_relation(vec![
+        Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con `with_relations(...)`
+
+Usa `with_relations(...)` quando ogni record padre ha più di un figlio; i record verranno automaticamente creati e collegati.
+
+```rust
+dinoco::insert_many::<Post>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_relation(vec![
+        vec![
+			Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        	Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+		],
+
+		vec![Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() }]
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con `with_connection(...)`
+
+Usa `with_connection(...)` quando ogni elemento padre deve essere connesso a esattamente un record già esistente.
+
+```rust
+dinoco::insert_many::<Team>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_connection(vec![
+        Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con `with_connections(...)`
+
+Usa `with_connections(...)` quando ogni elemento padre deve essere connesso a più record già esistenti. Questo è un caso d'uso comune nelle relazioni Many-to-Many.
+
+```rust
+dinoco::insert_many::<Article>()
+    .values(vec![
+        Article { id: "article-11".into(), title: "Connect Multiple".into() },
+        Article { id: "article-12".into(), title: "Connect Batch".into() },
+    ])
+    .with_connections(vec![
+        vec![
+            Label { id: "label-11".into(), name: "orm".into() },
+            Label { id: "label-12".into(), name: "rust".into() },
+        ],
+        vec![
+            Label { id: "label-10".into(), name: "backend".into() },
+        ],
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Note
+
+- `with_relation(...)` e `with_relations(...)` funzionano al meglio quando l'elemento padre ha già un ID noto in memoria.
+- `with_connection(...)` e `with_connections(...)` sono destinati alla connessione di relazioni già esistenti.
+- `with_connection(...)` richiede lo stesso numero di elementi di `values(...)`.
+- `with_connections(...)` richiede lo stesso numero di gruppi rispetto al vettore principale.
+
+## Passi successivi
+
+- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): inserimento singolo.
+- [**`update::<M>()`**](/v0.0.1/orm/update): aggiornamento con filtro.

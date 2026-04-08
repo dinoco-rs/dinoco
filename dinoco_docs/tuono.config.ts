@@ -1,14 +1,18 @@
 import type { TuonoConfig } from 'tuono/config';
+
 import mdx from '@mdx-js/rollup';
 import rehypeShiki from '@shikijs/rehype';
 import tailwindcss from '@tailwindcss/vite';
-import dinocoGrammar from './src/jsons/dinoco.tmLanguage.json';
+import remarkGfm from 'remark-gfm';
+
+import dinocoGrammar from '../dinoco_vscode/configs/dinoco.tmLanguage.json';
 
 const config: TuonoConfig = {
 	vite: {
 		plugins: [
 			mdx({
 				providerImportSource: '@mdx-js/react',
+				remarkPlugins: [remarkGfm],
 				rehypePlugins: [
 					[
 						rehypeShiki,

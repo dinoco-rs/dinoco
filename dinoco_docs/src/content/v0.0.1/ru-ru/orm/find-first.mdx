@@ -1,0 +1,106 @@
+export const title = "find_first";
+
+# find_first
+
+Используется для получения максимум одной записи.
+
+---
+
+## Что можно сделать
+
+Он предоставляет те же методы, что и `find_many`:
+
+- `select`
+- `cond`
+- `take`
+- `skip`
+- `order_by`
+- `includes`
+- `count`
+- `read_in_primary`
+- `execute`
+
+## Описание методов
+
+- `.select::<T>()`: Заменяет стандартную проекцию на пользовательскую.
+- `.cond(...)`: Добавляет фильтры к запросу.
+- `.take(...)`: Ограничивает максимальное количество рассматриваемых записей.
+- `.skip(...)`: Пропускает записи перед выбором первого результата.
+- `.order_by(...)`: Определяет, какая запись должна быть рассмотрена первой.
+- `.includes(...)`: Загружает связанные сущности вместе с основным элементом.
+- `.count(...)`: Вычисляет счетчики для связанных сущностей в проекции.
+- `.read_in_primary()`: Принудительно читает из основной базы данных.
+- `.execute(&client)`: Выполняет запрос и возвращает максимум один элемент.
+
+## Возвращаемое значение
+
+Без `select::<T>()` возвращаемое значение:
+
+```rust
+DinocoResult<Option<M>>
+```
+
+С `select::<T>()` возвращаемое значение меняется на:
+
+```rust
+DinocoResult<Option<T>>
+```
+
+## Базовый пример
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## Пример с select
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserSummary>()
+    .cond(|w| w.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+## Пример со связью
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserWithPosts>()
+    .cond(|x| x.id.eq(1_i64))
+    .includes(|x| x.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Пример с сортировкой
+
+```rust
+let latest_user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .execute(&client)
+    .await?;
+```
+
+## Следующие шаги
+
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): ищет несколько записей.
+- [**`count::<M>()`**](/v0.0.1/orm/count): подсчет записей.

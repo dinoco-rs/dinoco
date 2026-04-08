@@ -41,7 +41,7 @@ const DocsContentNavigation: React.FC<DocsContentNavigationProps> = ({ previous,
 	}
 
 	return (
-		<nav aria-label="Navegação da documentação" className="mt-10 grid gap-4s border-t border-light-200 pt-6 dark:border-dark-700 md:grid-cols-2">
+		<nav aria-label="Navegação da documentação" className="mt-10 grid gap-4 border-t border-light-200 pt-6 dark:border-dark-700 md:grid-cols-2">
 			{previous ? <NavigationCard label="Anterior" title={previous.item.name} href={previous.path} align="left" /> : <div className="hidden md:block" aria-hidden="true" />}
 
 			{next ? <NavigationCard label="Próximo" title={next.item.name} href={next.path} align="right" /> : <div className="hidden md:block" aria-hidden="true" />}

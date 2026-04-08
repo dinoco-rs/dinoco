@@ -1,0 +1,881 @@
+{
+	"description": "Erste öffentliche Version der Dinoco-Dokumentation.",
+	"groups": [
+		{
+			"icon": "database",
+			"name": "Dinoco ORM",
+			"shortName": "orm",
+			"sections": [
+				{
+					"title": "Erste Schritte",
+					"items": [
+						{
+							"shortName": "introduction-dinoco",
+							"name": "Einführung in Dinoco",
+							"mdxPath": "v0.0.1/de-de/orm/introduction-to-dinoco.mdx",
+							"inPage": [
+								"Einführung in Dinoco",
+								{
+									"title": "Das Prisma-Erlebnis in Rust",
+									"items": []
+								},
+								{
+									"title": "Säulen des Projekts",
+									"items": []
+								},
+								{
+									"title": "Wo positionieren wir uns?",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "first-steps",
+							"name": "Erste Schritte",
+							"mdxPath": "v0.0.1/de-de/orm/first-steps.mdx",
+							"inPage": [
+								"Erste Schritte",
+								{
+									"title": "Wie funktioniert es?",
+									"items": [
+										"1. Definieren Sie Ihr Schema und Ihre Verbindung",
+										"2. Erstellen Sie die Migration",
+										"3. Abfrage mit DinocoClient"
+									]
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "supported-databases",
+							"name": "Übersicht",
+							"mdxPath": "v0.0.1/de-de/orm/supported-databases.mdx",
+							"inPage": [
+								"Übersicht",
+								{
+									"title": "Unterstützte Versionen",
+									"items": []
+								},
+								{
+									"title": "Verbindungskonfiguration",
+									"items": [
+										"SQLite"
+									]
+								},
+								{
+									"title": "PostgreSQL oder MySQL",
+									"items": []
+								},
+								{
+									"title": "Typzuordnung",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco Schema",
+					"items": [
+						{
+							"shortName": "models",
+							"name": "Modelle",
+							"mdxPath": "v0.0.1/de-de/orm/models.mdx",
+							"inPage": [
+								"Modelle",
+								{
+									"title": "Was ein Modell repräsentiert",
+									"items": []
+								},
+								{
+									"title": "Vollständiges Beispiel",
+									"items": []
+								},
+								{
+									"title": "Struktur eines Feldes",
+									"items": []
+								},
+								{
+									"title": "Feldtypen",
+									"items": [
+										"Skalare Felder"
+									]
+								},
+								{
+									"title": "Typmodifikatoren",
+									"items": [
+										"Optionales Feld",
+										"Listenfeld"
+									]
+								},
+								{
+									"title": "Häufigste Attribute",
+									"items": [
+										"`@id`",
+										"`@default(...)`",
+										"`@unique`"
+									]
+								},
+								{
+									"title": "Model-Decorators",
+									"items": [
+										"`@@ids([...])`",
+										"`@@table_name(\"...\")`"
+									]
+								},
+								{
+									"title": "Beispiel eines Benutzermodells",
+									"items": []
+								},
+								{
+									"title": "Beispiel für die Suche nach Benutzern mit der Dinoco-API",
+									"items": [
+										"Einzelnen Datensatz suchen",
+										"Mehrere Datensätze suchen"
+									]
+								},
+								{
+									"title": "Beispiel für die Benutzererstellung mit der Dinoco-API",
+									"items": []
+								},
+								{
+									"title": "Beispiel für die Benutzeraktualisierung mit der Dinoco-API",
+									"items": []
+								},
+								{
+									"title": "Beispiel für die Benutzerlöschung mit der Dinoco-API",
+									"items": []
+								},
+								{
+									"title": "Kurze Zusammenfassung",
+									"items": []
+								},
+								{
+									"title": "Wann ein neues Modell erstellt werden sollte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "enums",
+							"name": "Enums",
+							"mdxPath": "v0.0.1/de-de/orm/enums.mdx",
+							"inPage": [
+								"Enums",
+								{
+									"title": "Was ist ein Enum",
+									"items": []
+								},
+								{
+									"title": "Verwendung in Models",
+									"items": []
+								},
+								{
+									"title": "Wann Enums verwendet werden sollten",
+									"items": []
+								},
+								{
+									"title": "Best Practices",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "relations",
+							"name": "Beziehungen",
+							"mdxPath": "v0.0.1/de-de/orm/relations.mdx",
+							"inPage": [
+								"Beziehungen",
+								{
+									"title": "@relation(...)",
+									"items": []
+								},
+								{
+									"title": "onDelete und onUpdate",
+									"items": []
+								},
+								{
+									"title": "One to many",
+									"items": []
+								},
+								{
+									"title": "Many to many",
+									"items": []
+								},
+								{
+									"title": "Self relation",
+									"items": []
+								},
+								{
+									"title": "Praktische Tipps",
+									"items": []
+								},
+								{
+									"title": "Referenzschema für die Beispiele",
+									"items": []
+								},
+								{
+									"title": "Beispiel für eine Abfrage mit allen möglichen Beziehungen von User",
+									"items": []
+								},
+								{
+									"title": "Beispiel für ein Insert mit Beziehung unter Verwendung von User und Profile",
+									"items": []
+								},
+								{
+									"title": "Beispiel für insert_many mit with_relations(...)",
+									"items": []
+								},
+								{
+									"title": "Beispiel für insert_many mit with_connections(...)",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco Client",
+					"items": [
+						{
+							"shortName": "find-many",
+							"name": "find_many",
+							"mdxPath": "v0.0.1/de-de/orm/find-many.mdx",
+							"inPage": [
+								"find_many",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Beschreibung der Methoden",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Grundlegendes Beispiel",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Filter",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Paginierung und Sortierung",
+									"items": []
+								},
+								{
+									"title": "Beispiel für benutzerdefinierten Select",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit einfachem Include",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit gefiltertem Include",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit verschachteltem Include",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Beziehungszähler",
+									"items": []
+								},
+								{
+									"title": "Beispiel für das Lesen aus der primären Datenbank",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-first",
+							"name": "find_first",
+							"mdxPath": "v0.0.1/de-de/orm/find-first.mdx",
+							"inPage": [
+								"find_first",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Beschreibung der Methoden",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Grundlegendes Beispiel",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit select",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Beziehung",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Sortierung",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-and-update",
+							"name": "find_and_update",
+							"mdxPath": "v0.0.1/de-de/orm/find-and-update.mdx",
+							"inPage": [
+								"find_and_update",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Beschreibung der Methoden",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Grundlegendes Beispiel",
+									"items": []
+								},
+								{
+									"title": "Verfügbare Operationen in `ModelUpdate`",
+									"items": []
+								},
+								{
+									"title": "Anmerkungen",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-into",
+							"name": "insert_into",
+							"mdxPath": "v0.0.1/de-de/orm/insert-into.mdx",
+							"inPage": [
+								"insert_into",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Beschreibung der Methoden",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Einfaches Beispiel",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Beziehung",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Verbindung",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit typisierter Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-many",
+							"name": "insert_many",
+							"mdxPath": "v0.0.1/de-de/orm/insert-many.mdx",
+							"inPage": [
+								"insert_many",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Rückgabewert",
+									"items": []
+								},
+								{
+									"title": "Einfaches Beispiel",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Rückgabewert",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit with_relation(...)",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit with_relations(...)",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit with_connection(...)",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit with_connections(...)",
+									"items": []
+								},
+								{
+									"title": "Anmerkungen",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update",
+							"name": "update",
+							"mdxPath": "v0.0.1/de-de/orm/update.mdx",
+							"inPage": [
+								"update",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Beispiel für das Aktualisieren von Feldern",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit connect(...)",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit disconnect(...)",
+									"items": []
+								},
+								{
+									"title": "Verfügbare Filter in connect und disconnect",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update-many",
+							"name": "update_many",
+							"mdxPath": "v0.0.1/de-de/orm/update-many.mdx",
+							"inPage": [
+								"update_many",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Grundlegendes Beispiel",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Filter",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete",
+							"name": "delete",
+							"mdxPath": "v0.0.1/de-de/orm/delete.mdx",
+							"inPage": [
+								"delete",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Grundlegendes Beispiel",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit einem anderen Filter",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete-many",
+							"name": "delete_many",
+							"mdxPath": "v0.0.1/de-de/orm/delete-many.mdx",
+							"inPage": [
+								"delete_many",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Grundlegendes Beispiel",
+									"items": []
+								},
+								{
+									"title": "Beispiel ohne Filter",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "count",
+							"name": "count",
+							"mdxPath": "v0.0.1/de-de/orm/count.mdx",
+							"inPage": [
+								"count",
+								{
+									"title": "Was Sie tun können",
+									"items": []
+								},
+								{
+									"title": "Beschreibung der Methoden",
+									"items": []
+								},
+								{
+									"title": "Rückgabe",
+									"items": []
+								},
+								{
+									"title": "Grundlegendes Beispiel",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit booleschem Filter",
+									"items": []
+								},
+								{
+									"title": "Beispiel mit Textfilter",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "terminal",
+			"name": "Dinoco CLI",
+			"shortName": "cli",
+			"sections": [
+				{
+					"title": "Installation",
+					"items": [
+						{
+							"shortName": "install",
+							"name": "Installation",
+							"mdxPath": "v0.0.1/de-de/cli/install.mdx",
+							"inPage": [
+								"Installation",
+								{
+									"title": "Installation",
+									"items": []
+								},
+								{
+									"title": "Konfiguration",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Befehle",
+					"items": [
+						{
+							"shortName": "init",
+							"name": "Init",
+							"mdxPath": "v0.0.1/de-de/cli/init.mdx",
+							"inPage": [
+								"Wie wird es verwendet?",
+								{
+									"title": "Was der Befehl tut",
+									"items": []
+								},
+								{
+									"title": "Wann zu verwenden",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "database-reset",
+							"name": "Database reset",
+							"mdxPath": "v0.0.1/de-de/cli/database-reset.mdx",
+							"inPage": [
+								"Wie verwende ich es?",
+								{
+									"title": "Was der Befehl tut",
+									"items": []
+								},
+								{
+									"title": "Vorsichtsmaßnahmen",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-generate",
+							"name": "Migrate generate",
+							"mdxPath": "v0.0.1/de-de/cli/migrate-generate.mdx",
+							"inPage": [
+								"Wie benutzt man es?",
+								{
+									"title": "Was der Befehl tut",
+									"items": []
+								},
+								{
+									"title": "Parameter",
+									"items": [
+										"--apply"
+									]
+								},
+								{
+									"title": "Anwendungsbeispiel ohne Anwendung",
+									"items": []
+								},
+								{
+									"title": "Anwendungsbeispiel mit sofortiger Anwendung",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-run",
+							"name": "Migrate run",
+							"mdxPath": "v0.0.1/de-de/cli/migrate-run.mdx",
+							"inPage": [
+								"Wie wird es verwendet?",
+								{
+									"title": "Was der Befehl tut",
+									"items": []
+								},
+								{
+									"title": "Wann zu verwenden",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-rollback",
+							"name": "Migrate rollback",
+							"mdxPath": "v0.0.1/de-de/cli/migrate-rollback.mdx",
+							"inPage": [
+								"Wie benutzt man?",
+								{
+									"title": "Was der Befehl tut",
+									"items": []
+								},
+								{
+									"title": "Parameter",
+									"items": []
+								},
+								{
+									"title": "Anwendungsbeispiel",
+									"items": []
+								},
+								{
+									"title": "Wann verwenden",
+									"items": []
+								},
+								{
+									"title": "Vorsichtsmaßnahmen",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models-generate",
+							"name": "Models generate",
+							"mdxPath": "v0.0.1/de-de/cli/models-generate.mdx",
+							"inPage": [
+								"Wie benutzt man es?",
+								{
+									"title": "Was der Befehl tut",
+									"items": []
+								},
+								{
+									"title": "Wann zu verwenden",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "schema-restore",
+							"name": "Schema restore",
+							"mdxPath": "v0.0.1/de-de/cli/schema-restore.mdx",
+							"inPage": [
+								"Wie verwenden?",
+								{
+									"title": "Was der Befehl macht",
+									"items": []
+								},
+								{
+									"title": "Beispiel für die Wiederherstellung aus einer spezifischen Migration",
+									"items": []
+								},
+								{
+									"title": "Wann verwenden",
+									"items": []
+								},
+								{
+									"title": "Nächste Schritte",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "rocket",
+			"name": "Dinoco Supersonic",
+			"shortName": "supersonic",
+			"sections": [
+				{
+					"title": "Einführung",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "Einführung",
+							"mdxPath": "v0.0.1/de-de/supersonic/introduction.mdx",
+							"inPage": [
+								"Einführung"
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "box",
+			"name": "DinocoDB",
+			"shortName": "dinocodb",
+			"sections": [
+				{
+					"title": "Einführung",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "Einführung",
+							"mdxPath": "v0.0.1/de-de/dinocodb/introduction.mdx",
+							"inPage": [
+								"Einführung"
+							]
+						}
+					]
+				}
+			]
+		}
+	],
+	"locale": "de-de",
+	"name": "v0.0.1"
+}

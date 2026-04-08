@@ -129,10 +129,7 @@ pub struct Eq<C: Column> {
 
 impl<C: Column> Col<C> {
     pub fn eq(self, value: C::Type) -> Eq<C> {
-        Eq {
-            value,
-            _marker: PhantomData,
-        }
+        Eq { value, _marker: PhantomData }
     }
 }
 
@@ -145,11 +142,7 @@ pub struct QueryBuilder<Model, S> {
 }
 
 pub fn find_many<T>() -> QueryBuilder<T, ()> {
-    QueryBuilder {
-        _marker: PhantomData,
-        where_sql: None,
-        bindings: vec![],
-    }
+    QueryBuilder { _marker: PhantomData, where_sql: None, bindings: vec![] }
 }
 
 impl<Model, S> QueryBuilder<Model, S> {
@@ -160,11 +153,7 @@ impl<Model, S> QueryBuilder<Model, S> {
     {
         let _ = f(UserFields);
 
-        QueryBuilder {
-            _marker: PhantomData,
-            where_sql: self.where_sql,
-            bindings: self.bindings,
-        }
+        QueryBuilder { _marker: PhantomData, where_sql: self.where_sql, bindings: self.bindings }
     }
 }
 
@@ -200,17 +189,11 @@ where
         println!("Bindings: {:?}", self.bindings);
 
         // ---------------- MOCK DB ----------------
-        let fake_rows = vec![
-            (1, "Matheus".to_string()),
-            (2, "João".to_string()),
-        ];
+        let fake_rows = vec![(1, "Matheus".to_string()), (2, "João".to_string())];
 
         // ---------------- MAPEAMENTO ----------------
         if std::any::TypeId::of::<S::Output>() == std::any::TypeId::of::<User>() {
-            let mapped: Vec<User> = fake_rows
-                .into_iter()
-                .map(|(id, name)| User { id, name })
-                .collect();
+            let mapped: Vec<User> = fake_rows.into_iter().map(|(id, name)| User { id, name }).collect();
 
             return unsafe { std::mem::transmute(mapped) };
         }
@@ -224,10 +207,7 @@ where
 
 async fn main_example() {
     // 1. SEM SELECT
-    let users: Vec<User> = find_many::<User>()
-        .where_(UserFields::id.eq(1))
-        .execute()
-        .await;
+    let users: Vec<User> = find_many::<User>().where_(UserFields::id.eq(1)).execute().await;
 
     println!("Sem select: {:?}", users);
 

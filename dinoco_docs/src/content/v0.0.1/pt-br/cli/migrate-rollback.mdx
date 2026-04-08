@@ -1,0 +1,48 @@
+export const title = "Migrate rollback";
+
+# Como usar?
+
+O comando `dinoco migrate rollback` reverte a última migração aplicada.
+
+É útil quando você precisa desfazer a alteração mais recente no banco de dados.
+
+---
+
+## O que o comando faz
+
+Ao executar este comando, a CLI tenta:
+
+- Identificar a última migração aplicada
+- Reverter essa migração
+- Atualizar o histórico de migrações do banco de dados
+
+## Parâmetros
+
+[NOME]: Nome da migração (para reverter para uma específica) (Opcional)
+
+## Exemplo de uso
+
+```bash
+dinoco migrate rollback
+```
+
+## Quando usar
+
+Use este comando quando:
+
+- A última migração precisar ser revertida
+- Você detectou um problema recente no esquema
+- Você estiver ajustando o fluxo de evolução do banco de dados em desenvolvimento
+
+## Precauções
+
+- Nem toda alteração estrutural é trivial para reverter sem impacto.
+- Revise o efeito da migração antes de realizar um rollback em ambientes importantes.
+
+## Próximos passos
+
+Após ajustar o esquema, você pode gerar uma nova migração:
+
+```bash
+dinoco migrate generate
+```

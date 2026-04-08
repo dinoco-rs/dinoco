@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { getDefaultVersionName } from '../jsons/versions';
 
-export type DocsLocale = 'pt';
+export type DocsLocale = 'pt-br' | 'en-us' | 'ru-ru' | 'ja-jp' | 'ko-kr' | 'de-de' | 'it-it' | 'zh-cn' | 'fr-fr';
 export type DocsTheme = 'light' | 'dark';
 export type DocsConsumer = string;
 
@@ -26,18 +26,31 @@ export function getSystemTheme(): DocsTheme {
 	return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+export function getLocale(): DocsLocale {
+	if (typeof window == 'undefined') return 'en-us';
+
+	const persistedTheme = localStorage.getItem('locale') as DocsLocale | undefined;
+	if (persistedTheme) return persistedTheme;
+
+	return 'en-us';
+}
+
 export const useDocs = create<DocsState>()(set => ({
 	consumer: 'cli',
-	locale: 'pt',
+	locale: getLocale(),
 	theme: getSystemTheme(),
 	version: getDefaultVersionName(),
 	setConsumer: consumer => set({ consumer }),
-	setLocale: locale => set({ locale }),
+	setLocale: locale => {
+		document.documentElement.lang = locale;
+		localStorage.setItem('locale', locale);
+
+		set({ locale });
+	},
 	setTheme: theme => {
 		localStorage.setItem('theme', theme);
 
 		document.documentElement.classList.toggle('dark', theme === 'dark');
-		document.documentElement.lang = 'pt-BR';
 
 		set({ theme });
 	},

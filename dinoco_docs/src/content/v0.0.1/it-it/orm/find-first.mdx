@@ -1,0 +1,106 @@
+export const title = "find_first";
+
+# find_first
+
+Viene utilizzato per recuperare al massimo un record.
+
+---
+
+## Cosa puoi fare
+
+Fornisce gli stessi metodi di `find_many`:
+
+- `select`
+- `cond`
+- `take`
+- `skip`
+- `order_by`
+- `includes`
+- `count`
+- `read_in_primary`
+- `execute`
+
+## Descrizione dei metodi
+
+- `.select::<T>()`: sostituisce la proiezione predefinita con una proiezione personalizzata.
+- `.cond(...)`: aggiunge filtri alla query.
+- `.take(...)`: limita il numero massimo di record considerati.
+- `.skip(...)`: salta i record prima che venga selezionato il primo risultato.
+- `.order_by(...)`: definisce quale record deve essere considerato per primo.
+- `.includes(...)`: carica le relazioni insieme all'oggetto principale.
+- `.count(...)`: calcola i contatori per le relazioni nella proiezione.
+- `.read_in_primary()`: forza la lettura dal database primario.
+- `.execute(&client)`: esegue la query e restituisce al massimo un elemento.
+
+## Ritorno
+
+Senza `select::<T>()` il ritorno è:
+
+```rust
+DinocoResult<Option<M>>
+```
+
+Con `select::<T>()` il ritorno cambia in:
+
+```rust
+DinocoResult<Option<T>>
+```
+
+## Esempio base
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con select
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserSummary>()
+    .cond(|w| w.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con relazione
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserWithPosts>()
+    .cond(|x| x.id.eq(1_i64))
+    .includes(|x| x.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con ordinamento
+
+```rust
+let latest_user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .execute(&client)
+    .await?;
+```
+
+## Passi successivi
+
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): cerca più record.
+- [**`count::<M>()`**](/v0.0.1/orm/count): conteggio dei record.

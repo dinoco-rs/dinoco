@@ -1,0 +1,71 @@
+export const title = "update_many";
+
+# update_many
+
+複数のレコードを一度に更新するために使用されます。
+
+---
+
+## できること
+
+- `.cond(...)`: 更新できるレコードを制限します。
+- `.values(Vec<M>)`: バッチ更新で使用される要素を定義します。
+- `.returning::<T>()`: 更新されたレコードを型付きリストとして返します。
+- `.execute(&client)`: バッチ更新を実行します。
+
+## 戻り値
+
+`.returning::<T>()`がない場合、戻り値は次のようになります。
+
+```rust
+DinocoResult<()>
+```
+
+`.returning::<T>()`がある場合、戻り値は次のようになります。
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## 基本例
+
+```rust
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 1, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 2, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+<h2>戻り値の例</h2>
+
+```rust
+let updated = dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana Batch".to_string() },
+        User { id: 3, name: "Caio Batch".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+<h2>フィルターの例</h2>
+
+```rust
+dinoco::update_many::<User>()
+    .cond(|x| x.active.eq(true))
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## 次のステップ
+
+- [**`update::<M>()`**](/v0.0.1/orm/update): 条件付きの伝統的な更新。
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 単一レコードのアトミックな更新。

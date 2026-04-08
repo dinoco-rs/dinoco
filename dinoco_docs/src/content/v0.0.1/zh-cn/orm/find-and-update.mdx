@@ -1,0 +1,57 @@
+export const title = "find_and_update";
+
+# find_and_update
+
+用于查找单个记录，在数据库中应用原子更新，并返回更新后的项。
+
+---
+
+## 你可以做什么
+
+- `.cond(...)`
+- `.update(...)`
+- `.execute(&client)`
+
+## 方法说明
+
+- `.cond(...)`: 定义要查找的记录。
+- `.update(...)`: 对模型的一个字段应用原子操作。
+- `.execute(&client)`: 执行更新并返回更新后的记录。
+
+## 返回值
+
+`find_and_update` 的返回值为：
+
+```rust
+DinocoResult<M>
+```
+
+## 基础示例
+
+```rust
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .execute(&client)
+    .await?;
+```
+
+## `ModelUpdate` 中可用的操作
+
+- `set(value)`
+- `increment(value)`
+- `decrement(value)`
+- `multiply(value)`
+- `division(value)`
+
+## 说明
+
+- 更新在单个 `UPDATE` 语句中执行。
+- 如果没有行符合条件，将返回 `DinocoError::RecordNotFound`。
+- 更新 DSL 不会暴露关系。
+- 目前，该工作流支持简单的主键来查找并返回更新后的记录。
+
+## 下一步
+
+- [**`update::<M>()`**](/v0.0.1/orm/update): 传统更新。
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): 批量更新。

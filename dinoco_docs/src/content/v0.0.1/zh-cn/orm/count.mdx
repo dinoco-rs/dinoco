@@ -1,0 +1,56 @@
+export const title = "count";
+
+# count
+
+用于计数记录。
+
+---
+
+## 你可以做什么
+
+- 使用 `.cond(...)` 进行筛选
+- 使用 `.execute(&client)` 执行
+
+## 方法说明
+
+- `.cond(...)`: 限制哪些记录包含在计数中。
+- `.execute(&client)`: 在数据库中执行计数。
+
+## 返回值
+
+`count` 的返回值是：
+
+```rust
+DinocoResult<usize>
+```
+
+## 基础示例
+
+```rust
+let total = dinoco::count::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## 布尔过滤器示例
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.active.eq(true))
+    .execute(&client)
+    .await?;
+```
+
+## 文本过滤器示例
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.name.includes("Ana"))
+    .execute(&client)
+    .await?;
+```
+
+## 下一步
+
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 获取列表中的记录。
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 获取单个记录。

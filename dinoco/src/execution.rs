@@ -2,8 +2,7 @@ use std::future::Future;
 
 use dinoco_engine::{
     AdapterDialect, DeleteStatement, DinocoAdapter, DinocoClient, DinocoError, DinocoGenericRow, DinocoResult,
-    DinocoRow,
-    InsertStatement, QueryBuilder, SelectStatement, UpdateStatement,
+    DinocoRow, InsertStatement, QueryBuilder, SelectStatement, UpdateStatement,
 };
 
 use crate::{
@@ -167,7 +166,10 @@ where
     }
 }
 
-async fn execute_insert_result<M, A>(items: Vec<M>, client: &DinocoClient<A>) -> DinocoResult<dinoco_engine::ExecutionResult>
+async fn execute_insert_result<M, A>(
+    items: Vec<M>,
+    client: &DinocoClient<A>,
+) -> DinocoResult<dinoco_engine::ExecutionResult>
 where
     M: InsertModel,
     A: DinocoAdapter,

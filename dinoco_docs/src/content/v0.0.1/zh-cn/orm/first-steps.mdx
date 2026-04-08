@@ -1,0 +1,130 @@
+export const title = "第一步";
+
+# 第一步
+
+要开始使用 Dinoco，您需要安装我们的 CLI，以便管理迁移和其他系统！
+
+```bash
+cargo install dinoco-cli
+```
+
+要创建 Dinoco 环境，请运行以下命令：
+
+```bash
+dinoco init
+```
+
+选择数据库和所有必要的配置后，`dinoco` 文件夹将在您的项目根目录中创建。
+
+此文件夹包含：
+
+- **迁移 (Migrations)**：您的数据库的更改历史记录。
+- **模式 (Schema)**：您数据结构的中心定义。
+- **模型 (Models)**：用于 Rust 代码中的类型化表示。
+
+## 它是如何工作的？
+
+### 1. 定义您的模式和连接
+
+Dinoco 模式定义了您的模型和数据库配置的内容。
+
+```dinoco
+config {
+	database = "postgresql"
+	database_url = env("DATABASE_URL")
+}
+
+model User {
+	id    Integer     @id @default(autoincrement())
+	email String  @unique
+	name  String?
+
+	posts Post[]
+}
+
+model Post {
+	id        Integer     @id @default(autoincrement())
+	title     String
+	published Boolean @default(false)
+
+	author    User?   @relation(fields: [authorId], references: [id])
+	authorId  Integer?
+}
+```
+
+### 2. 创建迁移
+
+当您使用 `--apply` 生成迁移时，它将应用于数据库，并且模型将自动生成！
+
+```bash
+dinoco migrate generate --apply
+```
+
+### 3. 使用 DinocoClient 查询
+
+```rust
+use dinoco::{DinocoClientConfig, DinocoQueryLogger, DinocoQueryLoggerOptions, Extend, find_many, insert_into};
+
+#[path = "../dinoco/mod.rs"]
+mod database;
+
+use database::models::*;
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserWithRelation {
+    id: i64,
+    email: String,
+    posts: Vec<PostSimple>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+struct PostSimple {
+    title: String,
+    published: bool,
+}
+
+#[tokio::main]
+async fn main() -> dinoco::DinocoResult<()> {
+    let _ = dotenvy::dotenv();
+
+    let config = DinocoClientConfig::default()
+        .with_snowflake_node_id(7)
+        .with_query_logger(DinocoQueryLogger::stdout(DinocoQueryLoggerOptions::verbose()));
+
+    let client = database::create_connection(config).await?;
+
+    // Insira um usuário com um post relacionado.
+    insert_into::<User>()
+        .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
+        .with_relation(Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None })
+        .execute(&client)
+        .await?;
+
+    // Busque todos os usuários com suas postagens.
+    let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
+
+    println!("{users:#?}");
+
+    // resultado:
+    // [
+    // 	UserWithRelation {
+    // 		email: "bia@dinoco.rs",
+    // 		posts: [
+    // 			Post {
+    // 				title: "Meu primeiro post",
+    // 				published: true,
+    // 			},
+    // 		],
+    // 	},
+    // ]
+
+    Ok(())
+}
+```
+
+## 下一步
+
+- [**Dinoco 模式 (Dinoco Schema)**](/v0.0.1/orm/introduction-dinoco)：更好地理解 Dinoco 的结构和概念。
+- [**Dinoco 客户端 (Dinoco Client)**](/v0.0.1/orm/first-steps)：查看此完整的客户端工作流程。

@@ -1,0 +1,93 @@
+export const title = "update";
+
+# update
+
+Используется для обновления отфильтрованных записей.
+
+---
+
+## Что можно сделать
+
+- `.cond(...)`: определяет, какие записи должны быть обновлены.
+- `.values(item)`: указывает новые значения записи.
+- `.connect(...)`: создает поддерживаемые связи для операций записи.
+- `.disconnect(...)`: удаляет поддерживаемые связи для операций записи.
+- `.returning::<T>()`: возвращает обновленные записи в типизированной проекции.
+- `.execute(&client)`: выполняет обновление в базе данных.
+
+## Возвращаемое значение
+
+Без `.returning::<T>()` возвращается:
+
+```rust
+DinocoResult<()>
+```
+
+С `.returning::<T>()` возвращается:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+Примечание:
+
+- `update().returning()` не поддерживает реляционные операции записи с `.connect(...)` или `.disconnect(...)`.
+
+## Пример обновления полей
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "Novo Nome".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Пример с `connect(...)`
+
+Используется для соединения поддерживаемых отношений записи, обычно "многие ко многим".
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .connect(|r| r.roles().slug.eq("admin"))
+    .execute(&client)
+    .await?;
+```
+
+## Пример с `disconnect(...)`
+
+Используется для разрыва отношений.
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .disconnect(|r| r.roles().slug.eq("guest"))
+    .execute(&client)
+    .await?;
+```
+
+## Доступные фильтры в connect и disconnect
+
+- `eq`
+- `neq`
+- `gt`
+- `gte`
+- `lt`
+- `lte`
+- `in_values`
+- `not_in_values`
+- `is_null`
+- `is_not_null`
+- `includes`
+- `starts_with`
+- `ends_with`
+
+## Следующие шаги
+
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): Пакетное обновление.
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): Атомарное обновление с возвратом.

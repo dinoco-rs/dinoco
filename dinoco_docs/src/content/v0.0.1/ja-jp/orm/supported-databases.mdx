@@ -1,0 +1,59 @@
+export const title = "概要";
+
+# 概要
+
+**Dinoco** は **PostgreSQL**、**MySQL**、**SQLite** をネイティブにサポートします。
+現在、このサポートを近いうちに他のデータベースにも広げられるよう取り組んでいます。
+
+> ⚠️
+> 現在、Dinocoは**直接接続URL**のみをサポートしています。
+
+---
+
+## 対応バージョン
+
+| データベース | 最低バージョン |
+| :------------- | :------------ |
+| **SQLite**     | `>= 3.25`     |
+| **PostgreSQL** | `>= 10`       |
+| **MySQL**      | `>= 8.0`      |
+
+---
+
+## 接続設定
+
+設定は schema ファイル内の `config` ブロックで行います。
+
+### SQLite
+
+SQLite を使う場合、データベースファイルは `dinoco` フォルダ内に自動生成されます。
+
+```dinoco
+config {
+  database = "sqlite"
+  database_url = "file:./database.sqlite" # env("DATABASE_URL")
+}
+```
+
+## PostgreSQL または MySQL
+
+外部データベースでは、対応する接続文字列を指定します:
+
+```dinoco
+config {
+  database = "postgresql" # または "mysql"
+  database_url = env("DATABASE_URL")
+}
+```
+
+## 型マッピング
+
+| Dinoco       | Sqlite   | PostgreSQL       | MySQL            |
+| :----------- | :------- | :--------------- | :--------------- |
+| **String**   | TEXT     | TEXT             | VARCHAR(255)     |
+| **Boolean**  | BOOLEAN  | BOOLEAN          | TINYINT(1)       |
+| **Integer**  | INTEGER  | BIGINT           | BIGINT           |
+| **Float**    | REAL     | DOUBLE PRECISION | DOUBLE PRECISION |
+| **DateTime** | DATETIME | TIMESTAMP        | TIMESTAMP        |
+| **Date**     | DATE     | DATE             | DATE             |
+| **Json**     | BLOB     | JSONB            | JSON             |
