@@ -1,12 +1,15 @@
 [workspace]
 members = [
-    "dinoco",
-    "dinoco_cli",
-    "dinoco_codegen",
-    "dinoco_compiler",
-    "dinoco_derives",
-    "dinoco_engine",
-    "dinoco_formatter",
-    "dinoco_tests",
+	"dinoco",
+	"dinoco_cli",
+	"dinoco_codegen",
+	"dinoco_compiler",
+	"dinoco_derives",
+	"dinoco_engine",
+	"dinoco_formatter",
+	"dinoco_tests",
+	"dinoco_vscode",
 ]
 resolver = "2"
+
+exclude = ["dinoco_docs", "dinoco_vscode"]

@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'tuono-router';
 
+import DocsContentNavigation from './DocsContentNavigation';
 import DocsSidebar from './DocsSidebar';
 import Header from './Header';
 import MarkdownContent from './MarkdownContent';
+import OutdatedVersionNotice from './OutdatedVersionNotice';
 import { useIntl } from '../hooks/useIntl';
-import { parseDocsPath, resolveDocsPath } from '../jsons/versions';
+import { getAdjacentDocsItems, getLatestVersionName, getLatestVersionPath, isLatestVersion, parseDocsPath, resolveDocsPath } from '../jsons/versions';
 import { type DocsConsumer, useDocs } from '../hooks/useDocs';
 
 function toAnchorId(value: string): string {
@@ -14,7 +16,6 @@ function toAnchorId(value: string): string {
 
 const DocsPage: React.FC = () => {
 	const locale = useDocs(state => state.locale);
-	const theme = useDocs(state => state.theme);
 
 	const setConsumer = useDocs(state => state.setConsumer);
 	const setVersion = useDocs(state => state.setVersion);
@@ -33,6 +34,34 @@ const DocsPage: React.FC = () => {
 			locale,
 		});
 	}, [locale, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName, routeParams.versionName]);
+	const navigation = useMemo(() => {
+		if (resolved === undefined) {
+			return {};
+		}
+
+		return getAdjacentDocsItems({
+			versionName: resolved.version.name,
+			groupShortName: resolved.group.shortName,
+			sections: resolved.sections,
+			currentItemShortName: resolved.item.shortName,
+		});
+	}, [resolved]);
+	const outdatedNotice = useMemo(() => {
+		if (resolved === undefined || isLatestVersion(resolved.version.name)) {
+			return undefined;
+		}
+
+		return {
+			currentVersionName: resolved.version.name,
+			latestVersionName: getLatestVersionName(),
+			latestPath: getLatestVersionPath({
+				groupShortName: routeParams.groupShortName,
+				itemShortName: routeParams.itemShortName,
+				subItemShortName: routeParams.subItemShortName,
+				locale,
+			}),
+		};
+	}, [locale, resolved, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName]);
 
 	useEffect(() => {
 		if (resolved === undefined) {
@@ -58,22 +87,6 @@ const DocsPage: React.FC = () => {
 			document.body.style.overflow = 'unset';
 		};
 	}, [isSidebarOpen]);
-
-	useEffect(() => {
-		let link = document.getElementById('hljs-theme') as HTMLLinkElement;
-
-		if (!link) {
-			link = document.createElement('link');
-			link.id = 'hljs-theme';
-			link.rel = 'stylesheet';
-			document.head.appendChild(link);
-		}
-
-		link.href =
-			theme === 'dark'
-				? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
-				: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
-	}, [theme]);
 
 	if (resolved === undefined) {
 		return null;
@@ -104,9 +117,15 @@ const DocsPage: React.FC = () => {
 						<span className="text-slate-900 dark:text-slate-200">{resolved.item.name}</span>
 					</div>
 
+					{outdatedNotice && (
+						<OutdatedVersionNotice currentVersionName={outdatedNotice.currentVersionName} latestVersionName={outdatedNotice.latestVersionName} latestPath={outdatedNotice.latestPath} />
+					)}
+
 					<article className="prose prose-slate max-w-none dark:prose-invert">
 						<MarkdownContent component={resolved.item.component} />
 					</article>
+
+					<DocsContentNavigation previous={navigation.previous} next={navigation.next} />
 				</main>
 
 				<aside className="hidden w-64 shrink-0 pt-8 pb-24 xl:block">

@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { DocsGroup, DocsItem, DocsLocale, DocsSection } from '../jsons/versions';
+import type { DocsGroup, DocsItem, DocsLocale, DocsNavigationItem, DocsSection } from '../jsons/versions';
 
 export type DocsSidebarProps = {
 	currentGroup: DocsGroup;
@@ -38,12 +38,11 @@ export type MdxCodeProps = React.HTMLAttributes<HTMLElement> & {
 	className?: string;
 };
 
-export type CodeBlockProps = {
-	children: React.ReactNode;
-	code: string;
-	language: string;
-};
-
 export type HeaderProps = {
 	onMenuToggle: () => void;
+};
+
+export type DocsContentNavigationProps = {
+	next?: DocsNavigationItem;
+	previous?: DocsNavigationItem;
 };

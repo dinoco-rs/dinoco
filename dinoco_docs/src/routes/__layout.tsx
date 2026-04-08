@@ -2,8 +2,6 @@ import { useEffect, type JSX } from 'react';
 import { TuonoScripts } from 'tuono';
 import type { TuonoLayoutProps } from 'tuono';
 
-// import 'highlight.js/styles/base16/dracula.css';
-
 import '../styles/global.css';
 import { getSystemTheme, useDocs } from '../hooks/useDocs';
 
@@ -11,10 +9,8 @@ export default function RootLayout({ children }: TuonoLayoutProps): JSX.Element 
 	const setTheme = useDocs(state => state.setTheme);
 
 	useEffect(() => {
-		console.log(getSystemTheme());
-
 		setTheme(getSystemTheme());
-	}, []);
+	}, [setTheme]);
 
 	return (
 		<html lang="pt-BR" className="font-montserrat" suppressHydrationWarning>

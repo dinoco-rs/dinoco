@@ -1,28 +1,38 @@
 import type { TuonoConfig } from 'tuono/config';
-
 import mdx from '@mdx-js/rollup';
-import { common } from 'lowlight';
-import rehypeHighlight from 'rehype-highlight';
-
+import rehypeShiki from '@shikijs/rehype';
 import tailwindcss from '@tailwindcss/vite';
-
-import dinocoHighlight from './src/jsons/dinocoHighlight';
+import dinocoGrammar from './src/jsons/dinoco.tmLanguage.json';
 
 const config: TuonoConfig = {
 	vite: {
 		plugins: [
 			mdx({
+				providerImportSource: '@mdx-js/react',
 				rehypePlugins: [
 					[
-						rehypeHighlight,
+						rehypeShiki,
 						{
-							languages: {
-								...common,
-								dinoco: dinocoHighlight,
+							themes: {
+								light: 'github-light',
+								dark: 'github-dark',
 							},
-							aliases: {
-								dinoco: ['dinoco'],
-							},
+							langs: [
+								'bash',
+								'shellscript',
+								'rust',
+								'sql',
+								'toml',
+
+								{
+									...dinocoGrammar,
+									name: 'dinoco',
+									displayName: 'Dinoco',
+								},
+							],
+							defaultLanguage: 'txt',
+							fallbackLanguage: 'txt',
+							addLanguageClass: true,
 						},
 					],
 				],

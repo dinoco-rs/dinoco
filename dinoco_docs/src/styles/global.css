@@ -27,12 +27,47 @@
 	}
 }
 
-@layer components {
-	.dinoco-code-block .hljs {
-		@apply m-0 block overflow-x-auto bg-[#282a36] p-0 text-sm leading-7;
+html.dark .shiki,
+html.dark .shiki span {
+	color: var(--shiki-dark) !important;
+	background-color: var(--shiki-dark-bg) !important;
+	font-style: var(--shiki-dark-font-style) !important;
+	font-weight: var(--shiki-dark-font-weight) !important;
+	text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* @layer components {
+	.dinoco-code-block .shiki {
+		@apply m-0 block min-w-full overflow-x-auto px-4 py-4 text-sm leading-7;
+		background-color: var(--shiki-light-bg, #ffffff) !important;
+		color: var(--shiki-light, #1f2328) !important;
 	}
 
-	.dinoco-code-block .hljs-subst {
-		color: inherit;
+	.dinoco-code-block .shiki code {
+		@apply block min-w-full;
+		background: transparent !important;
 	}
-}
+
+	.dinoco-code-block .shiki span {
+		color: var(--shiki-light) !important;
+		font-style: var(--shiki-light-font-style) !important;
+		font-weight: var(--shiki-light-font-weight) !important;
+		text-decoration: var(--shiki-light-text-decoration) !important;
+	}
+
+	.dark .dinoco-code-block .shiki {
+		background-color: var(--shiki-dark-bg, #1e1e1e) !important;
+		color: var(--shiki-dark, #d4d4d4) !important;
+	}
+
+	.dark .dinoco-code-block .shiki span {
+		color: var(--shiki-dark) !important;
+		font-style: var(--shiki-dark-font-style) !important;
+		font-weight: var(--shiki-dark-font-weight) !important;
+		text-decoration: var(--shiki-dark-text-decoration) !important;
+	}
+
+	.prose .dinoco-code-block .shiki code {
+		background: transparent;
+	}
+} */

@@ -12,51 +12,19 @@
 				"languages": {
 					"pt": [
 						{
-							"title": "Comece",
+							"title": "Começando",
 							"items": [
 								{
-									"shortName": "dinoco-client",
-									"name": "Dinoco Client",
-									"inPage": ["Visao geral", "Instalacao", "Primeira consulta", "Proximos passos"],
-									"subItems": [
-										{
-											"shortName": "client-installation",
-											"name": "Instalacao do client",
-											"description": "Instale, gere artefatos e configure o ambiente local.",
-											"mdxPath": "v0.0.1/pt/orm/client-installation.mdx",
-											"inPage": ["Dependencias", "Generate", "Conexao", "Validacao"]
-										},
-										{
-											"shortName": "client-querying",
-											"name": "Consultas",
-											"description": "Buscas, filtros, ordenacao e limites no client.",
-											"mdxPath": "v0.0.1/pt/orm/client-querying.mdx",
-											"inPage": ["FindMany", "Filtros", "Ordenacao", "Paginacao"]
-										}
-									]
+									"shortName": "introduction-dinoco",
+									"name": "Introdução ao Dinoco",
+									"mdxPath": "v0.0.1/pt/orm/introduction-to-dinoco.mdx",
+									"inPage": ["Introdução ao Dinoco", "A Experiência Prisma em Rust", "Pilares do Projeto", "Onde nos posicionamos?"]
 								},
 								{
-									"shortName": "schema",
-									"name": "Schema",
-									"description": "Modelagem, relacionamentos e geracao de tipos.",
-									"mdxPath": "v0.0.1/pt/orm/schema.mdx",
-									"inPage": ["Modelo", "Campos", "Relacoes", "Generate"],
-									"subItems": [
-										{
-											"shortName": "schema-relations",
-											"name": "Relacoes",
-											"description": "Como modelar relacionamentos entre entidades.",
-											"mdxPath": "v0.0.1/pt/orm/schema-relations.mdx",
-											"inPage": ["One-to-one", "One-to-many", "Muitos-para-muitos", "Boas praticas"]
-										},
-										{
-											"shortName": "schema-generators",
-											"name": "Generators",
-											"description": "Gere client, tipos e artefatos a partir do schema.",
-											"mdxPath": "v0.0.1/pt/orm/schema-generators.mdx",
-											"inPage": ["Config", "Generate", "Artefatos", "Pipeline"]
-										}
-									]
+									"shortName": "first-steps",
+									"name": "Primeiros passos",
+									"mdxPath": "v0.0.1/pt/orm/first-steps.mdx",
+									"inPage": ["Introdução ao Dinoco", "A Experiência Prisma em Rust", "Pilares do Projeto", "Onde nos posicionamos?"]
 								}
 							]
 						}
@@ -70,53 +38,13 @@
 				"languages": {
 					"pt": [
 						{
-							"title": "Primeiros passos",
+							"title": "Começando",
 							"items": [
 								{
-									"shortName": "install",
-									"name": "Instalacao",
-									"description": "Instale o CLI e crie o primeiro projeto.",
-									"mdxPath": "v0.0.1/pt/cli/install.mdx",
-									"inPage": ["Instalacao", "Init", "Configuracao", "Verificacao"],
-									"subItems": [
-										{
-											"shortName": "init-project",
-											"name": "dinoco init",
-											"description": "Bootstrap inicial do projeto com a estrutura recomendada.",
-											"mdxPath": "v0.0.1/pt/cli/init-project.mdx",
-											"inPage": ["Template", "Estrutura", "Config", "Proximos passos"]
-										},
-										{
-											"shortName": "doctor",
-											"name": "dinoco doctor",
-											"description": "Diagnostique instalacao, binarios e ambiente local.",
-											"mdxPath": "v0.0.1/pt/cli/doctor.mdx",
-											"inPage": ["Diagnostico", "Checks", "Erros comuns", "Correcao"]
-										}
-									]
-								},
-								{
-									"shortName": "commands",
-									"name": "Comandos",
-									"description": "Os comandos essenciais para o fluxo diario.",
-									"mdxPath": "v0.0.1/pt/cli/commands.mdx",
-									"inPage": ["Generate", "Migrate", "Studio", "Doctor"],
-									"subItems": [
-										{
-											"shortName": "migrations",
-											"name": "Migrations",
-											"description": "Fluxo de evolucao do schema e aplicacao no banco.",
-											"mdxPath": "v0.0.1/pt/cli/migrations.mdx",
-											"inPage": ["Create", "Apply", "Rollback", "Ambientes"]
-										},
-										{
-											"shortName": "studio",
-											"name": "Studio",
-											"description": "Inspecione dados e estruturas com a interface visual.",
-											"mdxPath": "v0.0.1/pt/cli/studio.mdx",
-											"inPage": ["Abrir", "Explorar", "Filtrar", "Colaboracao"]
-										}
-									]
+									"shortName": "introduction-dinoco",
+									"name": "Introdução ao Dinoco",
+									"mdxPath": "v0.0.1/pt/cli/introduction-to-dinoco.mdx",
+									"inPage": []
 								}
 							]
 						}

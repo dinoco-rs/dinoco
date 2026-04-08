@@ -46,6 +46,12 @@ export type DocsSection = {
 	title: string;
 };
 
+export type DocsNavigationItem = {
+	item: DocsItem;
+	parentItem?: DocsItem;
+	path: string;
+};
+
 export type DocsGroup = Omit<DocsGroupData, 'languages'> & {
 	languages: Partial<Record<DocsLocale, DocsSection[]>>;
 };
@@ -122,7 +128,11 @@ function fallbackLocale(locale: DocsLocale, version: DocsVersion): DocsLocale {
 }
 
 export function getLatestVersionName(): string {
-	return versions[versions.length - 1]?.name ?? 'v0.0.1';
+	return versions[0]?.name ?? 'v0.0.1';
+}
+
+export function isLatestVersion(versionName: string): boolean {
+	return versionName === getLatestVersionName();
 }
 
 export function getDefaultVersionName(): string {
@@ -260,6 +270,67 @@ export function getFirstDocsPath(versionName: string, locale: DocsLocale): strin
 	}
 
 	return buildDocsPath(versionName, resolved.group.shortName, resolved.item.shortName);
+}
+
+function flattenSectionItems(versionName: string, groupShortName: string, sections: DocsSection[]): DocsNavigationItem[] {
+	return sections.flatMap(section =>
+		section.items.flatMap(item => {
+			if (item.subItems === undefined || item.subItems.length === 0) {
+				return [
+					{
+						item,
+						path: buildDocsPath(versionName, groupShortName, item.shortName),
+					},
+				];
+			}
+
+			return item.subItems.map(subItem => ({
+				item: subItem,
+				parentItem: item,
+				path: buildDocsPath(versionName, groupShortName, item.shortName, subItem.shortName),
+			}));
+		}),
+	);
+}
+
+export function getAdjacentDocsItems(params: {
+	currentItemShortName: string;
+	groupShortName: string;
+	sections: DocsSection[];
+	versionName: string;
+}): {
+	next?: DocsNavigationItem;
+	previous?: DocsNavigationItem;
+} {
+	const flattenedItems = flattenSectionItems(params.versionName, params.groupShortName, params.sections);
+	const currentIndex = flattenedItems.findIndex(entry => entry.item.shortName === params.currentItemShortName);
+
+	if (currentIndex === -1) {
+		return {};
+	}
+
+	return {
+		previous: flattenedItems[currentIndex - 1],
+		next: flattenedItems[currentIndex + 1],
+	};
+}
+
+export function getLatestVersionPath(params: {
+	groupShortName?: string;
+	itemShortName?: string;
+	locale: DocsLocale;
+	subItemShortName?: string;
+}): string {
+	const latestVersionName = getLatestVersionName();
+	const resolved = resolveDocsPath({
+		versionName: latestVersionName,
+		groupShortName: params.groupShortName,
+		itemShortName: params.itemShortName,
+		subItemShortName: params.subItemShortName,
+		locale: params.locale,
+	});
+
+	return resolved?.path ?? getFirstDocsPath(latestVersionName, params.locale);
 }
 
 export function resolveDocsPath(params: {

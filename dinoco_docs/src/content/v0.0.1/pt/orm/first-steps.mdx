@@ -1,0 +1,57 @@
+# Primeiros passos
+
+Para começar a usar a Dinoco, você deve instalar nossa CLI para que possa manipular migrations e demais sistemas!
+
+```bash
+cargo install dinoco-cli
+```
+
+Para criarmos o ambiente dinoco, executamos o comando a seguir:
+
+```bash
+dinoco init
+```
+
+Após escolher o banco de dados e todas as configurações necessárias, será criada a pasta dinoco na raiz de seu projeto.
+
+Essa pasta conterá:
+
+- **Migrations:** O histórico de alterações do seu banco de dados.
+- **Schema:** A definição central da sua estrutura de dados.
+- **Models:** As representações tipadas para uso em seu código Rust.
+
+## Como funciona?
+
+### 1. Defina seu schema
+
+O Dinoco Schema defina o conteudo de seus models e configurações do banco de dados.
+
+```dinoco
+config {
+  database = "postgresql"
+  database_url = env("DATABASE_URL")
+
+  read_replicas = [
+	env("DATABASE_URL_REPLICA_1")
+	env("DATABASE_URL_REPLICA_2")
+	env("DATABASE_URL_REPLICA_3")
+  ]
+}
+
+model User {
+  id    Integer     @id @default(autoincrement())
+  email String  @unique
+  name  String?
+  posts Post[]
+}
+
+model Post {
+  id        Integer     @id @default(autoincrement())
+  title     String
+  published Boolean @default(false)
+  author    User?   @relation(fields: [authorId], references: [id])
+  authorId  Integer?
+
+  @@table_name("testing")
+}
+```
