@@ -124,7 +124,7 @@ for (const config of selectedTargets) {
 	}
 
 	const sourceBinaryName = isWindows ? `${crateName}.exe` : crateName;
-	const sourceBinaryPath = path.join(extensionRoot, 'target', config.target, 'release', sourceBinaryName);
+	const sourceBinaryPath = path.join(extensionRoot, '..', 'target', config.target, 'release', sourceBinaryName);
 	const destBinaryPath = path.join(binDir, config.outputName);
 
 	if (!fs.existsSync(sourceBinaryPath)) {
