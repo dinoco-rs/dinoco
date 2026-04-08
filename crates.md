@@ -1,6 +1,5 @@
 <p align="center">
-	<img src="./dinoco_docs/public/logo.png#gh-dark-mode-only" alt="Dinoco logo" width="220" />
-	<img src="./dinoco_docs/public/logo.png#gh-light-mode-only" alt="Dinoco logo" width="220" style="filter: invert(1);" />
+	<img src="./dinoco_docs/public/logo.png" alt="Dinoco logo" width="220" />
 </p>
 
 <h1 align="center">Dinoco</h1>

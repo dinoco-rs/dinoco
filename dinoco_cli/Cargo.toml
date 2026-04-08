@@ -2,6 +2,12 @@
 name = "dinoco_cli"
 version = "0.0.1"
 edition = "2024"
+license = "Apache-2.0"
+description = "Command-line tools for Dinoco schema setup, code generation, and migrations."
+homepage = "https://docs.dinoco.io"
+repository = "https://github.com/dinoco-rs/dinoco"
+readme = "../crates.md"
+keywords = ["orm", "cli", "database", "migrations", "codegen"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }

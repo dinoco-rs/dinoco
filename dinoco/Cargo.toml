@@ -2,6 +2,12 @@
 name = "dinoco"
 version = "0.0.1"
 edition = "2024"
+license = "Apache-2.0"
+description = "A modern Rust ORM for schema-driven queries, migrations, and database operations."
+homepage = "https://docs.dinoco.io"
+repository = "https://github.com/dinoco-rs/dinoco"
+readme = "../crates.md"
+keywords = ["orm", "database", "sql", "migrations", "rust"]
 
 [dependencies]
 chrono = "0.4.44"
