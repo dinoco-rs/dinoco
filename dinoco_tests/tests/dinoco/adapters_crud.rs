@@ -70,29 +70,59 @@ async fn sqlite_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
 
 #[tokio::test]
 async fn postgres_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
-    let _lock = common::lock_postgres().await;
-    let client =
-        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
-            .await?;
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client = DinocoClient::<PostgresAdapter>::new(
+            common::postgres_url(),
+            vec![],
+            dinoco::DinocoClientConfig::default(),
+        )
+        .await?;
 
-    client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
-    create_postgres_table(&client).await?;
-    exercise_crud_flow(&client).await?;
-    client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
+        client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
+        create_postgres_table(&client).await?;
+        exercise_crud_flow(&client).await?;
+        client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres crud adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn mysql_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
-    let _lock = common::lock_mysql().await;
-    let client =
-        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
-    client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
-    create_mysql_table(&client).await?;
-    exercise_crud_flow(&client).await?;
-    client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
+        client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
+        create_mysql_table(&client).await?;
+        exercise_crud_flow(&client).await?;
+        client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql crud adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }

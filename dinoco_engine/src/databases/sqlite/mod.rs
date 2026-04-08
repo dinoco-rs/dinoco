@@ -35,7 +35,7 @@ impl DinocoAdapter for SqliteAdapter {
     }
 
     async fn connect(url: String, config: DinocoClientConfig) -> DinocoResult<Self> {
-        let cfg = Config::new(&format!("dinoco/{}", url));
+        let cfg = Config::new(&url);
         let pool = cfg.create_pool(Runtime::Tokio1).map_err(DinocoError::from)?;
 
         Ok(Self { url, pool: Arc::new(pool), query_logger: config.query_logger })

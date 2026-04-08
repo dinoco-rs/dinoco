@@ -6,7 +6,7 @@ use dinoco_compiler::{
     ConnectionUrl, Database, ParsedConfig, ParsedEnum, ParsedField, ParsedFieldDefault, ParsedFieldType,
     ParsedRelation, ParsedSchema, ParsedTable, ReferentialAction,
 };
-use dinoco_engine::{DinocoAdapter, DinocoResult, MigrationStep};
+use dinoco_engine::{DinocoAdapter, DinocoError, DinocoResult, MigrationStep};
 use uuid::Uuid;
 
 pub fn postgres_url() -> String {
@@ -198,6 +198,15 @@ fn database_url(keys: &[&str], default: &str) -> String {
         .find_map(|key| env::var(key).ok())
         .or_else(|| env::var("DATABASE_URL").ok())
         .unwrap_or_else(|| default.to_string())
+}
+
+pub fn should_skip_external_adapter_test(error: &DinocoError) -> bool {
+    match error {
+        DinocoError::ConnectionError(_) => true,
+        DinocoError::MySql(mysql_error) => mysql_error.to_string().contains("Operation not permitted"),
+        DinocoError::Postgres(postgres_error) => postgres_error.to_string().contains("error connecting to server"),
+        _ => false,
+    }
 }
 
 fn integer_field(name: &str, is_primary_key: bool) -> ParsedField {

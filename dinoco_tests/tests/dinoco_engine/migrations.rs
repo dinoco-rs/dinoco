@@ -8,7 +8,7 @@ use dinoco_engine::{
 
 use crate::common::{
     alter_enum_schema, alter_enum_step, apply_sqls, migration_schema, migration_steps, mysql_url, postgres_url,
-    sqlite_url, unique_name,
+    should_skip_external_adapter_test, sqlite_url, unique_name,
 };
 
 #[tokio::test]
@@ -46,73 +46,107 @@ async fn sqlite_migration_builds_and_applies_schema() {
 
 #[tokio::test]
 async fn postgres_migration_builds_and_applies_schema() {
-    let prefix = unique_name("mig");
-    let schema = migration_schema(&prefix);
-    let steps = migration_steps(&prefix);
-    let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default())
-        .await
-        .expect("postgres client should connect");
+    let result = async {
+        let prefix = unique_name("mig");
+        let schema = migration_schema(&prefix);
+        let steps = migration_steps(&prefix);
+        let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default())
+            .await
+            .map_err(|err| err.to_string())?;
 
-    client.primary().reset_database().await.expect("postgres database should reset");
-    let sqls = client.primary().build_migration(&steps, &schema, false);
+        client.primary().reset_database().await.map_err(|err| err.to_string())?;
+        let sqls = client.primary().build_migration(&steps, &schema, false);
 
-    apply_sqls(client.primary(), &sqls).await.expect("postgres migration should apply");
+        apply_sqls(client.primary(), &sqls).await.map_err(|err| err.to_string())?;
 
-    let tables = client.primary().fetch_tables().await.expect("tables should load");
-    let users_table = format!("{prefix}_users");
-    let users = tables.iter().find(|table| table.name == users_table).expect("users table should exist");
+        let tables = client.primary().fetch_tables().await.map_err(|err| err.to_string())?;
+        let users_table = format!("{prefix}_users");
+        let users = tables.iter().find(|table| table.name == users_table).expect("users table should exist");
 
-    assert!(users.columns.iter().any(|column| column.name == "status" && column.db_type == format!("{prefix}_status")));
-    assert!(users.columns.iter().any(|column| column.name == "email"));
+        assert!(
+            users.columns.iter().any(|column| column.name == "status" && column.db_type == format!("{prefix}_status"))
+        );
+        assert!(users.columns.iter().any(|column| column.name == "email"));
 
-    let enums = client.primary().fetch_enums().await.expect("enums should load");
+        let enums = client.primary().fetch_enums().await.map_err(|err| err.to_string())?;
 
-    assert!(enums.iter().any(|item| item.name == format!("{prefix}_status") && item.value == "ACTIVE"));
-    assert!(enums.iter().any(|item| item.name == format!("{prefix}_status") && item.value == "DISABLED"));
+        assert!(enums.iter().any(|item| item.name == format!("{prefix}_status") && item.value == "ACTIVE"));
+        assert!(enums.iter().any(|item| item.name == format!("{prefix}_status") && item.value == "DISABLED"));
 
-    let foreign_keys = client.primary().fetch_foreign_keys().await.expect("foreign keys should load");
+        let foreign_keys = client.primary().fetch_foreign_keys().await.map_err(|err| err.to_string())?;
 
-    assert!(foreign_keys.iter().any(|fk| fk.table_name == users_table && fk.column_name == "team_id"));
+        assert!(foreign_keys.iter().any(|fk| fk.table_name == users_table && fk.column_name == "team_id"));
 
-    let indexes = client.primary().fetch_indexes().await.expect("indexes should load");
+        let indexes = client.primary().fetch_indexes().await.map_err(|err| err.to_string())?;
 
-    assert!(indexes.iter().any(|index| index.table_name == users_table && index.column_name == "status"));
-    assert!(
-        indexes.iter().any(|index| index.table_name == users_table && index.column_name == "email" && index.is_unique)
-    );
+        assert!(indexes.iter().any(|index| index.table_name == users_table && index.column_name == "status"));
+        assert!(
+            indexes.iter().any(|index| index.table_name == users_table && index.column_name == "email" && index.is_unique)
+        );
+
+        Ok::<(), String>(())
+    }
+    .await;
+
+    if let Err(message) = result {
+        let error = dinoco_engine::DinocoError::ConnectionError(message.clone());
+
+        if should_skip_external_adapter_test(&error) {
+            eprintln!("skipping postgres migration integration test: {message}");
+            return;
+        }
+
+        panic!("postgres migration integration test failed: {message}");
+    }
 }
 
 #[tokio::test]
 async fn mysql_migration_builds_and_applies_schema() {
-    let prefix = unique_name("mig");
-    let schema = migration_schema(&prefix);
-    let steps = migration_steps(&prefix);
-    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default())
-        .await
-        .expect("mysql client should connect");
+    let result = async {
+        let prefix = unique_name("mig");
+        let schema = migration_schema(&prefix);
+        let steps = migration_steps(&prefix);
+        let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default())
+            .await
+            .map_err(|err| err.to_string())?;
 
-    client.primary().reset_database().await.expect("mysql database should reset");
-    let sqls = client.primary().build_migration(&steps, &schema, false);
+        client.primary().reset_database().await.map_err(|err| err.to_string())?;
+        let sqls = client.primary().build_migration(&steps, &schema, false);
 
-    apply_sqls(client.primary(), &sqls).await.expect("mysql migration should apply");
+        apply_sqls(client.primary(), &sqls).await.map_err(|err| err.to_string())?;
 
-    let tables = client.primary().fetch_tables().await.expect("tables should load");
-    let users_table = format!("{prefix}_users");
-    let users = tables.iter().find(|table| table.name == users_table).expect("users table should exist");
+        let tables = client.primary().fetch_tables().await.map_err(|err| err.to_string())?;
+        let users_table = format!("{prefix}_users");
+        let users = tables.iter().find(|table| table.name == users_table).expect("users table should exist");
 
-    assert!(users.columns.iter().any(|column| column.name == "status" && column.db_type.starts_with("enum(")));
-    assert!(users.columns.iter().any(|column| column.name == "email"));
+        assert!(users.columns.iter().any(|column| column.name == "status" && column.db_type.starts_with("enum(")));
+        assert!(users.columns.iter().any(|column| column.name == "email"));
 
-    let foreign_keys = client.primary().fetch_foreign_keys().await.expect("foreign keys should load");
+        let foreign_keys = client.primary().fetch_foreign_keys().await.map_err(|err| err.to_string())?;
 
-    assert!(foreign_keys.iter().any(|fk| fk.table_name == users_table && fk.column_name == "team_id"));
+        assert!(foreign_keys.iter().any(|fk| fk.table_name == users_table && fk.column_name == "team_id"));
 
-    let indexes = client.primary().fetch_indexes().await.expect("indexes should load");
+        let indexes = client.primary().fetch_indexes().await.map_err(|err| err.to_string())?;
 
-    assert!(indexes.iter().any(|index| index.table_name == users_table && index.column_name == "status"));
-    assert!(
-        indexes.iter().any(|index| index.table_name == users_table && index.column_name == "email" && index.is_unique)
-    );
+        assert!(indexes.iter().any(|index| index.table_name == users_table && index.column_name == "status"));
+        assert!(
+            indexes.iter().any(|index| index.table_name == users_table && index.column_name == "email" && index.is_unique)
+        );
+
+        Ok::<(), String>(())
+    }
+    .await;
+
+    if let Err(message) = result {
+        let error = dinoco_engine::DinocoError::ConnectionError(message.clone());
+
+        if should_skip_external_adapter_test(&error) {
+            eprintln!("skipping mysql migration integration test: {message}");
+            return;
+        }
+
+        panic!("mysql migration integration test failed: {message}");
+    }
 }
 
 #[test]

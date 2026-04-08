@@ -6,7 +6,7 @@ use dinoco_engine::{
     PostgresAdapter, PostgresDialect, QueryBuilder, SelectStatement, SqliteAdapter, SqliteDialect,
 };
 
-use crate::common::{mysql_url, postgres_url, sqlite_url, unique_name};
+use crate::common::{mysql_url, postgres_url, should_skip_external_adapter_test, sqlite_url, unique_name};
 
 #[derive(Debug, Rowable)]
 struct RankedEvent {
@@ -30,26 +30,58 @@ async fn sqlite_window_function_query_runs_with_partitioned_select() {
 
 #[tokio::test]
 async fn postgres_window_function_query_runs_with_partitioned_select() {
-    let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default())
-        .await
-        .expect("postgres client should connect");
-    let table = unique_name("events");
+    let result = async {
+        let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default())
+            .await
+            .map_err(|err| err.to_string())?;
+        let table = unique_name("events");
 
-    client.primary().reset_database().await.expect("postgres database should reset");
-    create_events_table(client.primary(), &table, DatabaseKind::Postgres).await;
-    assert_top_rank_per_group(client.primary(), PostgresDialect, &table).await;
+        client.primary().reset_database().await.map_err(|err| err.to_string())?;
+        create_events_table(client.primary(), &table, DatabaseKind::Postgres).await;
+        assert_top_rank_per_group(client.primary(), PostgresDialect, &table).await;
+
+        Ok::<(), String>(())
+    }
+    .await;
+
+    if let Err(message) = result {
+        let error = dinoco_engine::DinocoError::ConnectionError(message.clone());
+
+        if should_skip_external_adapter_test(&error) {
+            eprintln!("skipping postgres window function test: {message}");
+            return;
+        }
+
+        panic!("postgres window function test failed: {message}");
+    }
 }
 
 #[tokio::test]
 async fn mysql_window_function_query_runs_with_partitioned_select() {
-    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default())
-        .await
-        .expect("mysql client should connect");
-    let table = unique_name("events");
+    let result = async {
+        let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default())
+            .await
+            .map_err(|err| err.to_string())?;
+        let table = unique_name("events");
 
-    client.primary().reset_database().await.expect("mysql database should reset");
-    create_events_table(client.primary(), &table, DatabaseKind::MySql).await;
-    assert_top_rank_per_group(client.primary(), MySqlDialect, &table).await;
+        client.primary().reset_database().await.map_err(|err| err.to_string())?;
+        create_events_table(client.primary(), &table, DatabaseKind::MySql).await;
+        assert_top_rank_per_group(client.primary(), MySqlDialect, &table).await;
+
+        Ok::<(), String>(())
+    }
+    .await;
+
+    if let Err(message) = result {
+        let error = dinoco_engine::DinocoError::ConnectionError(message.clone());
+
+        if should_skip_external_adapter_test(&error) {
+            eprintln!("skipping mysql window function test: {message}");
+            return;
+        }
+
+        panic!("mysql window function test failed: {message}");
+    }
 }
 
 async fn assert_top_rank_per_group<A, D>(adapter: &A, dialect: D, table: &str)

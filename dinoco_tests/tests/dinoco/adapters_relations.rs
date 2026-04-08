@@ -255,58 +255,118 @@ async fn sqlite_relation_insert_binds_foreign_keys_for_single_and_many() -> Dino
 
 #[tokio::test]
 async fn postgres_relation_insert_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
-    let _lock = common::lock_postgres().await;
-    let client =
-        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
-            .await?;
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client = DinocoClient::<PostgresAdapter>::new(
+            common::postgres_url(),
+            vec![],
+            dinoco::DinocoClientConfig::default(),
+        )
+        .await?;
 
-    drop_team_tables_postgres(&client).await?;
-    create_team_tables_postgres(&client).await?;
-    exercise_relation_insert_flow(&client).await?;
-    drop_team_tables_postgres(&client).await?;
+        drop_team_tables_postgres(&client).await?;
+        create_team_tables_postgres(&client).await?;
+        exercise_relation_insert_flow(&client).await?;
+        drop_team_tables_postgres(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres relations adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn mysql_relation_insert_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
-    let _lock = common::lock_mysql().await;
-    let client =
-        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
-    drop_team_tables_mysql(&client).await?;
-    create_team_tables_mysql(&client).await?;
-    exercise_relation_insert_flow(&client).await?;
-    drop_team_tables_mysql(&client).await?;
+        drop_team_tables_mysql(&client).await?;
+        create_team_tables_mysql(&client).await?;
+        exercise_relation_insert_flow(&client).await?;
+        drop_team_tables_mysql(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql relations adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn postgres_relation_insert_with_autoincrement_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
-    let _lock = common::lock_postgres().await;
-    let client =
-        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
-            .await?;
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client = DinocoClient::<PostgresAdapter>::new(
+            common::postgres_url(),
+            vec![],
+            dinoco::DinocoClientConfig::default(),
+        )
+        .await?;
 
-    drop_auto_team_tables_postgres(&client).await?;
-    create_auto_team_tables_postgres(&client).await?;
-    exercise_relation_insert_flow_autoincrement(&client).await?;
-    drop_auto_team_tables_postgres(&client).await?;
+        drop_auto_team_tables_postgres(&client).await?;
+        create_auto_team_tables_postgres(&client).await?;
+        exercise_relation_insert_flow_autoincrement(&client).await?;
+        drop_auto_team_tables_postgres(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres relations autoincrement adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn mysql_relation_insert_with_autoincrement_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
-    let _lock = common::lock_mysql().await;
-    let client =
-        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
-    drop_auto_team_tables_mysql(&client).await?;
-    create_auto_team_tables_mysql(&client).await?;
-    exercise_relation_insert_flow_autoincrement(&client).await?;
-    drop_auto_team_tables_mysql(&client).await?;
+        drop_auto_team_tables_mysql(&client).await?;
+        create_auto_team_tables_mysql(&client).await?;
+        exercise_relation_insert_flow_autoincrement(&client).await?;
+        drop_auto_team_tables_mysql(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql relations autoincrement adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
@@ -327,58 +387,118 @@ async fn sqlite_many_to_many_insert_with_relation_and_update_connect_disconnect_
 
 #[tokio::test]
 async fn postgres_many_to_many_insert_with_relation_and_update_connect_disconnect_work() -> DinocoResult<()> {
-    let _lock = common::lock_postgres().await;
-    let client =
-        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
-            .await?;
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client = DinocoClient::<PostgresAdapter>::new(
+            common::postgres_url(),
+            vec![],
+            dinoco::DinocoClientConfig::default(),
+        )
+        .await?;
 
-    drop_article_tables_postgres(&client).await?;
-    create_article_tables_postgres(&client).await?;
-    exercise_many_to_many_flow(&client).await?;
-    drop_article_tables_postgres(&client).await?;
+        drop_article_tables_postgres(&client).await?;
+        create_article_tables_postgres(&client).await?;
+        exercise_many_to_many_flow(&client).await?;
+        drop_article_tables_postgres(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres many-to-many adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn mysql_many_to_many_insert_with_relation_and_update_connect_disconnect_work() -> DinocoResult<()> {
-    let _lock = common::lock_mysql().await;
-    let client =
-        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
-    drop_article_tables_mysql(&client).await?;
-    create_article_tables_mysql(&client).await?;
-    exercise_many_to_many_flow(&client).await?;
-    drop_article_tables_mysql(&client).await?;
+        drop_article_tables_mysql(&client).await?;
+        create_article_tables_mysql(&client).await?;
+        exercise_many_to_many_flow(&client).await?;
+        drop_article_tables_mysql(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql many-to-many adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn postgres_many_to_many_insert_with_relation_supports_autoincrement_ids() -> DinocoResult<()> {
-    let _lock = common::lock_postgres().await;
-    let client =
-        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
-            .await?;
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client = DinocoClient::<PostgresAdapter>::new(
+            common::postgres_url(),
+            vec![],
+            dinoco::DinocoClientConfig::default(),
+        )
+        .await?;
 
-    drop_auto_article_tables_postgres(&client).await?;
-    create_auto_article_tables_postgres(&client).await?;
-    exercise_many_to_many_flow_autoincrement(&client).await?;
-    drop_auto_article_tables_postgres(&client).await?;
+        drop_auto_article_tables_postgres(&client).await?;
+        create_auto_article_tables_postgres(&client).await?;
+        exercise_many_to_many_flow_autoincrement(&client).await?;
+        drop_auto_article_tables_postgres(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres many-to-many autoincrement adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn mysql_many_to_many_insert_with_relation_supports_autoincrement_ids() -> DinocoResult<()> {
-    let _lock = common::lock_mysql().await;
-    let client =
-        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
-    drop_auto_article_tables_mysql(&client).await?;
-    create_auto_article_tables_mysql(&client).await?;
-    exercise_many_to_many_flow_autoincrement(&client).await?;
-    drop_auto_article_tables_mysql(&client).await?;
+        drop_auto_article_tables_mysql(&client).await?;
+        create_auto_article_tables_mysql(&client).await?;
+        exercise_many_to_many_flow_autoincrement(&client).await?;
+        drop_auto_article_tables_mysql(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql many-to-many autoincrement adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
@@ -401,35 +521,65 @@ async fn sqlite_insert_with_connection_links_existing_relations() -> DinocoResul
 
 #[tokio::test]
 async fn postgres_insert_with_connection_links_existing_relations() -> DinocoResult<()> {
-    let _lock = common::lock_postgres().await;
-    let client =
-        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
-            .await?;
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client = DinocoClient::<PostgresAdapter>::new(
+            common::postgres_url(),
+            vec![],
+            dinoco::DinocoClientConfig::default(),
+        )
+        .await?;
 
-    drop_team_tables_postgres(&client).await?;
-    create_team_tables_postgres(&client).await?;
-    drop_article_tables_postgres(&client).await?;
-    create_article_tables_postgres(&client).await?;
-    exercise_insert_connection_flow(&client).await?;
-    drop_article_tables_postgres(&client).await?;
-    drop_team_tables_postgres(&client).await?;
+        drop_team_tables_postgres(&client).await?;
+        create_team_tables_postgres(&client).await?;
+        drop_article_tables_postgres(&client).await?;
+        create_article_tables_postgres(&client).await?;
+        exercise_insert_connection_flow(&client).await?;
+        drop_article_tables_postgres(&client).await?;
+        drop_team_tables_postgres(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres insert connection adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn mysql_insert_with_connection_links_existing_relations() -> DinocoResult<()> {
-    let _lock = common::lock_mysql().await;
-    let client =
-        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
-    drop_team_tables_mysql(&client).await?;
-    create_team_tables_mysql(&client).await?;
-    drop_article_tables_mysql(&client).await?;
-    create_article_tables_mysql(&client).await?;
-    exercise_insert_connection_flow(&client).await?;
-    drop_article_tables_mysql(&client).await?;
-    drop_team_tables_mysql(&client).await?;
+        drop_team_tables_mysql(&client).await?;
+        create_team_tables_mysql(&client).await?;
+        drop_article_tables_mysql(&client).await?;
+        create_article_tables_mysql(&client).await?;
+        exercise_insert_connection_flow(&client).await?;
+        drop_article_tables_mysql(&client).await?;
+        drop_team_tables_mysql(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql insert connection adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
@@ -450,29 +600,59 @@ async fn sqlite_find_many_and_find_first_can_count_relations() -> DinocoResult<(
 
 #[tokio::test]
 async fn postgres_find_many_and_find_first_can_count_relations() -> DinocoResult<()> {
-    let _lock = common::lock_postgres().await;
-    let client =
-        DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
-            .await?;
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client = DinocoClient::<PostgresAdapter>::new(
+            common::postgres_url(),
+            vec![],
+            dinoco::DinocoClientConfig::default(),
+        )
+        .await?;
 
-    drop_count_tables_postgres(&client).await?;
-    create_count_tables_postgres(&client).await?;
-    exercise_relation_count_flow(&client).await?;
-    drop_count_tables_postgres(&client).await?;
+        drop_count_tables_postgres(&client).await?;
+        create_count_tables_postgres(&client).await?;
+        exercise_relation_count_flow(&client).await?;
+        drop_count_tables_postgres(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres relation count adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }
 
 #[tokio::test]
 async fn mysql_find_many_and_find_first_can_count_relations() -> DinocoResult<()> {
-    let _lock = common::lock_mysql().await;
-    let client =
-        DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default()).await?;
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
-    drop_count_tables_mysql(&client).await?;
-    create_count_tables_mysql(&client).await?;
-    exercise_relation_count_flow(&client).await?;
-    drop_count_tables_mysql(&client).await?;
+        drop_count_tables_mysql(&client).await?;
+        create_count_tables_mysql(&client).await?;
+        exercise_relation_count_flow(&client).await?;
+        drop_count_tables_mysql(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql relation count adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
 
     Ok(())
 }

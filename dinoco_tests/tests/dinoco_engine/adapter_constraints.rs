@@ -6,7 +6,7 @@ use dinoco_engine::{
     MySqlAdapter, PostgresAdapter, SqliteAdapter,
 };
 
-use crate::common::{mysql_url, postgres_url, sqlite_url, unique_name};
+use crate::common::{mysql_url, postgres_url, should_skip_external_adapter_test, sqlite_url, unique_name};
 
 #[derive(Debug, Rowable)]
 struct UserRow {
@@ -30,24 +30,51 @@ async fn sqlite_adapter_maps_constraints_and_queries_rows() -> DinocoResult<()> 
 
 #[tokio::test]
 async fn postgres_adapter_maps_constraints_and_queries_rows() -> DinocoResult<()> {
-    let client = DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default()).await?;
-    let teams_table = unique_name("teams");
-    let users_table = unique_name("users");
+    if let Err(err) = async {
+        let client =
+            DinocoClient::<PostgresAdapter>::new(postgres_url(), vec![], DinocoClientConfig::default()).await?;
+        let teams_table = unique_name("teams");
+        let users_table = unique_name("users");
 
-    client.primary().reset_database().await?;
-    create_postgres_tables(client.primary(), &teams_table, &users_table).await?;
-    exercise_adapter(client.primary(), &teams_table, &users_table, true).await
+        client.primary().reset_database().await?;
+        create_postgres_tables(client.primary(), &teams_table, &users_table).await?;
+        exercise_adapter(client.primary(), &teams_table, &users_table, true).await
+    }
+    .await
+    {
+        if should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres adapter constraints test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 #[tokio::test]
 async fn mysql_adapter_maps_constraints_and_queries_rows() -> DinocoResult<()> {
-    let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default()).await?;
-    let teams_table = unique_name("teams");
-    let users_table = unique_name("users");
+    if let Err(err) = async {
+        let client = DinocoClient::<MySqlAdapter>::new(mysql_url(), vec![], DinocoClientConfig::default()).await?;
+        let teams_table = unique_name("teams");
+        let users_table = unique_name("users");
 
-    client.primary().reset_database().await?;
-    create_mysql_tables(client.primary(), &teams_table, &users_table).await?;
-    exercise_adapter(client.primary(), &teams_table, &users_table, false).await
+        client.primary().reset_database().await?;
+        create_mysql_tables(client.primary(), &teams_table, &users_table).await?;
+        exercise_adapter(client.primary(), &teams_table, &users_table, false).await
+    }
+    .await
+    {
+        if should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql adapter constraints test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 async fn exercise_adapter<A: DinocoAdapter>(
