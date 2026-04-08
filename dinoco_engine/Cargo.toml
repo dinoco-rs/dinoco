@@ -26,5 +26,5 @@ chrono = "0.4.44"
 serde = "1.0.228"
 serde_json = "1.0.149"
 
-dinoco_compiler = { path = "../dinoco_compiler" }
-dinoco_derives = { path = "../dinoco_derives" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
+dinoco_derives = { path = "../dinoco_derives", version = "0.0.1" }

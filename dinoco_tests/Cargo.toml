@@ -17,12 +17,12 @@ clap = { version = "4.5", features = ["derive"] }
 colored = "3.1.1"
 deadpool-postgres = "0.14.1"
 deadpool-sqlite = "0.13"
-dinoco = { path = "../dinoco" }
-dinoco_codegen = { path = "../dinoco_codegen" }
-dinoco_compiler = { path = "../dinoco_compiler" }
-dinoco_derives = { path = "../dinoco_derives" }
-dinoco_engine = { path = "../dinoco_engine" }
-dinoco_formatter = { path = "../dinoco_formatter" }
+dinoco = { path = "../dinoco", version = "0.0.1" }
+dinoco_codegen = { path = "../dinoco_codegen", version = "0.0.1" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
+dinoco_derives = { path = "../dinoco_derives", version = "0.0.1" }
+dinoco_engine = { path = "../dinoco_engine", version = "0.0.1" }
+dinoco_formatter = { path = "../dinoco_formatter", version = "0.0.1" }
 dotenvy = "0.15.7"
 futures = "0.3.32"
 indicatif = "0.18.4"

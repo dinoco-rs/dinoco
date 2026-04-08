@@ -22,8 +22,8 @@ indicatif = "0.18.4"
 inquire = "0.9.4"
 colored = "3.1.1"
 
-dinoco_codegen = { path = "../dinoco_codegen" }
-dinoco_formatter = { path = "../dinoco_formatter" }
-dinoco_engine = { path = "../dinoco_engine" }
-dinoco_compiler = { path = "../dinoco_compiler" }
-dinoco_derives = { path = "../dinoco_derives" }
+dinoco_codegen = { path = "../dinoco_codegen", version = "0.0.1" }
+dinoco_formatter = { path = "../dinoco_formatter", version = "0.0.1" }
+dinoco_engine = { path = "../dinoco_engine", version = "0.0.1" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
+dinoco_derives = { path = "../dinoco_derives", version = "0.0.1" }
