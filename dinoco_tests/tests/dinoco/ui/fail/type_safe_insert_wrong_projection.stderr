@@ -1,0 +1,23 @@
+error[E0277]: the trait bound `Team: Projection<User>` is not satisfied
+ --> tests/dinoco/ui/fail/type_safe_insert_wrong_projection.rs:9:99
+  |
+9 |     let _ = insert_into::<User>().values(User { id: 1, name: "Matheus".to_string() }).returning::<Team>();
+  |                                                                                       ---------   ^^^^ unsatisfied trait bound
+  |                                                                                       |
+  |                                                                                       required by a bound introduced by this call
+  |
+help: the trait `Projection<User>` is not implemented for `Team`
+      but trait `Projection<Team>` is implemented for it
+ --> tests/dinoco/ui/fail/../common.rs
+  |
+  | impl Projection<Team> for Team {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `Team`, found `User`
+note: required by a bound in `Insert::<M>::returning`
+ --> $WORKSPACE/dinoco/src/methods/insert_into.rs
+  |
+  |     pub fn returning<S>(self) -> InsertReturning<M, S>
+  |            --------- required by a bound in this associated function
+  |     where
+  |         S: Projection<M>,
+  |            ^^^^^^^^^^^^^ required by this bound in `Insert::<M>::returning`

@@ -1,0 +1,29 @@
+[package]
+name = "dinoco_cli"
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "Command-line tools for Dinoco schema setup, code generation, and migrations."
+homepage = "https://docs.dinoco.io"
+repository = "https://github.com/dinoco-rs/dinoco"
+readme = "../crates.md"
+keywords = ["orm", "cli", "database", "migrations", "codegen"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.50.0", features = ["full", "rt-multi-thread"] }
+
+dotenvy = "0.15.7"
+futures = "0.3.32"
+bincode = "1.3.3"
+chrono = "0.4.44"
+
+indicatif = "0.18.4"
+inquire = "0.9.4"
+colored = "3.1.1"
+
+dinoco_codegen = { path = "../dinoco_codegen", version = "0.0.1" }
+dinoco_formatter = { path = "../dinoco_formatter", version = "0.0.1" }
+dinoco_engine = { path = "../dinoco_engine", version = "0.0.1" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
+dinoco_derives = { path = "../dinoco_derives", version = "0.0.1" }

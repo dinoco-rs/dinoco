@@ -1,0 +1,30 @@
+[package]
+name = "dinoco_engine"
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "Database adapters, query execution, and migration engine components for Dinoco."
+homepage = "https://docs.dinoco.io"
+repository = "https://github.com/dinoco-rs/dinoco"
+readme = "../crates.md"
+keywords = ["orm", "database", "sql", "adapters", "migrations"]
+
+[dependencies]
+tokio = { version = "1.50.0", features = ["full", "rt-multi-thread"] }
+tokio-postgres = { version = "0.7.16", features = ["with-serde_json-1", "with-chrono-0_4"] }
+
+deadpool-sqlite = "0.13"
+deadpool-postgres = "0.14.1"
+
+rusqlite = "0.38"
+mysql_async = "0.36.1"
+
+async-trait = "0.1.89"
+async-stream = "0.3.6"
+futures = "0.3.32"
+chrono = "0.4.44"
+serde = "1.0.228"
+serde_json = "1.0.149"
+
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
+dinoco_derives = { path = "../dinoco_derives", version = "0.0.1" }

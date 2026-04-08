@@ -1,87 +1,56 @@
-# Etanol-rs
+<p align="center">
+	<img src="./dinoco_docs/public/logo.png#gh-dark-mode-only" alt="Dinoco logo" width="220" />
+	<img src="./dinoco_docs/public/logo.png#gh-light-mode-only" alt="Dinoco logo" width="220" style="filter: invert(1);" />
+</p>
 
-### this crate is still under development!
+<h1 align="center">Dinoco</h1>
 
+<p align="center">
+	<strong>A modern Rust ecosystem for schema modeling, migrations, and database operations.</strong>
+</p>
 
+<p align="center">
+  <a href="https://crates.io/crates/dinoco"><img src="https://img.shields.io/crates/v/dinoco.svg?color=black" alt="Crates.io"></a>
+  <a href="https://docs.dinoco.io"><img src="https://img.shields.io/badge/docs-dinoco.io-black.svg" alt="Docs"></a>
+  <a href="https://github.com/theuszastro/dinoco/blob/main/LICENSE"><img src="https://img.shields.io/crates/l/dinoco.svg?color=black" alt="License"></a>
+</p>
 
-### Usage:
+---
 
-#### in etanol/schema.etanol
+This repository brings together the project's core crates, the CLI, the documentation, and the VS Code extension. **Dinoco** is focused on delivering a smooth, safe, and modern ORM experience for the Rust ecosystem.
 
+## 💖 Support the Project and Get Exclusive Access
+
+**Dinoco** is and will always be open source, but ongoing development takes time, coffee, and a lot of dedication.
+
+To push the Rust ecosystem even further, we are building the **Official Dinoco Infrastructure** — a complete ecosystem to power your applications.
+
+🎁 **Special Reward:** As a thank you, everyone who supports the project with **any amount** will join the _Early Adopters_ group and receive **guaranteed access to our infrastructure** as soon as it is ready.
+
+Be part of this journey, help accelerate the development of the best ORM for Rust, and secure your spot:
+
+<a href="https://www.buymeacoffee.com/theuszastro" target="_blank">
+	<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px; width: 217px;" />
+</a>
+
+## 🚀 Features
+
+- **Type-safe:** Queries validated at compile time.
+- **DinocoClient:** Built-in tools for automatic generation.
+- **Migrations:** Practical version control for your database schema.
+- **Performance:** Built in Rust to be fast and memory-efficient.
+
+## 📦 Installation
+
+Add Dinoco to your `Cargo.toml` dependencies:
+
+```toml
+[dependencies]
+dinoco = "0.0.1"
 ```
-    config {
-        database = env("DATABASE")
-        database_url = env("DATABASE_URL")
-    }
 
-    table User {
-        id String @id
-        name String
-        age Integer? 
-        isAdmin Boolean? @default(false)
-    }
-```
+## 📄 License
 
-#### in .env
+This project is licensed under the Apache License 2.0.
 
-```
-    DATABASE="sqlite"
-    DATABASE_URL="testing.sqlite"
-```
-
-#### execute this commands
-
-```
-    // for install etanol command line interface
-    $ cargo install etanol
-
-    // for generate migration and models
-    $ etanol migrate dev --name [name of migration]
-```
-
-#### in src/main.rs
-
-```
-    use etanol::{ModelWhere, QueryValue};
-
-    mod database;
-
-    use database::{create_connection, user::User};
-
-    fn main() {
-        create_connection();
-
-        // Insert
-        let user = User {
-            id: "5".to_string(),
-            age: Some(5),
-            name: "Teste".to_string(),
-            ..User::default()
-        };
-
-        user.insert().execute();
-
-        // FindOne
-        let _user = User::find()
-            .field(ModelWhere::Equal("name", "Random"))
-            .load()
-            .unwrap();
-
-        // FindMany
-        let _users = User::find()
-            .field(ModelWhere::Equal("name", "Random"))
-            .many()
-            .load()
-            .unwrap();
-
-        // Update
-        User::update()
-            .field(ModelWhere::Equal("id", "1"))
-            .value(QueryValue("name", "Matheus"))
-            .execute()
-            .unwrap();
-
-        // delete
-        User::delete().field(ModelWhere::Equal("id", "1")).execute();
-    }
-```
+See [LICENSE](./LICENSE) for details.

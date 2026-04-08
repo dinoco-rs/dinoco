@@ -1,0 +1,34 @@
+export const title = "Migrate run";
+
+# Wie wird es verwendet?
+
+Der Befehl `dinoco migrate run` führt alle ausstehenden Migrationen aus.
+
+Er wird verwendet, um die konfigurierte Datenbank mit der bereits generierten Migrationshistorie abzugleichen.
+
+---
+
+## Was der Befehl tut
+
+Beim Ausführen dieses Befehls führt das CLI Folgendes aus:
+
+- Liest die Migrationshistorie
+- Prüft, welche noch nicht angewendet wurden
+- Führt die ausstehenden Migrationen der Reihe nach aus
+
+## Wann zu verwenden
+
+Verwenden Sie diesen Befehl, wenn:
+
+- Sie bereits Migrationen generiert haben
+- Sie die ausstehenden Änderungen in der Datenbank anwenden möchten
+- Sie eine lokale Umgebung oder eine Bereitstellungsumgebung vorbereiten
+
+## Nächste Schritte
+
+Generieren Sie bei Bedarf die Modelle mit:
+
+```bash
+dinoco models generate
+```
+

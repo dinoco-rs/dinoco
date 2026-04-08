@@ -1,0 +1,13 @@
+[package]
+name = "dinoco_formatter"
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "A formatter for keeping Dinoco schema files clean, stable, and canonical."
+homepage = "https://docs.dinoco.io"
+repository = "https://github.com/dinoco-rs/dinoco"
+readme = "../crates.md"
+keywords = ["orm", "formatter", "schema", "database", "tooling"]
+
+[dependencies]
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }

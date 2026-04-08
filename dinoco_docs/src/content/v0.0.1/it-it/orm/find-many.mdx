@@ -1,0 +1,196 @@
+export const title = "find_many";
+
+# find_many
+
+Utilizzato per recuperare un elenco di record.
+
+---
+
+## Cosa puoi fare
+
+- Selezionare una proiezione con `.select::<T>()`
+- Filtrare con `.cond(...)`
+- Limitare con `.take(...)`
+- Paginare con `.skip(...)`
+- Ordinare con `.order_by(...)`
+- Caricare relazioni con `.includes(...)`
+- Contare relazioni con `.count(...)`
+- Forzare la lettura dal database primario con `.read_in_primary()`
+- Eseguire con `.execute(&client)`
+
+## Descrizione dei metodi
+
+- `.select::<T>()`: Sostituisce la proiezione predefinita del modello con una proiezione personalizzata.
+- `.cond(...)`: Aggiunge condizioni di filtro alla query.
+- `.take(...)`: Limita il numero di record restituiti.
+- `.skip(...)`: Salta un numero di record prima di restituire il risultato.
+- `.order_by(...)`: Definisce l'ordinamento della query.
+- `.includes(...)`: Carica le relazioni insieme ai record principali.
+- `.count(...)`: Calcola i contatori per le relazioni e popola campi come `posts_count`.
+- `.read_in_primary()`: Forza la lettura dal database primario, senza utilizzare una replica.
+- `.execute(&client)`: Esegue la query nel database.
+
+## Ritorno
+
+Senza `select::<T>()` il ritorno è:
+
+```rust
+DinocoResult<Vec<M>>
+```
+
+Con `select::<T>()` il ritorno diventa:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Esempio semplice
+
+```rust
+let users = dinoco::find_many::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con filtro
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|w| w.email.eq("ana@acme.com"))
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con paginazione e ordinamento
+
+```rust
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .skip(20)
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## Esempio di select personalizzata
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserListItem {
+    id: i64,
+    name: String,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserListItem>()
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con include semplice
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con include filtrato
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPublishedPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPublishedPosts>()
+    .includes(|i| i.posts().cond(|w| w.published.eq(true)))
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con include annidato
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Comment)]
+struct CommentListItem {
+    id: i64,
+    text: String,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    comments: Vec<CommentListItem>,
+    comments_count: usize,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| {
+        i.posts()
+            .includes(|post| post.comments().take(3))
+            .count(|post| post.comments())
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con conteggio delle relazioni
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Esempio di lettura dal database primario
+
+```rust
+let users = dinoco::find_many::<User>()
+    .read_in_primary()
+    .take(5)
+    .execute(&client)
+    .await?;
+```
+
+## Passi successivi
+
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): Versione per la ricerca di al massimo un record.
+- [**`count::<M>()`**](/v0.0.1/orm/count): Conteggio dei record con filtro.

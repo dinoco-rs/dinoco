@@ -1,0 +1,69 @@
+export const title = "Migrate generate";
+
+# 如何使用？
+
+`dinoco migrate generate` 命令会根据当前 schema 生成 migration。
+
+它会将当前 schema 状态与已知历史进行比较，并创建推动数据库演进所需的 artefact。
+
+---
+
+## 命令的作用
+
+此命令：
+
+- 读取当前 schema
+- 生成新的本地 migration
+- 准备 Dinoco 在数据库开发中使用的 artefact
+
+它还可以选择立即应用 migration 并生成 Rust 模型。
+
+## 参数
+
+### --apply
+
+立即应用生成的 migration 并生成 Rust 模型。
+
+示例：
+
+```bash
+dinoco migrate generate --apply
+```
+
+## 不立即应用的使用示例
+
+```bash
+dinoco migrate generate
+```
+
+此流程在以下情况下很有用：
+
+- 希望在应用前检查 migration
+- 希望在版本控制中审查更改
+- 希望将生成和执行分为不同的步骤
+
+## 立即应用的使用示例
+
+```bash
+dinoco migrate generate --apply
+```
+
+此流程在以下情况下很有用：
+
+- 希望快速更新本地数据库
+- 希望在 migration 后直接生成模型
+- 希望在开发过程中更快地迭代
+
+## 下一步
+
+生成后，您可以：
+
+```bash
+dinoco migrate run
+```
+
+或：
+
+```bash
+dinoco models generate
+```

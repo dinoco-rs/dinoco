@@ -1,0 +1,248 @@
+use dinoco_engine::{DinocoRow, DinocoValue, Expression};
+
+use crate::{CountNode, IncludeNode};
+
+pub type IncludeApplier<'a, T> = Box<dyn FnOnce(&mut [T]) + 'a>;
+pub type IncludeLoaderFuture<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<IncludeApplier<'a, T>>> + 'a>>;
+
+pub trait Model: Sized {
+    type Include: Default;
+    type Where: Default;
+
+    fn table_name() -> &'static str;
+}
+
+pub trait Projection<M: Model>: DinocoRow {
+    fn columns() -> &'static [&'static str];
+
+    fn load_includes<'a, A>(
+        _items: &'a mut [Self],
+        _includes: &'a [IncludeNode],
+        _client: &'a dinoco_engine::DinocoClient<A>,
+        _read_mode: crate::ReadMode,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    where
+        Self: Sized,
+        A: dinoco_engine::DinocoAdapter,
+    {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn load_counts<'a, A>(
+        _items: &'a mut [Self],
+        _counts: &'a [CountNode],
+        _client: &'a dinoco_engine::DinocoClient<A>,
+        _read_mode: crate::ReadMode,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    where
+        Self: Sized,
+        A: dinoco_engine::DinocoAdapter,
+    {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+pub trait InsertModel: Model {
+    fn insert_columns() -> &'static [&'static str];
+    fn into_insert_row(self) -> Vec<DinocoValue>;
+    fn insert_identity_conditions(&self) -> Vec<Expression>;
+    fn auto_increment_primary_key_column() -> Option<&'static str> {
+        None
+    }
+    fn auto_increment_identity_conditions(id: i64) -> Vec<Expression> {
+        Self::auto_increment_primary_key_column()
+            .map(|column| vec![Expression::Column(column.to_string()).eq(DinocoValue::Integer(id))])
+            .unwrap_or_default()
+    }
+    fn validate_insert(&self) -> dinoco_engine::DinocoResult<()> {
+        Ok(())
+    }
+}
+
+pub trait UpdateModel: Model {
+    fn update_columns() -> &'static [&'static str];
+    fn into_update_row(self) -> Vec<DinocoValue>;
+    fn update_identity_conditions(&self) -> Vec<Expression>;
+    fn validate_update(&self) -> dinoco_engine::DinocoResult<()> {
+        Ok(())
+    }
+}
+
+pub trait FindAndUpdateModel: UpdateModel + Projection<Self> {
+    type Update: Default;
+
+    fn primary_key_columns() -> &'static [&'static str];
+}
+
+pub trait InsertRelation<R>: InsertModel {
+    fn bind_relation(&self, _item: &mut R) {}
+
+    fn relation_links(&self, _item: &R) -> Vec<RelationLinkPlan> {
+        Vec::new()
+    }
+}
+
+pub trait InsertConnection<R>: InsertRelation<R> {
+    fn connection_updates(&self, _item: &R) -> Vec<ConnectionUpdatePlan> {
+        Vec::new()
+    }
+
+    fn connection_links(&self, item: &R) -> Vec<RelationLinkPlan> {
+        self.relation_links(item)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RelationMutationTarget {
+    pub relation_name: &'static str,
+    pub expression: Expression,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum RelationWriteAction {
+    Connect,
+    Disconnect,
+}
+
+#[derive(Debug, Clone)]
+pub struct RelationWritePlan {
+    pub join_table_name: &'static str,
+    pub source_table_name: &'static str,
+    pub source_key_column: &'static str,
+    pub source_join_column: &'static str,
+    pub target_table_name: &'static str,
+    pub target_key_column: &'static str,
+    pub target_join_column: &'static str,
+    pub target_expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct RelationLinkPlan {
+    pub table_name: &'static str,
+    pub columns: &'static [&'static str],
+    pub row: Vec<DinocoValue>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectionUpdatePlan {
+    pub table_name: &'static str,
+    pub columns: &'static [&'static str],
+    pub row: Vec<DinocoValue>,
+    pub conditions: Vec<Expression>,
+}
+
+pub trait RelationMutationModel: Model {
+    type Relations: Default;
+
+    fn relation_write_plan(target: RelationMutationTarget) -> Option<RelationWritePlan>;
+}
+
+pub trait IntoDinocoValue {
+    fn into_dinoco_value(self) -> DinocoValue;
+}
+
+pub trait ScalarFieldValue<T> {
+    fn into_scalar_field_value(self) -> DinocoValue;
+}
+
+pub trait IntoIncludeNode {
+    fn into_include_node(self) -> IncludeNode;
+}
+
+pub trait IntoCountNode {
+    fn into_count_node(self) -> CountNode;
+}
+
+impl IntoDinocoValue for DinocoValue {
+    fn into_dinoco_value(self) -> DinocoValue {
+        self
+    }
+}
+
+impl IntoDinocoValue for String {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::from(self)
+    }
+}
+
+impl IntoDinocoValue for &str {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::from(self)
+    }
+}
+
+impl IntoDinocoValue for bool {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::from(self)
+    }
+}
+
+impl IntoDinocoValue for i64 {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::from(self)
+    }
+}
+
+impl IntoDinocoValue for i32 {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::Integer(self as i64)
+    }
+}
+
+impl IntoDinocoValue for usize {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::Integer(self as i64)
+    }
+}
+
+impl IntoDinocoValue for f64 {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::from(self)
+    }
+}
+
+impl IntoDinocoValue for serde_json::Value {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::Json(self)
+    }
+}
+
+impl IntoDinocoValue for chrono::DateTime<chrono::Utc> {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::DateTime(self)
+    }
+}
+
+impl IntoDinocoValue for chrono::NaiveDate {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::Date(self)
+    }
+}
+
+impl<T> ScalarFieldValue<T> for T
+where
+    T: IntoDinocoValue,
+{
+    fn into_scalar_field_value(self) -> DinocoValue {
+        self.into_dinoco_value()
+    }
+}
+
+impl ScalarFieldValue<String> for &str {
+    fn into_scalar_field_value(self) -> DinocoValue {
+        self.into_dinoco_value()
+    }
+}
+
+impl<T> IntoDinocoValue for Option<T>
+where
+    T: IntoDinocoValue,
+{
+    fn into_dinoco_value(self) -> DinocoValue {
+        match self {
+            Some(value) => value.into_dinoco_value(),
+            None => DinocoValue::Null,
+        }
+    }
+}

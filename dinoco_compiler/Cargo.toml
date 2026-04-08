@@ -1,0 +1,16 @@
+[package]
+name = "dinoco_compiler"
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "The Dinoco schema compiler for parsing, validating, and analyzing database schemas."
+homepage = "https://docs.dinoco.io"
+repository = "https://github.com/dinoco-rs/dinoco"
+readme = "../crates.md"
+keywords = ["orm", "compiler", "schema", "database", "parser"]
+
+[dependencies]
+pest = "2.8.6"
+pest_derive = "2.8.6"
+ariadne = "0.4"
+serde = { version = "1.0.228", features = ["derive"] }

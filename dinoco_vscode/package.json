@@ -1,0 +1,76 @@
+{
+	"name": "dinoco-vscode",
+	"displayName": "Dinoco",
+	"version": "0.0.1",
+	"description": "Support for Dinoco schemas with syntax highlighting, diagnostics, formatting, and language server features.",
+	"icon": "images/icon.png",
+	"publisher": "dinoco-rs",
+	"author": "Matheus Castro",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/dinoco-rs/dinoco.git"
+	},
+	"homepage": "https://github.com/dinoco-rs/dinoco",
+	"bugs": {
+		"url": "https://github.com/dinoco-rs/dinoco/issues"
+	},
+	"keywords": [
+		"dinoco",
+		"schema",
+		"orm",
+		"database",
+		"lsp"
+	],
+	"categories": [
+		"Programming Languages",
+		"Formatters",
+		"Linters"
+	],
+	"engines": {
+		"vscode": "^1.110.0"
+	},
+	"main": "./out/extension.js",
+	"activationEvents": [
+		"onLanguage:dinoco"
+	],
+	"scripts": {
+		"compile": "tsc -p ./; yarn run build:binaries",
+		"watch": "tsc -watch -p ./",
+		"build:binaries": "node ./scripts/build-binaries.mjs",
+		"build:binaries:linux": "node ./scripts/build-binaries.mjs linux",
+		"build:binaries:macos": "node ./scripts/build-binaries.mjs macos",
+		"build:binaries:windows": "node ./scripts/build-binaries.mjs windows"
+	},
+	"contributes": {
+		"languages": [
+			{
+				"id": "dinoco",
+				"aliases": [
+					"Dinoco",
+					"dinoco"
+				],
+				"extensions": [
+					".dinoco"
+				],
+				"configuration": "./configs/language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "dinoco",
+				"scopeName": "source.dinoco",
+				"path": "./configs/dinoco.tmLanguage.json"
+			}
+		]
+	},
+	"dependencies": {
+		"@vscode/vsce": "^3.7.1",
+		"vscode-languageclient": "^9.0.1"
+	},
+	"devDependencies": {
+		"@types/node": "^25.5.0",
+		"@types/vscode": "^1.110.0",
+		"typescript": "^5.9.3"
+	}
+}

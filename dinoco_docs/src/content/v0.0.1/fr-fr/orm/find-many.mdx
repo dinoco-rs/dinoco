@@ -1,0 +1,196 @@
+export const title = "find_many";
+
+# find_many
+
+Utilisé pour récupérer une liste d'enregistrements.
+
+---
+
+## Ce que vous pouvez faire
+
+- Sélectionnez une projection avec `.select::<T>()`
+- Filtrez avec `.cond(...)`
+- Limitez avec `.take(...)`
+- Paginer avec `.skip(...)`
+- Triez avec `.order_by(...)`
+- Chargez les relations avec `.includes(...)`
+- Comptez les relations avec `.count(...)`
+- Forcez la lecture depuis la base de données primaire avec `.read_in_primary()`
+- Exécutez avec `.execute(&client)`
+
+## Description des méthodes
+
+- `.select::<T>()`: remplace la projection par défaut du modèle par une projection personnalisée.
+- `.cond(...)`: ajoute des conditions de filtre à la requête.
+- `.take(...)`: limite le nombre d'enregistrements retournés.
+- `.skip(...)`: ignore un nombre d'enregistrements avant de retourner le résultat.
+- `.order_by(...)`: définit l'ordre de tri de la requête.
+- `.includes(...)`: charge les relations avec les enregistrements principaux.
+- `.count(...)`: calcule les compteurs de relations et remplit des champs comme `posts_count`.
+- `.read_in_primary()`: force la lecture depuis la base de données primaire, sans utiliser de répliques.
+- `.execute(&client)`: exécute la requête dans la base de données.
+
+## Retour
+
+Sans `select::<T>()`, le retour est :
+
+```rust
+DinocoResult<Vec<M>>
+```
+
+Avec `select::<T>()`, le retour devient :
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Exemple de base
+
+```rust
+let users = dinoco::find_many::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec filtre
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|w| w.email.eq("ana@acme.com"))
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec pagination et tri
+
+```rust
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .skip(20)
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## Exemple de select personnalisé
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserListItem {
+    id: i64,
+    name: String,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserListItem>()
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec include simple
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec include filtré
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPublishedPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPublishedPosts>()
+    .includes(|i| i.posts().cond(|w| w.published.eq(true)))
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec include imbriqué
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Comment)]
+struct CommentListItem {
+    id: i64,
+    text: String,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    comments: Vec<CommentListItem>,
+    comments_count: usize,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| {
+        i.posts()
+            .includes(|post| post.comments().take(3))
+            .count(|post| post.comments())
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec comptage des relations
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Exemple de lecture depuis la base de données primaire
+
+```rust
+let users = dinoco::find_many::<User>()
+    .read_in_primary()
+    .take(5)
+    .execute(&client)
+    .await?;
+```
+
+## Prochaines étapes
+
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): Version pour rechercher au maximum un enregistrement.
+- [**`count::<M>()`**](/v0.0.1/orm/count): Comptage d'enregistrements avec filtre.

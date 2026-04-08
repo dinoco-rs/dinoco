@@ -1,0 +1,196 @@
+export const title = "find_many";
+
+# find_many
+
+Используется для получения списка записей.
+
+---
+
+## Что можно сделать
+
+- Выбрать проекцию с помощью `.select::<T>()`
+- Фильтровать с помощью `.cond(...)`
+- Ограничить с помощью `.take(...)`
+- Разбить на страницы с помощью `.skip(...)`
+- Сортировать с помощью `.order_by(...)`
+- Загрузить связи с помощью `.includes(...)`
+- Подсчитать связи с помощью `.count(...)`
+- Принудительно читать из основной базы данных с помощью `.read_in_primary()`
+- Выполнить с помощью `.execute(&client)`
+
+## Описание методов
+
+- `.select::<T>()`: Заменяет стандартную проекцию модели на пользовательскую.
+- `.cond(...)`: Добавляет условия фильтрации к запросу.
+- `.take(...)`: Ограничивает количество возвращаемых записей.
+- `.skip(...)`: Пропускает указанное количество записей перед возвратом результата.
+- `.order_by(...)`: Определяет порядок сортировки запроса.
+- `.includes(...)`: Загружает связанные сущности вместе с основными записями.
+- `.count(...)`: Вычисляет счетчики связей и заполняет поля, такие как `posts_count`.
+- `.read_in_primary()`: Принудительно читает из основной базы данных, не используя реплику.
+- `.execute(&client)`: Выполняет запрос к базе данных.
+
+## Возвращаемое значение
+
+Без `select::<T>()` возвращается:
+
+```rust
+DinocoResult<Vec<M>>
+```
+
+С `select::<T>()` возвращается:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Базовый пример
+
+```rust
+let users = dinoco::find_many::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Пример с фильтром
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|w| w.email.eq("ana@acme.com"))
+    .execute(&client)
+    .await?;
+```
+
+## Пример с пагинацией и сортировкой
+
+```rust
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .skip(20)
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## Пример пользовательского select
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserListItem {
+    id: i64,
+    name: String,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserListItem>()
+    .execute(&client)
+    .await?;
+```
+
+## Пример с простым include
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Пример с include с фильтром
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPublishedPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPublishedPosts>()
+    .includes(|i| i.posts().cond(|w| w.published.eq(true)))
+    .execute(&client)
+    .await?;
+```
+
+## Пример с вложенным include
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Comment)]
+struct CommentListItem {
+    id: i64,
+    text: String,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    comments: Vec<CommentListItem>,
+    comments_count: usize,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| {
+        i.posts()
+            .includes(|post| post.comments().take(3))
+            .count(|post| post.comments())
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Пример с подсчетом связей
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Пример чтения из основной базы данных
+
+```rust
+let users = dinoco::find_many::<User>()
+    .read_in_primary()
+    .take(5)
+    .execute(&client)
+    .await?;
+```
+
+## Следующие шаги
+
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): Версия для получения максимум одной записи.
+- [**`count::<M>()`**](/v0.0.1/orm/count): Подсчет записей с фильтром.

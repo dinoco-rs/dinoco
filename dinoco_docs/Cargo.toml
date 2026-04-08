@@ -1,0 +1,12 @@
+[package]
+name = "with-tailwind"
+version = "0.0.1"
+edition = "2024"
+
+[[bin]]
+name = "tuono"
+path = ".tuono/main.rs"
+
+[dependencies]
+serde_json = "1"
+tuono_lib = "0.19.7"

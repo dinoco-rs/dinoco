@@ -1,0 +1,95 @@
+export const title = "insert_into";
+
+# insert_into
+
+Viene utilizzato per inserire un record.
+
+---
+
+## Cosa puoi fare
+
+- Passare i valori con `.values(item)`
+- Inserire con una relazione tramite `.with_relation(related)`
+- Connettere una relazione esistente tramite `.with_connection(connected)`
+- Eseguire con `.execute(&client)`
+
+## Descrizione dei metodi
+
+- `.values(item)`: Definisce il record da inserire.
+- `.with_relation(related)`: Inserisce un nuovo record correlato insieme all'elemento padre.
+- `.with_connection(connected)`: Connette il record inserito a un elemento già esistente, solitamente in flussi di relazione che supportano la connessione.
+- `.returning::<T>()`: Modifica il valore di ritorno a una proiezione tipizzata dell'elemento inserito.
+- `.execute(&client)`: Esegue l'operazione di scrittura nel database.
+
+## Valore di ritorno
+
+Senza `.returning::<T>()` il valore di ritorno è:
+
+```rust
+DinocoResult<()>
+```
+
+Con `.returning::<T>()` il valore di ritorno diventa:
+
+```rust
+DinocoResult<T>
+```
+
+## Esempio semplice
+
+```rust
+dinoco::insert_into::<User>()
+    .values(User {
+        id: "usr_1".to_string(),
+        email: "ana@acme.com".to_string(),
+        name: "Ana".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con relazione
+
+Utilizzare `.with_relation(...)` quando il modello generato supporta l'inserimento simultaneo dell'elemento padre e dell'elemento correlato.
+
+```rust
+dinoco::insert_into::<User>()
+    .values(user)
+    .with_relation(profile)
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con connessione
+
+Utilizzare `.with_connection(...)` quando si desidera inserire un elemento e connettere una relazione già esistente.
+
+```rust
+dinoco::insert_into::<User>()
+    .values(new_user)
+    .with_connection(existing_team)
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con ritorno tipizzato
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let created = dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .returning::<UserSummary>()
+    .execute(&client)
+    .await?;
+```
+
+## Passi successivi
+
+- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): Inserimento in batch.
+- [**`update::<M>()`**](/v0.0.1/orm/update): Aggiornamento di record.

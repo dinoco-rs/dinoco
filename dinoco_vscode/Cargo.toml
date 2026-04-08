@@ -1,0 +1,18 @@
+[package]
+name = "dinoco_vscode"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "Language server components for Dinoco editor and VS Code integration."
+homepage = "https://docs.dinoco.io"
+repository = "https://github.com/dinoco-rs/dinoco"
+readme = "../crates.md"
+keywords = ["orm", "lsp", "vscode", "editor", "database"]
+
+[dependencies]
+dashmap = "5.5"
+tower-lsp = "0.20"
+tokio = { version = "1.50.0", features = ["full", "rt-multi-thread"] }
+
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
+dinoco_formatter = { path = "../dinoco_formatter", version = "0.0.1" }

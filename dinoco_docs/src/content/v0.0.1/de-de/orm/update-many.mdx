@@ -1,0 +1,71 @@
+export const title = "update_many";
+
+# update_many
+
+Wird verwendet, um mehrere Datensätze gleichzeitig zu aktualisieren.
+
+---
+
+## Was Sie tun können
+
+- `.cond(...)`: schränkt ein, welche Datensätze aktualisiert werden können.
+- `.values(Vec<M>)`: definiert die Elemente, die in der Batch-Aktualisierung verwendet werden.
+- `.returning::<T>()`: gibt die aktualisierten Datensätze als typisierte Liste zurück.
+- `.execute(&client)`: führt die Batch-Aktualisierung aus.
+
+## Rückgabe
+
+Ohne `.returning::<T>()` ist die Rückgabe:
+
+```rust
+DinocoResult<()>
+```
+
+Mit `.returning::<T>()` wird die Rückgabe zu:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Grundlegendes Beispiel
+
+```rust
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 1, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 2, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Rückgabe
+
+```rust
+let updated = dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana Batch".to_string() },
+        User { id: 3, name: "Caio Batch".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Filter
+
+```rust
+dinoco::update_many::<User>()
+    .cond(|x| x.active.eq(true))
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Nächste Schritte
+
+- [**`update::<M>()`**](/v0.0.1/orm/update): traditionelles Update mit Bedingung.
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): atomares Update eines einzelnen Datensatzes.

@@ -1,0 +1,196 @@
+export const title = "find_many";
+
+# find_many
+
+Used to retrieve a list of records.
+
+---
+
+## What you can do
+
+- Select a projection with `.select::<T>()`
+- Filter with `.cond(...)`
+- Limit with `.take(...)`
+- Paginate with `.skip(...)`
+- Order with `.order_by(...)`
+- Load relations with `.includes(...)`
+- Count relations with `.count(...)`
+- Force read from the primary database with `.read_in_primary()`
+- Execute with `.execute(&client)`
+
+## Methods Description
+
+- `.select::<T>()`: changes the model's default projection to a customized one.
+- `.cond(...)`: adds filter conditions to the query.
+- `.take(...)`: limits the number of records returned.
+- `.skip(...)`: skips a number of records before returning the result.
+- `.order_by(...)`: defines the query's ordering.
+- `.includes(...)`: loads relations along with the main records.
+- `.count(...)`: calculates relation counters and populates fields like `posts_count`.
+- `.read_in_primary()`: forces reading from the primary database, without using a replica.
+- `.execute(&client)`: executes the query in the database.
+
+## Return
+
+Without `select::<T>()`, the return is:
+
+```rust
+DinocoResult<Vec<M>>
+```
+
+With `select::<T>()`, the return becomes:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Basic example
+
+```rust
+let users = dinoco::find_many::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Example with filter
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|w| w.email.eq("ana@acme.com"))
+    .execute(&client)
+    .await?;
+```
+
+## Example with pagination and ordering
+
+```rust
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .skip(20)
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## Custom select example
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserListItem {
+    id: i64,
+    name: String,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserListItem>()
+    .execute(&client)
+    .await?;
+```
+
+## Simple include example
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Example with filtered include
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPublishedPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPublishedPosts>()
+    .includes(|i| i.posts().cond(|w| w.published.eq(true)))
+    .execute(&client)
+    .await?;
+```
+
+## Nested include example
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Comment)]
+struct CommentListItem {
+    id: i64,
+    text: String,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    comments: Vec<CommentListItem>,
+    comments_count: usize,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| {
+        i.posts()
+            .includes(|post| post.comments().take(3))
+            .count(|post| post.comments())
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Relation count example
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Example reading from primary database
+
+```rust
+let users = dinoco::find_many::<User>()
+    .read_in_primary()
+    .take(5)
+    .execute(&client)
+    .await?;
+```
+
+## Next steps
+
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): version for retrieving at most one record.
+- [**`count::<M>()`**](/v0.0.1/orm/count): record count with filter.

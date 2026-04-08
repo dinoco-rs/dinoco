@@ -1,0 +1,57 @@
+export const title = "find_and_update";
+
+# find_and_update
+
+Used to locate a single record, apply atomic updates to the database, and return the updated item.
+
+---
+
+## What you can do
+
+- `.cond(...)`
+- `.update(...)`
+- `.execute(&client)`
+
+## Method Description
+
+- `.cond(...)`: defines which record will be located.
+- `.update(...)`: applies an atomic operation to a model field.
+- `.execute(&client)`: executes the update and returns the updated record.
+
+## Return
+
+The return of `find_and_update` is:
+
+```rust
+DinocoResult<M>
+```
+
+## Basic Example
+
+```rust
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .execute(&client)
+    .await?;
+```
+
+## Available Operations in `ModelUpdate`
+
+- `set(value)`
+- `increment(value)`
+- `decrement(value)`
+- `multiply(value)`
+- `division(value)`
+
+## Notes
+
+- The update is executed in a single `UPDATE`.
+- If no rows match the condition, the return will be `DinocoError::RecordNotFound`.
+- The update DSL does not expose relationships.
+- Currently, the flow supports a simple primary key to locate and return the updated record.
+
+## Next steps
+
+- [**`update::<M>()`**](/v0.0.1/orm/update): traditional update.
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): batch update.

@@ -1,0 +1,48 @@
+export const title = "Rollback della migrazione";
+
+# Come si usa?
+
+Il comando `dinoco migrate rollback` annulla l'ultima migrazione applicata.
+
+È utile quando è necessario annullare l'ultima modifica nel database.
+
+---
+
+## Cosa fa il comando
+
+Quando si esegue questo comando, la CLI tenta di:
+
+- Identificare l'ultima migrazione applicata
+- Annullare tale migrazione
+- Aggiornare la cronologia delle migrazioni del database
+
+## Parametri
+
+[NOME]: Nome della migrazione (per tornare a una specifica) (Opzionale)
+
+## Esempio d'uso
+
+```bash
+dinoco migrate rollback
+```
+
+## Quando usarlo
+
+Utilizzare questo comando quando:
+
+- L'ultima migrazione deve essere annullata
+- Hai scoperto un problema recente nello schema
+- Stai adattando il flusso di sviluppo del database nell'ambiente di sviluppo
+
+## Precauzioni
+
+- Non ogni modifica strutturale è banale da annullare senza impatti.
+- Verificare gli impatti della migrazione prima di eseguire un rollback in ambienti importanti.
+
+## Passi successivi
+
+Dopo aver adattato lo schema, è possibile generare una nuova migrazione:
+
+```bash
+dinoco migrate generate
+```

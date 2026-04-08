@@ -1,0 +1,19 @@
+[package]
+name = "dinoco_derives"
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "Procedural macros for Dinoco models, projections, and type-safe ORM helpers."
+homepage = "https://docs.dinoco.io"
+repository = "https://github.com/dinoco-rs/dinoco"
+readme = "../crates.md"
+keywords = ["orm", "macros", "proc-macro", "derive", "database"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro-crate = "3.4.0"
+proc-macro2 = "1.0.106"
+quote = "1.0.45"
+syn = "2.0.117"
