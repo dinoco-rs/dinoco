@@ -11,7 +11,7 @@ pub use dinoco_derives::{Extend, Rowable};
 pub use dinoco_engine::{
     AdapterDialect, DinocoAdapter, DinocoClient, DinocoClientConfig, DinocoError, DinocoGenericRow, DinocoQueryLog,
     DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions, DinocoResult, DinocoRow, DinocoValue,
-    MySqlAdapter, OrderDirection, PostgresAdapter, SqliteAdapter,
+    Expression, MySqlAdapter, OrderDirection, PostgresAdapter, QueryBuilder, SelectStatement, SqliteAdapter,
 };
 pub use uuid::Uuid;
 
@@ -23,7 +23,8 @@ pub use serde_json::Value as JsonValue;
 pub use data::{CountNode, IncludeNode, OrderBy, ReadMode};
 pub use execution::{
     execute_connection_updates, execute_count, execute_delete, execute_find_and_update, execute_first, execute_insert,
-    execute_insert_relation_links, execute_many, execute_relation_writes, execute_update, execute_update_many,
+    execute_insert_relation_links, execute_insert_returning, execute_many, execute_relation_writes, execute_update,
+    execute_update_many, execute_update_many_returning, execute_update_returning,
 };
 pub use fields::{
     FieldUpdate, RelationField, RelationMutationWhere, RelationQuery, RelationScalarField, ScalarField, UpdateField,

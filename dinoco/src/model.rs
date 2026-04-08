@@ -46,6 +46,7 @@ pub trait Projection<M: Model>: DinocoRow {
 pub trait InsertModel: Model {
     fn insert_columns() -> &'static [&'static str];
     fn into_insert_row(self) -> Vec<DinocoValue>;
+    fn insert_identity_conditions(&self) -> Vec<Expression>;
     fn validate_insert(&self) -> dinoco_engine::DinocoResult<()> {
         Ok(())
     }

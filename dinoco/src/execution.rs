@@ -131,6 +131,23 @@ where
     }
 }
 
+pub fn execute_insert_returning<'a, M, S, A>(
+    items: Vec<M>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<Vec<S>>> + 'a
+where
+    M: InsertModel + 'a,
+    S: Projection<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        let identity_conditions = items.iter().map(InsertModel::insert_identity_conditions).collect::<Vec<_>>();
+
+        execute_insert::<M, A>(items, client).await?;
+        load_many_by_conditions::<M, S, A>(identity_conditions, client).await
+    }
+}
+
 pub fn execute_insert_relation_links<'a, A>(
     relation_links: Vec<RelationLinkPlan>,
     client: &'a DinocoClient<A>,
@@ -243,14 +260,70 @@ where
     }
 }
 
-pub fn execute_find_and_update<'a, M, S, A>(
+pub fn execute_update_returning<'a, M, S, A>(
+    conditions: Vec<dinoco_engine::Expression>,
+    item: M,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<Vec<S>>> + 'a
+where
+    M: UpdateModel + Projection<M> + 'a,
+    S: Projection<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        item.validate_update()?;
+
+        let mut before_statement = SelectStatement::new().from(M::table_name()).select(M::columns());
+
+        for condition in conditions.clone() {
+            before_statement = before_statement.condition(condition);
+        }
+
+        let matched = execute_many::<M, M, A>(before_statement, &[], &[], ReadMode::Primary, client).await?;
+
+        let mut statement = UpdateStatement::new().table(M::table_name());
+
+        for (column, value) in M::update_columns().iter().copied().zip(item.into_update_row().into_iter()) {
+            statement = statement.set(column, value);
+        }
+
+        for condition in conditions {
+            statement = statement.condition(condition);
+        }
+
+        execute_update(statement, client).await?;
+
+        let identity_conditions = matched.iter().map(UpdateModel::update_identity_conditions).collect::<Vec<_>>();
+
+        load_many_by_conditions::<M, S, A>(identity_conditions, client).await
+    }
+}
+
+pub fn execute_update_many_returning<'a, M, S, A>(
+    items: Vec<M>,
+    conditions: Vec<dinoco_engine::Expression>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<Vec<S>>> + 'a
+where
+    M: UpdateModel + 'a,
+    S: Projection<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        let identity_conditions = items.iter().map(UpdateModel::update_identity_conditions).collect::<Vec<_>>();
+
+        execute_update_many::<M, A>(items, conditions, client).await?;
+        load_many_by_conditions::<M, S, A>(identity_conditions, client).await
+    }
+}
+
+pub fn execute_find_and_update<'a, M, A>(
     conditions: Vec<dinoco_engine::Expression>,
     updates: Vec<FieldUpdate>,
     client: &'a DinocoClient<A>,
-) -> impl Future<Output = DinocoResult<S>> + 'a
+) -> impl Future<Output = DinocoResult<M>> + 'a
 where
     M: crate::FindAndUpdateModel + 'a,
-    S: Projection<M> + 'a,
     A: DinocoAdapter,
 {
     async move {
@@ -307,10 +380,10 @@ where
 
         let statement = SelectStatement::new()
             .from(M::table_name())
-            .select(S::columns())
+            .select(M::columns())
             .condition(dinoco_engine::Expression::Column(primary_key.to_string()).eq(target_id));
 
-        execute_first::<M, S, A>(statement, ReadMode::Primary, client).await?.ok_or_else(|| {
+        execute_first::<M, M, A>(statement, ReadMode::Primary, client).await?.ok_or_else(|| {
             DinocoError::RecordNotFound(format!(
                 "Updated record from table '{}' could not be loaded after write.",
                 M::table_name()
@@ -498,6 +571,45 @@ where
     let rows = adapter.query_as::<DinocoPairRow>(&sql, &params).await?;
 
     Ok(rows.into_iter().map(|row| (row.left, row.right)).collect())
+}
+
+async fn load_many_by_conditions<M, S, A>(
+    identity_conditions: Vec<Vec<dinoco_engine::Expression>>,
+    client: &DinocoClient<A>,
+) -> DinocoResult<Vec<S>>
+where
+    M: Model,
+    S: Projection<M>,
+    A: DinocoAdapter,
+{
+    let mut rows = Vec::with_capacity(identity_conditions.len());
+
+    for conditions in identity_conditions {
+        let item = load_one_by_conditions::<M, S, A>(conditions, client).await?;
+        rows.push(item);
+    }
+
+    Ok(rows)
+}
+
+async fn load_one_by_conditions<M, S, A>(
+    conditions: Vec<dinoco_engine::Expression>,
+    client: &DinocoClient<A>,
+) -> DinocoResult<S>
+where
+    M: Model,
+    S: Projection<M>,
+    A: DinocoAdapter,
+{
+    let mut statement = SelectStatement::new().from(M::table_name()).select(S::columns());
+
+    for condition in conditions {
+        statement = statement.condition(condition);
+    }
+
+    execute_first::<M, S, A>(statement, ReadMode::Primary, client).await?.ok_or_else(|| {
+        DinocoError::RecordNotFound(format!("Record from table '{}' could not be loaded after write.", M::table_name()))
+    })
 }
 
 fn build_missing_relation_rows(

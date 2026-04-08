@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression, UpdateStatement};
 
 use crate::{
-    RelationMutationModel, RelationMutationTarget, RelationWriteAction, RelationWritePlan, UpdateModel,
-    execute_relation_writes, execute_update,
+    Projection, RelationMutationModel, RelationMutationTarget, RelationWriteAction, RelationWritePlan, UpdateModel,
+    execute_relation_writes, execute_update, execute_update_returning,
 };
 
 #[derive(Debug, Clone)]
@@ -13,6 +13,14 @@ pub struct Update<M> {
     relation_writes: Vec<(RelationWriteAction, RelationWritePlan)>,
     item: Option<M>,
     marker: PhantomData<fn() -> M>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateReturning<M, S> {
+    conditions: Vec<Expression>,
+    relation_writes: Vec<(RelationWriteAction, RelationWritePlan)>,
+    item: Option<M>,
+    marker: PhantomData<fn() -> (M, S)>,
 }
 
 pub fn update<M>() -> Update<M>
@@ -39,6 +47,19 @@ where
         self.item = Some(item);
 
         self
+    }
+
+    pub fn returning<S>(self) -> UpdateReturning<M, S>
+    where
+        M: Projection<M>,
+        S: Projection<M>,
+    {
+        UpdateReturning {
+            conditions: self.conditions,
+            relation_writes: self.relation_writes,
+            item: self.item,
+            marker: PhantomData,
+        }
     }
 
     pub fn connect<F>(mut self, closure: F) -> Self
@@ -94,6 +115,38 @@ where
             }
 
             Ok(())
+        }
+    }
+}
+
+impl<M, S> UpdateReturning<M, S>
+where
+    M: UpdateModel + Projection<M>,
+    S: Projection<M>,
+{
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<Vec<S>>> + 'a
+    where
+        M: 'a,
+        S: 'a,
+        A: DinocoAdapter,
+    {
+        async move {
+            if !self.relation_writes.is_empty() {
+                return Err(dinoco_engine::DinocoError::ParseError(
+                    "update().returning() does not support relation writes.".to_string(),
+                ));
+            }
+
+            let item = self.item.ok_or_else(|| {
+                dinoco_engine::DinocoError::ParseError(
+                    "update().returning() requires values(...) before execute().".to_string(),
+                )
+            })?;
+
+            execute_update_returning::<M, S, A>(self.conditions, item, client).await
         }
     }
 }

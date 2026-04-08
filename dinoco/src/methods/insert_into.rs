@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 
 use dinoco_engine::{DinocoAdapter, DinocoClient};
 
-use crate::{InsertConnection, InsertModel, InsertRelation};
-use crate::{execute_connection_updates, execute_insert, execute_insert_relation_links};
+use crate::{InsertConnection, InsertModel, InsertRelation, Projection};
+use crate::{execute_connection_updates, execute_insert, execute_insert_relation_links, execute_insert_returning};
 
 #[derive(Debug, Clone)]
 pub struct Insert<M> {
@@ -21,6 +21,26 @@ pub struct InsertWithRelation<M, R> {
 pub struct InsertWithConnection<M, R> {
     item: M,
     connected: R,
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertReturning<M, S> {
+    item: Option<M>,
+    marker: PhantomData<fn() -> (M, S)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertWithRelationReturning<M, R, S> {
+    item: M,
+    related: R,
+    marker: PhantomData<fn() -> S>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertWithConnectionReturning<M, R, S> {
+    item: M,
+    connected: R,
+    marker: PhantomData<fn() -> S>,
 }
 
 pub fn insert_into<M>() -> Insert<M>
@@ -60,6 +80,13 @@ where
         }
     }
 
+    pub fn returning<S>(self) -> InsertReturning<M, S>
+    where
+        S: Projection<M>,
+    {
+        InsertReturning { item: self.item, marker: PhantomData }
+    }
+
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -76,11 +103,46 @@ where
     }
 }
 
+impl<M, S> InsertReturning<M, S>
+where
+    M: InsertModel,
+    S: Projection<M>,
+{
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + 'a
+    where
+        M: 'a,
+        S: 'a,
+        A: DinocoAdapter,
+    {
+        async move {
+            let item = self.item.expect("insert_into().values(...) must be called before execute()");
+            let mut rows: Vec<S> = execute_insert_returning::<M, S, A>(vec![item], client).await?;
+
+            rows.drain(..).next().ok_or_else(|| {
+                dinoco_engine::DinocoError::RecordNotFound(format!(
+                    "Record from table '{}' could not be loaded after insert.",
+                    M::table_name()
+                ))
+            })
+        }
+    }
+}
+
 impl<M, R> InsertWithRelation<M, R>
 where
     M: InsertModel + InsertRelation<R>,
     R: InsertModel,
 {
+    pub fn returning<S>(self) -> InsertWithRelationReturning<M, R, S>
+    where
+        S: Projection<M>,
+    {
+        InsertWithRelationReturning { item: self.item, related: self.related, marker: PhantomData }
+    }
+
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -104,10 +166,54 @@ where
     }
 }
 
+impl<M, R, S> InsertWithRelationReturning<M, R, S>
+where
+    M: InsertModel + InsertRelation<R>,
+    R: InsertModel,
+    S: Projection<M>,
+{
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + 'a
+    where
+        M: 'a,
+        R: 'a,
+        S: 'a,
+        A: DinocoAdapter,
+    {
+        async move {
+            let item = self.item;
+            let mut related = self.related;
+
+            item.bind_relation(&mut related);
+            let relation_links = item.relation_links(&related);
+            let mut rows: Vec<S> = execute_insert_returning::<M, S, A>(vec![item], client).await?;
+
+            execute_insert::<R, A>(vec![related], client).await?;
+            execute_insert_relation_links(relation_links, client).await?;
+
+            rows.drain(..).next().ok_or_else(|| {
+                dinoco_engine::DinocoError::RecordNotFound(format!(
+                    "Record from table '{}' could not be loaded after insert.",
+                    M::table_name()
+                ))
+            })
+        }
+    }
+}
+
 impl<M, R> InsertWithConnection<M, R>
 where
     M: InsertModel + InsertConnection<R>,
 {
+    pub fn returning<S>(self) -> InsertWithConnectionReturning<M, R, S>
+    where
+        S: Projection<M>,
+    {
+        InsertWithConnectionReturning { item: self.item, connected: self.connected, marker: PhantomData }
+    }
+
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -126,6 +232,41 @@ where
             execute_insert::<M, A>(vec![item], client).await?;
             execute_connection_updates(connection_updates, client).await?;
             execute_insert_relation_links(relation_links, client).await
+        }
+    }
+}
+
+impl<M, R, S> InsertWithConnectionReturning<M, R, S>
+where
+    M: InsertModel + InsertConnection<R>,
+    S: Projection<M>,
+{
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + 'a
+    where
+        M: 'a,
+        R: 'a,
+        S: 'a,
+        A: DinocoAdapter,
+    {
+        async move {
+            let item = self.item;
+            let connected = self.connected;
+            let connection_updates = item.connection_updates(&connected);
+            let relation_links = item.connection_links(&connected);
+            let mut rows: Vec<S> = execute_insert_returning::<M, S, A>(vec![item], client).await?;
+
+            execute_connection_updates(connection_updates, client).await?;
+            execute_insert_relation_links(relation_links, client).await?;
+
+            rows.drain(..).next().ok_or_else(|| {
+                dinoco_engine::DinocoError::RecordNotFound(format!(
+                    "Record from table '{}' could not be loaded after insert.",
+                    M::table_name()
+                ))
+            })
         }
     }
 }

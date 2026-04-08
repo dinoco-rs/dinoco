@@ -2,13 +2,13 @@ use std::marker::PhantomData;
 
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression};
 
-use crate::{FieldUpdate, FindAndUpdateModel, Projection, execute_find_and_update};
+use crate::{FieldUpdate, FindAndUpdateModel, execute_find_and_update};
 
 #[derive(Debug, Clone)]
-pub struct FindAndUpdate<M, S = M> {
+pub struct FindAndUpdate<M> {
     conditions: Vec<Expression>,
     updates: Vec<FieldUpdate>,
-    marker: PhantomData<fn() -> (M, S)>,
+    marker: PhantomData<fn() -> M>,
 }
 
 pub fn find_and_update<M>() -> FindAndUpdate<M>
@@ -18,10 +18,9 @@ where
     FindAndUpdate { conditions: Vec::new(), updates: Vec::new(), marker: PhantomData }
 }
 
-impl<M, S> FindAndUpdate<M, S>
+impl<M> FindAndUpdate<M>
 where
     M: FindAndUpdateModel,
-    S: Projection<M>,
 {
     pub fn cond<F>(mut self, closure: F) -> Self
     where
@@ -39,22 +38,14 @@ where
         self
     }
 
-    pub fn returning<NS>(self) -> FindAndUpdate<M, NS>
-    where
-        NS: Projection<M>,
-    {
-        FindAndUpdate { conditions: self.conditions, updates: self.updates, marker: PhantomData }
-    }
-
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<M>> + 'a
     where
         M: 'a,
-        S: 'a,
         A: DinocoAdapter,
     {
-        async move { execute_find_and_update::<M, S, A>(self.conditions, self.updates, client).await }
+        async move { execute_find_and_update::<M, A>(self.conditions, self.updates, client).await }
     }
 }
