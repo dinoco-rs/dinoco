@@ -8,6 +8,10 @@ import remarkGfm from 'remark-gfm';
 import dinocoGrammar from '../dinoco_vscode/configs/dinoco.tmLanguage.json';
 
 const config: TuonoConfig = {
+	server: {
+		host: '0.0.0.0',
+		port: 3000,
+	},
 	vite: {
 		plugins: [
 			mdx({
