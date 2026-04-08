@@ -86,7 +86,7 @@ function renderInPageItems(items: DocsInPageItemData[], activeAnchorId: string |
 							? 'border-dinoco-brand font-bold text-dinoco-brand dark:border-dinoco-cyan dark:text-dinoco-cyan'
 							: isInActivePath
 								? 'border-dinoco-brand/50 font-semibold text-dinoco-brand/80 dark:border-dinoco-cyan/50 dark:text-dinoco-cyan/80'
-							: 'border-transparent text-slate-500 hover:border-dinoco-brand hover:text-slate-900 dark:text-slate-400 dark:hover:border-dinoco-cyan dark:hover:text-white'
+								: 'border-transparent text-slate-500 hover:border-dinoco-brand hover:text-slate-900 dark:text-slate-400 dark:hover:border-dinoco-cyan dark:hover:text-white'
 					}`}
 					style={{ paddingLeft: `${1 + level}rem` }}
 				>
@@ -186,40 +186,49 @@ const DocsPage: React.FC = () => {
 	}, [isSidebarOpen]);
 
 	useEffect(() => {
-		if (inPageAnchorIds.length === 0) {
+		if (!articleElement || inPageAnchorIds.length === 0) {
 			setActiveAnchorId(undefined);
 			return;
 		}
 
 		const validAnchorIds = new Set(inPageAnchorIds);
-		const headingElements = Array.from(articleElement?.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]') ?? []).filter(element =>
-			validAnchorIds.has(element.id),
-		);
-
-		if (headingElements.length === 0) {
-			setActiveAnchorId(undefined);
-			return;
-		}
+		let frameId = 0;
 
 		const syncActiveAnchor = () => {
+			const headingElements = Array.from(articleElement.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]')).filter(element => validAnchorIds.has(element.id));
+
+			if (headingElements.length === 0) return;
+
+			const isAtBottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 20;
+
+			if (isAtBottom) {
+				const lastHeadingId = headingElements[headingElements.length - 1].id;
+				setActiveAnchorId(prev => (prev !== lastHeadingId ? lastHeadingId : prev));
+				return;
+			}
+
 			const viewportOffset = 180;
 			const passedHeadings = headingElements.filter(element => element.getBoundingClientRect().top <= viewportOffset);
 			const nextActiveAnchorId = passedHeadings[passedHeadings.length - 1]?.id ?? headingElements[0]?.id;
 
 			if (nextActiveAnchorId !== undefined) {
-				setActiveAnchorId(nextActiveAnchorId);
+				setActiveAnchorId(prev => (prev !== nextActiveAnchorId ? nextActiveAnchorId : prev));
 			}
 		};
 
-		setActiveAnchorId(window.location.hash ? window.location.hash.slice(1) : inPageAnchorIds[0]);
+		const observer = new MutationObserver(() => {
+			syncActiveAnchor();
+		});
+		observer.observe(articleElement, { childList: true, subtree: true });
+
+		if (window.location.hash) {
+			setActiveAnchorId(window.location.hash.slice(1));
+		}
+
 		syncActiveAnchor();
-		let frameId = 0;
 
 		const scheduleSync = () => {
-			if (frameId !== 0) {
-				return;
-			}
-
+			if (frameId !== 0) return;
 			frameId = window.requestAnimationFrame(() => {
 				frameId = 0;
 				syncActiveAnchor();
@@ -228,12 +237,10 @@ const DocsPage: React.FC = () => {
 
 		const handleHashChange = () => {
 			const hash = window.location.hash.slice(1);
-
 			if (hash.length > 0) {
 				setActiveAnchorId(hash);
 				return;
 			}
-
 			syncActiveAnchor();
 		};
 
@@ -242,13 +249,11 @@ const DocsPage: React.FC = () => {
 		window.addEventListener('hashchange', handleHashChange);
 
 		return () => {
-			if (frameId !== 0) {
-				window.cancelAnimationFrame(frameId);
-			}
-
+			if (frameId !== 0) window.cancelAnimationFrame(frameId);
 			window.removeEventListener('scroll', scheduleSync);
 			window.removeEventListener('resize', scheduleSync);
 			window.removeEventListener('hashchange', handleHashChange);
+			observer.disconnect();
 		};
 	}, [articleElement, inPageAnchorIds]);
 
