@@ -30,6 +30,12 @@ pub struct InsertManyWithConnections<M, R> {
 }
 
 #[derive(Debug, Clone)]
+pub struct InsertManyWithConnection<M, R> {
+    items: Vec<M>,
+    connected_items: Vec<R>,
+}
+
+#[derive(Debug, Clone)]
 pub struct InsertManyReturning<M, S> {
     items: Vec<M>,
     marker: PhantomData<fn() -> (M, S)>,
@@ -53,6 +59,13 @@ pub struct InsertManyWithRelationsReturning<M, R, S> {
 pub struct InsertManyWithConnectionsReturning<M, R, S> {
     items: Vec<M>,
     connected_groups: Vec<Vec<R>>,
+    marker: PhantomData<fn() -> S>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertManyWithConnectionReturning<M, R, S> {
+    items: Vec<M>,
+    connected_items: Vec<R>,
     marker: PhantomData<fn() -> S>,
 }
 
@@ -94,6 +107,13 @@ where
         M: InsertConnection<R>,
     {
         InsertManyWithConnections { items: self.items, connected_groups }
+    }
+
+    pub fn with_connection<R>(self, connected_items: Vec<R>) -> InsertManyWithConnection<M, R>
+    where
+        M: InsertConnection<R>,
+    {
+        InsertManyWithConnection { items: self.items, connected_items }
     }
 
     pub fn returning<S>(self) -> InsertManyReturning<M, S>
@@ -375,6 +395,56 @@ where
     }
 }
 
+impl<M, R> InsertManyWithConnection<M, R>
+where
+    M: InsertModel + InsertConnection<R>,
+{
+    pub fn returning<S>(self) -> InsertManyWithConnectionReturning<M, R, S>
+    where
+        S: Projection<M>,
+    {
+        InsertManyWithConnectionReturning {
+            items: self.items,
+            connected_items: self.connected_items,
+            marker: PhantomData,
+        }
+    }
+
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
+    where
+        M: 'a,
+        R: 'a,
+        A: DinocoAdapter,
+    {
+        async move {
+            let items = self.items;
+            let connected_items = self.connected_items;
+            let mut connection_updates = Vec::new();
+            let mut relation_links = Vec::new();
+
+            if items.len() != connected_items.len() {
+                return Err(dinoco_engine::DinocoError::ParseError(format!(
+                    "insert_many connection size mismatch: {} parent items for {} connected items",
+                    items.len(),
+                    connected_items.len()
+                )));
+            }
+
+            for (item, connected) in items.iter().zip(connected_items.iter()) {
+                connection_updates.extend(item.connection_updates(connected));
+                relation_links.extend(item.connection_links(connected));
+            }
+
+            execute_insert::<M, A>(items, client).await?;
+            execute_connection_updates(connection_updates, client).await?;
+            execute_insert_relation_links(relation_links, client).await
+        }
+    }
+}
+
 impl<M, R, S> InsertManyWithConnectionsReturning<M, R, S>
 where
     M: InsertModel + InsertConnection<R>,
@@ -409,6 +479,50 @@ where
                     connection_updates.extend(item.connection_updates(&connected));
                     relation_links.extend(item.connection_links(&connected));
                 }
+            }
+
+            let rows = execute_insert_returning::<M, S, A>(items, client).await?;
+
+            execute_connection_updates(connection_updates, client).await?;
+            execute_insert_relation_links(relation_links, client).await?;
+
+            Ok(rows)
+        }
+    }
+}
+
+impl<M, R, S> InsertManyWithConnectionReturning<M, R, S>
+where
+    M: InsertModel + InsertConnection<R>,
+    S: Projection<M>,
+{
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<Vec<S>>> + 'a
+    where
+        M: 'a,
+        R: 'a,
+        S: 'a,
+        A: DinocoAdapter,
+    {
+        async move {
+            let items = self.items;
+            let connected_items = self.connected_items;
+            let mut connection_updates = Vec::new();
+            let mut relation_links = Vec::new();
+
+            if items.len() != connected_items.len() {
+                return Err(dinoco_engine::DinocoError::ParseError(format!(
+                    "insert_many connection size mismatch: {} parent items for {} connected items",
+                    items.len(),
+                    connected_items.len()
+                )));
+            }
+
+            for (item, connected) in items.iter().zip(connected_items.iter()) {
+                connection_updates.extend(item.connection_updates(connected));
+                relation_links.extend(item.connection_links(connected));
             }
 
             let rows = execute_insert_returning::<M, S, A>(items, client).await?;

@@ -475,6 +475,7 @@ Usado para insercao em lote.
 - `.values(Vec<M>)`
 - `.with_relation(Vec<R>)`
 - `.with_relations(Vec<Vec<R>>)`
+- `.with_connection(Vec<R>)`
 - `.with_connections(Vec<Vec<R>>)`
 - `.execute(&client)`
 
@@ -517,6 +518,71 @@ Observacao importante:
 - Em outras palavras: o item pai precisa ja ter o ID definido no proprio struct antes do `execute`.
 - Isso funciona bem com IDs gerados na aplicacao, como `uuid()` e `snowflake()`.
 - Nao e apropriado para cenarios em que o ID do pai so passa a existir depois do insert no banco, como `autoincrement()`.
+
+### `with_connection(...)`
+
+`with_connection(...)` no `insert_many(...)` serve para conectar exatamente um relacionado para cada item pai.
+
+Exemplo conceitual:
+
+```rust
+dinoco::insert_many::<Team>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_connection(vec![
+        Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+Leitura mental:
+
+- o primeiro `Member` sera conectado ao primeiro `Team`
+- o segundo `Member` sera conectado ao segundo `Team`
+
+Observacao importante:
+
+- `with_connection(Vec<R>)` exige o mesmo numero de itens em `values(...)`
+- se houver 2 pais, precisa haver 2 itens conectados
+
+### `with_connections(...)`
+
+`with_connections(...)` no `insert_many(...)` serve para conectar varios relacionados para cada item pai.
+
+Exemplo conceitual:
+
+```rust
+dinoco::insert_many::<Article>()
+    .values(vec![
+        Article { id: "article-11".into(), title: "Connect Multiple".into() },
+        Article { id: "article-12".into(), title: "Connect Batch".into() },
+    ])
+    .with_connections(vec![
+        vec![
+            Label { id: "label-11".into(), name: "orm".into() },
+            Label { id: "label-12".into(), name: "rust".into() },
+        ],
+        vec![
+            Label { id: "label-10".into(), name: "backend".into() },
+        ],
+    ])
+    .execute(&client)
+    .await?;
+```
+
+Leitura mental:
+
+- o primeiro `Article` conecta com `label-11` e `label-12`
+- o segundo `Article` conecta com `label-10`
+
+Observacao importante:
+
+- `with_connections(Vec<Vec<R>>)` exige o mesmo numero de grupos em relacao ao `values(...)`
+- cada posicao do vetor externo corresponde ao item pai da mesma posicao
 
 ## `update::<M>()`
 

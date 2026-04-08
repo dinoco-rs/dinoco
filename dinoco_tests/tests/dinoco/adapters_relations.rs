@@ -719,9 +719,9 @@ where
             Team { id: "team-11".to_string(), name: "Data".to_string() },
             Team { id: "team-12".to_string(), name: "DX".to_string() },
         ])
-        .with_connections(vec![
-            vec![Member { id: "member-11".to_string(), name: "Rafa".to_string(), teamId: "legacy".to_string() }],
-            vec![Member { id: "member-12".to_string(), name: "Bia".to_string(), teamId: "legacy".to_string() }],
+        .with_connection(vec![
+            Member { id: "member-11".to_string(), name: "Rafa".to_string(), teamId: "legacy".to_string() },
+            Member { id: "member-12".to_string(), name: "Bia".to_string(), teamId: "legacy".to_string() },
         ])
         .returning::<Team>()
         .execute(client)
