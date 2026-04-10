@@ -19,6 +19,10 @@ pub fn mysql_url() -> String {
     database_url(&["DINOCO_MYSQL_DATABASE_URL", "MYSQL_DATABASE_URL"], "mysql://root:root@localhost:3306/dinoco")
 }
 
+pub fn redis_url() -> String {
+    database_url(&["DINOCO_REDIS_URL", "REDIS_URL"], "redis://localhost:6379")
+}
+
 pub fn sqlite_url(name: &str) -> String {
     let mut path = env::temp_dir();
 

@@ -382,6 +382,19 @@
 									"title": "Exemplo lendo no banco principal",
 									"items": []
 								},
+
+								{
+									"title": "Exemplo com cache",
+									"items": []
+								},
+								{
+									"title": "Exemplo com cache e expiração",
+									"items": []
+								},
+								{
+									"title": "Cache direto pelo client",
+									"items": []
+								},
 								{
 									"title": "Próximos passos",
 									"items": []
@@ -420,6 +433,14 @@
 								},
 								{
 									"title": "Exemplo com ordenação",
+									"items": []
+								},
+								{
+									"title": "Exemplo com cache",
+									"items": []
+								},
+								{
+									"title": "Cache direto pelo client",
 									"items": []
 								},
 								{

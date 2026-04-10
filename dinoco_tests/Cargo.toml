@@ -49,6 +49,10 @@ name = "dinoco_adapters_relations"
 path = "tests/dinoco/adapters_relations.rs"
 
 [[test]]
+name = "dinoco_cache"
+path = "tests/dinoco/cache.rs"
+
+[[test]]
 name = "dinoco_include_limits"
 path = "tests/dinoco/include_limits.rs"
 

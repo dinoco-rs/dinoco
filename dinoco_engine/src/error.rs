@@ -20,6 +20,7 @@ pub enum DinocoError {
     Constraint(ConstraintError),
     Postgres(tokio_postgres::Error),
     MySql(mysql_async::Error),
+    Redis(redis::RedisError),
     Sqlite(rusqlite::Error),
     TaskJoin(tokio::task::JoinError),
     ParseError(String),
@@ -63,6 +64,7 @@ impl std::fmt::Display for DinocoError {
                 }
             }
             Self::MySql(e) => write!(f, "MySQL error: {}", e),
+            Self::Redis(e) => write!(f, "Redis error: {}", e),
             Self::Sqlite(e) => write!(f, "Sqlite error: {}", e),
 
             Self::TaskJoin(e) => write!(f, "Async task join error: {}", e),
@@ -81,6 +83,12 @@ impl std::error::Error for DinocoError {}
 impl From<std::io::Error> for DinocoError {
     fn from(err: std::io::Error) -> Self {
         Self::ParseError(err.to_string())
+    }
+}
+
+impl From<redis::RedisError> for DinocoError {
+    fn from(err: redis::RedisError) -> Self {
+        Self::Redis(err)
     }
 }
 

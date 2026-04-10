@@ -1,6 +1,6 @@
 use dinoco_compiler::{Database, ParsedSchema};
 
-use super::helpers::render_connection_url;
+use super::helpers::{render_connection_url, render_redis_config};
 
 const GENERATED_FILE_BANNER: &str = "// ==============================================================\n\
 // =================== DINOCO MANAGED FILE =======================\n\
@@ -10,6 +10,24 @@ const GENERATED_FILE_BANNER: &str = "// ========================================
 // Any manual changes will be overwritten the next time Dinoco runs.\n\
 // ==============================================================\n\n";
 const GENERATED_FILE_LINTS: &str = "#![allow(dead_code)]\n#![allow(non_camel_case_types)]\n#![allow(non_snake_case)]\n#![allow(non_upper_case_globals)]\n#![allow(unused_imports)]\n#![allow(unused_variables)]\n\n";
+
+fn render_cache_client_extension() -> String {
+    String::from(
+        "pub trait DinocoClientCacheExt<A>\nwhere\n    A: dinoco::DinocoAdapter,\n{\n    fn cache(&self) -> dinoco::DinocoCache<'_, A>;\n}\n\nimpl<A> DinocoClientCacheExt<A> for DinocoClient<A>\nwhere\n    A: dinoco::DinocoAdapter,\n{\n    fn cache(&self) -> dinoco::DinocoCache<'_, A> {\n        dinoco::DinocoCache::new(self)\n    }\n}\n",
+    )
+}
+
+fn render_cache_find_first_extension() -> String {
+    String::from(
+        "pub trait FindFirstCacheExt<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M> + dinoco::serde::Serialize + dinoco::serde::de::DeserializeOwned,\n{\n    fn cache(self, key: impl Into<String>) -> dinoco::CachedFindFirst<M, S>;\n    fn cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64) -> dinoco::CachedFindFirst<M, S>;\n}\n\nimpl<M, S> FindFirstCacheExt<M, S> for dinoco::FindFirst<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M> + dinoco::serde::Serialize + dinoco::serde::de::DeserializeOwned,\n{\n    fn cache(self, key: impl Into<String>) -> dinoco::CachedFindFirst<M, S> {\n        dinoco::CachedFindFirst::new(self, dinoco::CachePolicy::new(key))\n    }\n\n    fn cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64) -> dinoco::CachedFindFirst<M, S> {\n        dinoco::CachedFindFirst::new(self, dinoco::CachePolicy::with_ttl(key, ttl_seconds))\n    }\n}\n",
+    )
+}
+
+fn render_cache_find_many_extension() -> String {
+    String::from(
+        "pub trait FindManyCacheExt<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M> + dinoco::serde::Serialize + dinoco::serde::de::DeserializeOwned,\n{\n    fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S>;\n    fn cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64) -> dinoco::CachedFindMany<M, S>;\n}\n\nimpl<M, S> FindManyCacheExt<M, S> for dinoco::FindMany<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M> + dinoco::serde::Serialize + dinoco::serde::de::DeserializeOwned,\n{\n    fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S> {\n        dinoco::CachedFindMany::new(self, dinoco::CachePolicy::new(key))\n    }\n\n    fn cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64) -> dinoco::CachedFindMany<M, S> {\n        dinoco::CachedFindMany::new(self, dinoco::CachePolicy::with_ttl(key, ttl_seconds))\n    }\n}\n",
+    )
+}
 
 pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
     let adapter = match schema.config.database {
@@ -25,8 +43,37 @@ pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
 
         format!("vec![{values}]")
     };
+    let redis_config = schema.config.redis.as_ref().map(render_redis_config);
+    let mut output = format!(
+        "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoClientConfig, DinocoResult, {adapter}}};\n\npub mod models;\npub use models::*;\n\n"
+    );
 
-    format!(
-        "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoClientConfig, DinocoResult, {adapter}}};\n\npub mod models;\npub use models::*;\n\npub async fn create_connection(config: DinocoClientConfig) -> DinocoResult<DinocoClient<{adapter}>> {{\n    DinocoClient::<{adapter}>::new({database_url}, {read_replicas}, config).await\n}}\n"
-    )
+    if redis_config.is_some() {
+        output.push_str(&render_cache_client_extension());
+        output.push('\n');
+        output.push_str(&render_cache_find_first_extension());
+        output.push('\n');
+        output.push_str(&render_cache_find_many_extension());
+        output.push('\n');
+    }
+
+    output.push_str("pub async fn create_connection(config: DinocoClientConfig) -> DinocoResult<DinocoClient<");
+    output.push_str(adapter);
+    output.push_str(">> {\n");
+
+    if let Some(redis_config) = redis_config {
+        output.push_str("    let config = config.with_redis(");
+        output.push_str(&redis_config);
+        output.push_str(");\n");
+    }
+
+    output.push_str("    DinocoClient::<");
+    output.push_str(adapter);
+    output.push_str(">::new(");
+    output.push_str(&database_url);
+    output.push_str(", ");
+    output.push_str(&read_replicas);
+    output.push_str(", config).await\n}\n");
+
+    output
 }

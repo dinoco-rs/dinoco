@@ -1,5 +1,6 @@
 extern crate self as dinoco;
 
+mod cache;
 mod data;
 mod execution;
 mod fields;
@@ -10,8 +11,9 @@ mod model;
 pub use dinoco_derives::{Extend, Rowable};
 pub use dinoco_engine::{
     AdapterDialect, DinocoAdapter, DinocoClient, DinocoClientConfig, DinocoError, DinocoGenericRow, DinocoQueryLog,
-    DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions, DinocoResult, DinocoRow, DinocoValue,
-    Expression, MySqlAdapter, OrderDirection, PostgresAdapter, QueryBuilder, SelectStatement, SqliteAdapter,
+    DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions, DinocoRedisConfig, DinocoResult, DinocoRow,
+    DinocoValue, Expression, MySqlAdapter, OrderDirection, PostgresAdapter, QueryBuilder, SelectStatement,
+    SqliteAdapter,
 };
 pub use uuid::Uuid;
 
@@ -20,6 +22,7 @@ pub use futures;
 pub use serde;
 pub use serde_json::Value as JsonValue;
 
+pub use cache::{CachePolicy, CachedFindFirst, CachedFindMany, DinocoCache};
 pub use data::{CountNode, IncludeNode, OrderBy, ReadMode};
 pub use execution::{
     execute_connection_updates, execute_count, execute_delete, execute_find_and_update, execute_first, execute_insert,

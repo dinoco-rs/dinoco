@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use dinoco_compiler::{ConnectionUrl, FunctionCall, ParsedField, ParsedFieldDefault, ParsedFieldType};
+use dinoco_compiler::{ConnectionUrl, FunctionCall, ParsedField, ParsedFieldDefault, ParsedFieldType, RedisConfig};
 
 pub(crate) fn render_connection_url(url: &ConnectionUrl) -> String {
     match url {
@@ -9,6 +9,26 @@ pub(crate) fn render_connection_url(url: &ConnectionUrl) -> String {
             format!("std::env::var({value:?}).expect(\"missing environment variable for Dinoco client generation\")")
         }
     }
+}
+
+pub(crate) fn render_redis_config(redis: &RedisConfig) -> String {
+    if let Some(url) = &redis.url {
+        return format!("dinoco::DinocoRedisConfig::from_url({})", render_connection_url(url));
+    }
+
+    let host =
+        redis.host.as_ref().map(render_connection_url).expect("redis host should exist when url is not configured");
+    let mut output = format!("dinoco::DinocoRedisConfig::from_host({host})");
+
+    if let Some(username) = &redis.username {
+        output.push_str(&format!(".with_username({})", render_connection_url(username)));
+    }
+
+    if let Some(password) = &redis.password {
+        output.push_str(&format!(".with_password({})", render_connection_url(password)));
+    }
+
+    output
 }
 
 pub(crate) fn scalar_fields(fields: &[ParsedField]) -> Vec<&ParsedField> {

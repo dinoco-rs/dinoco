@@ -17,6 +17,8 @@ Ele expõe os mesmos métodos de `find_many`:
 - `order_by`
 - `includes`
 - `count`
+- `cache`
+- `cache_with_expiration`
 - `read_in_primary`
 - `execute`
 
@@ -29,6 +31,8 @@ Ele expõe os mesmos métodos de `find_many`:
 - `.order_by(...)`: define qual registro deve ser considerado primeiro.
 - `.includes(...)`: carrega relações junto com o item principal.
 - `.count(...)`: calcula contadores de relações na projeção.
+- `.cache(...)`: tenta buscar primeiro no Redis e só consulta o banco se a chave não existir. Em cache hit, o query logger registra `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: faz o mesmo fluxo, mas salva com TTL em segundos.
 - `.read_in_primary()`: força a leitura no banco principal.
 - `.execute(&client)`: executa a consulta e retorna no máximo um item.
 
@@ -100,8 +104,29 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
+## Exemplo com cache
+
+Esse método só existe quando o schema tiver `redis` configurado.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## Cache direto pelo client
+
+```rust
+use database::*;
+
+let cached_user = client.cache().get::<Option<User>>("users:1").await?;
+```
+
 ## Próximos passos
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): busca múltiplos registros.
-- [**`count::<M>()`**](/v0.0.1/orm/count): contagem de registros.
-
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): busca múltiplos registros.
+- [**`count::<M>()`**](/v0.0.2/orm/count): contagem de registros.

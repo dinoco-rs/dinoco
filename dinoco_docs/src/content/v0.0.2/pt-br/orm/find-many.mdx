@@ -15,6 +15,8 @@ Usado para buscar uma lista de registros.
 - Ordenar com `.order_by(...)`
 - Carregar relações com `.includes(...)`
 - Contar relações com `.count(...)`
+- Cachear o resultado com `.cache(...)`
+- Cachear com TTL usando `.cache_with_expiration(...)`
 - Forçar leitura no banco principal com `.read_in_primary()`
 - Executar com `.execute(&client)`
 
@@ -27,6 +29,8 @@ Usado para buscar uma lista de registros.
 - `.order_by(...)`: define a ordenação da consulta.
 - `.includes(...)`: carrega relações junto com os registros principais.
 - `.count(...)`: calcula contadores de relações e preenche campos como `posts_count`.
+- `.cache(...)`: consulta primeiro no Redis usando a chave informada; em cache miss executa a query, salva e retorna o resultado. Em cache hit, o query logger registra `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: mesmo comportamento do cache padrão, mas grava com TTL em segundos.
 - `.read_in_primary()`: força a leitura no banco principal, sem usar réplica.
 - `.execute(&client)`: executa a consulta no banco.
 
@@ -190,8 +194,48 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## Exemplo com cache
+
+Esse método só é gerado quando o `config {}` do schema tiver `redis`.
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com cache e expiração
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
+## Cache direto pelo client
+
+Quando o schema tiver `redis`, o módulo gerado também exporta `client.cache()` com acesso direto ao Redis configurado.
+
+```rust
+use database::*;
+
+let users_cache = client.cache();
+
+let cached = users_cache.get::<Vec<User>>("users:list").await?;
+users_cache.set("users:list", &vec![]).await?;
+users_cache.set_with_ttl("users:list", &vec![], 60).await?;
+users_cache.delete("users:list").await?;
+```
+
 ## Próximos passos
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): versão para buscar no máximo um registro.
-- [**`count::<M>()`**](/v0.0.1/orm/count): contagem de registros com filtro.
-
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): versão para buscar no máximo um registro.
+- [**`count::<M>()`**](/v0.0.2/orm/count): contagem de registros com filtro.

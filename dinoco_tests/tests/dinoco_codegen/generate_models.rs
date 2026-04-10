@@ -77,6 +77,71 @@ model Post {
 }
 
 #[test]
+fn generate_models_adds_cache_extensions_when_redis_is_configured() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+
+    redis = {
+        url = env("REDIS_URL")
+    }
+}
+
+model User {
+    id String @id @default(uuid())
+    name String
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let dinoco_module =
+        fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
+
+    assert!(dinoco_module.contains("pub trait DinocoClientCacheExt"));
+    assert!(dinoco_module.contains("pub trait FindFirstCacheExt"));
+    assert!(dinoco_module.contains("pub trait FindManyCacheExt"));
+    assert!(dinoco_module.contains("fn cache(&self) -> dinoco::DinocoCache<'_, A>"));
+    assert!(dinoco_module.contains("fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S>"));
+    assert!(dinoco_module.contains("cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64)"));
+    assert!(dinoco_module.contains("config.with_redis(dinoco::DinocoRedisConfig::from_url("));
+}
+
+#[test]
+fn generate_models_skips_cache_extensions_without_redis() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model User {
+    id String @id @default(uuid())
+    name String
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let dinoco_module =
+        fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
+
+    assert!(!dinoco_module.contains("pub trait DinocoClientCacheExt"));
+    assert!(!dinoco_module.contains("pub trait FindFirstCacheExt"));
+    assert!(!dinoco_module.contains("pub trait FindManyCacheExt"));
+    assert!(!dinoco_module.contains("config.with_redis("));
+}
+
+#[test]
 fn generate_models_prefers_default_derives_when_defaults_match_rust_defaults() {
     let _lock = lock_current_dir();
     let raw = r#"
@@ -361,14 +426,13 @@ model Task {
         fs::read_to_string(temp_dir.path().join("dinoco/models/task.rs")).expect("generated task model should exist");
 
     assert!(enum_file.contains("pub enum Status"));
-    assert!(
-        enum_file
-            .contains("#[derive(Debug, Clone, PartialEq, Eq, dinoco::serde::Serialize, dinoco::serde::Deserialize)]")
-    );
+    assert!(enum_file.contains(
+        "#[derive(Debug, Clone, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize)]"
+    ));
     assert!(enum_file.contains("#[serde(crate = \"dinoco::serde\")]"));
     assert!(enum_file.contains("    #[serde(rename = \"IN_PROGRESS\")]"));
     assert!(enum_file.contains("    IN_PROGRESS,"));
-    assert!(enum_file.contains("        Self::IN_PROGRESS"));
+    assert!(enum_file.contains("    #[default]"));
     assert!(enum_file.contains("\"IN_PROGRESS\" => Ok(Self::IN_PROGRESS)"));
     assert!(model_file.contains("status: super::enums::Status::IN_PROGRESS"));
 }
