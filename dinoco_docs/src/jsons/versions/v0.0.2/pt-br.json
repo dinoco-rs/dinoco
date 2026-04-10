@@ -270,6 +270,58 @@
 									"items": []
 								}
 							]
+						},
+						{
+							"shortName": "traits",
+							"name": "Traits",
+							"mdxPath": "v0.0.2/pt-br/core/traits.mdx",
+							"inPage": [
+								"Traits",
+								{
+									"title": "O que são traits no Dinoco",
+									"items": []
+								},
+								{
+									"title": "Trait Model",
+									"items": []
+								},
+								{
+									"title": "Trait Projection",
+									"items": []
+								},
+								{
+									"title": "Trait InsertModel",
+									"items": []
+								},
+								{
+									"title": "Trait UpdateModel",
+									"items": []
+								},
+								{
+									"title": "Trait InsertPayload",
+									"items": []
+								},
+								{
+									"title": "Trait InsertConnectionPayload",
+									"items": []
+								},
+								{
+									"title": "Traits implementadas pelo model",
+									"items": []
+								},
+								{
+									"title": "Exemplo com traits e derive juntos",
+									"items": []
+								},
+								{
+									"title": "Quando usar cada um",
+									"items": []
+								},
+								{
+									"title": "Próximos passos",
+									"items": []
+								}
+							]
 						}
 					]
 				},
