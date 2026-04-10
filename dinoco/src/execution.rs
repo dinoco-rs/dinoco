@@ -2,7 +2,7 @@ use std::future::Future;
 
 use dinoco_engine::{
     AdapterDialect, DeleteStatement, DinocoAdapter, DinocoClient, DinocoError, DinocoGenericRow, DinocoResult,
-    DinocoRow, InsertStatement, QueryBuilder, SelectStatement, UpdateStatement,
+    DinocoRow, Expression, InsertStatement, QueryBuilder, SelectStatement, UpdateStatement,
 };
 
 use crate::{
@@ -23,6 +23,16 @@ struct DinocoPairRow {
     right: dinoco_engine::DinocoValue,
 }
 
+fn should_qualify_query_column(value: &str) -> bool {
+    !value.is_empty()
+        && value != "*"
+        && !value.contains('.')
+        && !value.contains(' ')
+        && !value.contains('(')
+        && !value.contains(')')
+        && !value.contains(',')
+}
+
 impl DinocoRow for DinocoCountRow {
     fn from_row<R: DinocoGenericRow>(row: &R) -> DinocoResult<Self> {
         Ok(Self { count: row.get(0)? })
@@ -39,6 +49,50 @@ impl DinocoRow for DinocoPairRow {
     fn from_row<R: DinocoGenericRow>(row: &R) -> DinocoResult<Self> {
         Ok(Self { left: row.get_value(0)?, right: row.get_value(1)? })
     }
+}
+
+pub fn qualify_query_column(value: &str, table_name: &str) -> String {
+    if should_qualify_query_column(value) { format!("{table_name}.{value}") } else { value.to_string() }
+}
+
+pub fn qualify_expression(expression: Expression, table_name: &str) -> Expression {
+    match expression {
+        Expression::Column(name) => Expression::Column(qualify_query_column(&name, table_name)),
+        Expression::Value(value) => Expression::Value(value),
+        Expression::Raw(value) => Expression::Raw(value),
+        Expression::IsNull(inner) => Expression::IsNull(Box::new(qualify_expression(*inner, table_name))),
+        Expression::IsNotNull(inner) => Expression::IsNotNull(Box::new(qualify_expression(*inner, table_name))),
+        Expression::In { expr, values } => {
+            Expression::In { expr: Box::new(qualify_expression(*expr, table_name)), values }
+        }
+        Expression::NotIn { expr, values } => {
+            Expression::NotIn { expr: Box::new(qualify_expression(*expr, table_name)), values }
+        }
+        Expression::And(expressions) => {
+            Expression::And(expressions.into_iter().map(|item| qualify_expression(item, table_name)).collect())
+        }
+        Expression::Or(expressions) => {
+            Expression::Or(expressions.into_iter().map(|item| qualify_expression(item, table_name)).collect())
+        }
+        Expression::BinaryOp { left, op, right } => Expression::BinaryOp {
+            left: Box::new(qualify_expression(*left, table_name)),
+            op,
+            right: Box::new(qualify_expression(*right, table_name)),
+        },
+    }
+}
+
+pub fn qualify_select_statement(mut statement: SelectStatement, table_name: &str) -> SelectStatement {
+    statement.select = statement.select.into_iter().map(|column| qualify_query_column(&column, table_name)).collect();
+    statement.conditions =
+        statement.conditions.into_iter().map(|expression| qualify_expression(expression, table_name)).collect();
+    statement.order_by = statement
+        .order_by
+        .into_iter()
+        .map(|(column, direction)| (qualify_query_column(&column, table_name), direction))
+        .collect();
+
+    statement
 }
 
 pub fn execute_many<'a, M, S, A>(

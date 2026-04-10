@@ -17,24 +17,21 @@ pub(crate) fn render_enums(schema: &ParsedSchema) -> String {
     output.push_str(GENERATED_FILE_LINTS);
 
     for item in &schema.enums {
-        output
-            .push_str("#[derive(Debug, Clone, PartialEq, Eq, dinoco::serde::Serialize, dinoco::serde::Deserialize)]\n");
+        output.push_str(
+            "#[derive(Debug, Clone, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize)]\n",
+        );
         output.push_str("#[serde(crate = \"dinoco::serde\")]\n");
         output.push_str(&format!("pub enum {} {{\n", item.name));
 
-        for value in &item.values {
+        for (index, value) in item.values.iter().enumerate() {
+            if index == 0 {
+                output.push_str("    #[default]\n");
+            }
             output.push_str(&format!("    #[serde(rename = {:?})]\n", value));
             output.push_str(&format!("    {},\n", enum_variant_name(value)));
         }
 
         output.push_str("}\n\n");
-        if let Some(first_value) = item.values.first() {
-            output.push_str(&format!("impl Default for {} {{\n", item.name));
-            output.push_str("    fn default() -> Self {\n");
-            output.push_str(&format!("        Self::{}\n", enum_variant_name(first_value)));
-            output.push_str("    }\n");
-            output.push_str("}\n\n");
-        }
         output.push_str(&format!("impl TryFrom<dinoco::DinocoValue> for {} {{\n", item.name));
         output.push_str("    type Error = dinoco::DinocoError;\n\n");
         output.push_str("    fn try_from(value: dinoco::DinocoValue) -> Result<Self, Self::Error> {\n");

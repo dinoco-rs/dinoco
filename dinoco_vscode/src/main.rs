@@ -16,10 +16,7 @@ struct LspServer {
 
 impl LspServer {
     pub fn new(client: Client) -> Self {
-        Self {
-            client,
-            documents: DashMap::new(),
-        }
+        Self { client, documents: DashMap::new() }
     }
 
     async fn validate_document(&self, uri: Url, text: String) {
@@ -121,15 +118,10 @@ impl LanguageServer for LspServer {
         };
 
         let line_count = text.lines().count() as u32;
-        let full_range = Range {
-            start: Position { line: 0, character: 0 },
-            end: Position { line: line_count, character: 0 },
-        };
+        let full_range =
+            Range { start: Position { line: 0, character: 0 }, end: Position { line: line_count, character: 0 } };
 
-        Ok(Some(vec![TextEdit {
-            range: full_range,
-            new_text: formatted,
-        }]))
+        Ok(Some(vec![TextEdit { range: full_range, new_text: formatted }]))
     }
 
     async fn completion(&self, params: CompletionParams) -> LspResult<Option<CompletionResponse>> {
@@ -158,12 +150,7 @@ impl LanguageServer for LspServer {
 
         if last_word.starts_with("@@") || prefix_up_to_cursor.ends_with("@@") {
             completions.extend(vec![
-                create_snippet_completion(
-                    "@@ids",
-                    CompletionItemKind::PROPERTY,
-                    "Composite primary key",
-                    "ids([$0])",
-                ),
+                create_snippet_completion("@@ids", CompletionItemKind::PROPERTY, "Composite primary key", "ids([$0])"),
                 create_snippet_completion(
                     "@@table_name",
                     CompletionItemKind::PROPERTY,
@@ -203,8 +190,18 @@ impl LanguageServer for LspServer {
 
         if is_root_level {
             completions.extend(vec![
-                create_snippet_completion("model", CompletionItemKind::KEYWORD, "Define a new model", "model ${1:ModelName} {\n\t$0\n}"),
-                create_snippet_completion("enum", CompletionItemKind::KEYWORD, "Define an enum", "enum ${1:EnumName} {\n\t$0\n}"),
+                create_snippet_completion(
+                    "model",
+                    CompletionItemKind::KEYWORD,
+                    "Define a new model",
+                    "model ${1:ModelName} {\n\t$0\n}",
+                ),
+                create_snippet_completion(
+                    "enum",
+                    CompletionItemKind::KEYWORD,
+                    "Define an enum",
+                    "enum ${1:EnumName} {\n\t$0\n}",
+                ),
                 create_snippet_completion(
                     "config",
                     CompletionItemKind::KEYWORD,

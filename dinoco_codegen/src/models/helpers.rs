@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use dinoco_compiler::{ConnectionUrl, FunctionCall, ParsedField, ParsedFieldDefault, ParsedFieldType};
 
 pub(crate) fn render_connection_url(url: &ConnectionUrl) -> String {
@@ -172,6 +174,70 @@ pub(crate) fn default_value_expr(field: &ParsedField, enum_names: &[String]) -> 
         },
         ParsedFieldDefault::NotDefined => default_expr_by_type(field, enum_names),
     }
+}
+
+pub(crate) fn can_derive_default_for_model(
+    fields: &[&ParsedField],
+    enum_names: &[String],
+    enum_default_variants: &BTreeMap<String, String>,
+) -> bool {
+    fields.iter().all(|field| can_derive_default_for_field(field, enum_names, enum_default_variants))
+}
+
+fn can_derive_default_for_field(
+    field: &ParsedField,
+    enum_names: &[String],
+    enum_default_variants: &BTreeMap<String, String>,
+) -> bool {
+    if field.is_optional || field.is_list {
+        return true;
+    }
+
+    match &field.default_value {
+        ParsedFieldDefault::String(value) => value.is_empty(),
+        ParsedFieldDefault::Boolean(value) => !value,
+        ParsedFieldDefault::Integer(value) => *value == 0,
+        ParsedFieldDefault::Float(value) => *value == 0.0,
+        ParsedFieldDefault::EnumValue(value) => enum_default_variant(field, enum_names, enum_default_variants)
+            .is_some_and(|default_value| default_value == value),
+        ParsedFieldDefault::Function(FunctionCall::AutoIncrement) => true,
+        ParsedFieldDefault::NotDefined => field_uses_type_default(field, enum_names, enum_default_variants),
+        ParsedFieldDefault::Function(_) => false,
+    }
+}
+
+fn field_uses_type_default(
+    field: &ParsedField,
+    enum_names: &[String],
+    enum_default_variants: &BTreeMap<String, String>,
+) -> bool {
+    match &field.field_type {
+        ParsedFieldType::String => true,
+        ParsedFieldType::Boolean => true,
+        ParsedFieldType::Integer => true,
+        ParsedFieldType::Float => true,
+        ParsedFieldType::Json => true,
+        ParsedFieldType::Enum(_) => enum_default_variant(field, enum_names, enum_default_variants).is_some(),
+        ParsedFieldType::DateTime => false,
+        ParsedFieldType::Date => false,
+        ParsedFieldType::Relation(_) => unreachable!(),
+    }
+}
+
+fn enum_default_variant<'a>(
+    field: &ParsedField,
+    enum_names: &[String],
+    enum_default_variants: &'a BTreeMap<String, String>,
+) -> Option<&'a str> {
+    let ParsedFieldType::Enum(name) = &field.field_type else {
+        return None;
+    };
+
+    if !enum_names.iter().any(|item| item == name) {
+        return None;
+    }
+
+    enum_default_variants.get(name).map(String::as_str)
 }
 
 fn default_expr_by_type(field: &ParsedField, enum_names: &[String]) -> String {

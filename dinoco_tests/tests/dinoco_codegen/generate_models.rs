@@ -77,6 +77,89 @@ model Post {
 }
 
 #[test]
+fn generate_models_prefers_default_derives_when_defaults_match_rust_defaults() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum Role {
+    USER
+    ADMIN
+}
+
+model User {
+    id Integer @id @default(autoincrement())
+    name String
+    active Boolean
+    payload Json
+    role Role
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let user_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/user.rs")).expect("generated user model should exist");
+    let enums_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/enums.rs")).expect("generated enums file should exist");
+
+    assert!(user_file.contains("Deserialize, Rowable, Default)]"));
+    assert!(!user_file.contains("impl Default for User {"));
+    assert!(user_file.contains("#[derive(Default)]\npub struct UserInclude {}"));
+    assert!(user_file.contains("#[derive(Default)]\npub struct UserRelations {}"));
+    assert!(!user_file.contains("impl Default for UserInclude {"));
+    assert!(!user_file.contains("impl Default for UserRelations {"));
+
+    assert!(enums_file.contains("PartialEq, Eq, Default, dinoco::serde::Serialize"));
+    assert!(enums_file.contains("#[default]\n    #[serde(rename = \"USER\")]"));
+    assert!(!enums_file.contains("impl Default for Role {"));
+}
+
+#[test]
+fn generate_models_preserves_manual_default_when_schema_requires_custom_defaults() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum Role {
+    USER
+    ADMIN
+}
+
+model User {
+    id Integer @id @default(autoincrement())
+    name String @default("Dinoco")
+    createdAt DateTime @default(now())
+    role Role @default(ADMIN)
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let user_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/user.rs")).expect("generated user model should exist");
+
+    assert!(user_file.contains("Deserialize, Rowable)]"));
+    assert!(!user_file.contains("Deserialize, Rowable, Default)]"));
+    assert!(user_file.contains("impl Default for User {"));
+    assert!(user_file.contains("name: \"Dinoco\".to_string()"));
+    assert!(user_file.contains("createdAt: dinoco::Utc::now()"));
+    assert!(user_file.contains("role: super::enums::Role::ADMIN"));
+}
+
+#[test]
 fn generate_models_uses_partitioned_loader_for_many_to_many_include_limits() {
     let _lock = lock_current_dir();
     let raw = r#"
@@ -202,8 +285,11 @@ model Tag {
         fs::read_to_string(temp_dir.path().join("dinoco/models/post.rs")).expect("generated post model should exist");
 
     assert!(user_file.contains("pub fn __dinoco_load_profile"));
-    assert!(user_file.contains("client.read_adapter(false)"));
-    assert!(user_file.contains("Expression::Column(\"userId\".to_string()).in_values"));
+    assert!(user_file.contains("qualify_select_statement"));
+    assert!(user_file.contains("LEFT JOIN"));
+    assert!(user_file.contains("client.read_adapter(matches!(read_mode, dinoco::ReadMode::Primary))"));
+    assert!(user_file.contains("Expression::Column(format!(\"{}.{}\", \"User\", \"id\"))"));
+    assert!(user_file.contains("row.get_optional::<i64>(relation_offset)?"));
 
     assert!(user_file.contains("pub fn __dinoco_load_followers"));
     assert!(user_file.contains(".condition(dinoco::Expression::Column(\"user_A_id\".to_string())"));
