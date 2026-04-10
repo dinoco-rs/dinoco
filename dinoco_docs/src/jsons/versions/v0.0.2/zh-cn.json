@@ -1,0 +1,854 @@
+{
+	"description": "Dinoco 文档的首个公开版本。",
+	"groups": [
+		{
+			"icon": "database",
+			"name": "Dinoco ORM",
+			"shortName": "orm",
+			"sections": [
+				{
+					"title": "入门",
+					"items": [
+						{
+							"shortName": "introduction-dinoco",
+							"name": "Dinoco 简介",
+							"mdxPath": "v0.0.1/zh-cn/orm/introduction-to-dinoco.mdx",
+							"inPage": [
+								"Dinoco 简介",
+								{
+									"title": "Rust 中的 Prisma 体验",
+									"items": []
+								},
+								{
+									"title": "项目支柱",
+									"items": []
+								},
+								{
+									"title": "我们处于什么位置？",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "first-steps",
+							"name": "第一步",
+							"mdxPath": "v0.0.1/zh-cn/orm/first-steps.mdx",
+							"inPage": [
+								"第一步",
+								{
+									"title": "它是如何工作的？",
+									"items": ["1. 定义你的 schema 和连接", "2. 创建迁移", "3. 使用 DinocoClient 查询"]
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "supported-databases",
+							"name": "概览",
+							"mdxPath": "v0.0.1/zh-cn/orm/supported-databases.mdx",
+							"inPage": [
+								"概览",
+								{
+									"title": "支持的版本",
+									"items": []
+								},
+								{
+									"title": "连接配置",
+									"items": ["SQLite"]
+								},
+								{
+									"title": "PostgreSQL 或 MySQL",
+									"items": []
+								},
+								{
+									"title": "类型映射",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco 模式",
+					"items": [
+						{
+							"shortName": "models",
+							"name": "模型",
+							"mdxPath": "v0.0.1/zh-cn/orm/models.mdx",
+							"inPage": [
+								"模型",
+								{
+									"title": "模型表示什么",
+									"items": []
+								},
+								{
+									"title": "完整示例",
+									"items": []
+								},
+								{
+									"title": "字段结构",
+									"items": []
+								},
+								{
+									"title": "字段类型",
+									"items": ["标量字段"]
+								},
+								{
+									"title": "类型修饰符",
+									"items": ["可选字段", "列表字段"]
+								},
+								{
+									"title": "最常见的属性",
+									"items": ["`@id`", "`@default(...)`", "`@unique`"]
+								},
+								{
+									"title": "模型装饰器",
+									"items": ["`@@ids([...])`", "`@@table_name(\"...\")`"]
+								},
+								{
+									"title": "用户模型示例",
+									"items": []
+								},
+								{
+									"title": "使用 Dinoco API 搜索用户的示例",
+									"items": ["查询单条记录", "查询多条记录"]
+								},
+								{
+									"title": "使用 Dinoco API 创建用户的示例",
+									"items": []
+								},
+								{
+									"title": "使用 Dinoco API 更新用户的示例",
+									"items": []
+								},
+								{
+									"title": "使用 Dinoco API 删除用户的示例",
+									"items": []
+								},
+								{
+									"title": "快速总结",
+									"items": []
+								},
+								{
+									"title": "何时创建新模型",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "enums",
+							"name": "Enums",
+							"mdxPath": "v0.0.1/zh-cn/orm/enums.mdx",
+							"inPage": [
+								"Enums",
+								{
+									"title": "什么是枚举",
+									"items": []
+								},
+								{
+									"title": "在模型中的使用",
+									"items": []
+								},
+								{
+									"title": "何时使用枚举",
+									"items": []
+								},
+								{
+									"title": "最佳实践",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "relations",
+							"name": "关系",
+							"mdxPath": "v0.0.1/zh-cn/orm/relations.mdx",
+							"inPage": [
+								"关系",
+								{
+									"title": "@relation(...)",
+									"items": []
+								},
+								{
+									"title": "onDelete 和 onUpdate",
+									"items": []
+								},
+								{
+									"title": "一对多",
+									"items": []
+								},
+								{
+									"title": "多对多",
+									"items": []
+								},
+								{
+									"title": "自引用关系",
+									"items": []
+								},
+								{
+									"title": "实用技巧",
+									"items": []
+								},
+								{
+									"title": "示例参考 schema",
+									"items": []
+								},
+								{
+									"title": "从 `User` 出发查询所有可能关系的示例",
+									"items": []
+								},
+								{
+									"title": "使用 `User` 和 `Profile` 进行带关系 insert 的示例",
+									"items": []
+								},
+								{
+									"title": "使用 `with_relations(...)` 的 `insert_many` 示例",
+									"items": []
+								},
+								{
+									"title": "使用 `with_connections(...)` 的 `insert_many` 示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco 客户端",
+					"items": [
+						{
+							"shortName": "find-many",
+							"name": "find_many",
+							"mdxPath": "v0.0.1/zh-cn/orm/find-many.mdx",
+							"inPage": [
+								"find_many",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "方法说明",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "基础示例",
+									"items": []
+								},
+								{
+									"title": "带过滤器的示例",
+									"items": []
+								},
+								{
+									"title": "带分页和排序的示例",
+									"items": []
+								},
+								{
+									"title": "自定义 select 示例",
+									"items": []
+								},
+								{
+									"title": "简单 include 示例",
+									"items": []
+								},
+								{
+									"title": "带过滤 include 的示例",
+									"items": []
+								},
+								{
+									"title": "嵌套 include 示例",
+									"items": []
+								},
+								{
+									"title": "关系计数示例",
+									"items": []
+								},
+								{
+									"title": "从主数据库读取的示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-first",
+							"name": "find_first",
+							"mdxPath": "v0.0.1/zh-cn/orm/find-first.mdx",
+							"inPage": [
+								"find_first",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "方法说明",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "基础示例",
+									"items": []
+								},
+								{
+									"title": "select 示例",
+									"items": []
+								},
+								{
+									"title": "关系示例",
+									"items": []
+								},
+								{
+									"title": "排序示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-and-update",
+							"name": "find_and_update",
+							"mdxPath": "v0.0.1/zh-cn/orm/find-and-update.mdx",
+							"inPage": [
+								"find_and_update",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "方法说明",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "基础示例",
+									"items": []
+								},
+								{
+									"title": "`ModelUpdate` 中可用的操作",
+									"items": []
+								},
+								{
+									"title": "说明",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-into",
+							"name": "insert_into",
+							"mdxPath": "v0.0.1/zh-cn/orm/insert-into.mdx",
+							"inPage": [
+								"insert_into",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "方法说明",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "简单示例",
+									"items": []
+								},
+								{
+									"title": "关系示例",
+									"items": []
+								},
+								{
+									"title": "连接示例",
+									"items": []
+								},
+								{
+									"title": "带类型返回值的示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-many",
+							"name": "insert_many",
+							"mdxPath": "v0.0.1/zh-cn/orm/insert-many.mdx",
+							"inPage": [
+								"insert_many",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "简单示例",
+									"items": []
+								},
+								{
+									"title": "带返回值的示例",
+									"items": []
+								},
+								{
+									"title": "`with_relation(...)` 示例",
+									"items": []
+								},
+								{
+									"title": "`with_relations(...)` 示例",
+									"items": []
+								},
+								{
+									"title": "`with_connection(...)` 示例",
+									"items": []
+								},
+								{
+									"title": "`with_connections(...)` 示例",
+									"items": []
+								},
+								{
+									"title": "说明",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update",
+							"name": "update",
+							"mdxPath": "v0.0.1/zh-cn/orm/update.mdx",
+							"inPage": [
+								"update",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "字段更新示例",
+									"items": []
+								},
+								{
+									"title": "`connect(...)` 示例",
+									"items": []
+								},
+								{
+									"title": "`disconnect(...)` 示例",
+									"items": []
+								},
+								{
+									"title": "connect 和 disconnect 中可用的过滤器",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update-many",
+							"name": "update_many",
+							"mdxPath": "v0.0.1/zh-cn/orm/update-many.mdx",
+							"inPage": [
+								"update_many",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "基础示例",
+									"items": []
+								},
+								{
+									"title": "带返回值的示例",
+									"items": []
+								},
+								{
+									"title": "带过滤器的示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete",
+							"name": "delete",
+							"mdxPath": "v0.0.1/zh-cn/orm/delete.mdx",
+							"inPage": [
+								"delete",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "基础示例",
+									"items": []
+								},
+								{
+									"title": "另一个过滤器示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete-many",
+							"name": "delete_many",
+							"mdxPath": "v0.0.1/zh-cn/orm/delete-many.mdx",
+							"inPage": [
+								"delete_many",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "基础示例",
+									"items": []
+								},
+								{
+									"title": "无过滤器示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "count",
+							"name": "count",
+							"mdxPath": "v0.0.1/zh-cn/orm/count.mdx",
+							"inPage": [
+								"count",
+								{
+									"title": "你可以做什么",
+									"items": []
+								},
+								{
+									"title": "方法说明",
+									"items": []
+								},
+								{
+									"title": "返回值",
+									"items": []
+								},
+								{
+									"title": "基础示例",
+									"items": []
+								},
+								{
+									"title": "布尔过滤器示例",
+									"items": []
+								},
+								{
+									"title": "文本过滤器示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "terminal",
+			"name": "Dinoco CLI",
+			"shortName": "cli",
+			"sections": [
+				{
+					"title": "安装",
+					"items": [
+						{
+							"shortName": "install",
+							"name": "安装",
+							"mdxPath": "v0.0.1/zh-cn/cli/install.mdx",
+							"inPage": [
+								"安装",
+								{
+									"title": "安装",
+									"items": []
+								},
+								{
+									"title": "配置",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "命令",
+					"items": [
+						{
+							"shortName": "init",
+							"name": "Init",
+							"mdxPath": "v0.0.1/zh-cn/cli/init.mdx",
+							"inPage": [
+								"如何使用？",
+								{
+									"title": "命令的作用",
+									"items": []
+								},
+								{
+									"title": "何时使用",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "database-reset",
+							"name": "Database reset",
+							"mdxPath": "v0.0.1/zh-cn/cli/database-reset.mdx",
+							"inPage": [
+								"如何使用？",
+								{
+									"title": "命令的作用",
+									"items": []
+								},
+								{
+									"title": "注意事项",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-generate",
+							"name": "Migrate generate",
+							"mdxPath": "v0.0.1/zh-cn/cli/migrate-generate.mdx",
+							"inPage": [
+								"如何使用？",
+								{
+									"title": "命令的作用",
+									"items": []
+								},
+								{
+									"title": "参数",
+									"items": ["--apply"]
+								},
+								{
+									"title": "不立即应用的使用示例",
+									"items": []
+								},
+								{
+									"title": "立即应用的使用示例",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-run",
+							"name": "Migrate run",
+							"mdxPath": "v0.0.1/zh-cn/cli/migrate-run.mdx",
+							"inPage": [
+								"如何使用？",
+								{
+									"title": "命令的作用",
+									"items": []
+								},
+								{
+									"title": "何时使用",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-rollback",
+							"name": "Migrate rollback",
+							"mdxPath": "v0.0.1/zh-cn/cli/migrate-rollback.mdx",
+							"inPage": [
+								"如何使用？",
+								{
+									"title": "命令的作用",
+									"items": []
+								},
+								{
+									"title": "参数",
+									"items": []
+								},
+								{
+									"title": "使用示例",
+									"items": []
+								},
+								{
+									"title": "何时使用",
+									"items": []
+								},
+								{
+									"title": "注意事项",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models-generate",
+							"name": "Models generate",
+							"mdxPath": "v0.0.1/zh-cn/cli/models-generate.mdx",
+							"inPage": [
+								"如何使用？",
+								{
+									"title": "命令的作用",
+									"items": []
+								},
+								{
+									"title": "何时使用",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "schema-restore",
+							"name": "Schema restore",
+							"mdxPath": "v0.0.1/zh-cn/cli/schema-restore.mdx",
+							"inPage": [
+								"如何使用？",
+								{
+									"title": "命令的作用",
+									"items": []
+								},
+								{
+									"title": "从特定迁移恢复的示例",
+									"items": []
+								},
+								{
+									"title": "何时使用",
+									"items": []
+								},
+								{
+									"title": "下一步",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "rocket",
+			"name": "Dinoco Supersonic",
+			"shortName": "supersonic",
+			"sections": [
+				{
+					"title": "介绍",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "介绍",
+							"mdxPath": "v0.0.1/zh-cn/supersonic/introduction.mdx",
+							"inPage": ["介绍"]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "box",
+			"name": "DinocoDB",
+			"shortName": "dinocodb",
+			"sections": [
+				{
+					"title": "介绍",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "介绍",
+							"mdxPath": "v0.0.1/zh-cn/dinocodb/introduction.mdx",
+							"inPage": ["介绍"]
+						}
+					]
+				}
+			]
+		}
+	],
+	"locale": "zh-cn",
+	"name": "v0.0.2"
+}

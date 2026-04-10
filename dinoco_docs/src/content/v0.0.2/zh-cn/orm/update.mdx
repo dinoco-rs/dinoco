@@ -1,0 +1,93 @@
+export const title = "update";
+
+# update
+
+用于更新筛选后的记录。
+
+---
+
+## 你可以做什么
+
+- `.cond(...)`: 定义要更新的记录。
+- `.values(item)`: 指定记录的新值。
+- `.connect(...)`: 创建支持的写入关系。
+- `.disconnect(...)`: 移除支持的写入关系。
+- `.returning::<T>()`: 以类型化投影返回更新后的记录。
+- `.execute(&client)`: 在数据库中执行更新。
+
+## 返回值
+
+如果没有 `.returning::<T>()`，返回值为：
+
+```rust
+DinocoResult<()>
+```
+
+如果使用 `.returning::<T>()`，返回值为：
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+注意：
+
+- `update().returning()` 不支持使用 `.connect(...)` 或 `.disconnect(...)` 进行关系写入。
+
+## 字段更新示例
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "Novo Nome".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## `connect(...)` 示例
+
+用于连接支持的写入关系，通常是多对多关系。
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .connect(|r| r.roles().slug.eq("admin"))
+    .execute(&client)
+    .await?;
+```
+
+## `disconnect(...)` 示例
+
+用于断开关系。
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .disconnect(|r| r.roles().slug.eq("guest"))
+    .execute(&client)
+    .await?;
+```
+
+## connect 和 disconnect 中可用的过滤器
+
+- `eq`
+- `neq`
+- `gt`
+- `gte`
+- `lt`
+- `lte`
+- `in_values`
+- `not_in_values`
+- `is_null`
+- `is_not_null`
+- `includes`
+- `starts_with`
+- `ends_with`
+
+## 下一步
+
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): 批量更新。
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 带返回值的原子更新。

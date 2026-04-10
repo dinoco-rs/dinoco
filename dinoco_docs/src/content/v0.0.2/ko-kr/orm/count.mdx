@@ -1,0 +1,56 @@
+export const title = "count";
+
+# count
+
+데이터 레코드를 세는 데 사용됩니다.
+
+---
+
+## 할 수 있는 것
+
+- 필터링: `.cond(...)`
+- 실행: `.execute(&client)`
+
+## 메서드 설명
+
+- `.cond(...)`: 어떤 데이터 레코드를 계산에 포함할지 제한합니다.
+- `.execute(&client)`: 데이터베이스에서 계산을 실행합니다.
+
+## 반환값
+
+`count`의 반환값은 다음과 같습니다:
+
+```rust
+DinocoResult<usize>
+```
+
+## 기본 예제
+
+```rust
+let total = dinoco::count::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## 불리언 필터 예제
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.active.eq(true))
+    .execute(&client)
+    .await?;
+```
+
+## 텍스트 필터 예제
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.name.includes("Ana"))
+    .execute(&client)
+    .await?;
+```
+
+## 다음 단계
+
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 목록에서 데이터 레코드를 가져옵니다.
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 단일 데이터 레코드를 가져옵니다.

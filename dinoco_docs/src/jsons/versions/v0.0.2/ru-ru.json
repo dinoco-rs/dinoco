@@ -1,0 +1,854 @@
+{
+	"description": "Первая публичная версия документации Dinoco.",
+	"groups": [
+		{
+			"icon": "database",
+			"name": "Dinoco ORM",
+			"shortName": "orm",
+			"sections": [
+				{
+					"title": "Начало работы",
+					"items": [
+						{
+							"shortName": "introduction-dinoco",
+							"name": "Введение в Dinoco",
+							"mdxPath": "v0.0.1/ru-ru/orm/introduction-to-dinoco.mdx",
+							"inPage": [
+								"Введение в Dinoco",
+								{
+									"title": "Опыт Prisma в Rust",
+									"items": []
+								},
+								{
+									"title": "Основы проекта",
+									"items": []
+								},
+								{
+									"title": "Где мы находимся?",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "first-steps",
+							"name": "Первые шаги",
+							"mdxPath": "v0.0.1/ru-ru/orm/first-steps.mdx",
+							"inPage": [
+								"Первые шаги",
+								{
+									"title": "Как это работает?",
+									"items": ["1. Определите схему и подключение", "2. Создайте миграцию", "3. Выполните запрос с DinocoClient"]
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "supported-databases",
+							"name": "Обзор",
+							"mdxPath": "v0.0.1/ru-ru/orm/supported-databases.mdx",
+							"inPage": [
+								"Обзор",
+								{
+									"title": "Поддерживаемые версии",
+									"items": []
+								},
+								{
+									"title": "Настройка подключения",
+									"items": ["SQLite"]
+								},
+								{
+									"title": "PostgreSQL или MySQL",
+									"items": []
+								},
+								{
+									"title": "Сопоставление типов",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Схема Dinoco",
+					"items": [
+						{
+							"shortName": "models",
+							"name": "Модели",
+							"mdxPath": "v0.0.1/ru-ru/orm/models.mdx",
+							"inPage": [
+								"Модели",
+								{
+									"title": "Что представляет модель",
+									"items": []
+								},
+								{
+									"title": "Полный пример",
+									"items": []
+								},
+								{
+									"title": "Структура поля",
+									"items": []
+								},
+								{
+									"title": "Типы полей",
+									"items": ["Скалярные поля"]
+								},
+								{
+									"title": "Модификаторы типов",
+									"items": ["Необязательное поле", "Поле-список"]
+								},
+								{
+									"title": "Наиболее частые атрибуты",
+									"items": ["`@id`", "`@default(...)`", "`@unique`"]
+								},
+								{
+									"title": "Декораторы модели",
+									"items": ["`@@ids([...])`", "`@@table_name(\"...\")`"]
+								},
+								{
+									"title": "Пример модели пользователя",
+									"items": []
+								},
+								{
+									"title": "Пример поиска пользователей с помощью API Dinoco",
+									"items": ["Поиск одной записи", "Поиск нескольких записей"]
+								},
+								{
+									"title": "Пример создания пользователя с помощью API Dinoco",
+									"items": []
+								},
+								{
+									"title": "Пример обновления пользователя с помощью API Dinoco",
+									"items": []
+								},
+								{
+									"title": "Пример удаления пользователя с помощью API Dinoco",
+									"items": []
+								},
+								{
+									"title": "Краткое резюме",
+									"items": []
+								},
+								{
+									"title": "Когда стоит создавать новую модель",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "enums",
+							"name": "Enums",
+							"mdxPath": "v0.0.1/ru-ru/orm/enums.mdx",
+							"inPage": [
+								"Enums",
+								{
+									"title": "Что такое enum",
+									"items": []
+								},
+								{
+									"title": "Использование в моделях",
+									"items": []
+								},
+								{
+									"title": "Когда использовать enum",
+									"items": []
+								},
+								{
+									"title": "Рекомендации",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "relations",
+							"name": "Связи",
+							"mdxPath": "v0.0.1/ru-ru/orm/relations.mdx",
+							"inPage": [
+								"Связи",
+								{
+									"title": "@relation(...)",
+									"items": []
+								},
+								{
+									"title": "onDelete и onUpdate",
+									"items": []
+								},
+								{
+									"title": "Один ко многим",
+									"items": []
+								},
+								{
+									"title": "Многие ко многим",
+									"items": []
+								},
+								{
+									"title": "Самоссылка",
+									"items": []
+								},
+								{
+									"title": "Практические советы",
+									"items": []
+								},
+								{
+									"title": "Справочная схема для примеров",
+									"items": []
+								},
+								{
+									"title": "Пример запроса со всеми возможными связями, начиная от User",
+									"items": []
+								},
+								{
+									"title": "Пример вставки со связью с использованием User и Profile",
+									"items": []
+								},
+								{
+									"title": "Пример `insert_many` с `with_relations(...)`",
+									"items": []
+								},
+								{
+									"title": "Пример `insert_many` с `with_connections(...)`",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Клиент Dinoco",
+					"items": [
+						{
+							"shortName": "find-many",
+							"name": "find_many",
+							"mdxPath": "v0.0.1/ru-ru/orm/find-many.mdx",
+							"inPage": [
+								"find_many",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Описание методов",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Базовый пример",
+									"items": []
+								},
+								{
+									"title": "Пример с фильтром",
+									"items": []
+								},
+								{
+									"title": "Пример с пагинацией и сортировкой",
+									"items": []
+								},
+								{
+									"title": "Пример пользовательского select",
+									"items": []
+								},
+								{
+									"title": "Пример с простым include",
+									"items": []
+								},
+								{
+									"title": "Пример с include с фильтром",
+									"items": []
+								},
+								{
+									"title": "Пример с вложенным include",
+									"items": []
+								},
+								{
+									"title": "Пример с подсчетом связей",
+									"items": []
+								},
+								{
+									"title": "Пример чтения из основной базы данных",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-first",
+							"name": "find_first",
+							"mdxPath": "v0.0.1/ru-ru/orm/find-first.mdx",
+							"inPage": [
+								"find_first",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Описание методов",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Базовый пример",
+									"items": []
+								},
+								{
+									"title": "Пример с select",
+									"items": []
+								},
+								{
+									"title": "Пример со связью",
+									"items": []
+								},
+								{
+									"title": "Пример с сортировкой",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-and-update",
+							"name": "find_and_update",
+							"mdxPath": "v0.0.1/ru-ru/orm/find-and-update.mdx",
+							"inPage": [
+								"find_and_update",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Описание методов",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Базовый пример",
+									"items": []
+								},
+								{
+									"title": "Доступные операции в `ModelUpdate`",
+									"items": []
+								},
+								{
+									"title": "Примечания",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-into",
+							"name": "insert_into",
+							"mdxPath": "v0.0.1/ru-ru/orm/insert-into.mdx",
+							"inPage": [
+								"insert_into",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Описание методов",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Простой пример",
+									"items": []
+								},
+								{
+									"title": "Пример со связью",
+									"items": []
+								},
+								{
+									"title": "Пример с подключением",
+									"items": []
+								},
+								{
+									"title": "Пример с типизированным результатом",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-many",
+							"name": "insert_many",
+							"mdxPath": "v0.0.1/ru-ru/orm/insert-many.mdx",
+							"inPage": [
+								"insert_many",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Простой пример",
+									"items": []
+								},
+								{
+									"title": "Пример с возвращаемым значением",
+									"items": []
+								},
+								{
+									"title": "Пример с `with_relation(...)`",
+									"items": []
+								},
+								{
+									"title": "Пример с `with_relations(...)`",
+									"items": []
+								},
+								{
+									"title": "Пример с `with_connection(...)`",
+									"items": []
+								},
+								{
+									"title": "Пример с `with_connections(...)`",
+									"items": []
+								},
+								{
+									"title": "Примечания",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update",
+							"name": "update",
+							"mdxPath": "v0.0.1/ru-ru/orm/update.mdx",
+							"inPage": [
+								"update",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Пример обновления полей",
+									"items": []
+								},
+								{
+									"title": "Пример с `connect(...)`",
+									"items": []
+								},
+								{
+									"title": "Пример с `disconnect(...)`",
+									"items": []
+								},
+								{
+									"title": "Доступные фильтры в connect и disconnect",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update-many",
+							"name": "update_many",
+							"mdxPath": "v0.0.1/ru-ru/orm/update-many.mdx",
+							"inPage": [
+								"update_many",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Базовый пример",
+									"items": []
+								},
+								{
+									"title": "Пример с возвращаемым значением",
+									"items": []
+								},
+								{
+									"title": "Пример с фильтром",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete",
+							"name": "delete",
+							"mdxPath": "v0.0.1/ru-ru/orm/delete.mdx",
+							"inPage": [
+								"delete",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Базовый пример",
+									"items": []
+								},
+								{
+									"title": "Пример с другим фильтром",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete-many",
+							"name": "delete_many",
+							"mdxPath": "v0.0.1/ru-ru/orm/delete-many.mdx",
+							"inPage": [
+								"delete_many",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Базовый пример",
+									"items": []
+								},
+								{
+									"title": "Пример без фильтра",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "count",
+							"name": "count",
+							"mdxPath": "v0.0.1/ru-ru/orm/count.mdx",
+							"inPage": [
+								"count",
+								{
+									"title": "Что можно сделать",
+									"items": []
+								},
+								{
+									"title": "Описание методов",
+									"items": []
+								},
+								{
+									"title": "Возвращаемое значение",
+									"items": []
+								},
+								{
+									"title": "Базовый пример",
+									"items": []
+								},
+								{
+									"title": "Пример с логическим фильтром",
+									"items": []
+								},
+								{
+									"title": "Пример с текстовым фильтром",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "terminal",
+			"name": "Dinoco CLI",
+			"shortName": "cli",
+			"sections": [
+				{
+					"title": "Установка",
+					"items": [
+						{
+							"shortName": "install",
+							"name": "Установка",
+							"mdxPath": "v0.0.1/ru-ru/cli/install.mdx",
+							"inPage": [
+								"Установка",
+								{
+									"title": "Установка",
+									"items": []
+								},
+								{
+									"title": "Конфигурация",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Команды",
+					"items": [
+						{
+							"shortName": "init",
+							"name": "Init",
+							"mdxPath": "v0.0.1/ru-ru/cli/init.mdx",
+							"inPage": [
+								"Как использовать?",
+								{
+									"title": "Что делает команда",
+									"items": []
+								},
+								{
+									"title": "Когда использовать",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "database-reset",
+							"name": "Database reset",
+							"mdxPath": "v0.0.1/ru-ru/cli/database-reset.mdx",
+							"inPage": [
+								"Как использовать?",
+								{
+									"title": "Что делает команда",
+									"items": []
+								},
+								{
+									"title": "Предосторожности",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-generate",
+							"name": "Migrate generate",
+							"mdxPath": "v0.0.1/ru-ru/cli/migrate-generate.mdx",
+							"inPage": [
+								"Как это использовать?",
+								{
+									"title": "Что делает команда",
+									"items": []
+								},
+								{
+									"title": "Параметры",
+									"items": ["--apply"]
+								},
+								{
+									"title": "Пример использования без немедленного применения",
+									"items": []
+								},
+								{
+									"title": "Пример использования с немедленным применением",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-run",
+							"name": "Migrate run",
+							"mdxPath": "v0.0.1/ru-ru/cli/migrate-run.mdx",
+							"inPage": [
+								"Как это использовать?",
+								{
+									"title": "Что делает команда",
+									"items": []
+								},
+								{
+									"title": "Когда использовать",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-rollback",
+							"name": "Migrate rollback",
+							"mdxPath": "v0.0.1/ru-ru/cli/migrate-rollback.mdx",
+							"inPage": [
+								"Как использовать?",
+								{
+									"title": "Что выполняет команда",
+									"items": []
+								},
+								{
+									"title": "Параметры",
+									"items": []
+								},
+								{
+									"title": "Пример использования",
+									"items": []
+								},
+								{
+									"title": "Когда использовать",
+									"items": []
+								},
+								{
+									"title": "Предосторожности",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models-generate",
+							"name": "Models generate",
+							"mdxPath": "v0.0.1/ru-ru/cli/models-generate.mdx",
+							"inPage": [
+								"Как это использовать?",
+								{
+									"title": "Что делает команда",
+									"items": []
+								},
+								{
+									"title": "Когда использовать",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "schema-restore",
+							"name": "Schema restore",
+							"mdxPath": "v0.0.1/ru-ru/cli/schema-restore.mdx",
+							"inPage": [
+								"Как использовать?",
+								{
+									"title": "Что делает команда",
+									"items": []
+								},
+								{
+									"title": "Пример восстановления из определенной миграции",
+									"items": []
+								},
+								{
+									"title": "Когда использовать",
+									"items": []
+								},
+								{
+									"title": "Следующие шаги",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "rocket",
+			"name": "Dinoco Supersonic",
+			"shortName": "supersonic",
+			"sections": [
+				{
+					"title": "Введение",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "Введение",
+							"mdxPath": "v0.0.1/ru-ru/supersonic/introduction.mdx",
+							"inPage": ["Введение"]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "box",
+			"name": "DinocoDB",
+			"shortName": "dinocodb",
+			"sections": [
+				{
+					"title": "Введение",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "Введение",
+							"mdxPath": "v0.0.1/ru-ru/dinocodb/introduction.mdx",
+							"inPage": ["Введение"]
+						}
+					]
+				}
+			]
+		}
+	],
+	"locale": "ru-ru",
+	"name": "v0.0.2"
+}

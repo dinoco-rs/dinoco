@@ -1,0 +1,71 @@
+export const title = "update_many";
+
+# update_many
+
+Utilizzato per aggiornare più voci contemporaneamente.
+
+---
+
+## Cosa puoi fare
+
+- `.cond(...)`: limita quali voci possono essere aggiornate.
+- `.values(Vec<M>)`: definisce gli elementi utilizzati nell'aggiornamento in batch.
+- `.returning::<T>()`: restituisce le voci aggiornate come una lista tipizzata.
+- `.execute(&client)`: esegue l'aggiornamento in batch.
+
+## Ritorno
+
+Senza `.returning::<T>()` il ritorno è:
+
+```rust
+DinocoResult<()>
+```
+
+Con `.returning::<T>()` il ritorno diventa:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Esempio base
+
+```rust
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 1, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 2, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con ritorno
+
+```rust
+let updated = dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana Batch".to_string() },
+        User { id: 3, name: "Caio Batch".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con filtro
+
+```rust
+dinoco::update_many::<User>()
+    .cond(|x| x.active.eq(true))
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Passi successivi
+
+- [**`update::<M>()`**](/v0.0.1/orm/update): Aggiornamento tradizionale con condizione.
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): Aggiornamento atomico di una singola voce.

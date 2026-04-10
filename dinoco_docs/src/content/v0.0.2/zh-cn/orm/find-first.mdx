@@ -1,0 +1,106 @@
+export const title = "find_first";
+
+# find_first
+
+用于检索最多一条记录。
+
+---
+
+## 你可以做什么
+
+它提供与 `find_many` 相同的方法：
+
+- `select`
+- `cond`
+- `take`
+- `skip`
+- `order_by`
+- `includes`
+- `count`
+- `read_in_primary`
+- `execute`
+
+## 方法说明
+
+- `.select::<T>()`: 将默认投影替换为自定义投影。
+- `.cond(...)`: 为查询添加过滤器。
+- `.take(...)`: 限制要考虑的最大记录数。
+- `.skip(...)`: 在选择第一个结果之前跳过记录。
+- `.order_by(...)`: 定义应首先考虑哪条记录。
+- `.includes(...)`: 与主对象一起加载关联关系。
+- `.count(...)`: 在投影中计算关联计数。
+- `.read_in_primary()`: 强制从主数据库读取。
+- `.execute(&client)`: 执行查询并返回最多一个元素。
+
+## 返回值
+
+没有 `select::<T>()` 时，返回值为：
+
+```rust
+DinocoResult<Option<M>>
+```
+
+使用 `select::<T>()` 时，返回值为：
+
+```rust
+DinocoResult<Option<T>>
+```
+
+## 基础示例
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## select 示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserSummary>()
+    .cond(|w| w.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+## 关系示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserWithPosts>()
+    .cond(|x| x.id.eq(1_i64))
+    .includes(|x| x.posts())
+    .execute(&client)
+    .await?;
+```
+
+## 排序示例
+
+```rust
+let latest_user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .execute(&client)
+    .await?;
+```
+
+## 下一步
+
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 获取多条记录。
+- [**`count::<M>()`**](/v0.0.1/orm/count): 统计记录。

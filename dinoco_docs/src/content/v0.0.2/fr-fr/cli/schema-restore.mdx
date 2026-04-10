@@ -1,0 +1,35 @@
+export const title = "Restauration du schéma";
+
+# Utilisation ?
+
+La commande `dinoco schema restore` restaure le fichier `schema.dinoco` à partir d'une migration locale.
+
+Ceci est utile si vous devez recréer le schéma à partir de l'historique enregistré.
+
+---
+
+## Ce que fait la commande
+
+Cette commande :
+
+- Lit une migration locale
+- Récupère les métadonnées enregistrées de cette migration
+- Recrée le fichier `schema.dinoco`
+
+## Exemple de restauration à partir d'une migration spécifique
+
+```bash
+dinoco schema restore 20250410_create_users
+```
+
+## Quand l'utiliser
+
+Utilisez cette commande lorsque :
+
+- Le fichier `schema.dinoco` a été perdu
+- Vous souhaitez recréer le schéma local à partir de l'historique
+- Vous devez comparer le schéma enregistré dans une migration spécifique
+
+## Prochaines étapes
+
+Après la restauration, vous pouvez vérifier le schéma, puis générer ou appliquer de nouvelles migrations.

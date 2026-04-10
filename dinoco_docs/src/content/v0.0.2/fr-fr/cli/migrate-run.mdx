@@ -1,0 +1,33 @@
+export const title = "Exécution des migrations";
+
+# Utilisation ?
+
+La commande `dinoco migrate run` exécute toutes les migrations en attente.
+
+Elle est utilisée pour aligner la base configurée avec l'historique de migrations déjà généré.
+
+---
+
+## Ce que fait la commande
+
+Lors de l'exécution de cette commande, la CLI :
+
+- Lit l'historique des migrations
+- Vérifie celles qui n'ont pas encore été appliquées
+- Exécute les migrations en attente dans l'ordre
+
+## Quand l'utiliser
+
+Utilisez cette commande lorsque :
+
+- Vous avez déjà généré des migrations
+- Vous souhaitez appliquer les changements en attente dans la base
+- Vous préparez un environnement local ou de déploiement
+
+## Prochaines étapes
+
+Générez les modèles si nécessaire avec :
+
+```bash
+dinoco models generate
+```

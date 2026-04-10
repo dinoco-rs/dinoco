@@ -1,0 +1,48 @@
+export const title = "Migrate rollback";
+
+# How to use?
+
+The command `dinoco migrate rollback` rolls back the last applied migration.
+
+It is useful when you need to undo the most recent database change.
+
+---
+
+## What the command does
+
+When executing this command, the CLI attempts to:
+
+- Identify the last applied migration
+- Revert that migration
+- Update the database migration history
+
+## Parameters
+
+[NAME]: Name of the migration (to revert to a specific one) (Optional)
+
+## Usage example
+
+```bash
+dinoco migrate rollback
+```
+
+## When to use
+
+Use this command when:
+
+- The last migration needs to be reverted
+- You detected a recent schema problem
+- You are adjusting the database evolution flow in development
+
+## Cautions
+
+- Not every structural change is trivial to revert without impact.
+- Review the effect of the migration before performing a rollback in important environments.
+
+## Next steps
+
+After adjusting the schema, you can generate a new migration:
+
+```bash
+dinoco migrate generate
+```

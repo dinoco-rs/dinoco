@@ -1,0 +1,150 @@
+export const title = "insert_many";
+
+# insert_many
+
+Используется для пакетной вставки.
+
+---
+
+## Что можно сделать
+
+- `.values(Vec<M>): определяет записи, которые будут вставлены в пакетном режиме.`
+- `.with_relation(Vec<R>): вставляет ровно одну новую связанную запись для каждого родительского элемента.`
+- `.with_relations(Vec<Vec<R>>): вставляет несколько новых связанных записей для каждого родительского элемента.`
+- `.with_connection(Vec<R>): связывает ровно одну уже существующую связь для каждого вставленного родительского элемента.`
+- `.with_connections(Vec<Vec<R>>): связывает несколько уже существующих связей для каждого вставленного родительского элемента, обычно в сценариях "многие ко многим".`
+- `.returning::<T>(): изменяет возвращаемое значение на типизированный список вставленных элементов.`
+- `.execute(&client): выполняет пакетную операцию.`
+
+## Возвращаемое значение
+
+Без `.returning::<T>()` возвращаемое значение:
+
+```rust
+DinocoResult<()>
+```
+
+С `.returning::<T>()` возвращаемое значение становится:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Простой пример
+
+```rust
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: "u1".into(), email: "a@acme.com".into(), name: "A".into() },
+        User { id: "u2".into(), email: "b@acme.com".into(), name: "B".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Пример с возвращаемым значением
+
+```rust
+let created = dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Пример с `with_relation(...)`
+
+Используйте `with_relation(...)`, когда каждый родительский элемент должен быть создан и связан.
+
+```rust
+dinoco::insert_many::<Post>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_relation(vec![
+        Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Пример с `with_relations(...)`
+
+Используйте `with_relations(...)`, когда каждая родительская запись имеет более одного дочернего элемента; записи будут автоматически созданы и связаны.
+
+```rust
+dinoco::insert_many::<Post>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_relation(vec![
+        vec![
+			Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        	Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+		],
+
+		vec![Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() }]
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Пример с `with_connection(...)`
+
+Используйте `with_connection(...)`, когда каждый родительский элемент должен быть связан ровно с одной уже существующей записью.
+
+```rust
+dinoco::insert_many::<Team>()
+    .values(vec![
+        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-12".into(), name: "DX".into() },
+    ])
+    .with_connection(vec![
+        Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+        Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Пример с `with_connections(...)`
+
+Используйте `with_connections(...)`, когда каждый родительский элемент должен быть связан с несколькими уже существующими записями.
+Это распространенный случай использования для связей "многие ко многим".
+
+```rust
+dinoco::insert_many::<Article>()
+    .values(vec![
+        Article { id: "article-11".into(), title: "Connect Multiple".into() },
+        Article { id: "article-12".into(), title: "Connect Batch".into() },
+    ])
+    .with_connections(vec![
+        vec![
+            Label { id: "label-11".into(), name: "orm".into() },
+            Label { id: "label-12".into(), name: "rust".into() },
+        ],
+        vec![
+            Label { id: "label-10".into(), name: "backend".into() },
+        ],
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Примечания
+
+- `with_relation(...)` и `with_relations(...)` работают лучше всего, когда родительский элемент уже имеет известный ID в памяти.
+- `with_connection(...)` и `with_connections(...)` предназначены для связывания уже существующих отношений.
+- `with_connection(...)` требует такого же количества элементов, как и `values(...)`.
+- `with_connections(...)` требует такого же количества групп относительно основного вектора.
+
+## Следующие шаги
+
+- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): одиночная вставка.
+- [**`update::<M>()`**](/v0.0.1/orm/update): обновление с фильтром.

@@ -17,6 +17,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         Ok(model) => model,
         Err(error) => return TokenStream::from(error.to_compile_error()),
     };
+    let insertable = has_insertable_attr(&input.attrs);
     let crate_path = runtime_crate();
 
     let scalar_fields = fields.iter().filter(|field| !is_relation_field(&field.ty)).collect::<Vec<_>>();
@@ -36,16 +37,23 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     });
 
-    let relation_field_validations = relation_fields.iter().map(|field| {
-        let ident = field.ident.as_ref().unwrap();
-        let span = ident.span();
+    let relation_field_validations = if insertable {
+        Vec::new()
+    } else {
+        relation_fields
+            .iter()
+            .map(|field| {
+                let ident = field.ident.as_ref().unwrap();
+                let span = ident.span();
 
-        quote_spanned! {span=>
-            let _ = |include: &<#model as #crate_path::Model>::Include| {
-                let _ = include.#ident();
-            };
-        }
-    });
+                quote_spanned! {span=>
+                    let _ = |include: &<#model as #crate_path::Model>::Include| {
+                        let _ = include.#ident();
+                    };
+                }
+            })
+            .collect::<Vec<_>>()
+    };
 
     let count_field_validations = count_fields.iter().map(|field| {
         let ident = field.ident.as_ref().unwrap();
@@ -61,6 +69,50 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let field_names =
         base_scalar_fields.iter().filter_map(|field| field.ident.as_ref()).map(|ident| quote! { stringify!(#ident) });
+    let nested_name = format_ident!("__DinocoInsertNestedFor{}", name);
+    let base_model_initializers = base_scalar_fields.iter().filter_map(|field| {
+        let ident = field.ident.as_ref()?;
+
+        Some(quote! { #ident: self.#ident })
+    });
+    let nested_field_defs = relation_fields.iter().filter_map(|field| {
+        let ident = field.ident.as_ref()?;
+        let ty = &field.ty;
+
+        Some(quote! { #ident: #ty })
+    });
+    let nested_field_initializers = relation_fields.iter().filter_map(|field| {
+        let ident = field.ident.as_ref()?;
+
+        Some(quote! { #ident: self.#ident })
+    });
+    let nested_execute_steps = relation_fields.iter().filter_map(|field| {
+        let ident = field.ident.as_ref()?;
+
+        if is_connection_field(&field.ty) {
+            return match relation_field_kind(&field.ty)? {
+                RelationFieldKind::Many => Some(quote! {
+                    #crate_path::execute_insert_connected_payloads(parent, self.#ident, client).await?;
+                }),
+                RelationFieldKind::Optional => Some(quote! {
+                    if let ::core::option::Option::Some(connected) = self.#ident {
+                        #crate_path::execute_insert_connected_payload(parent, connected, client).await?;
+                    }
+                }),
+            };
+        }
+
+        match relation_field_kind(&field.ty)? {
+            RelationFieldKind::Many => Some(quote! {
+                #crate_path::execute_insert_related_payloads(parent, self.#ident, client).await?;
+            }),
+            RelationFieldKind::Optional => Some(quote! {
+                if let ::core::option::Option::Some(related) = self.#ident {
+                    #crate_path::execute_insert_related_payload(parent, related, client).await?;
+                }
+            }),
+        }
+    });
 
     let mut scalar_index = 0usize;
     let row_initializers = fields.iter().map(|field| {
@@ -83,58 +135,66 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     });
 
-    let relation_match_arms = relation_fields.iter().filter_map(|field| {
-        let ident = field.ident.as_ref()?;
-        let loader = format_ident!("__dinoco_load_{}", ident);
-        let foreign_key_ident = format_ident!("{}Id", ident);
-        let inner_ty = relation_inner_type(&field.ty)?;
-        let uses_foreign_key =
-            fields.iter().any(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident));
-        let key_getter = if uses_foreign_key {
-            let foreign_key_field = fields
-                .iter()
-                .find(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident))?;
+    let relation_match_arms = if insertable {
+        Vec::new()
+    } else {
+        relation_fields
+            .iter()
+            .filter_map(|field| {
+                let ident = field.ident.as_ref()?;
+                let loader = format_ident!("__dinoco_load_{}", ident);
+                let foreign_key_ident = format_ident!("{}Id", ident);
+                let inner_ty = relation_inner_type(&field.ty)?;
+                let uses_foreign_key = fields
+                    .iter()
+                    .any(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident));
+                let key_getter = if uses_foreign_key {
+                    let foreign_key_field = fields
+                        .iter()
+                        .find(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident))?;
 
-            if extract_option_inner(&foreign_key_field.ty).is_some() {
-                quote! { |item: &Self| item.#foreign_key_ident.clone() }
-            } else {
-                quote! { |item: &Self| ::core::option::Option::Some(item.#foreign_key_ident.clone()) }
-            }
-        } else {
-            quote! { |item: &Self| ::core::option::Option::Some(item.id.clone()) }
-        };
+                    if extract_option_inner(&foreign_key_field.ty).is_some() {
+                        quote! { |item: &Self| item.#foreign_key_ident.clone() }
+                    } else {
+                        quote! { |item: &Self| ::core::option::Option::Some(item.#foreign_key_ident.clone()) }
+                    }
+                } else {
+                    quote! { |item: &Self| ::core::option::Option::Some(item.id.clone()) }
+                };
 
-        match relation_field_kind(&field.ty)? {
-            RelationFieldKind::Many => Some(quote! {
-                stringify!(#ident) => {
-                    let item_keys = items.iter().map(#key_getter).collect::<::std::vec::Vec<_>>();
+                match relation_field_kind(&field.ty)? {
+                    RelationFieldKind::Many => Some(quote! {
+                        stringify!(#ident) => {
+                            let item_keys = items.iter().map(#key_getter).collect::<::std::vec::Vec<_>>();
 
-                    tasks.push(#model::#loader::<Self, #inner_ty, A>(
-                        item_keys,
-                        include,
-                        client,
-                        read_mode,
-                        |item: &mut Self| &mut item.#ident,
-                    )
-                    );
+                            tasks.push(#model::#loader::<Self, #inner_ty, A>(
+                                item_keys,
+                                include,
+                                client,
+                                read_mode,
+                                |item: &mut Self| &mut item.#ident,
+                            )
+                            );
+                        }
+                    }),
+                    RelationFieldKind::Optional => Some(quote! {
+                        stringify!(#ident) => {
+                            let item_keys = items.iter().map(#key_getter).collect::<::std::vec::Vec<_>>();
+
+                            tasks.push(#model::#loader::<Self, #inner_ty, A>(
+                                item_keys,
+                                include,
+                                client,
+                                read_mode,
+                                |item: &mut Self| &mut item.#ident,
+                            )
+                            );
+                        }
+                    }),
                 }
-            }),
-            RelationFieldKind::Optional => Some(quote! {
-                stringify!(#ident) => {
-                    let item_keys = items.iter().map(#key_getter).collect::<::std::vec::Vec<_>>();
-
-                    tasks.push(#model::#loader::<Self, #inner_ty, A>(
-                        item_keys,
-                        include,
-                        client,
-                        read_mode,
-                        |item: &mut Self| &mut item.#ident,
-                    )
-                    );
-                }
-            }),
-        }
-    });
+            })
+            .collect::<Vec<_>>()
+    };
 
     let count_match_arms = count_fields.iter().filter_map(|field| {
         let ident = field.ident.as_ref()?;
@@ -173,6 +233,49 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
         })
     });
+
+    let insert_payload_impl = if insertable {
+        quote! {
+            #[doc(hidden)]
+            struct #nested_name {
+                #(#nested_field_defs),*
+            }
+
+            impl #crate_path::InsertNested<#model> for #nested_name {
+                fn execute<'a, A>(
+                    self,
+                    parent: &'a #model,
+                    client: &'a #crate_path::DinocoClient<A>,
+                ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = #crate_path::DinocoResult<()>> + 'a>>
+                where
+                    A: #crate_path::DinocoAdapter,
+                {
+                    Box::pin(async move {
+                        #(#nested_execute_steps)*
+
+                        Ok(())
+                    })
+                }
+            }
+
+            impl #crate_path::InsertPayload<#model> for #name {
+                type Nested = #nested_name;
+
+                fn split_insert_payload(self) -> (#model, Self::Nested) {
+                    (
+                        #model {
+                            #(#base_model_initializers),*
+                        },
+                        #nested_name {
+                            #(#nested_field_initializers),*
+                        },
+                    )
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     TokenStream::from(quote! {
         #[doc(hidden)]
@@ -258,6 +361,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 })
             }
         }
+        #insert_payload_impl
 
         impl #crate_path::DinocoRow for #name {
             fn from_row<R: #crate_path::DinocoGenericRow>(row: &R) -> #crate_path::DinocoResult<Self> {
@@ -294,6 +398,10 @@ fn count_field_relation_name(ident: &syn::Ident) -> String {
 
 fn is_relation_field(ty: &syn::Type) -> bool {
     relation_field_kind(ty).is_some()
+}
+
+fn is_connection_field(ty: &syn::Type) -> bool {
+    relation_inner_type(ty).is_some_and(is_connection_type)
 }
 
 fn relation_field_kind(ty: &syn::Type) -> Option<RelationFieldKind> {
@@ -372,6 +480,17 @@ fn is_custom_type(ty: &syn::Type) -> bool {
     )
 }
 
+fn is_connection_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+
+    segment.ident.to_string().ends_with("Connection")
+}
+
 enum RelationFieldKind {
     Many,
     Optional,
@@ -385,4 +504,8 @@ fn extend_model(attrs: &[syn::Attribute]) -> syn::Result<syn::Path> {
     }
 
     Err(syn::Error::new(proc_macro2::Span::call_site(), "missing #[extend(ModelName)] attribute"))
+}
+
+fn has_insertable_attr(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|attr| attr.path().is_ident("insertable"))
 }

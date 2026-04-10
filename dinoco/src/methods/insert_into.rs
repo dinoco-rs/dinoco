@@ -3,12 +3,15 @@ use std::marker::PhantomData;
 use dinoco_engine::{DinocoAdapter, DinocoClient};
 
 use crate::execution::execute_reload_by_identity;
-use crate::{InsertConnection, InsertModel, InsertRelation, Projection};
-use crate::{execute_connection_updates, execute_insert, execute_insert_relation_links, execute_insert_returning};
+use crate::{
+    InsertConnection, InsertModel, InsertPayload, InsertRelation, Projection, execute_connection_updates,
+    execute_insert, execute_insert_payload, execute_insert_payload_returning, execute_insert_relation_links,
+    execute_insert_returning,
+};
 
 #[derive(Debug, Clone)]
-pub struct Insert<M> {
-    item: Option<M>,
+pub struct Insert<M, V = M> {
+    item: Option<V>,
     marker: PhantomData<fn() -> M>,
 }
 
@@ -25,8 +28,8 @@ pub struct InsertWithConnection<M, R> {
 }
 
 #[derive(Debug, Clone)]
-pub struct InsertReturning<M, S> {
-    item: Option<M>,
+pub struct InsertReturning<M, V = M, S = M> {
+    item: Option<V>,
     marker: PhantomData<fn() -> (M, S)>,
 }
 
@@ -51,16 +54,46 @@ where
     Insert { item: None, marker: PhantomData }
 }
 
+impl<M, V> Insert<M, V>
+where
+    M: InsertModel,
+    V: InsertPayload<M>,
+{
+    pub fn values<N>(self, item: N) -> Insert<M, N>
+    where
+        N: InsertPayload<M>,
+    {
+        Insert { item: Some(item), marker: PhantomData }
+    }
+
+    pub fn returning<S>(self) -> InsertReturning<M, V, S>
+    where
+        S: Projection<M>,
+    {
+        InsertReturning { item: self.item, marker: PhantomData }
+    }
+
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
+    where
+        M: Projection<M> + 'a,
+        V: 'a,
+        A: DinocoAdapter,
+    {
+        async move {
+            let item = self.item.expect("insert_into().values(...) must be called before execute()");
+
+            execute_insert_payload::<M, V, A>(vec![item], client).await
+        }
+    }
+}
+
 impl<M> Insert<M>
 where
     M: InsertModel,
 {
-    pub fn values(mut self, item: M) -> Self {
-        self.item = Some(item);
-
-        self
-    }
-
     pub fn with_relation<R>(self, related: R) -> InsertWithRelation<M, R>
     where
         M: InsertRelation<R>,
@@ -80,33 +113,12 @@ where
             connected,
         }
     }
-
-    pub fn returning<S>(self) -> InsertReturning<M, S>
-    where
-        S: Projection<M>,
-    {
-        InsertReturning { item: self.item, marker: PhantomData }
-    }
-
-    pub fn execute<'a, A>(
-        self,
-        client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
-    where
-        M: 'a,
-        A: DinocoAdapter,
-    {
-        async move {
-            let item = self.item.expect("insert_into().values(...) must be called before execute()");
-
-            execute_insert::<M, A>(vec![item], client).await
-        }
-    }
 }
 
-impl<M, S> InsertReturning<M, S>
+impl<M, V, S> InsertReturning<M, V, S>
 where
     M: InsertModel,
+    V: InsertPayload<M>,
     S: Projection<M>,
 {
     pub fn execute<'a, A>(
@@ -114,13 +126,14 @@ where
         client: &'a DinocoClient<A>,
     ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + 'a
     where
-        M: 'a,
+        M: Projection<M> + 'a,
+        V: 'a,
         S: 'a,
         A: DinocoAdapter,
     {
         async move {
             let item = self.item.expect("insert_into().values(...) must be called before execute()");
-            let mut rows: Vec<S> = execute_insert_returning::<M, S, A>(vec![item], client).await?;
+            let mut rows = execute_insert_payload_returning::<M, V, S, A>(vec![item], client).await?;
 
             rows.drain(..).next().ok_or_else(|| {
                 dinoco_engine::DinocoError::RecordNotFound(format!(

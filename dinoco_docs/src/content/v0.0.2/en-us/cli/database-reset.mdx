@@ -1,0 +1,39 @@
+export const title = "Database reset";
+
+# How to use?
+
+The `dinoco database reset` command resets the configured database.
+
+It is useful in development when you want to completely clear the current state of the database.
+
+---
+
+## What the command does
+
+When executing this command, the CLI attempts to remove objects from the current database and recreate a clean state for the configured environment.
+
+This flow is especially useful for:
+
+- Restarting a local environment from scratch
+- Clearing test data
+- Fixing inconsistent environments during development
+
+## Precautions
+
+- This command is destructive to the configured database.
+- Use with caution outside of a local environment.
+- Always confirm that the connection URL points to the correct database.
+
+## Next steps
+
+After the reset, you typically run:
+
+```bash
+dinoco migrate run
+```
+
+or:
+
+```bash
+dinoco migrate generate --apply
+```

@@ -3,8 +3,9 @@ import path from 'path';
 
 const API_KEY = process.env.GEMINI_API_KEY;
 const DEFAULT_MODEL = 'gemini-2.5-flash';
-const DEFAULT_VERSION = 'v0.0.1';
+const DEFAULT_VERSION = 'v0.0.2';
 const PROJECT_ROOT = 'dinoco_docs';
+const SOURCE_LOCALE = 'pt-br';
 
 const TARGETS = {
 	'de-de': 'German (Germany)',
@@ -59,12 +60,16 @@ function parseArgs(argv) {
 
 function resolveLocales(locales) {
 	if (locales === undefined || locales.length === 0) {
-		return Object.keys(TARGETS);
+		return Object.keys(TARGETS).filter(locale => locale !== SOURCE_LOCALE);
 	}
 
 	for (const locale of locales) {
 		if (!(locale in TARGETS)) {
 			throw new Error(`Unsupported locale: ${locale}`);
+		}
+
+		if (locale === SOURCE_LOCALE) {
+			throw new Error(`The source locale '${SOURCE_LOCALE}' cannot be used as a translation target.`);
 		}
 	}
 
@@ -79,45 +84,45 @@ function localeFromFile(file) {
 
 async function collectJsonFiles(version, locales) {
 	const versionsDir = path.join(PROJECT_ROOT, 'src/jsons/versions', version);
-	const files = await fs.readdir(versionsDir);
 
-	return files
-		.filter(file => file.endsWith('.json'))
-		.map(file => path.join(versionsDir, file))
-		.filter(file => {
-			const locale = localeFromFile(file);
-
-			return locale !== undefined && locales.includes(locale);
-		})
-		.sort();
+	return locales
+		.map(locale => ({
+			filePath: path.join(versionsDir, `${locale}.json`),
+			sourcePath: path.join(versionsDir, `${SOURCE_LOCALE}.json`),
+		}))
+		.sort((left, right) => left.filePath.localeCompare(right.filePath));
 }
 
 async function collectContentFiles(version, locales) {
-	const baseDir = path.join(PROJECT_ROOT, 'src/content', version);
+	const baseDir = path.join(PROJECT_ROOT, 'src/content', version, SOURCE_LOCALE);
 	const files = [];
+	const entries = await fs.readdir(baseDir, { recursive: true, withFileTypes: true });
 
-	for (const locale of locales) {
-		const localeDir = path.join(baseDir, locale);
-		const entries = await fs.readdir(localeDir, { recursive: true, withFileTypes: true });
+	for (const entry of entries) {
+		if (!entry.isFile() || !entry.name.endsWith('.mdx')) {
+			continue;
+		}
 
-		for (const entry of entries) {
-			if (!entry.isFile() || !entry.name.endsWith('.mdx')) {
-				continue;
-			}
+		const sourcePath = path.join(entry.parentPath, entry.name);
+		const relativePath = path.relative(baseDir, sourcePath);
 
-			files.push(path.join(entry.parentPath, entry.name));
+		for (const locale of locales) {
+			files.push({
+				filePath: path.join(PROJECT_ROOT, 'src/content', version, locale, relativePath),
+				sourcePath,
+			});
 		}
 	}
 
-	return files.sort();
+	return files.sort((left, right) => left.filePath.localeCompare(right.filePath));
 }
 
-function buildPrompt(filePath, locale, content) {
+function buildPrompt(filePath, sourcePath, locale, content) {
 	const targetLanguage = TARGETS[locale];
 	const isJson = filePath.endsWith('.json');
 
 	return [
-		`Translate the following ${isJson ? 'JSON' : 'MDX'} file to ${targetLanguage}.`,
+		`Translate the following ${isJson ? 'JSON' : 'MDX'} file from Portuguese (Brazil) to ${targetLanguage}.`,
 		'Return only the full translated file contents, with no markdown fences and no commentary.',
 		'Requirements:',
 		'- Preserve the exact file structure and syntax.',
@@ -125,18 +130,24 @@ function buildPrompt(filePath, locale, content) {
 		'- Translate only human-readable natural language text to the target language.',
 		'- Keep locale codes, shortName values, mdxPath values, type names, function names, Rust identifiers, Dinoco API identifiers, and command names unchanged.',
 		'- In JSON files, translate only string values meant for UI or documentation text.',
-		'- In MDX files, keep code blocks unchanged unless they contain prose comments that should obviously be translated.',
+		'- In MDX files, also translate human-readable comments inside code blocks.',
+		'- In MDX files, also translate human-readable string literals used as example content, labels, titles, messages, text, names, descriptions, comments, and sample values.',
+		'- Do not translate code identifiers, type names, field names, enum names, API names, locale codes, paths, URLs, commands, or syntax tokens.',
+		'- If a string literal is acting as an identifier, slug, database key, file path, locale, route segment, or command, keep it unchanged.',
 		'- Preserve line breaks as naturally as possible.',
-		'File path:',
+		'- Use the Portuguese (Brazil) source file as the single source of truth.',
+		'Target file path:',
 		filePath,
-		'File contents:',
+		'Source file path:',
+		sourcePath,
+		'Source file contents:',
 		content,
 	].join('\n');
 }
 
-async function translateFile({ filePath, locale, model }) {
-	const original = await fs.readFile(filePath, 'utf8');
-	const prompt = buildPrompt(filePath, locale, original);
+async function translateFile({ filePath, sourcePath, locale, model }) {
+	const original = await fs.readFile(sourcePath, 'utf8');
+	const prompt = buildPrompt(filePath, sourcePath, locale, original);
 
 	const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`, {
 		body: JSON.stringify({
@@ -167,6 +178,7 @@ async function translateFile({ filePath, locale, model }) {
 		throw new Error(`Gemini returned empty content for ${filePath}`);
 	}
 
+	await fs.mkdir(path.dirname(filePath), { recursive: true });
 	await fs.writeFile(filePath, `${translated}\n`);
 }
 
@@ -176,18 +188,19 @@ const jsonFiles = await collectJsonFiles(options.version, locales);
 const contentFiles = await collectContentFiles(options.version, locales);
 const files = [...jsonFiles, ...contentFiles];
 
-for (const filePath of files) {
-	const locale = localeFromFile(filePath);
+for (const file of files) {
+	const locale = localeFromFile(file.filePath);
 
 	if (!locale) {
-		throw new Error(`Unable to infer locale for ${filePath}`);
+		throw new Error(`Unable to infer locale for ${file.filePath}`);
 	}
 
-	console.log(`Translating ${filePath}`);
+	console.log(`Translating ${file.filePath} from ${file.sourcePath}`);
 	await translateFile({
-		filePath,
+		filePath: file.filePath,
 		locale,
 		model: options.model,
+		sourcePath: file.sourcePath,
 	});
 }
 

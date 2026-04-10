@@ -219,6 +219,10 @@ model Tag {
     assert!(post_file.contains("pub fn __dinoco_load_tags"));
     assert!(post_file.contains(".from(\"_PostTags\")"));
     assert!(post_file.contains(".condition(dinoco::Expression::Column(\"post_id\".to_string())"));
+    assert!(post_file.contains("pub enum PostConnection"));
+    assert!(post_file.contains("Tag(i64)"));
+    assert!(post_file.contains("impl dinoco::InsertConnectionPayload<Post> for PostConnection"));
+    assert!(post_file.contains("Self::Tag(value) => vec![dinoco::RelationLinkPlan"));
     assert!(user_file.contains("pub fn __dinoco_count_posts"));
     assert!(user_file.contains("C::load_counts(&mut children, &include.counts, client, read_mode).await?;"));
     assert!(post_file.contains("pub fn __dinoco_count_comments"));

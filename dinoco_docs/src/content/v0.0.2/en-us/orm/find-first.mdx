@@ -1,0 +1,106 @@
+export const title = "find_first";
+
+# find_first
+
+Used to fetch at most one record.
+
+---
+
+## What you can do
+
+It exposes the same methods as `find_many`:
+
+- `select`
+- `cond`
+- `take`
+- `skip`
+- `order_by`
+- `includes`
+- `count`
+- `read_in_primary`
+- `execute`
+
+## Method descriptions
+
+- `.select::<T>()`: swaps the default projection for a custom projection.
+- `.cond(...)`: adds filters to the query.
+- `.take(...)`: limits the maximum number of records considered.
+- `.skip(...)`: skips records before selecting the first result.
+- `.order_by(...)`: defines which record should be considered first.
+- `.includes(...)`: loads relations together with the main item.
+- `.count(...)`: calculates relation counters in the projection.
+- `.read_in_primary()`: forces reading from the primary database.
+- `.execute(&client)`: executes the query and returns at most one item.
+
+## Return
+
+Without `select::<T>()`, the return is:
+
+```rust
+DinocoResult<Option<M>>
+```
+
+With `select::<T>()`, the return becomes:
+
+```rust
+DinocoResult<Option<T>>
+```
+
+## Basic example
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## Example with select
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserSummary>()
+    .cond(|w| w.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+## Example with relation
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserWithPosts>()
+    .cond(|x| x.id.eq(1_i64))
+    .includes(|x| x.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Example with ordering
+
+```rust
+let latest_user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .execute(&client)
+    .await?;
+```
+
+## Next steps
+
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): fetches multiple records.
+- [**`count::<M>()`**](/v0.0.1/orm/count): counts records.

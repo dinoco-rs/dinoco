@@ -1,0 +1,29 @@
+export const title = "Génération des modèles";
+
+# Utilisation ?
+
+La commande `dinoco models generate` génère les modèles Rust à partir de la dernière migration enregistrée dans la base de données.
+
+Il est utilisé pour maintenir le code généré en accord avec la structure de schéma déjà appliquée.
+
+---
+
+## Ce que fait la commande
+
+Cette commande :
+
+- Lit la dernière migration disponible
+- Reconstruit les modèles Rust générés
+- Met à jour les artefacts utilisés par l'API Dinoco typée
+
+## Quand l'utiliser
+
+Utilisez cette commande lorsque :
+
+- Vous avez déjà appliqué des migrations et souhaitez régénérer le code
+- Vous devez mettre à jour les modèles après des modifications structurelles
+- Vous voulez vous assurer que le client typé reflète le dernier état
+
+## Prochaines étapes
+
+Après la génération, vous pouvez maintenant utiliser les modèles dans votre code Rust.

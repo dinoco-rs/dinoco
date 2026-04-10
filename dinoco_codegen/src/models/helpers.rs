@@ -98,6 +98,45 @@ pub(crate) fn to_snake_case(value: &str) -> String {
     output
 }
 
+pub(crate) fn to_pascal_case(value: &str) -> String {
+    let mut output = String::new();
+    let mut uppercase_next = true;
+
+    for ch in value.chars() {
+        if ch == '_' || ch == '-' || ch == ' ' {
+            uppercase_next = true;
+            continue;
+        }
+
+        if uppercase_next {
+            output.extend(ch.to_uppercase());
+            uppercase_next = false;
+        } else {
+            output.push(ch);
+        }
+    }
+
+    output
+}
+
+pub(crate) fn singularize(value: &str) -> String {
+    if let Some(stripped) = value.strip_suffix("ies") {
+        return format!("{stripped}y");
+    }
+
+    if value.len() > 1 {
+        if let Some(stripped) = value.strip_suffix("ses") {
+            return stripped.to_string();
+        }
+
+        if let Some(stripped) = value.strip_suffix('s') {
+            return stripped.to_string();
+        }
+    }
+
+    value.to_string()
+}
+
 pub(crate) fn enum_variant_name(value: &str) -> String {
     if is_rust_keyword(value) {
         return format!("r#{value}");

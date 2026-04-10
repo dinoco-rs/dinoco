@@ -239,6 +239,62 @@ struct UserListItem {
     posts: Vec<PostListItem>,
 }
 
+#[derive(Debug, Clone, Extend)]
+#[extend(Comment)]
+#[insertable]
+struct CommentInsertItem {
+    id: i64,
+    text: String,
+    flagged: bool,
+    postId: i64,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostInsertItem {
+    id: i64,
+    title: String,
+    published: bool,
+    authorId: i64,
+    comments: Vec<CommentInsertItem>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+#[insertable]
+struct UserInsertItem {
+    id: i64,
+    name: String,
+    posts: Vec<PostInsertItem>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithConnectionPayload {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+#[derive(Debug, Clone)]
+enum ArticleConnection {
+    Label(String),
+}
+
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
+
 #[tokio::test]
 async fn sqlite_relation_insert_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
     let client = DinocoClient::<SqliteAdapter>::new(
@@ -257,12 +313,9 @@ async fn sqlite_relation_insert_binds_foreign_keys_for_single_and_many() -> Dino
 async fn postgres_relation_insert_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
     if let Err(err) = async {
         let _lock = common::lock_postgres().await;
-        let client = DinocoClient::<PostgresAdapter>::new(
-            common::postgres_url(),
-            vec![],
-            dinoco::DinocoClientConfig::default(),
-        )
-        .await?;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
         drop_team_tables_postgres(&client).await?;
         create_team_tables_postgres(&client).await?;
@@ -316,12 +369,9 @@ async fn mysql_relation_insert_binds_foreign_keys_for_single_and_many() -> Dinoc
 async fn postgres_relation_insert_with_autoincrement_binds_foreign_keys_for_single_and_many() -> DinocoResult<()> {
     if let Err(err) = async {
         let _lock = common::lock_postgres().await;
-        let client = DinocoClient::<PostgresAdapter>::new(
-            common::postgres_url(),
-            vec![],
-            dinoco::DinocoClientConfig::default(),
-        )
-        .await?;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
         drop_auto_team_tables_postgres(&client).await?;
         create_auto_team_tables_postgres(&client).await?;
@@ -389,12 +439,9 @@ async fn sqlite_many_to_many_insert_with_relation_and_update_connect_disconnect_
 async fn postgres_many_to_many_insert_with_relation_and_update_connect_disconnect_work() -> DinocoResult<()> {
     if let Err(err) = async {
         let _lock = common::lock_postgres().await;
-        let client = DinocoClient::<PostgresAdapter>::new(
-            common::postgres_url(),
-            vec![],
-            dinoco::DinocoClientConfig::default(),
-        )
-        .await?;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
         drop_article_tables_postgres(&client).await?;
         create_article_tables_postgres(&client).await?;
@@ -448,12 +495,9 @@ async fn mysql_many_to_many_insert_with_relation_and_update_connect_disconnect_w
 async fn postgres_many_to_many_insert_with_relation_supports_autoincrement_ids() -> DinocoResult<()> {
     if let Err(err) = async {
         let _lock = common::lock_postgres().await;
-        let client = DinocoClient::<PostgresAdapter>::new(
-            common::postgres_url(),
-            vec![],
-            dinoco::DinocoClientConfig::default(),
-        )
-        .await?;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
         drop_auto_article_tables_postgres(&client).await?;
         create_auto_article_tables_postgres(&client).await?;
@@ -523,12 +567,9 @@ async fn sqlite_insert_with_connection_links_existing_relations() -> DinocoResul
 async fn postgres_insert_with_connection_links_existing_relations() -> DinocoResult<()> {
     if let Err(err) = async {
         let _lock = common::lock_postgres().await;
-        let client = DinocoClient::<PostgresAdapter>::new(
-            common::postgres_url(),
-            vec![],
-            dinoco::DinocoClientConfig::default(),
-        )
-        .await?;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
         drop_team_tables_postgres(&client).await?;
         create_team_tables_postgres(&client).await?;
@@ -585,6 +626,146 @@ async fn mysql_insert_with_connection_links_existing_relations() -> DinocoResult
 }
 
 #[tokio::test]
+async fn sqlite_insertable_extend_recursively_inserts_nested_relations() -> DinocoResult<()> {
+    let client = DinocoClient::<SqliteAdapter>::new(
+        common::sqlite_url("insertable-extend-recursive"),
+        vec![],
+        dinoco::DinocoClientConfig::default(),
+    )
+    .await?;
+
+    drop_count_tables_sqlite(&client).await?;
+    create_count_tables_sqlite(&client).await?;
+    exercise_recursive_insert_payload_flow(&client).await
+}
+
+#[tokio::test]
+async fn sqlite_insertable_extend_accepts_connection_payloads() -> DinocoResult<()> {
+    let client = DinocoClient::<SqliteAdapter>::new(
+        common::sqlite_url("insertable-extend-connections-adapters"),
+        vec![],
+        dinoco::DinocoClientConfig::default(),
+    )
+    .await?;
+
+    drop_article_tables_sqlite(&client).await?;
+    create_article_tables_sqlite(&client).await?;
+    exercise_insert_connection_payload_flow(&client).await
+}
+
+#[tokio::test]
+async fn postgres_insertable_extend_accepts_connection_payloads() -> DinocoResult<()> {
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
+
+        drop_article_tables_postgres(&client).await?;
+        create_article_tables_postgres(&client).await?;
+        exercise_insert_connection_payload_flow(&client).await?;
+        drop_article_tables_postgres(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres insertable connection payload adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn mysql_insertable_extend_accepts_connection_payloads() -> DinocoResult<()> {
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
+
+        drop_article_tables_mysql(&client).await?;
+        create_article_tables_mysql(&client).await?;
+        exercise_insert_connection_payload_flow(&client).await?;
+        drop_article_tables_mysql(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql insertable connection payload adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_insertable_extend_recursively_inserts_nested_relations() -> DinocoResult<()> {
+    if let Err(err) = async {
+        let _lock = common::lock_postgres().await;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
+
+        drop_count_tables_postgres(&client).await?;
+        create_count_tables_postgres(&client).await?;
+        exercise_recursive_insert_payload_flow(&client).await?;
+        drop_count_tables_postgres(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres recursive insert adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn mysql_insertable_extend_recursively_inserts_nested_relations() -> DinocoResult<()> {
+    if let Err(err) = async {
+        let _lock = common::lock_mysql().await;
+        let client =
+            DinocoClient::<MySqlAdapter>::new(common::mysql_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
+
+        drop_count_tables_mysql(&client).await?;
+        create_count_tables_mysql(&client).await?;
+        exercise_recursive_insert_payload_flow(&client).await?;
+        drop_count_tables_mysql(&client).await?;
+
+        Ok(())
+    }
+    .await
+    {
+        if common::should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql recursive insert adapter test: {err}");
+            return Ok(());
+        }
+
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn sqlite_find_many_and_find_first_can_count_relations() -> DinocoResult<()> {
     let client = DinocoClient::<SqliteAdapter>::new(
         common::sqlite_url("relation-counts-adapters"),
@@ -602,12 +783,9 @@ async fn sqlite_find_many_and_find_first_can_count_relations() -> DinocoResult<(
 async fn postgres_find_many_and_find_first_can_count_relations() -> DinocoResult<()> {
     if let Err(err) = async {
         let _lock = common::lock_postgres().await;
-        let client = DinocoClient::<PostgresAdapter>::new(
-            common::postgres_url(),
-            vec![],
-            dinoco::DinocoClientConfig::default(),
-        )
-        .await?;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
         drop_count_tables_postgres(&client).await?;
         create_count_tables_postgres(&client).await?;
@@ -1286,6 +1464,128 @@ where
     Ok(())
 }
 
+async fn exercise_insert_connection_payload_flow<A>(client: &DinocoClient<A>) -> DinocoResult<()>
+where
+    A: DinocoAdapter,
+{
+    insert_many::<Label>()
+        .values(vec![
+            Label { id: "label-40".to_string(), name: "orm".to_string() },
+            Label { id: "label-41".to_string(), name: "rust".to_string() },
+            Label { id: "label-42".to_string(), name: "backend".to_string() },
+        ])
+        .execute(client)
+        .await?;
+
+    let created_article = insert_into::<Article>()
+        .values(ArticleWithConnectionPayload {
+            id: "article-40".to_string(),
+            title: "Single Connect Payload".to_string(),
+            labels: vec![ArticleConnection::Label("label-40".to_string())],
+        })
+        .returning::<Article>()
+        .execute(client)
+        .await?;
+
+    let created_many = insert_many::<Article>()
+        .values(vec![
+            ArticleWithConnectionPayload {
+                id: "article-41".to_string(),
+                title: "Connect Multiple".to_string(),
+                labels: vec![
+                    ArticleConnection::Label("label-40".to_string()),
+                    ArticleConnection::Label("label-41".to_string()),
+                ],
+            },
+            ArticleWithConnectionPayload {
+                id: "article-42".to_string(),
+                title: "Connect Batch".to_string(),
+                labels: vec![ArticleConnection::Label("label-42".to_string())],
+            },
+        ])
+        .returning::<Article>()
+        .execute(client)
+        .await?;
+
+    assert_eq!(created_article.id, "article-40");
+    assert_eq!(created_many.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), vec!["article-41", "article-42"]);
+
+    let rows = find_many::<ArticleLabel>().order_by(|x| x.article_id.asc()).execute(client).await?;
+
+    assert_eq!(
+        rows.iter().map(|row| (&row.article_id, &row.label_id)).collect::<Vec<_>>(),
+        vec![
+            (&"article-40".to_string(), &"label-40".to_string()),
+            (&"article-41".to_string(), &"label-40".to_string()),
+            (&"article-41".to_string(), &"label-41".to_string()),
+            (&"article-42".to_string(), &"label-42".to_string()),
+        ]
+    );
+
+    Ok(())
+}
+
+async fn exercise_recursive_insert_payload_flow<A>(client: &DinocoClient<A>) -> DinocoResult<()>
+where
+    A: DinocoAdapter,
+{
+    insert_into::<User>()
+        .values(UserInsertItem {
+            id: 10,
+            name: "Alice".to_string(),
+            posts: vec![
+                PostInsertItem {
+                    id: 100,
+                    title: "Nested One".to_string(),
+                    published: true,
+                    authorId: 0,
+                    comments: vec![
+                        CommentInsertItem { id: 1000, text: "c1".to_string(), flagged: false, postId: 0 },
+                        CommentInsertItem { id: 1001, text: "c2".to_string(), flagged: true, postId: 0 },
+                    ],
+                },
+                PostInsertItem {
+                    id: 101,
+                    title: "Nested Two".to_string(),
+                    published: false,
+                    authorId: 0,
+                    comments: vec![CommentInsertItem { id: 1002, text: "c3".to_string(), flagged: false, postId: 0 }],
+                },
+            ],
+        })
+        .execute(client)
+        .await?;
+
+    insert_many::<User>()
+        .values(vec![UserInsertItem {
+            id: 11,
+            name: "Bruno".to_string(),
+            posts: vec![PostInsertItem {
+                id: 102,
+                title: "Nested Batch".to_string(),
+                published: true,
+                authorId: 0,
+                comments: vec![CommentInsertItem { id: 1003, text: "c4".to_string(), flagged: false, postId: 0 }],
+            }],
+        }])
+        .execute(client)
+        .await?;
+
+    let posts = find_many::<Post>().order_by(|x| x.id.asc()).execute(client).await?;
+    let comments = find_many::<Comment>().order_by(|x| x.id.asc()).execute(client).await?;
+
+    assert_eq!(
+        posts.iter().map(|item| (item.id, item.authorId)).collect::<Vec<_>>(),
+        vec![(100, 10), (101, 10), (102, 11)]
+    );
+    assert_eq!(
+        comments.iter().map(|item| (item.id, item.postId)).collect::<Vec<_>>(),
+        vec![(1000, 100), (1001, 100), (1002, 101), (1003, 102)]
+    );
+
+    Ok(())
+}
+
 async fn exercise_relation_count_flow<A>(client: &DinocoClient<A>) -> DinocoResult<()>
 where
     A: DinocoAdapter,
@@ -1686,6 +1986,18 @@ impl InsertRelation<Member> for Team {
 impl InsertRelation<AutoMember> for AutoTeam {
     fn bind_relation(&self, item: &mut AutoMember) {
         item.teamId = self.id;
+    }
+}
+
+impl InsertRelation<Post> for User {
+    fn bind_relation(&self, item: &mut Post) {
+        item.authorId = self.id;
+    }
+}
+
+impl InsertRelation<Comment> for Post {
+    fn bind_relation(&self, item: &mut Comment) {
+        item.postId = self.id;
     }
 }
 

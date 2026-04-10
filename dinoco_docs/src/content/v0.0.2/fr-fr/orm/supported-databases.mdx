@@ -1,0 +1,58 @@
+export const title = "Vue d'ensemble";
+
+# Vue d'ensemble
+
+**Dinoco** prend en charge nativement les bases **PostgreSQL**, **MySQL** et **SQLite**. Nous travaillons à étendre bientôt ce support à de nouvelles bases de données.
+
+> ⚠️
+> Actuellement, Dinoco prend en charge uniquement les **URL de connexion directes**.
+
+---
+
+## Versions prises en charge
+
+| Base de données | Version minimale |
+| :------------- | :------------  |
+| **SQLite**     | `>= 3.25`      |
+| **PostgreSQL** | `>= 10`        |
+| **MySQL**      | `>= 8.0`       |
+
+---
+
+## Configuration de connexion
+
+La configuration se fait dans le bloc `config` de votre fichier de schéma.
+
+### SQLite
+
+Avec SQLite, le fichier de base de données est généré automatiquement dans votre dossier `dinoco`.
+
+```dinoco
+config {
+  database = "sqlite"
+  database_url = "file:./database.sqlite" # env("DATABASE_URL")
+}
+```
+
+## PostgreSQL ou MySQL
+
+Pour les bases externes, indiquez la chaîne de connexion correspondante :
+
+```dinoco
+config {
+  database = "postgresql" # ou "mysql"
+  database_url = env("DATABASE_URL")
+}
+```
+
+## Correspondance des types
+
+| Dinoco       | Sqlite   | PostgreSQL       | MySQL            |
+| :----------- | :------- | :--------------- | :--------------- |
+| **String**   | TEXT     | TEXT             | VARCHAR(255)     |
+| **Boolean**  | BOOLEAN  | BOOLEAN          | TINYINT(1)       |
+| **Integer**  | INTEGER  | BIGINT           | BIGINT           |
+| **Float**    | REAL     | DOUBLE PRECISION | DOUBLE PRECISION |
+| **DateTime** | DATETIME | TIMESTAMP        | TIMESTAMP        |
+| **Date**     | DATE     | DATE             | DATE             |
+| **Json**     | BLOB     | JSONB            | JSON             |

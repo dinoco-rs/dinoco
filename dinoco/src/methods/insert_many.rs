@@ -3,12 +3,15 @@ use std::marker::PhantomData;
 use dinoco_engine::{DinocoAdapter, DinocoClient};
 
 use crate::execution::execute_reload_many_by_identity;
-use crate::{InsertConnection, InsertModel, InsertRelation, Projection};
-use crate::{execute_connection_updates, execute_insert, execute_insert_relation_links, execute_insert_returning};
+use crate::{
+    InsertConnection, InsertModel, InsertPayload, InsertRelation, Projection, execute_connection_updates,
+    execute_insert, execute_insert_payload, execute_insert_payload_returning, execute_insert_related_payloads,
+    execute_insert_relation_links, execute_insert_returning,
+};
 
 #[derive(Debug, Clone)]
-pub struct InsertMany<M> {
-    items: Vec<M>,
+pub struct InsertMany<M, V = M> {
+    items: Vec<V>,
     marker: PhantomData<fn() -> M>,
 }
 
@@ -37,8 +40,8 @@ pub struct InsertManyWithConnection<M, R> {
 }
 
 #[derive(Debug, Clone)]
-pub struct InsertManyReturning<M, S> {
-    items: Vec<M>,
+pub struct InsertManyReturning<M, V = M, S = M> {
+    items: Vec<V>,
     marker: PhantomData<fn() -> (M, S)>,
 }
 
@@ -77,16 +80,42 @@ where
     InsertMany { items: Vec::new(), marker: PhantomData }
 }
 
+impl<M, V> InsertMany<M, V>
+where
+    M: InsertModel,
+    V: InsertPayload<M>,
+{
+    pub fn values<N>(self, items: Vec<N>) -> InsertMany<M, N>
+    where
+        N: InsertPayload<M>,
+    {
+        InsertMany { items, marker: PhantomData }
+    }
+
+    pub fn returning<S>(self) -> InsertManyReturning<M, V, S>
+    where
+        S: Projection<M>,
+    {
+        InsertManyReturning { items: self.items, marker: PhantomData }
+    }
+
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
+    where
+        M: Projection<M> + 'a,
+        V: 'a,
+        A: DinocoAdapter,
+    {
+        async move { execute_insert_payload::<M, V, A>(self.items, client).await }
+    }
+}
+
 impl<M> InsertMany<M>
 where
     M: InsertModel,
 {
-    pub fn values(mut self, items: Vec<M>) -> Self {
-        self.items = items;
-
-        self
-    }
-
     pub fn with_relation<R>(self, related_items: Vec<R>) -> InsertManyWithRelation<M, R>
     where
         M: InsertRelation<R>,
@@ -116,29 +145,12 @@ where
     {
         InsertManyWithConnection { items: self.items, connected_items }
     }
-
-    pub fn returning<S>(self) -> InsertManyReturning<M, S>
-    where
-        S: Projection<M>,
-    {
-        InsertManyReturning { items: self.items, marker: PhantomData }
-    }
-
-    pub fn execute<'a, A>(
-        self,
-        client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
-    where
-        M: 'a,
-        A: DinocoAdapter,
-    {
-        async move { execute_insert::<M, A>(self.items, client).await }
-    }
 }
 
-impl<M, S> InsertManyReturning<M, S>
+impl<M, V, S> InsertManyReturning<M, V, S>
 where
     M: InsertModel,
+    V: InsertPayload<M>,
     S: Projection<M>,
 {
     pub fn execute<'a, A>(
@@ -146,11 +158,12 @@ where
         client: &'a DinocoClient<A>,
     ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<Vec<S>>> + 'a
     where
-        M: 'a,
+        M: Projection<M> + 'a,
+        V: 'a,
         S: 'a,
         A: DinocoAdapter,
     {
-        async move { execute_insert_returning::<M, S, A>(self.items, client).await }
+        async move { execute_insert_payload_returning::<M, V, S, A>(self.items, client).await }
     }
 }
 
@@ -326,7 +339,6 @@ where
             let items = self.items;
             let related_groups = self.related_groups;
             let parent_auto_increment = M::auto_increment_primary_key_column().is_some();
-            let related_auto_increment = R::auto_increment_primary_key_column().is_some();
 
             if items.len() != related_groups.len() {
                 return Err(dinoco_engine::DinocoError::ParseError(format!(
@@ -336,55 +348,18 @@ where
                 )));
             }
 
-            let mut related_items = Vec::new();
-            let mut parent_indexes = Vec::new();
-
             let parent_items = if parent_auto_increment {
-                let inserted = execute_insert_returning::<M, M, A>(items, client).await?;
-
-                for (index, (item, group)) in inserted.iter().zip(related_groups.into_iter()).enumerate() {
-                    for mut related_item in group {
-                        item.bind_relation(&mut related_item);
-                        parent_indexes.push(index);
-                        related_items.push(related_item);
-                    }
-                }
-
-                inserted
+                execute_insert_returning::<M, M, A>(items, client).await?
             } else {
-                for (index, (item, group)) in items.iter().zip(related_groups.iter()).enumerate() {
-                    for related_item in group {
-                        let mut related_item = related_item.clone();
-
-                        item.bind_relation(&mut related_item);
-                        parent_indexes.push(index);
-                        related_items.push(related_item);
-                    }
-                }
-
                 execute_insert::<M, A>(items.clone(), client).await?;
                 items
             };
 
-            if related_auto_increment {
-                let inserted_related = execute_insert_returning::<R, R, A>(related_items, client).await?;
-                let mut relation_links = Vec::new();
-
-                for (parent_index, related_item) in parent_indexes.into_iter().zip(inserted_related.iter()) {
-                    relation_links.extend(parent_items[parent_index].relation_links(related_item));
-                }
-
-                execute_insert_relation_links(relation_links, client).await
-            } else {
-                let mut relation_links = Vec::new();
-
-                for (parent_index, related_item) in parent_indexes.into_iter().zip(related_items.iter()) {
-                    relation_links.extend(parent_items[parent_index].relation_links(related_item));
-                }
-
-                execute_insert::<R, A>(related_items, client).await?;
-                execute_insert_relation_links(relation_links, client).await
+            for (parent_item, related_group) in parent_items.iter().zip(related_groups.into_iter()) {
+                execute_insert_related_payloads::<M, R, R, A>(parent_item, related_group, client).await?;
             }
+
+            Ok(())
         }
     }
 }
@@ -409,7 +384,6 @@ where
             let items = self.items;
             let related_groups = self.related_groups;
             let parent_auto_increment = M::auto_increment_primary_key_column().is_some();
-            let related_auto_increment = R::auto_increment_primary_key_column().is_some();
 
             if items.len() != related_groups.len() {
                 return Err(dinoco_engine::DinocoError::ParseError(format!(
@@ -419,54 +393,15 @@ where
                 )));
             }
 
-            let mut related_items = Vec::new();
-            let mut parent_indexes = Vec::new();
-
             let parent_items = if parent_auto_increment {
-                let inserted = execute_insert_returning::<M, M, A>(items, client).await?;
-
-                for (index, (item, group)) in inserted.iter().zip(related_groups.into_iter()).enumerate() {
-                    for mut related_item in group {
-                        item.bind_relation(&mut related_item);
-                        parent_indexes.push(index);
-                        related_items.push(related_item);
-                    }
-                }
-
-                inserted
+                execute_insert_returning::<M, M, A>(items, client).await?
             } else {
-                for (index, (item, group)) in items.iter().zip(related_groups.iter()).enumerate() {
-                    for related_item in group {
-                        let mut related_item = related_item.clone();
-
-                        item.bind_relation(&mut related_item);
-                        parent_indexes.push(index);
-                        related_items.push(related_item);
-                    }
-                }
-
                 execute_insert::<M, A>(items.clone(), client).await?;
                 items
             };
 
-            if related_auto_increment {
-                let inserted_related = execute_insert_returning::<R, R, A>(related_items, client).await?;
-                let mut relation_links = Vec::new();
-
-                for (parent_index, related_item) in parent_indexes.into_iter().zip(inserted_related.iter()) {
-                    relation_links.extend(parent_items[parent_index].relation_links(related_item));
-                }
-
-                execute_insert_relation_links(relation_links, client).await?;
-            } else {
-                let mut relation_links = Vec::new();
-
-                for (parent_index, related_item) in parent_indexes.into_iter().zip(related_items.iter()) {
-                    relation_links.extend(parent_items[parent_index].relation_links(related_item));
-                }
-
-                execute_insert::<R, A>(related_items, client).await?;
-                execute_insert_relation_links(relation_links, client).await?;
+            for (parent_item, related_group) in parent_items.iter().zip(related_groups.into_iter()) {
+                execute_insert_related_payloads::<M, R, R, A>(parent_item, related_group, client).await?;
             }
 
             execute_reload_many_by_identity::<M, S, A>(&parent_items, client).await

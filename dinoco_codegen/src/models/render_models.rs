@@ -8,7 +8,7 @@ use dinoco_compiler::{
 
 use super::helpers::{
     default_value_expr, filter_type, relation_fields, relation_target, rust_scalar_base_type, rust_scalar_type,
-    scalar_fields, to_snake_case,
+    scalar_fields, singularize, to_pascal_case, to_snake_case,
 };
 use super::relations::{RelationCardinality, collect_join_tables, resolve_relation};
 use super::render_dinoco::render_dinoco_module;
@@ -93,9 +93,10 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
         .copied()
         .filter(|field| table.primary_key_fields.iter().any(|primary_key| primary_key == &field.name))
         .collect::<Vec<_>>();
-    let auto_increment_primary_key_field = primary_key_fields.iter().copied().find(|field| {
-        matches!(field.default_value, ParsedFieldDefault::Function(FunctionCall::AutoIncrement))
-    });
+    let auto_increment_primary_key_field = primary_key_fields
+        .iter()
+        .copied()
+        .find(|field| matches!(field.default_value, ParsedFieldDefault::Function(FunctionCall::AutoIncrement)));
     let relation_fields = relation_fields(fields);
     let relation_imports = relation_fields
         .iter()
@@ -330,6 +331,7 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     output.push_str(&render_relation_loaders(table, schema));
     output.push_str(&render_relation_count_loaders(table, schema));
     output.push_str(&render_relation_mutations(table, schema));
+    output.push_str(&render_connection_payloads(table, schema, enum_names));
     output.push_str(&render_insert_relations(table, schema));
     output.push_str(&format!("impl Model for {} {{\n", name));
     output.push_str(&format!("    type Include = {}Include;\n", name));
@@ -674,6 +676,129 @@ fn render_insert_relations(table: &ParsedTable, schema: &ParsedSchema) -> String
             }
         }
     }
+
+    output
+}
+
+fn render_connection_payloads(table: &ParsedTable, schema: &ParsedSchema, enum_names: &[String]) -> String {
+    let mut variants = Vec::new();
+
+    for field in relation_fields(&table.fields) {
+        let Some(relation) = resolve_relation(table, field, schema) else {
+            continue;
+        };
+        let ParsedFieldType::Relation(target_table_name) = &field.field_type else {
+            continue;
+        };
+        let Some(target_table) = schema.tables.iter().find(|candidate| candidate.name == *target_table_name) else {
+            continue;
+        };
+
+        if target_table.primary_key_fields.is_empty() {
+            continue;
+        }
+
+        let variant_name = to_pascal_case(&singularize(&field.name));
+        let Some(key_field) = target_table
+            .primary_key_fields
+            .first()
+            .and_then(|primary_key| target_table.fields.iter().find(|candidate| candidate.name == *primary_key))
+        else {
+            continue;
+        };
+
+        variants.push((field, relation, variant_name, key_field));
+    }
+
+    if variants.is_empty() {
+        return String::new();
+    }
+
+    let enum_name = format!("{}Connection", table.name);
+    let mut output = String::new();
+
+    output.push_str("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize)]\n");
+    output.push_str("#[serde(crate = \"dinoco::serde\")]\n");
+    output.push_str(&format!("pub enum {} {{\n", enum_name));
+
+    for (_field, _relation, variant_name, key_field) in &variants {
+        output.push_str(&format!("    {}({}),\n", variant_name, filter_type(key_field, enum_names)));
+    }
+
+    output.push_str("}\n\n");
+    output.push_str(&format!("impl dinoco::InsertConnectionPayload<{}> for {} {{\n", table.name, enum_name));
+    output.push_str(&format!(
+        "    fn connection_updates(&self, parent: &{}) -> Vec<dinoco::ConnectionUpdatePlan> {{\n",
+        table.name
+    ));
+    output.push_str("        match self {\n");
+
+    for (_field, relation, variant_name, key_field) in &variants {
+        match relation.cardinality {
+            RelationCardinality::ManyToMany { .. } => {
+                output.push_str(&format!("            Self::{}(_) => Vec::new(),\n", variant_name));
+            }
+            _ => {
+                output.push_str(&format!(
+                    "            Self::{}(value) => vec![dinoco::ConnectionUpdatePlan {{\n",
+                    variant_name
+                ));
+                output.push_str(&format!("                table_name: {:?},\n", relation.target_table_name));
+                output.push_str(&format!("                columns: &[{:?}],\n", relation.remote_key_field.name));
+                output.push_str(&format!(
+                    "                row: vec![parent.{}.clone().into_dinoco_value()],\n",
+                    relation.local_key_field.name
+                ));
+                output.push_str("                conditions: vec![\n");
+                output.push_str(&format!(
+                    "                    dinoco::Expression::Column({:?}.to_string()).eq(value.clone().into_dinoco_value()),\n",
+                    key_field.name
+                ));
+                output.push_str("                ],\n");
+                output.push_str("            }],\n");
+            }
+        }
+    }
+
+    output.push_str("        }\n");
+    output.push_str("    }\n\n");
+    output.push_str(&format!(
+        "    fn relation_links(&self, parent: &{}) -> Vec<dinoco::RelationLinkPlan> {{\n",
+        table.name
+    ));
+    output.push_str("        match self {\n");
+
+    for (_field, relation, variant_name, _key_field) in &variants {
+        match relation.cardinality {
+            RelationCardinality::ManyToMany {
+                ref join_table_name,
+                ref current_join_column,
+                ref target_join_column,
+            } => {
+                output.push_str(&format!(
+                    "            Self::{}(value) => vec![dinoco::RelationLinkPlan {{\n",
+                    variant_name
+                ));
+                output.push_str(&format!("                table_name: {:?},\n", join_table_name));
+                output.push_str(&format!(
+                    "                columns: &[{:?}, {:?}],\n",
+                    current_join_column, target_join_column
+                ));
+                output.push_str(&format!(
+                    "                row: vec![parent.{}.clone().into_dinoco_value(), value.clone().into_dinoco_value()],\n",
+                    relation.local_key_field.name
+                ));
+                output.push_str("            }],\n");
+            }
+            _ => {
+                output.push_str(&format!("            Self::{}(_) => Vec::new(),\n", variant_name));
+            }
+        }
+    }
+
+    output.push_str("        }\n");
+    output.push_str("    }\n");
+    output.push_str("}\n\n");
 
     output
 }
