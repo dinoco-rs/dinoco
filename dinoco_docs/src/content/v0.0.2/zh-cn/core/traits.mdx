@@ -8,7 +8,7 @@ Dinoco 中模型和负载使用的核心特性概述。
 
 ## Dinoco 中的特性是什么
 
-特性定义了 ORM 的基本行为：模型如何暴露元数据，如何投影列，如何插入，如何更新以及如何处理嵌套负载。
+特性定义了 ORM 的基本行为：模型如何公开元数据，如何投影列，如何插入，如何更新以及如何处理嵌套负载。
 
 在代码生成器生成的模型中，大部分功能已自动实现。
 
@@ -98,7 +98,7 @@ impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
 
 ## 模型实现的特性
 
-在 Dinoco 生成的模型中，最常见的是您会收到以下实现：
+在 Dinoco 生成的模型中，最常见的是您已经收到以下实现：
 
 - `Model`
 - `Projection`
@@ -112,7 +112,7 @@ impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
 - `InsertRelation<T>`
 - `InsertConnection<T>`
 
-## 特性与派生宏结合的示例
+## 特性和派生一起使用的示例
 
 实际上，最常见的流程是：
 
@@ -134,7 +134,7 @@ struct ArticleWithLabels {
 dinoco::insert_into::<Article>()
     .values(ArticleWithLabels {
         id: "article-30".into(),
-        title: "核心示例".into(),
+        title: "Core Example".into(),
         labels: vec![ArticleConnection::Label("label-10".into())],
     })
     .execute(&client)
@@ -143,7 +143,7 @@ dinoco::insert_into::<Article>()
 
 ## 何时使用每个特性
 
-- 使用 `Model` 来识别表、`Where` 和 `Include`。
+- 使用 `Model` 来标识表、`Where` 和 `Include`。
 - 当结构体需要通过 `select` 加载时，使用 `Projection`。
 - 使用 `InsertModel` 和 `UpdateModel` 来理解 ORM 的写入路径。
 - 当处理嵌套负载时，使用 `InsertPayload`。
@@ -151,5 +151,5 @@ dinoco::insert_into::<Article>()
 
 ## 下一步
 
-- [**派生宏**](/v0.0.2/core/derives)：查看与这些特性一起使用的派生宏和属性。
+- [**派生**](/v0.0.2/core/derives)：查看与这些特性一起使用的派生和属性。
 - [**关系**](/v0.0.2/orm/relations)：了解这如何与关系系统连接。

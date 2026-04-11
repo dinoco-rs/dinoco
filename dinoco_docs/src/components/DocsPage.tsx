@@ -159,6 +159,13 @@ const DocsPage: React.FC = () => {
 	const activeInPagePathIds = useMemo(() => {
 		return new Set(findActiveInPagePath(resolved?.item.inPage ?? [], activeAnchorId));
 	}, [activeAnchorId, resolved]);
+	const contentKey = useMemo(() => {
+		if (resolved === undefined) {
+			return locale;
+		}
+
+		return `${locale}:${resolved.path}:${resolved.item.mdxPath}`;
+	}, [locale, resolved]);
 
 	useEffect(() => {
 		if (resolved === undefined) {
@@ -173,6 +180,11 @@ const DocsPage: React.FC = () => {
 		setVersion(resolved.version.name);
 		setConsumer(resolved.group.shortName as DocsConsumer);
 	}, [resolved, router, setConsumer, setVersion]);
+
+	useEffect(() => {
+		setIsSidebarOpen(false);
+		setActiveAnchorId(undefined);
+	}, [contentKey]);
 
 	useEffect(() => {
 		if (resolved === undefined) {
@@ -276,6 +288,7 @@ const DocsPage: React.FC = () => {
 
 			<div className="mx-auto flex w-full max-w-[100%] flex-1 items-start px-4 sm:px-6 md:px-8">
 				<DocsSidebar
+					key={`sidebar:${contentKey}`}
 					currentGroup={resolved.group}
 					currentItem={resolved.item}
 					locale={locale}
@@ -299,7 +312,7 @@ const DocsPage: React.FC = () => {
 						<OutdatedVersionNotice currentVersionName={outdatedNotice.currentVersionName} latestVersionName={outdatedNotice.latestVersionName} latestPath={outdatedNotice.latestPath} />
 					)}
 
-					<article ref={setArticleElement} className="prose prose-slate max-w-none dark:prose-invert">
+					<article key={contentKey} ref={setArticleElement} className="prose prose-slate max-w-none dark:prose-invert">
 						<MarkdownContent component={resolved.item.component} />
 					</article>
 

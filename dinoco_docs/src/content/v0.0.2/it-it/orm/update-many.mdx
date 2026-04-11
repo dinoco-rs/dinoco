@@ -65,6 +65,32 @@ dinoco::update_many::<User>()
     .await?;
 ```
 
+## Esempio con worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        // Utenti aggiornati
+        println!("Utenti aggiornati: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .enqueue("user.batch-updated")
+    .execute(&client)
+    .await?;
+```
+
+Scopri di più sui worker in [**`queues`**](/v0.0.2/orm/queues).
+
 ## Prossimi passi
 
 - [**`update::<M>()`**](/v0.0.1/orm/update): aggiornamento tradizionale con condizione.

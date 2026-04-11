@@ -2,13 +2,13 @@ export const title = 'Derives';
 
 # Derives
 
-Overview of the core derives and attributes used in Dinoco.
+Overview of core derives and attributes used in Dinoco.
 
 ---
 
 ## What are derives in Dinoco
 
-Dinoco derives help link your Rust structs to ORM behavior without needing to write all the implementation manually.
+Dinoco derives help link your Rust structs to ORM behavior without needing to write the entire implementation manually.
 
 The most common ones in daily use are:
 
@@ -29,7 +29,7 @@ struct User {
 }
 ```
 
-This derive serializes the row returned by the adapter into the Rust struct.
+This derive handles the serialization of the row returned by the adapter to the Rust struct.
 
 ## Extend Derive
 
@@ -44,7 +44,7 @@ struct UserSummary {
 }
 ```
 
-In this case, the struct remains linked to the `User` model, but can expose only the fields necessary for that flow.
+In this case, the struct remains linked to the `User` model but can expose only the fields necessary for that flow.
 
 ## #[insertable] Attribute
 

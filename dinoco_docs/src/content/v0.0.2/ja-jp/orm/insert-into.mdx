@@ -8,13 +8,13 @@ export const title = 'insert_into';
 
 ## できること
 
-- `.values(item)`: 挿入されるレコードを定義します。
+- `.values(item)`: 挿入するレコードを定義します。
 - `.returning::<T>()`: 戻り値を、挿入されたアイテムの型付きプロジェクションに変更します。
 - `.execute(&client)`: データベースへの書き込みを実行します。
 
 ## Extend #[insertable] の例
 
-`#[insertable]` を `#[derive(Extend)]` と一緒に使用すると、`.values(...)` が新しいリレーションや既存の接続を含むよりリッチなペイロードを受け入れるようになります。Dinoco はまず親を挿入し、その後すべてを再帰的に処理します。
+#[insertable] を #[derive(Extend)] と一緒に使用すると、.values(...) が新しいリレーションと既存の接続を含むよりリッチなペイロードを受け入れるようになります。Dinoco はまず親を挿入し、その後すべてを再帰的に処理します。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -57,7 +57,7 @@ dinoco::insert_into::<User>()
 
 ## ネストされたリレーションの例
 
-`#[insertable]` を使用した Extend ペイロードを使用して、親を作成し、関連するエンティティも同じフローで作成します。
+#[insertable] を持つ Extend ペイロードを使用して、親を作成し、同じフローで関連するレコードも作成します。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -87,7 +87,7 @@ dinoco::insert_into::<User>()
 
 ## ネストされた接続の例
 
-リレーションが既存のレコードを指す場合、コード生成はペイロード内で使用される ArticleConnection のような enum を生成します。
+リレーションが既存のレコードを指す場合、codegen はペイロード内で使用される ArticleConnection のような enum を生成します。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -102,7 +102,7 @@ struct ArticleWithLabels {
 dinoco::insert_into::<Article>()
     .values(ArticleWithLabels {
         id: "article-10".into(),
-        title: "既存を接続".into(),
+        title: "既存の接続".into(),
         labels: vec![ArticleConnection::Label("label-10".into())],
     })
     .execute(&client)
@@ -111,7 +111,7 @@ dinoco::insert_into::<Article>()
 
 ## ArticleConnection の例
 
-これは、多対多のリレーションで既存のレコードを接続するための最も一般的な形式です。
+これは、多対多のリレーションにおける既存レコードの接続で最も一般的な形式です。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -125,7 +125,7 @@ struct ArticleWithLabels {
 
 let value = ArticleWithLabels {
     id: "article-20".into(),
-    title: "既存を接続".into(),
+    title: "既存の接続".into(),
     labels: vec![
         ArticleConnection::Label("label-10".into()),
         ArticleConnection::Label("label-11".into()),
@@ -140,25 +140,25 @@ dinoco::insert_into::<Article>()
 
 ## 戻り値
 
-`.returning::<T>()` なしの場合、戻り値は次のようになります。
+.returning::<T>() なしの場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()` ありの場合、戻り値は次のようになります。
+.returning::<T>() ありの場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<T>
 ```
 
-## 簡単な例
+## シンプルな例
 
 ```rust
 dinoco::insert_into::<User>()
     .values(User {
         id: "usr_1".to_string(),
-        email: "ana@acme.com".to_string(),
+        email: "アナ@acme.com".to_string(),
         name: "アナ".to_string(),
     })
     .execute(&client)
@@ -182,8 +182,30 @@ let created = dinoco::insert_into::<User>()
     .await?;
 ```
 
+## ワーカーの例
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("ユーザーが作成されました: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "マテウス".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+ワーカーの詳細については、[**`queues`**](/v0.0.2/orm/queues) を参照してください。
+
 ## 次のステップ
 
-- [**Derives**](/v0.0.2/core/derives): Rowable、Extend、および #[insertable] をいつ使用するかを理解します。
+- [**Derives**](/v0.0.2/core/derives): `Rowable`、`Extend`、`#[insertable]` をいつ使用するかを理解します。
 - [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): バッチ挿入。
 - [**`update::<M>()`**](/v0.0.2/orm/update): レコードの更新。

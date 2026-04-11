@@ -13,10 +13,10 @@ Used to fetch a list of records.
 - `.take(...)`: limits the number of records returned.
 - `.skip(...)`: skips a number of records before returning the result.
 - `.order_by(...)`: defines the query's ordering.
-- `.includes(...)`: loads relations along with the main records.
-- `.count(...)`: calculates relation counters and populates fields like `posts_count`.
-- `.cache(...)`: queries Redis first using the provided key; on cache miss, executes the query, saves, and returns the result. On cache hit, the query logger logs `CACHE HIT key=...`.
-- `.cache_with_expiration(...)`: same behavior as the standard cache, but saves with a TTL in seconds.
+- `.includes(...)`: loads relationships along with the main records.
+- `.count(...)`: calculates relationship counters and populates fields like `posts_count`.
+- `.cache(...)`: first queries Redis using the provided key; on cache miss, executes the query, saves, and returns the result. On cache hit, the query logger logs `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: same behavior as standard cache, but saves with TTL in seconds.
 - `.read_in_primary()`: forces reading from the primary database, without using a replica.
 - `.execute(&client)`: executes the query in the database.
 
@@ -152,7 +152,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Relation count example
+## Relationship count example
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,6 +180,29 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## Worker example
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("Batch read with {} users", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+See more about workers in [**`queues`**](/v0.0.2/orm/queues).
+
 ## Cache example
 
 This method is only generated when the schema's `config {}` has `redis`.
@@ -194,7 +217,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Cache with expiration example
+## Example with cache and expiration
 
 ```rust
 use database::*;
@@ -208,5 +231,5 @@ let users = dinoco::find_many::<User>()
 
 ## Next steps
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): version to fetch at most one record.
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): version for fetching at most one record.
 - [**`count::<M>()`**](/v0.0.2/orm/count): record count with filter.

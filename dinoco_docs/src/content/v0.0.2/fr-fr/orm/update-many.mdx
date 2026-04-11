@@ -9,9 +9,9 @@ Utilisé pour mettre à jour plusieurs enregistrements à la fois.
 ## Ce que vous pouvez faire
 
 - `.cond(...)`: restreint les enregistrements qui peuvent être mis à jour.
-- `.values(Vec<M>)`: définit les éléments utilisés dans la mise à jour par lot.
-- `.returning::<T>()`: retourne les enregistrements mis à jour sous forme de liste typée.
-- `.execute(&client)`: exécute la mise à jour par lot.
+- `.values(Vec<M>)`: définit les éléments utilisés dans la mise à jour par lots.
+- `.returning::<T>()`: renvoie les enregistrements mis à jour sous forme de liste typée.
+- `.execute(&client)`: exécute la mise à jour par lots.
 
 ## Retour
 
@@ -64,6 +64,32 @@ dinoco::update_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Exemple avec worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        // Utilisateurs mis à jour
+        println!("Utilisateurs mis à jour : {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .enqueue("user.batch-updated")
+    .execute(&client)
+    .await?;
+```
+
+En savoir plus sur les workers dans [**`queues`**](/v0.0.2/orm/queues).
 
 ## Prochaines étapes
 

@@ -2,23 +2,23 @@ export const title = "count";
 
 # count
 
-用于计数记录。
+用于统计记录。
 
 ---
 
 ## 您可以做什么
 
-- 使用 `.cond(...)` 过滤
+- 使用 `.cond(...)` 进行过滤
 - 使用 `.execute(&client)` 执行
 
-## 方法描述
+## 方法说明
 
 - `.cond(...)`: 限制哪些记录包含在计数中。
 - `.execute(&client)`: 在数据库中执行计数。
 
-## 返回
+## 返回值
 
-`count`的返回值为：
+`count`的返回值是：
 
 ```rust
 DinocoResult<usize>
@@ -52,5 +52,5 @@ let total = dinoco::count::<User>()
 
 ## 下一步
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 以列表形式检索记录。
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 检索记录列表。
 - [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 检索单个记录。

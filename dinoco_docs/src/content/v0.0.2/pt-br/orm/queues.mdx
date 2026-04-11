@@ -8,6 +8,7 @@ O sistema de filas do Dinoco permite publicar eventos assíncronos a partir de `
 
 - Permitir o encadeamento de .enqueue(...), .enqueue_in(...) e .enqueue_at(...) em todos os métodos do cliente, exceto nas operações de exclusão.
 - Processar jobs com `workers().on::<Model>(... )`.
+- Carregar projeções com relações no worker usando `workers().on_with_relation::<Model, Projection>(... )`.
 - Recarregar o dado mais recente antes do handler rodar.
 - Ignora automaticamente jobs cujo registro não existe mais.
 
@@ -71,6 +72,24 @@ let _worker = workers()
         println!("Processando {}", job.data.name);
         job.success()
     })
+    .run()
+    .await?;
+```
+
+Se você precisar de uma projeção com relações, use `on_with_relation`. O Dinoco recarrega o registro e aplica a árvore de includes antes do handler rodar.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{} tem {} posts", job.data.name, job.data.posts.len());
+            job.success()
+        },
+    )
     .run()
     .await?;
 ```

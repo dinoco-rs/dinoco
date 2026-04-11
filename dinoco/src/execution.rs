@@ -82,15 +82,48 @@ pub fn qualify_expression(expression: Expression, table_name: &str) -> Expressio
     }
 }
 
+fn qualify_expression_in_place(expression: &mut Expression, table_name: &str) {
+    match expression {
+        Expression::Column(name) => {
+            if should_qualify_query_column(name) {
+                *name = format!("{table_name}.{name}");
+            }
+        }
+        Expression::Value(_) | Expression::Raw(_) => {}
+        Expression::IsNull(inner) | Expression::IsNotNull(inner) => {
+            qualify_expression_in_place(inner, table_name);
+        }
+        Expression::In { expr, .. } | Expression::NotIn { expr, .. } => {
+            qualify_expression_in_place(expr, table_name);
+        }
+        Expression::And(expressions) | Expression::Or(expressions) => {
+            for expression in expressions {
+                qualify_expression_in_place(expression, table_name);
+            }
+        }
+        Expression::BinaryOp { left, right, .. } => {
+            qualify_expression_in_place(left, table_name);
+            qualify_expression_in_place(right, table_name);
+        }
+    }
+}
+
 pub fn qualify_select_statement(mut statement: SelectStatement, table_name: &str) -> SelectStatement {
-    statement.select = statement.select.into_iter().map(|column| qualify_query_column(&column, table_name)).collect();
-    statement.conditions =
-        statement.conditions.into_iter().map(|expression| qualify_expression(expression, table_name)).collect();
-    statement.order_by = statement
-        .order_by
-        .into_iter()
-        .map(|(column, direction)| (qualify_query_column(&column, table_name), direction))
-        .collect();
+    for column in &mut statement.select {
+        if should_qualify_query_column(column) {
+            *column = format!("{table_name}.{column}");
+        }
+    }
+
+    for expression in &mut statement.conditions {
+        qualify_expression_in_place(expression, table_name);
+    }
+
+    for (column, _) in &mut statement.order_by {
+        if should_qualify_query_column(column) {
+            *column = format!("{table_name}.{column}");
+        }
+    }
 
     statement
 }
@@ -130,11 +163,11 @@ where
     A: DinocoAdapter,
 {
     async move {
-        // statement.limit = Some(1);
+        let statement = statement.limit(1);
 
-        let mut rows = execute_many::<M, S, A>(statement, &[], &[], read_mode, client).await?;
+        let rows = execute_many::<M, S, A>(statement, &[], &[], read_mode, client).await?;
 
-        Ok(rows.drain(..).next())
+        Ok(rows.into_iter().next())
     }
 }
 
@@ -149,8 +182,8 @@ where
     async move {
         let adapter = client.read_adapter(matches!(read_mode, ReadMode::Primary));
         let (sql, params) = adapter.dialect().build_count(&statement);
-        let mut rows = adapter.query_as::<DinocoCountRow>(&sql, &params).await?;
-        let count = rows.drain(..).next().map(|row| row.count).unwrap_or_default();
+        let rows = adapter.query_as::<DinocoCountRow>(&sql, &params).await?;
+        let count = rows.into_iter().next().map(|row| row.count).unwrap_or_default();
 
         usize::try_from(count).map_err(|_| DinocoError::ParseError(format!("Expected non-negative count, got {count}")))
     }

@@ -2,7 +2,7 @@ export const title = 'find_and_update';
 
 # find_and_update
 
-Wird verwendet, um einen einzelnen Datensatz zu finden, atomare Updates in der Datenbank anzuwenden und den aktualisierten Eintrag zurückzugeben.
+Wird verwendet, um einen einzelnen Datensatz zu finden, atomare Updates in der Datenbank anzuwenden und das aktualisierte Element zurückzugeben.
 
 ---
 
@@ -30,7 +30,31 @@ let task = dinoco::find_and_update::<Task>()
     .await?;
 ```
 
-<h2>Verfügbare Operationen in <code>ModelUpdate</code></h2>
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Task, _, _>("task.reviewed", |job| async move {
+        // Aufgabe aktualisiert auf
+        println!("Aufgabe aktualisiert auf {:?}", job.data.status);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .enqueue("task.reviewed")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
+
+## Verfügbare Operationen in `ModelUpdate`
 
 - `set(value)`
 - `increment(value)`

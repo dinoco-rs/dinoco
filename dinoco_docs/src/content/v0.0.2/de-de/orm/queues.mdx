@@ -1,32 +1,33 @@
-export const title = 'Warteschlangen';
+export const title = 'queues';
 
 # Warteschlangen
 
-Das Warteschlangensystem von Dinoco ermöglicht die Veröffentlichung asynchroner Ereignisse aus `insert`, `find` und `update`, wobei nur die notwendigen Daten in `Redis` gespeichert werden, um den Datensatz neu zu hydrieren, wenn der Worker ausgeführt wird.
+Das Dinoco-Warteschlangensystem ermöglicht die Veröffentlichung asynchroner Ereignisse aus `insert`, `find` und `update`, wobei nur die notwendigen Daten in `Redis` gespeichert werden, um den Datensatz neu zu hydrieren, wenn der Worker ausgeführt wird.
 
 ## Was Sie tun können
 
-- Ermöglicht das Verketten von .enqueue(...), .enqueue_in(...) und .enqueue_at(...) in allen Client-Methoden, außer bei Löschoperationen.
-- Jobs mit `workers().on::<Model>(... )` verarbeiten.
-- Die neuesten Daten neu laden, bevor der Handler ausgeführt wird.
+- Ermöglichen Sie das Verketten von .enqueue(...), .enqueue_in(...) und .enqueue_at(...) in allen Client-Methoden, außer bei Löschvorgängen.
+- Verarbeiten Sie Jobs mit `workers().on::<Model>(... )`.
+- Laden Sie Projektionen mit Beziehungen im Worker mithilfe von `workers().on_with_relation::<Model, Projection>(... )`.
+- Laden Sie die neuesten Daten neu, bevor der Handler ausgeführt wird.
 - Ignoriert automatisch Jobs, deren Datensatz nicht mehr existiert.
 
 ## Wie es funktioniert
 
-Wenn Sie `enqueue` verwenden, macht Dinoco Folgendes:
+Wenn Sie `enqueue` verwenden, tut Dinoco Folgendes:
 
-1. Führt die Hauptoperation normal aus.
-2. Speichert in der Warteschlange nur die Suchkriterien des Datensatzes.
+1. Führt den Hauptvorgang normal aus.
+2. Speichert nur die Suchkriterien des Datensatzes in der Warteschlange.
 3. Im Worker werden die neuesten Daten aus der Datenbank abgerufen.
 4. Erst dann wird der Handler ausgeführt.
 
-Wenn der Datensatz zum Zeitpunkt der Abfrage nicht mehr existiert, wird der Handler nicht ausgeführt und der Job wird aus der Warteschlange entfernt.
+Wenn der Datensatz zum Zeitpunkt der Suche nicht mehr existiert, wird der Handler nicht ausgeführt und der Job wird aus der Warteschlange entfernt.
 
 ## Warteschlangenmethoden
 
-- `.enqueue(Ereignis)`: plant für sofortige Ausführung ein.
-- `.enqueue_in(Ereignis, delay_ms)`: plant mit Verzögerung in Millisekunden ein.
-- `.enqueue_at(Ereignis, data_utc)`: plant für ein bestimmtes Datum in `chrono::DateTime<Utc>` ein.
+- `.enqueue(evento)`: plant die sofortige Ausführung.
+- `.enqueue_in(evento, delay_ms)`: plant mit einer Verzögerung in Millisekunden.
+- `.enqueue_at(evento, data_utc)`: plant für ein bestimmtes Datum in `chrono::DateTime<Utc>`.
 
 ```rust
 use database::*;
@@ -54,23 +55,41 @@ insert_into::<User>()
 
 Verwenden Sie `workers()`, um asynchrone Handler zu registrieren. Der Worker-Kontext stellt Folgendes bereit:
 
-- `data`: der rehydrierte Datensatz.
+- `data`: der neu hydrierte Datensatz.
 - `client`: eine Kopie des `DinocoClient`.
 - `success()` oder `remove()`: entfernt den Job aus der Warteschlange.
 - `fail()`: plant mit dem Standard-Retry neu.
 - `retry_in()` und `retry_at()`: gleiche Idee wie `enqueue_in` und `enqueue_at`.
 - `.run().await?`: startet den Worker im Hintergrund und kehrt sofort mit einem `JoinHandle` zurück.
 
-Beim Aufruf von `run` erstellt Dinoco einen neuen, exklusiven `DinocoClient` für die Worker, mit einem eigenen Verbindungspool. So verwendet der Warteschlangen-Loop nicht denselben Pool wie die Hauptanwendung.
+Beim Aufruf von `run` erstellt Dinoco einen neuen, exklusiven `DinocoClient` für die Worker mit einem eigenen Verbindungspool. So nutzt der Warteschlangen-Loop nicht denselben Pool wie die Hauptanwendung.
 
 ```rust
 use database::*;
 
 let _worker = workers()
     .on::<User, _, _>("user.created", |job| async move {
-        println!("Processando {}", job.data.name); // Verarbeite {}
+        println!("Verarbeite {}", job.data.name);
         job.success()
     })
+    .run()
+    .await?;
+```
+
+Wenn Sie eine Projektion mit Beziehungen benötigen, verwenden Sie `on_with_relation`. Dinoco lädt den Datensatz neu und wendet den Include-Baum an, bevor der Handler ausgeführt wird.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{} hat {} Beiträge", job.data.name, job.data.posts.len());
+            job.success()
+        },
+    )
     .run()
     .await?;
 ```
@@ -94,7 +113,7 @@ let _worker = workers()
 
 ## Redis-Konfiguration
 
-Die Warteschlangen verwenden das in `DinocoClientConfig::with_redis(...)` konfigurierte `Redis`. Für `enqueue_in` und `enqueue_at` ist es ratsam, die Persistenz zu aktivieren, da geplante Jobs bis zur Ausführungszeit in Redis verbleiben.
+Die Warteschlangen verwenden das in `DinocoClientConfig::with_redis(...)` konfigurierte `Redis`. Für `enqueue_in` und `enqueue_at` ist es ratsam, die Persistenz zu aktivieren, da geplante Jobs bis zur Ausführungszeit in Redis leben.
 
 Empfehlung: Verwenden Sie **AOF + RDB zusammen**.
 
@@ -108,7 +127,7 @@ appendfsync everysec
 # AOF-Datei
 appendfilename "appendonly.aof"
 
-# --- SCHNAPPSCHUSS (RDB) ---
+# --- SNAPSHOT (RDB) ---
 save 900 1
 save 300 10
 save 60 10000
@@ -116,7 +135,7 @@ save 60 10000
 # --- SICHERHEIT ---
 dir /data
 
-# --- LEISTUNG ---
+# --- PERFORMANCE ---
 no-appendfsync-on-rewrite yes
 ```
 
@@ -125,7 +144,7 @@ no-appendfsync-on-rewrite yes
 - `delete` und `delete_many` unterstützen `enqueue` nicht.
 - Der Worker ist vollständig asynchron und verwendet `tokio` unter der Haube.
 - `run()` blockiert den Rest der Anwendung nicht: Es startet den Loop im Hintergrund.
-- `Option<User>` wird bei der Worker-Registrierung akzeptiert, aber der Handler wird nur ausgeführt, wenn ein Datensatz zur Rehydrierung vorhanden ist.
+- `Option<User>` wird bei der Worker-Registrierung akzeptiert, aber der Handler wird nur ausgeführt, wenn ein Datensatz zur Re-Hydrierung vorhanden ist.
 
 ## Nächste Schritte
 

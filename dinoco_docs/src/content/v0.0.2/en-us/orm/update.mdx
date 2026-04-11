@@ -9,7 +9,7 @@ Used to update filtered records.
 ## What you can do
 
 - `.cond(...)`: defines which records will be updated.
-- `.values(item)`: informs the new values for the record.
+- `.values(item)`: informs the new values of the record.
 - `.connect(...)`: creates supported write relation links.
 - `.disconnect(...)`: removes supported write relation links.
 - `.returning::<T>()`: returns the updated records in a typed projection.
@@ -49,7 +49,7 @@ dinoco::update::<User>()
 
 ## Example with connect(...)
 
-Used to connect relations supported for writing, typically Many to Many.
+Used to connect supported write relations, typically Many to Many.
 
 ```rust
 dinoco::update::<User>()
@@ -71,7 +71,34 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## Filters available in connect and disconnect
+## Example with worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("User updated: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "new@acme.com".to_string(),
+        name: "New Name".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+See more about workers in [**`queues`**](/v0.0.2/orm/queues).
+
+## Available filters in connect and disconnect
 
 - `eq`
 - `neq`

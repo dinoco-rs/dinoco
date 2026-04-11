@@ -30,6 +30,29 @@ let task = dinoco::find_and_update::<Task>()
     .await?;
 ```
 
+## Example with worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Task, _, _>("task.reviewed", |job| async move {
+        println!("Task updated to {:?}", job.data.status); // Task updated to
+        job.success();
+    })
+    .run()
+    .await?;
+
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .enqueue("task.reviewed")
+    .execute(&client)
+    .await?;
+```
+
+Learn more about workers in [**`queues`**](/v0.0.2/orm/queues).
+
 ## Available operations in `ModelUpdate`
 
 - `set(value)`
@@ -42,7 +65,7 @@ let task = dinoco::find_and_update::<Task>()
 
 - The update is executed in a single `UPDATE`.
 - If no row matches the condition, the return will be `DinocoError::RecordNotFound`.
-- The update DSL does not expose relationships.
+- The update DSL does not expose relations.
 - Currently, the flow supports simple primary keys to locate and return the updated record.
 
 ## Next steps

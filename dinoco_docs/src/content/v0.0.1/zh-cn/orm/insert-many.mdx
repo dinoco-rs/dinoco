@@ -121,8 +121,8 @@ dinoco::insert_many::<Team>()
 ```rust
 dinoco::insert_many::<Article>()
     .values(vec![
-        Article { id: "article-11".into(), title: "Connect Multiple".into() },
-        Article { id: "article-12".into(), title: "Connect Batch".into() },
+        Article { id: "article-11".into(), title: "连接多个".into() },
+        Article { id: "article-12".into(), title: "批量连接".into() },
     ])
     .with_connections(vec![
         vec![

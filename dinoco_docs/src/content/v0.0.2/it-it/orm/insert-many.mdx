@@ -2,7 +2,7 @@ export const title = 'insert_many';
 
 # insert_many
 
-Usato per l'inserimento in batch.
+Utilizzato per l'inserimento in batch.
 
 ---
 
@@ -50,6 +50,31 @@ let created = dinoco::insert_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Esempio con worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
+        println!("Utenti creati nel batch: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .enqueue("user.batch-created")
+    .execute(&client)
+    .await?;
+```
+
+Vedi di più sui worker in [**`queues`**](/v0.0.2/orm/queues).
 
 ## Esempio con relazioni annidate
 
@@ -194,7 +219,7 @@ dinoco::insert_many::<Article>()
 ## Note
 
 - `#[insertable]` in una struct `Extend` permette a `.values(...)` di inserire nuove relazioni in modo ricorsivo.
-- Per connessioni con record già esistenti, usa l'enum `ModelConnection` generato dal codegen.
+- Per le connessioni con record già esistenti, usa l'enum `ModelConnection` generato dal codegen.
 - Nuove relazioni possono usare `Vec<ModelRelacionado>` o altri payload `Extend` marcati con `#[insertable]`.
 - Le connessioni esistenti funzionano bene in scenari many-to-many e anche in flussi supportati dal modello generato.
 

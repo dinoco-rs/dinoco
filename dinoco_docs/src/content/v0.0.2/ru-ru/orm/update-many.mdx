@@ -15,13 +15,13 @@ export const title = "update_many";
 
 ## Возвращаемое значение
 
-Без `.returning::<T>()`, возвращаемое значение:
+Без `.returning::<T>()` возвращаемое значение:
 
 ```rust
 DinocoResult<()>
 ```
 
-С `.returning::<T>()`, возвращаемое значение становится:
+С `.returning::<T>()` возвращаемое значение становится:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -64,6 +64,31 @@ dinoco::update_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Пример с воркером
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        println!("Пользователи обновлены: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .enqueue("user.batch-updated")
+    .execute(&client)
+    .await?;
+```
+
+Узнайте больше о воркерах в [**`queues`**](/v0.0.2/orm/queues).
 
 ## Следующие шаги
 

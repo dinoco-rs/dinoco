@@ -2,8 +2,8 @@ extern crate self as dinoco_engine;
 
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 mod cache;
@@ -161,15 +161,9 @@ where
     }
 
     pub async fn worker_client(&self) -> DinocoResult<Self> {
-        Self::build(
-            self.primary_url.clone(),
-            self.read_replica_urls.clone(),
-            self.config.clone(),
-            self.adapter_name,
-        )
-        .await
+        Self::build(self.primary_url.clone(), self.read_replica_urls.clone(), self.config.clone(), self.adapter_name)
+            .await
     }
-
 }
 
 impl<T> DinocoClient<T>
@@ -194,8 +188,7 @@ fn register_worker_client<T>(
     primary_url: String,
     read_replica_urls: Vec<String>,
     config: DinocoClientConfig,
-)
-where
+) where
     T: DinocoAdapter + 'static,
 {
     let mut registry = worker_client_registry().lock().expect("worker client registry mutex poisoned");

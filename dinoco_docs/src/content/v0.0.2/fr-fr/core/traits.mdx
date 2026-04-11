@@ -2,7 +2,7 @@ export const title = 'Traits';
 
 # Traits
 
-Aperçu des traits centraux utilisés par les modèles et les payloads dans Dinoco.
+Aperçu des traits centraux que les modèles et les payloads utilisent dans Dinoco.
 
 ---
 
@@ -29,7 +29,7 @@ impl dinoco::Model for User {
 
 ## Trait Projection
 
-`Projection` définit comment une structure lit les colonnes d'un modèle et quelles colonnes elle doit charger.
+`Projection` définit comment une struct lit les colonnes d'un modèle et quelles colonnes elle doit charger.
 
 ```rust
 impl dinoco::Projection<User> for UserSummary {
@@ -39,7 +39,7 @@ impl dinoco::Projection<User> for UserSummary {
 }
 ```
 
-Elle est très utilisée avec `select::<T>()`, `include` et les structures dérivées avec `Extend`.
+Elle est très utilisée avec `select::<T>()`, `include` et les structs dérivées avec `Extend`.
 
 ## Trait InsertModel
 
@@ -57,7 +57,7 @@ Dans les modèles générés, ce trait est déjà prêt.
 
 ## Trait UpdateModel
 
-`UpdateModel` décrit les champs qui peuvent être envoyés lors d'une mise à jour et comment identifier l'enregistrement à modifier.
+`UpdateModel` décrit les champs qui peuvent être envoyés en mise à jour et comment identifier l'enregistrement à modifier.
 
 ```rust
 impl dinoco::UpdateModel for User {
@@ -72,13 +72,13 @@ impl dinoco::UpdateModel for User {
 `InsertPayload` permet à `.values(...)` d'accepter quelque chose de différent du modèle brut, en séparant le payload en :
 
 - modèle de base à insérer
-- contenu imbriqué qui sera traité par la suite
+- contenu imbriqué qui sera traité ultérieurement
 
 C'est ce trait que `#[insertable]` implémente automatiquement.
 
 ## Trait InsertConnectionPayload
 
-`InsertConnectionPayload` est utilisé lorsque le payload imbriqué représente des connexions avec des enregistrements existants.
+`InsertConnectionPayload` est utilisé lorsque le payload imbriqué représente des connexions avec des enregistrements déjà existants.
 
 C'est l'interface utilisée par les enums générés par le codegen, comme `ArticleConnection`.
 
@@ -98,7 +98,7 @@ impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
 
 ## Traits implémentés par le modèle
 
-Dans un modèle généré par Dinoco, il est courant de recevoir déjà des implémentations de :
+Dans un modèle généré par Dinoco, le plus courant est de recevoir déjà des implémentations de :
 
 - `Model`
 - `Projection`
@@ -119,7 +119,7 @@ En pratique, le flux le plus courant est :
 - `Rowable` pour la lecture de la ligne
 - `Extend` pour les projections ou les payloads enrichis
 - `#[insertable]` pour les insertions imbriquées
-- des traits comme `Model`, `Projection` et `InsertModel` générés automatiquement par le codegen
+- traits comme `Model`, `Projection` et `InsertModel` générés automatiquement par le codegen
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -134,7 +134,7 @@ struct ArticleWithLabels {
 dinoco::insert_into::<Article>()
     .values(ArticleWithLabels {
         id: "article-30".into(),
-        title: "Core Example".into(),
+        title: "Exemple de base".into(),
         labels: vec![ArticleConnection::Label("label-10".into())],
     })
     .execute(&client)
@@ -144,12 +144,12 @@ dinoco::insert_into::<Article>()
 ## Quand utiliser chaque trait
 
 - Utilisez `Model` pour identifier la table, `Where` et `Include`.
-- Utilisez `Projection` lorsque la structure doit être chargée par `select`.
+- Utilisez `Projection` lorsque la struct doit être chargée par `select`.
 - Utilisez `InsertModel` et `UpdateModel` pour comprendre le chemin d'écriture de l'ORM.
 - Utilisez `InsertPayload` lorsque vous travaillez avec des payloads imbriqués.
 - Utilisez `InsertConnectionPayload` lorsque le payload imbriqué connecte des enregistrements existants.
 
 ## Prochaines étapes
 
-- [**Derives**](/v0.0.2/core/derives): découvrez les derives et attributs utilisés avec ces traits.
-- [**Relations**](/v0.0.2/orm/relations): découvrez comment cela se connecte au système de relations.
+- [**Derives**](/v0.0.2/core/derives) : découvrez les derives et attributs utilisés avec ces traits.
+- [**Relations**](/v0.0.2/orm/relations) : découvrez comment cela se connecte au système de relations.

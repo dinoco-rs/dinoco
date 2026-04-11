@@ -180,6 +180,29 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## Exemplo com worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("Lote lido com {} usuários", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
+
 ## Exemplo com cache
 
 Esse método só é gerado quando o `config {}` do schema tiver `redis`.

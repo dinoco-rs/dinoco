@@ -6,10 +6,10 @@ export const title = 'insert_many';
 
 ---
 
-## 기능
+## 수행할 수 있는 작업
 
-- `.values(Vec<M>)`: 일괄 삽입할 레코드를 정의합니다.
-- `.returning::<T>()`: 반환 값을 삽입된 항목의 타입 지정 목록으로 변경합니다.
+- `.values(Vec<M>)`: 일괄 삽입될 레코드를 정의합니다.
+- `.returning::<T>()`: 반환 값을 삽입된 항목의 유형화된 목록으로 변경합니다.
 - `.execute(&client)`: 일괄 작업을 실행합니다.
 
 ## 반환
@@ -20,7 +20,7 @@ export const title = 'insert_many';
 DinocoResult<()>
 ```
 
-`.returning::<T>()`가 있으면 반환 값은 다음과 같이 변경됩니다:
+`.returning::<T>()`가 있으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -50,6 +50,31 @@ let created = dinoco::insert_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## 워커 예시
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
+        println!("일괄 생성된 사용자: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .enqueue("user.batch-created")
+    .execute(&client)
+    .await?;
+```
+
+워커에 대한 자세한 내용은 [**`queues`**](/v0.0.2/orm/queues)를 참조하십시오.
 
 ## 중첩 관계 예시
 
@@ -121,7 +146,7 @@ dinoco::insert_many::<Article>()
 
 ## ArticleConnection 예시
 
-관련 항목이 이미 존재하는 경우, 페이로드 내에서 코드 생성기가 생성한 enum을 사용하세요.
+관련 항목이 이미 존재하는 경우, 페이로드 내에서 코드 생성기가 생성한 enum을 사용하십시오.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -157,7 +182,7 @@ dinoco::insert_many::<Article>()
 
 ## Extend #[insertable] 예시
 
-`insert_many`는 struct가 `#[insertable]`로 표시된 경우 `.values(...)`를 통해 더 풍부한 페이로드를 받을 수도 있습니다. 이는 부모와 중첩된 관계를 단일 재귀 흐름으로 생성하는 데 유용합니다.
+`insert_many`는 struct가 `#[insertable]`로 표시된 경우 `.values(...)`를 통해 더 풍부한 페이로드를 받을 수도 있습니다. 이는 부모와 해당 중첩 관계를 단일 재귀 흐름으로 생성하는 데 유용합니다.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -191,15 +216,15 @@ dinoco::insert_many::<Article>()
     .await?;
 ```
 
-## 참고 사항
+## 참고
 
-- Extend struct의 `#[insertable]`는 `.values(...)`가 새로운 관계를 재귀적으로 삽입할 수 있도록 합니다.
-- 이미 존재하는 레코드와의 연결에는 코드 생성기가 생성한 `ModelConnection` enum을 사용하세요.
+- `Extend` struct의 `#[insertable]`은 `.values(...)`가 새로운 관계를 재귀적으로 삽입할 수 있도록 합니다.
+- 이미 존재하는 레코드와의 연결을 위해서는 코드 생성기가 생성한 `ModelConnection` enum을 사용하십시오.
 - 새로운 관계는 `Vec<ModelRelacionado>` 또는 `#[insertable]`로 표시된 다른 `Extend` 페이로드를 사용할 수 있습니다.
 - 기존 연결은 다대다 시나리오와 생성된 모델이 지원하는 흐름에서 잘 작동합니다.
 
 ## 다음 단계
 
-- [**Derives**](/v0.0.2/core/derives): `Extend` 및 `#[insertable]`로 페이로드를 구성하는 방법을 이해합니다.
+- [**Derives**](/v0.0.2/core/derives): `Extend` 및 `#[insertable]`을 사용하여 페이로드를 구성하는 방법을 이해하십시오.
 - [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into): 단일 삽입.
 - [**`update::<M>()`**](/v0.0.2/orm/update): 필터가 있는 업데이트.

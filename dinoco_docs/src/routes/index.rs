@@ -17,10 +17,7 @@ fn get_latest_version_path() -> String {
 
     versions.sort();
 
-    format!(
-        "/{}",
-        versions.last().expect("No versions found in src/jsons/versions")
-    )
+    format!("/{}", versions.last().expect("No versions found in src/jsons/versions"))
 }
 
 #[tuono_lib::handler]

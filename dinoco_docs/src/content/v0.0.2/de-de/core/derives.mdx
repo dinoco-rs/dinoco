@@ -2,7 +2,7 @@ export const title = 'Derives';
 
 # Derives
 
-Übersicht über die zentralen Derives und Attribute, die in Dinoco verwendet werden.
+Übersicht der zentralen Derives und Attribute, die in Dinoco verwendet werden.
 
 ---
 
@@ -44,11 +44,11 @@ struct UserSummary {
 }
 ```
 
-In diesem Fall bleibt die Struktur mit dem `User`-Modell verbunden, kann aber nur die für diesen Workflow benötigten Felder freigeben.
+In diesem Fall bleibt die Struktur mit dem `User`-Modell verbunden, kann aber nur die für diesen Fluss notwendigen Felder freilegen.
 
 ## Attribut #[insertable]
 
-Verwenden Sie `#[insertable]` zusammen mit `Extend`, wenn `.values(...)` neue Beziehungen oder bestehende Verbindungen innerhalb des Payloads akzeptieren muss.
+Verwenden Sie `#[insertable]` zusammen mit `Extend`, wenn `.values(...)` neue Beziehungen oder bestehende Verbindungen innerhalb der Payload akzeptieren muss.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]

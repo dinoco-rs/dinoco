@@ -16,8 +16,8 @@ export const title = 'cache()';
 Use `client.cache()` quando você quiser:
 
 - montar cache manual
-- invalidar chaves depois de writes
-- compartilhar payloads entre várias queries
+- invalidar chaves depois de operações de escrita
+- compartilhar cargas úteis entre várias consultas
 - guardar estruturas prontas para leitura rápida
 
 ## Como funciona
@@ -100,8 +100,8 @@ Exemplos comuns:
 
 ## Observações
 
-- `client.cache()` é cache manual; ele não executa query no banco.
-- Para cache integrado em query, use `find_first().cache(...)` e `find_many().cache(...)`.
+- `client.cache()` é cache manual; ele não executa consulta no banco.
+- Para cache integrado em consulta, use `find_first().cache(...)` e `find_many().cache(...)`.
 - Você pode chamar `client.cache()` quantas vezes quiser; ele só cria um wrapper leve.
 
 ## Próximos passos

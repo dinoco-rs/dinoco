@@ -9,7 +9,7 @@ export const title = 'insert_many';
 ## 您可以做什么
 
 - `.values(Vec<M>)`: 定义将批量插入的记录。
-- `.returning::<T>()`: 将返回值更改为插入项的类型化列表。
+- `.returning::<T>()`: 将返回值更改为已插入项的类型化列表。
 - `.execute(&client)`: 执行批量操作。
 
 ## 返回值
@@ -50,6 +50,32 @@ let created = dinoco::insert_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## 带 worker 的示例
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
+        // 批量创建的用户：{}
+        println!("批量创建的用户：{}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .enqueue("user.batch-created")
+    .execute(&client)
+    .await?;
+```
+
+在 [**`queues`**](/v0.0.2/orm/queues) 中了解更多关于 worker 的信息。
 
 ## 带嵌套关系的示例
 
@@ -119,7 +145,7 @@ dinoco::insert_many::<Article>()
     .await?;
 ```
 
-## ArticleConnection 示例
+## 带 ArticleConnection 的示例
 
 当相关项已存在时，请在 payload 中使用 codegen 生成的枚举。
 
@@ -155,9 +181,9 @@ dinoco::insert_many::<Article>()
     .await?;
 ```
 
-## Extend #[insertable] 示例
+## 带 Extend #[insertable] 的示例
 
-`insert_many` 也可以通过 `.values(...)` 接收更丰富的 payload，当结构体被标记为 `#[insertable]` 时。这对于在一个递归流中创建父级及其嵌套关系非常有用。
+`insert_many` 也可以通过 `.values(...)` 接收更丰富的 payload，当 struct 被标记为 `#[insertable]` 时。这对于在一个递归流中创建父级及其嵌套关系非常有用。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -193,13 +219,13 @@ dinoco::insert_many::<Article>()
 
 ## 注意事项
 
-- 在 `Extend` 结构体上使用 `#[insertable]` 允许 `.values(...)` 以递归方式插入新的关系。
+- 在 `Extend` struct 中使用 `#[insertable]` 允许 `.values(...)` 以递归方式插入新关系。
 - 对于与现有记录的连接，请使用 codegen 生成的 `ModelConnection` 枚举。
-- 新的关系可以使用 `Vec<ModelRelacionado>` 或其他标记为 `#[insertable]` 的 `Extend` payload。
-- 现有连接在多对多场景以及由生成模型支持的流程中运行良好。
+- 新关系可以使用 `Vec<ModelRelacionado>` 或其他标记为 `#[insertable]` 的 `Extend` payload。
+- 现有连接在多对多场景以及生成模型支持的流中运行良好。
 
 ## 下一步
 
-- [**Derives**](/v0.0.2/core/derives): 了解如何使用 `Extend` 和 `#[insertable]` 构建 payload。
-- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into): 单次插入。
-- [**`update::<M>()`**](/v0.0.2/orm/update): 带过滤器的更新。
+- [**派生**](/v0.0.2/core/derives)：了解如何使用 `Extend` 和 `#[insertable]` 构建 payload。
+- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into)：单次插入。
+- [**`update::<M>()`**](/v0.0.2/orm/update)：带过滤器的更新。

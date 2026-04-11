@@ -24,11 +24,11 @@ const TARGETS = {
 const FREE_TIER_LIMITS = {
 	'gemini-2.0-flash': { concurrency: 2, rpm: 15 },
 	'gemini-2.0-flash-lite': { concurrency: 4, rpm: 30 },
-	'gemini-2.5-flash': { concurrency: 5, rpm: 40 },
+	'gemini-2.5-flash': { concurrency: 15, rpm: 60 },
 	'gemini-2.5-flash-lite': { concurrency: 2, rpm: 15 },
 	'gemini-2.5-flash-lite-preview': { concurrency: 2, rpm: 15 },
 	'gemini-2.5-flash-preview': { concurrency: 2, rpm: 10 },
-	'gemini-2.5-pro': { concurrency: 1, rpm: 5 },
+	'gemini-2.5-pro': { concurrency: 2, rpm: 10 },
 };
 
 if (!API_KEY) {

@@ -8,7 +8,7 @@ Utilisé pour récupérer une liste d'enregistrements.
 
 ## Ce que vous pouvez faire
 
-- `.select::<T>()`: remplace la projection par défaut du modèle par une projection personnalisée.
+- `.select::<T>()`: échange la projection par défaut du modèle contre une projection personnalisée.
 - `.cond(...)`: ajoute des conditions de filtre à la requête.
 - `.take(...)`: limite le nombre d'enregistrements retournés.
 - `.skip(...)`: saute un nombre d'enregistrements avant de retourner le résultat.
@@ -152,7 +152,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec comptage de relation
+## Exemple avec le compte de relation
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -179,6 +179,30 @@ let users = dinoco::find_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Exemple avec worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        // Lot lu avec {} utilisateurs
+        println!("Lot lu avec {} utilisateurs", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+Voir plus sur les workers dans [**`queues`**](/v0.0.2/orm/queues).
 
 ## Exemple avec cache
 
@@ -208,5 +232,5 @@ let users = dinoco::find_many::<User>()
 
 ## Prochaines étapes
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): version pour récupérer au maximum un enregistrement.
-- [**`count::<M>()`**](/v0.0.2/orm/count): comptage d'enregistrements avec filtre.
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): version pour rechercher au maximum un enregistrement.
+- [**`count::<M>()`**](/v0.0.2/orm/count): nombre d'enregistrements avec filtre.

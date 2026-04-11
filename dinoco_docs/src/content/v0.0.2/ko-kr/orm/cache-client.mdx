@@ -2,23 +2,23 @@ export const title = '캐시()';
 
 # 캐시
 
-`client.cache()`는 `find_first` 및 `find_many`에 내장된 캐시 헬퍼에 의존하지 않고 `DinocoClient`에 구성된 Redis에 직접 접근할 수 있도록 합니다.
+`client.cache()`는 `find_first` 및 `find_many`에 내장된 캐시 헬퍼에 의존하지 않고 `DinocoClient`에 구성된 Redis에 직접 액세스할 수 있도록 합니다.
 
 ## 무엇을 할 수 있나요
 
 - `.get::<T>(...)`로 키 읽기
-- `.set(...)`으로 키 저장
+- `.set(...)`로 키 저장
 - `.set_with_ttl(...)`을 사용하여 만료와 함께 저장
 - `.delete(...)`로 키 제거
 
-## 언제 사용해야 하나요
+## 언제 사용하나요
 
 다음과 같은 경우 `client.cache()`를 사용하세요:
 
-- 수동 캐시를 설정하려는 경우
-- 쓰기 후 키를 무효화하려는 경우
-- 여러 쿼리 간에 페이로드를 공유하려는 경우
-- 빠른 읽기를 위해 준비된 구조를 저장하려는 경우
+- 수동 캐시 설정
+- 쓰기 작업 후 키 무효화
+- 여러 쿼리 간에 페이로드 공유
+- 빠른 읽기를 위해 준비된 구조 저장
 
 ## 작동 방식
 
@@ -29,8 +29,8 @@ export const title = '캐시()';
 ## 사용 가능한 메서드
 
 - `.get::<T>(key)`: 값을 `T`로 가져와 역직렬화합니다.
-- `.set(key, &value)`: TTL 없이 직렬화하여 저장합니다.
-- `.set_with_ttl(key, &value, ttl_seconds)`: 초 단위 만료와 함께 직렬화하여 저장합니다.
+- `.set(key, &value)`: TTL 없이 직렬화하고 저장합니다.
+- `.set_with_ttl(key, &value, ttl_seconds)`: 초 단위 만료와 함께 직렬화하고 저장합니다.
 - `.delete(key)`: 키를 제거합니다.
 
 ## 기본 예제
@@ -77,7 +77,7 @@ use database::*;
 
 dinoco::update::<User>()
     .cond(|x| x.id.eq(1_i64))
-    .values(User { id: 1, name: "Novo nome".to_string() })
+    .values(User { id: 1, name: "새 이름".to_string() })
     .execute(&client)
     .await?;
 

@@ -6,18 +6,18 @@ export const title = 'find_many';
 
 ---
 
-## 수행 가능한 작업
+## 수행할 수 있는 작업
 
-- `.select::<T>()`: 모델의 기본 프로젝션을 사용자 지정 프로젝션으로 변경합니다.
+- `.select::<T>()`: 모델의 기본 프로젝션을 사용자 지정 프로젝션으로 바꿉니다.
 - `.cond(...)`: 쿼리에 필터 조건을 추가합니다.
 - `.take(...)`: 반환되는 레코드 수를 제한합니다.
-- `.skip(...)`: 결과를 반환하기 전에 지정된 수의 레코드를 건너뜀니다.
+- `.skip(...)`: 결과를 반환하기 전에 지정된 수의 레코드를 건너뜠니다.
 - `.order_by(...)`: 쿼리의 정렬 순서를 정의합니다.
-- `.includes(...)`: 기본 레코드와 함께 관계를 로드합니다.
+- `.includes(...)`: 주요 레코드와 함께 관계를 로드합니다.
 - `.count(...)`: 관계 카운터를 계산하고 `posts_count`와 같은 필드를 채웁니다.
 - `.cache(...)`: 제공된 키를 사용하여 Redis에서 먼저 쿼리합니다. 캐시 미스 시 쿼리를 실행하고 결과를 저장한 후 반환합니다. 캐시 히트 시 쿼리 로거는 `CACHE HIT key=...`를 기록합니다.
 - `.cache_with_expiration(...)`: 표준 캐시와 동일하게 동작하지만, TTL(초)과 함께 저장합니다.
-- `.read_in_primary()`: 복제본을 사용하지 않고 기본 데이터베이스에서 읽기를 강제합니다.
+- `.read_in_primary()`: 복제본을 사용하지 않고 주 데이터베이스에서 읽기를 강제합니다.
 - `.execute(&client)`: 데이터베이스에서 쿼리를 실행합니다.
 
 ## 반환
@@ -170,7 +170,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 기본 데이터베이스에서 읽기 예시
+## 주 데이터베이스에서 읽기 예시
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -179,6 +179,29 @@ let users = dinoco::find_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## 워커 예시
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("{}명의 사용자로 배치가 읽혔습니다.", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+워커에 대한 자세한 내용은 [**`queues`**](/v0.0.2/orm/queues)를 참조하세요.
 
 ## 캐시 예시
 

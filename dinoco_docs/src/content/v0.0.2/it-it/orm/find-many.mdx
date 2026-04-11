@@ -180,6 +180,29 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## Esempio con worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("Lotto letto con {} utenti", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+Vedi di più sui worker in [**`queues`**](/v0.0.2/orm/queues).
+
 ## Esempio con cache
 
 Questo metodo viene generato solo quando il `config {}` dello schema ha `redis`.
@@ -209,4 +232,4 @@ let users = dinoco::find_many::<User>()
 ## Prossimi passi
 
 - [**`find_first::<M>()`**](/v0.0.2/orm/find-first): versione per cercare al massimo un record.
-- [**`count::<M>()`**](/v0.0.2/orm/count): conteggio di record con filtro.
+- [**`count::<M>()`**](/v0.0.2/orm/count): conteggio dei record con filtro.

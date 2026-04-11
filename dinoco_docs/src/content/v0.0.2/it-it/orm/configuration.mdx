@@ -49,9 +49,9 @@ config {
 
 ## Cosa cambia nell'API generata
 
-- Con `redis`, il progetto inizia a esporre helper come `client.cache()`, `.cache(...)` e code con `workers()`.
-- Con `read_replicas`, le letture possono usare la replica mentre le scritture continuano sul database principale.
-- Senza `redis`, le risorse di cache e coda non sono completamente disponibili.
+- Con `redis`, il progetto espone funzioni ausiliarie come `client.cache()`, `.cache(...)` e code con `workers()`.
+- Con `read_replicas`, le letture possono usare una replica mentre le scritture continuano sul database principale.
+- Senza `redis`, le funzionalità di cache e coda non sono completamente disponibili.
 
 ## Quando modificare questo blocco
 

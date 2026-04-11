@@ -14,13 +14,13 @@ Pour créer l'environnement Dinoco, nous exécutons la commande suivante :
 dinoco init
 ```
 
-Après avoir choisi la base de données et toutes les configurations nécessaires, le dossier `dinoco` sera créé à la racine de votre projet.
+Après avoir choisi la base de données et toutes les configurations nécessaires, le dossier dinoco sera créé à la racine de votre projet.
 
 Ce dossier contiendra :
 
 - **Migrations :** L'historique des modifications de votre base de données.
-- **Schema :** La définition centrale de votre structure de données.
-- **Models :** Les représentations typées pour une utilisation dans votre code Rust.
+- **Schéma :** La définition centrale de votre structure de données.
+- **Modèles :** Les représentations typées pour une utilisation dans votre code Rust.
 
 ## Comment ça marche ?
 
@@ -57,7 +57,7 @@ model Post {
 
 ### 2. Créez la migration
 
-En générant la migration avec `--apply`, elle sera appliquée à la base de données et les modèles seront générés automatiquement !
+En générant la migration avec --apply, elle sera appliquée à la base de données et les modèles seront générés automatiquement !
 
 ```bash
 dinoco migrate generate --apply
@@ -109,18 +109,18 @@ async fn main() -> dinoco::DinocoResult<()> {
 
     let client = database::create_connection(config).await?;
 
-    // Insérer un utilisateur avec un post lié.
+    // Insérez un utilisateur avec un post lié.
     insert_into::<User>()
         .values(UserWithPostInsert {
             id: 0,
             email: "bia@dinoco.rs".to_string(),
             name: Some("Bia".to_string()),
-            posts: vec![Post { id: 0, title: "Mon premier post".to_string(), published: true, authorId: None }],
+            posts: vec![Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None }],
         })
         .execute(&client)
         .await?;
 
-    // Récupérer tous les utilisateurs avec leurs posts.
+    // Recherchez tous les utilisateurs avec leurs publications.
     let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
 
     let cached_users = find_many::<User>()
@@ -156,4 +156,4 @@ async fn main() -> dinoco::DinocoResult<()> {
 ## Prochaines étapes
 
 - [**Schéma Dinoco**](/v0.0.2/orm/introduction-dinoco) : Comprenez mieux la structure et la proposition de Dinoco.
-- [**find_many**](/v0.0.2/orm/find-many) : Voir les filtres, les inclusions et le cache dans les requêtes de liste.
+- [**find_many**](/v0.0.2/orm/find-many) : consultez les filtres, les inclusions et le cache dans les requêtes de liste.

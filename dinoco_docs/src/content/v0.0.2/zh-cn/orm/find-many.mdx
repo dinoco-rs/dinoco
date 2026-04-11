@@ -9,15 +9,15 @@ export const title = 'find_many';
 ## 您可以做什么
 
 - `.select::<T>()`: 将模型的默认投影替换为自定义投影。
-- `.cond(...)`: 在查询中添加过滤条件。
+- `.cond(...)`: 向查询添加过滤条件。
 - `.take(...)`: 限制返回的记录数量。
 - `.skip(...)`: 在返回结果之前跳过一定数量的记录。
 - `.order_by(...)`: 定义查询的排序方式。
-- `.includes(...)`: 随主记录一起加载关联关系。
-- `.count(...)`: 计算关联计数器并填充 `posts_count` 等字段。
-- `.cache(...)`: 首先使用提供的键在 Redis 中查询；如果缓存未命中，则执行查询、保存并返回结果。如果缓存命中，查询日志记录器将记录 `CACHE HIT key=...`。
-- `.cache_with_expiration(...)`: 与标准缓存行为相同，但以秒为单位写入 TTL。
-- `.read_in_primary()`: 强制在主数据库中读取，不使用副本。
+- `.includes(...)`: 与主记录一起加载关联关系。
+- `.count(...)`: 计算关联计数器并填充诸如 `posts_count` 等字段。
+- `.cache(...)`: 首先使用提供的键在 Redis 中查询；如果缓存未命中，则执行查询、保存并返回结果。如果缓存命中，查询日志会记录 `CACHE HIT key=...`。
+- `.cache_with_expiration(...)`: 与标准缓存行为相同，但以秒为单位设置 TTL。
+- `.read_in_primary()`: 强制从主数据库读取，不使用副本。
 - `.execute(&client)`: 在数据库中执行查询。
 
 ## 返回值
@@ -42,7 +42,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 带过滤的示例
+## 带过滤条件的示例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -78,7 +78,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 简单包含示例
+## 简单关联示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -96,7 +96,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 带过滤的包含示例
+## 带过滤条件的关联示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -114,7 +114,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 嵌套包含示例
+## 嵌套关联示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -170,7 +170,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 在主数据库中读取的示例
+## 从主数据库读取示例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -179,6 +179,29 @@ let users = dinoco::find_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Worker 示例
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("已读取包含 {} 个用户的批次", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+在 [**`queues`**](/v0.0.2/orm/queues) 中了解更多关于 worker 的信息。
 
 ## 缓存示例
 
@@ -208,5 +231,5 @@ let users = dinoco::find_many::<User>()
 
 ## 下一步
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)：用于最多获取一条记录的版本。
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)：最多获取一条记录的版本。
 - [**`count::<M>()`**](/v0.0.2/orm/count)：带过滤条件的记录计数。

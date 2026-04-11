@@ -12,7 +12,7 @@ export default function RootLayout({ children }: TuonoLayoutProps): JSX.Element 
 	useEffect(() => {
 		setTheme(getSystemTheme());
 		setLocale(getLocale());
-	}, [setTheme]);
+	}, [setLocale, setTheme]);
 
 	return (
 		<html lang="pt-BR" className="font-montserrat" suppressHydrationWarning>

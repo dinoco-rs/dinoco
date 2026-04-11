@@ -2,7 +2,7 @@ export const title = 'cache()';
 
 # cache
 
-`client.cache()` exposes direct access to Redis configured in `DinocoClient`, without relying on the cache helpers coupled in `find_first` and `find_many`.
+`client.cache()` exposes direct access to the Redis configured in `DinocoClient`, without relying on the cache helpers coupled with `find_first` and `find_many`.
 
 ## What you can do
 
@@ -16,9 +16,9 @@ export const title = 'cache()';
 Use `client.cache()` when you want to:
 
 - set up manual cache
-- invalidate keys after writes
+- invalidate keys after write operations
 - share payloads between multiple queries
-- store structures ready for quick reading
+- store structures ready for fast reading
 
 ## How it works
 
@@ -26,14 +26,14 @@ The method uses the Redis configured in `DinocoClientConfig::with_redis(...)`.
 
 If the client does not have Redis configured, the operation returns an error.
 
-## Available methods
+## Available Methods
 
 - `.get::<T>(key)`: fetches and deserializes the value as `T`
 - `.set(key, &value)`: serializes and saves without TTL
 - `.set_with_ttl(key, &value, ttl_seconds)`: serializes and saves with expiration in seconds
 - `.delete(key)`: removes the key
 
-## Basic example
+## Basic Example
 
 ```rust
 use database::*;
@@ -47,7 +47,7 @@ let count = cache.get::<i64>("users:count").await?;
 println!("{count:?}");
 ```
 
-## Example with typed list
+## Example with Typed List
 
 ```rust
 use database::*;
@@ -70,7 +70,7 @@ use database::*;
 client.cache().set_with_ttl("users:top-10", &vec![1, 2, 3], 60).await?;
 ```
 
-## Invalidation example
+## Invalidation Example
 
 ```rust
 use database::*;
@@ -85,7 +85,7 @@ client.cache().delete("users:1").await?;
 client.cache().delete("users:list").await?;
 ```
 
-## Supported types
+## Supported Types
 
 Values are serialized to JSON, so the type must be compatible with `serde`.
 
@@ -100,11 +100,11 @@ Common examples:
 
 ## Notes
 
-- `client.cache()` is manual cache; it does not execute queries on the database.
+- `client.cache()` is manual cache; it does not execute database queries.
 - For integrated query caching, use `find_first().cache(...)` and `find_many().cache(...)`.
 - You can call `client.cache()` as many times as you want; it only creates a lightweight wrapper.
 
-## Next steps
+## Next Steps
 
 - [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
 - [**`find_many::<M>()`**](/v0.0.2/orm/find-many)

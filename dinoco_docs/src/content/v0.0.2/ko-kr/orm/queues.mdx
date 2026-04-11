@@ -1,50 +1,51 @@
 export const title = 'queues';
 
-# queues
+# 큐
 
-Dinoco의 큐 시스템은 `insert`, `find`, `update`에서 비동기 이벤트를 발행할 수 있게 하며, 워커가 실행될 때 레코드를 다시 채우는 데 필요한 데이터만 `Redis`에 저장합니다.
+Dinoco의 큐 시스템은 `insert`, `find`, `update`에서 비동기 이벤트를 발행할 수 있도록 하며, 워커가 실행될 때 레코드를 다시 수화하는 데 필요한 데이터만 `Redis`에 저장합니다.
 
-## 할 수 있는 것
+## 무엇을 할 수 있나요
 
-- 삭제 작업을 제외한 모든 클라이언트 메서드에서 .enqueue(...), .enqueue_in(...) 및 .enqueue_at(...)을 체인으로 연결할 수 있습니다.
-- `workers().on::<Model>(... )`으로 작업을 처리합니다.
+- 삭제 작업을 제외한 모든 클라이언트 메서드에서 .enqueue(...), .enqueue_in(...), .enqueue_at(...) 체이닝을 허용합니다.
+- `workers().on::<Model>(... )`를 사용하여 작업을 처리합니다.
+- `workers().on_with_relation::<Model, Projection>(... )`를 사용하여 워커에서 관계가 있는 프로젝션을 로드합니다.
 - 핸들러가 실행되기 전에 최신 데이터를 다시 로드합니다.
-- 더 이상 존재하지 않는 레코드에 대한 작업은 자동으로 무시합니다.
+- 더 이상 존재하지 않는 레코드의 작업은 자동으로 무시합니다.
 
 ## 작동 방식
 
 `enqueue`를 사용하면 Dinoco는 다음을 수행합니다.
 
-1.  주요 작업을 정상적으로 실행합니다.
-2.  레코드의 검색 조건만 큐에 저장합니다.
-3.  워커에서 데이터베이스에서 최신 데이터를 가져옵니다.
-4.  그 후에야 핸들러를 실행합니다.
+1. 주 작업을 정상적으로 실행합니다.
+2. 레코드의 검색 기준만 큐에 저장합니다.
+3. 워커에서 데이터베이스에서 최신 데이터를 가져옵니다.
+4. 그런 다음 핸들러를 실행합니다.
 
 검색 시점에 레코드가 더 이상 존재하지 않으면 핸들러는 실행되지 않고 작업은 큐에서 제거됩니다.
 
 ## 큐에 넣는 메서드
 
-- `.enqueue(evento)`: 즉시 실행되도록 예약합니다.
-- `.enqueue_in(evento, delay_ms)`: 밀리초 단위로 지연하여 예약합니다.
-- `.enqueue_at(evento, data_utc)`: `chrono::DateTime<Utc>`의 특정 날짜에 예약합니다.
+- `.enqueue(이벤트)`: 즉시 실행되도록 예약합니다.
+- `.enqueue_in(이벤트, delay_ms)`: 밀리초 단위로 지연하여 예약합니다.
+- `.enqueue_at(이벤트, data_utc)`: `chrono::DateTime<Utc>`의 특정 날짜에 예약합니다.
 
 ```rust
 use database::*;
 
 insert_into::<User>()
-    .values(User { id: 1, name: "Matheus".to_string() }) // 마테우스
+    .values(User { id: 1, name: "Matheus".to_string() })
     .enqueue("user.created")
     .execute(&client)
     .await?;
 
 insert_into::<User>()
-    .values(User { id: 2, name: "Ana".to_string() }) // 아나
+    .values(User { id: 2, name: "Ana".to_string() })
     .enqueue_in("user.reminder", 30_000)
     .execute(&client)
     .await?;
 
 insert_into::<User>()
-    .values(User { id: 3, name: "Lia".to_string() }) // 리아
+    .values(User { id: 3, name: "Lia".to_string() })
     .enqueue_at("user.scheduled", dinoco::Utc::now() + chrono::Duration::hours(1))
     .execute(&client)
     .await?;
@@ -54,10 +55,10 @@ insert_into::<User>()
 
 비동기 핸들러를 등록하려면 `workers()`를 사용하세요. 워커 컨텍스트는 다음을 노출합니다.
 
-- `data`: 다시 채워진 레코드.
+- `data`: 다시 수화된 레코드.
 - `client`: `DinocoClient`의 복사본.
 - `success()` 또는 `remove()`: 큐에서 작업을 제거합니다.
-- `fail()`: 기본 재시도 정책으로 다시 예약합니다.
+- `fail()`: 기본 재시도로 다시 예약합니다.
 - `retry_in()` 및 `retry_at()`: `enqueue_in` 및 `enqueue_at`과 동일한 개념입니다.
 - `.run().await?`: 백그라운드에서 워커를 시작하고 `JoinHandle`을 즉시 반환합니다.
 
@@ -68,9 +69,27 @@ use database::*;
 
 let _worker = workers()
     .on::<User, _, _>("user.created", |job| async move {
-        println!("처리 중 {}", job.data.name);
+        println!("{} 처리 중", job.data.name);
         job.success()
     })
+    .run()
+    .await?;
+```
+
+관계가 있는 프로젝션이 필요한 경우 `on_with_relation`을 사용하세요. Dinoco는 핸들러가 실행되기 전에 레코드를 다시 로드하고 포함 트리를 적용합니다.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{}에 {}개의 게시물이 있습니다", job.data.name, job.data.posts.len());
+            job.success()
+        },
+    )
     .run()
     .await?;
 ```
@@ -94,9 +113,9 @@ let _worker = workers()
 
 ## Redis 구성
 
-큐는 `DinocoClientConfig::with_redis(...)`에 구성된 `Redis`를 사용합니다. `enqueue_in` 및 `enqueue_at`의 경우, 예약된 작업은 실행 시간까지 Redis에 존재하므로 영속성을 활성화하는 것이 좋습니다.
+큐는 `DinocoClientConfig::with_redis(...)`에 구성된 `Redis`를 사용합니다. `enqueue_in` 및 `enqueue_at`의 경우, 예약된 작업은 실행 시간까지 Redis에 존재하므로 영구성을 활성화하는 것이 좋습니다.
 
-권장 사항: **AOF + RDB를 함께 사용**하세요.
+권장 사항: **AOF + RDB를 함께** 사용하세요.
 
 ```conf
 # AOF 활성화
@@ -123,9 +142,9 @@ no-appendfsync-on-rewrite yes
 ## 참고 사항
 
 - `delete` 및 `delete_many`는 `enqueue`를 지원하지 않습니다.
-- 워커는 완전히 비동기적이며 내부적으로 `tokio`를 사용합니다.
+- 워커는 완전히 비동기식이며 내부적으로 `tokio`를 사용합니다.
 - `run()`은 애플리케이션의 나머지 부분을 차단하지 않습니다. 백그라운드에서 루프를 시작합니다.
-- `Option<User>`는 워커 등록에서 허용되지만, 핸들러는 다시 채울 레코드가 있을 때만 실행됩니다.
+- `Option<User>`는 워커 등록에서 허용되지만, 핸들러는 다시 수화할 레코드가 있을 때만 실행됩니다.
 
 ## 다음 단계
 

@@ -49,8 +49,8 @@ config {
 
 ## O que muda na API gerada
 
-- Com `redis`, o projeto passa a expor helpers como `client.cache()`, `.cache(...)` e filas com `workers()`.
-- Com `read_replicas`, leituras podem usar réplica enquanto writes continuam no banco principal.
+- Com `redis`, o projeto passa a expor funções auxiliares como `client.cache()`, `.cache(...)` e filas com `workers()`.
+- Com `read_replicas`, leituras podem usar réplica enquanto escritas continuam no banco principal.
 - Sem `redis`, recursos de cache e fila não ficam totalmente disponíveis.
 
 ## Quando editar esse bloco

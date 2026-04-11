@@ -2,7 +2,7 @@ export const title = 'insert_many';
 
 # insert_many
 
-Wird für Batch-Einfügungen verwendet.
+Wird für die Batch-Einfügung verwendet.
 
 ---
 
@@ -10,7 +10,7 @@ Wird für Batch-Einfügungen verwendet.
 
 - `.values(Vec<M>)`: definiert die Datensätze, die im Batch eingefügt werden sollen.
 - `.returning::<T>()`: ändert den Rückgabewert in eine typisierte Liste der eingefügten Elemente.
-- `.execute(&client)`: führt den Batch-Vorgang aus.
+- `.execute(&client)`: führt die Batch-Operation aus.
 
 ## Rückgabe
 
@@ -20,7 +20,7 @@ Ohne `.returning::<T>()` ist der Rückgabewert:
 DinocoResult<()>
 ```
 
-Mit `.returning::<T>()` wird der Rückgabewert:
+Mit `.returning::<T>()` wird der Rückgabewert zu:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -50,6 +50,31 @@ let created = dinoco::insert_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
+        println!("Benutzer im Batch erstellt: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .enqueue("user.batch-created")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
 
 ## Beispiel mit verschachtelten Beziehungen
 
@@ -157,7 +182,7 @@ dinoco::insert_many::<Article>()
 
 ## Beispiel mit Extend #[insertable]
 
-`insert_many` kann auch reichhaltigere Payloads über `.values(...)` empfangen, wenn die Struktur mit `#[insertable]` markiert ist. Dies ist nützlich, um die Eltern und ihre verschachtelten Beziehungen in einem einzigen rekursiven Fluss zu erstellen.
+`insert_many` kann auch reichhaltigere Payloads über `.values(...)` empfangen, wenn die Struktur mit `#[insertable]` markiert ist. Dies ist nützlich, um Eltern und ihre verschachtelten Beziehungen in einem einzigen rekursiven Fluss zu erstellen.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -195,11 +220,11 @@ dinoco::insert_many::<Article>()
 
 - `#[insertable]` in einer `Extend`-Struktur ermöglicht es `.values(...)`, neue Beziehungen rekursiv einzufügen.
 - Für Verbindungen mit bereits existierenden Datensätzen verwenden Sie das vom Codegen generierte Enum `ModelConnection`.
-- Neue Beziehungen können `Vec<ModelRelacionado>` oder andere `Extend`-Payloads verwenden, die mit `#[insertable]` markiert sind.
-- Bestehende Verbindungen funktionieren gut in Many-to-Many-Szenarien und auch in vom generierten Modell unterstützten Abläufen.
+- Neue Beziehungen können `Vec<ModelRelacionado>` oder andere `Extend`-Payloas verwenden, die mit `#[insertable]` markiert sind.
+- Bestehende Verbindungen funktionieren gut in Many-to-Many-Szenarien und auch in Flüssen, die vom generierten Modell unterstützt werden.
 
 ## Nächste Schritte
 
-- [**Derives**](/v0.0.2/core/derives): Verstehen Sie, wie Payloads mit `Extend` und `#[insertable]` erstellt werden.
+- [**Derives**](/v0.0.2/core/derives): verstehen Sie, wie Payloads mit `Extend` und `#[insertable]` erstellt werden.
 - [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into): einzelne Einfügung.
 - [**`update::<M>()`**](/v0.0.2/orm/update): Aktualisierung mit Filter.

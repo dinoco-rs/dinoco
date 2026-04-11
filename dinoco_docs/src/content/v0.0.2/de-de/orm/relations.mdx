@@ -14,13 +14,13 @@ Das Attribut `@relation(...)` definiert, wie zwei Models miteinander verbunden s
 
 Unterstützte Parameter:
 
-| Parameter    | Verwendung                                              |
-| :----------- | :------------------------------------------------------ |
-| `name`       | Expliziter Name der Beziehung                           |
-| `fields`     | Lokale Felder, die als Schlüssel verwendet werden       |
-| `references` | Referenzierte Felder im Ziel-Model                      |
-| `onDelete`   | Verhalten beim Löschen des referenzierten Datensatzes   |
-| `onUpdate`   | Verhalten beim Aktualisieren des referenzierten Wertes  |
+| Parameter    | Verwendung                                       |
+| :----------- | :----------------------------------------------- |
+| `name`       | Expliziter Name der Beziehung                    |
+| `fields`     | Lokale Felder, die als Schlüssel verwendet werden |
+| `references` | Referenzierte Felder im Ziel-Model               |
+| `onDelete`   | Verhalten beim Löschen des referenzierten Datensatzes |
+| `onUpdate`   | Verhalten beim Aktualisieren des referenzierten Wertes |
 
 Vollständiges Beispiel:
 
@@ -39,11 +39,11 @@ Dinoco stellt referenzielle Aktionen bereit, um zu steuern, was passiert, wenn d
 
 Unterstützte Werte:
 
-| Aktion         | Bedeutung                                               |
-| :------------- | :------------------------------------------------------ |
-| `Cascade`      | Propagiert die Operation auf abhängige Datensätze       |
-| `SetNull`      | Setzt den Fremdschlüssel auf `null`                     |
-| `SetDefault`   | Setzt den für das Feld konfigurierten Standardwert     |
+| Aktion         | Bedeutung                                        |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | Leitet die Operation an abhängige Datensätze weiter |
+| `SetNull`    | Setzt den Fremdschlüssel auf `null`              |
+| `SetDefault` | Setzt den für das Feld konfigurierten Standardwert |
 
 Beispiel:
 
@@ -78,12 +78,12 @@ model Post {
 
 Gedankliche Lesart:
 
-- Ein `User` kann mehrere `Post` haben.
+- Ein `User` kann mehrere `Posts` haben.
 - Jeder `Post` gehört zu einem einzigen `User`.
 
 ## Many to many
 
-Bei Viele-zu-Viele-Beziehungen haben beide Seiten Listen.
+Bei Many-to-Many-Beziehungen haben beide Seiten Listen.
 
 ```dinoco
 model User {
@@ -103,12 +103,12 @@ model Role {
 
 Gedankliche Lesart:
 
-- Ein `User` kann mehrere `Role` haben.
-- Eine `Role` kann zu mehreren `User` gehören.
+- Ein `User` kann mehrere `Roles` haben.
+- Eine `Role` kann mehreren `Usern` gehören.
 
 ## Self relation
 
-Eine Selbstbeziehung tritt auf, wenn ein Model sich auf sich selbst bezieht.
+Eine Self-Relation tritt auf, wenn ein Model sich auf sich selbst bezieht.
 
 ```dinoco
 model User {
@@ -130,7 +130,7 @@ Gedankliche Lesart:
 - Verwenden Sie `name`, wenn es mehr als eine Beziehung zwischen denselben Models gibt.
 - Verwenden Sie `onDelete: Cascade`, wenn das Kind ohne den Elternteil keinen Sinn ergibt.
 - Verwenden Sie `onDelete: SetNull`, wenn die Beziehung aufgehoben werden kann, ohne den untergeordneten Datensatz zu entfernen.
-- Verwenden Sie Selbstbeziehungen mit expliziten Namen, um die Lesbarkeit und den Codegen zu erleichtern.
+- Verwenden Sie Self-Relations mit expliziten Namen, um die Lesbarkeit und Codegenerierung zu erleichtern.
 
 ## Referenzschema für die Beispiele
 
@@ -323,7 +323,7 @@ Dieses Muster ist nützlich, wenn Sie eine umfassende Benutzeransicht in einem e
 
 ## Beispiel für einen Insert mit Beziehung unter Verwendung von User und Profile
 
-Um einen Datensatz mit einer 1:1-Beziehung über die neue API einzufügen, platzieren Sie die Beziehung in einem `Extend`-Payload, der mit `#[insertable]` markiert ist.
+Um einen Datensatz mit einer 1:1-Beziehung über die neue API einzufügen, platzieren Sie die Beziehung innerhalb eines Extend-Payloads, der mit `#[insertable]` markiert ist.
 
 ```rust
 use dinoco::insert_into;
@@ -357,7 +357,7 @@ In diesem Ablauf:
 
 - Der `User` wird zuerst eingefügt.
 - Das zugehörige `Profile` wird anschließend erstellt.
-- Der Schlüssel `userId` wird durch den Dinoco-Beziehungsfluss verknüpft.
+- Der `userId`-Schlüssel wird durch den Dinoco-Beziehungsfluss verknüpft.
 
 ## Beispiel für insert_many mit verschachtelten Beziehungen
 
@@ -426,7 +426,7 @@ insert_many::<Post>()
 In diesem Ablauf:
 
 - Jeder `Post` wird eingefügt.
-- Dinoco erstellt die verschachtelten `Comment` und verknüpft jede Gruppe während des Schreibvorgangs mit dem korrekten `Post`.
+- Dinoco erstellt die verschachtelten `Comments` und verknüpft jede Gruppe während des Schreibvorgangs mit dem richtigen `Post`.
 
 ## Beispiel für insert_many mit verschachtelten Verbindungen
 
@@ -475,8 +475,8 @@ insert_many::<Post>()
 
 In diesem Ablauf:
 
-- Die `Post` werden eingefügt.
-- Die bereits vorhandenen `Tag` werden mit den entsprechenden Posts verbunden.
+- Die `Posts` werden eingefügt.
+- Die bereits vorhandenen `Tags` werden mit den entsprechenden Posts verbunden.
 - Jeder Payload definiert seine Verbindungen mithilfe des vom Codegen generierten Enums.
 
 ## Nächste Schritte

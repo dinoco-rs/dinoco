@@ -12,7 +12,7 @@
 						{
 							"shortName": "introduction-dinoco",
 							"name": "Introduzione a Dinoco",
-							"mdxPath": "v0.0.2/pt-br/orm/introduction-to-dinoco.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/introduction-to-dinoco.mdx",
 							"inPage": [
 								"Introduzione a Dinoco",
 								{
@@ -32,15 +32,15 @@
 						{
 							"shortName": "first-steps",
 							"name": "Primi passi",
-							"mdxPath": "v0.0.2/pt-br/orm/first-steps.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/first-steps.mdx",
 							"inPage": [
 								"Primi passi",
 								{
 									"title": "Come funziona?",
-									"items": ["1. Definisci il tuo schema e la tua connessione", "2. Crea la migrazione", "3. Query con DinocoClient"]
+									"items": ["1. Definisci il tuo schema e la tua connessione", "2. Crea la migrazione", "3. Interroga con DinocoClient"]
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -48,7 +48,7 @@
 						{
 							"shortName": "supported-databases",
 							"name": "Panoramica",
-							"mdxPath": "v0.0.2/pt-br/orm/supported-databases.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/supported-databases.mdx",
 							"inPage": [
 								"Panoramica",
 								{
@@ -77,7 +77,7 @@
 						{
 							"shortName": "configuration",
 							"name": "Configurazione",
-							"mdxPath": "v0.0.2/pt-br/orm/configuration.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/configuration.mdx",
 							"inPage": [
 								"Configurazione",
 								{
@@ -105,7 +105,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -113,7 +113,7 @@
 						{
 							"shortName": "models",
 							"name": "Modelli",
-							"mdxPath": "v0.0.2/pt-br/orm/models.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/models.mdx",
 							"inPage": [
 								"Modelli",
 								{
@@ -177,7 +177,7 @@
 						{
 							"shortName": "enums",
 							"name": "Enum",
-							"mdxPath": "v0.0.2/pt-br/orm/enums.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/enums.mdx",
 							"inPage": [
 								"Enum",
 								{
@@ -197,7 +197,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -205,7 +205,7 @@
 						{
 							"shortName": "relations",
 							"name": "Relazioni",
-							"mdxPath": "v0.0.2/pt-br/orm/relations.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/relations.mdx",
 							"inPage": [
 								"Relazioni",
 								{
@@ -253,7 +253,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -265,12 +265,12 @@
 					"items": [
 						{
 							"shortName": "derives",
-							"name": "Derive",
-							"mdxPath": "v0.0.2/pt-br/core/derives.mdx",
+							"name": "Derives",
+							"mdxPath": "v0.0.2/it-it/core/derives.mdx",
 							"inPage": [
-								"Derive",
+								"Derives",
 								{
-									"title": "Cosa sono le derive in Dinoco",
+									"title": "Cosa sono le derives in Dinoco",
 									"items": []
 								},
 								{
@@ -302,19 +302,19 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
 						},
 						{
 							"shortName": "traits",
-							"name": "Trait",
-							"mdxPath": "v0.0.2/pt-br/core/traits.mdx",
+							"name": "Traits",
+							"mdxPath": "v0.0.2/it-it/core/traits.mdx",
 							"inPage": [
-								"Trait",
+								"Traits",
 								{
-									"title": "Cosa sono i trait in Dinoco",
+									"title": "Cosa sono i traits in Dinoco",
 									"items": []
 								},
 								{
@@ -342,11 +342,11 @@
 									"items": []
 								},
 								{
-									"title": "Trait implementati dal modello",
+									"title": "Traits implementati dal modello",
 									"items": []
 								},
 								{
-									"title": "Esempio con trait e derive insieme",
+									"title": "Esempio con traits e derive insieme",
 									"items": []
 								},
 								{
@@ -354,7 +354,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -367,7 +367,7 @@
 						{
 							"shortName": "find-many",
 							"name": "find_many",
-							"mdxPath": "v0.0.2/pt-br/orm/find-many.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/find-many.mdx",
 							"inPage": [
 								"find_many",
 								{
@@ -425,7 +425,11 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Esempio con worker",
+									"items": []
+								},
+								{
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -433,7 +437,7 @@
 						{
 							"shortName": "find-first",
 							"name": "find_first",
-							"mdxPath": "v0.0.2/pt-br/orm/find-first.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/find-first.mdx",
 							"inPage": [
 								"find_first",
 								{
@@ -466,7 +470,11 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Esempio con worker",
+									"items": []
+								},
+								{
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -474,7 +482,7 @@
 						{
 							"shortName": "find-and-update",
 							"name": "find_and_update",
-							"mdxPath": "v0.0.2/pt-br/orm/find-and-update.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/find-and-update.mdx",
 							"inPage": [
 								"find_and_update",
 								{
@@ -491,6 +499,10 @@
 									"items": []
 								},
 								{
+									"title": "Esempio con worker",
+									"items": []
+								},
+								{
 									"title": "Operazioni disponibili in `ModelUpdate`",
 									"items": []
 								},
@@ -499,7 +511,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -507,7 +519,7 @@
 						{
 							"shortName": "insert-into",
 							"name": "insert_into",
-							"mdxPath": "v0.0.2/pt-br/orm/insert-into.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/insert-into.mdx",
 							"inPage": [
 								"insert_into",
 								{
@@ -544,7 +556,11 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Esempio con worker",
+									"items": []
+								},
+								{
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -552,7 +568,7 @@
 						{
 							"shortName": "insert-many",
 							"name": "insert_many",
-							"mdxPath": "v0.0.2/pt-br/orm/insert-many.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/insert-many.mdx",
 							"inPage": [
 								"insert_many",
 								{
@@ -569,6 +585,10 @@
 								},
 								{
 									"title": "Esempio con ritorno",
+									"items": []
+								},
+								{
+									"title": "Esempio con worker",
 									"items": []
 								},
 								{
@@ -592,7 +612,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -600,7 +620,7 @@
 						{
 							"shortName": "update",
 							"name": "update",
-							"mdxPath": "v0.0.2/pt-br/orm/update.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/update.mdx",
 							"inPage": [
 								"update",
 								{
@@ -628,7 +648,11 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Esempio con worker",
+									"items": []
+								},
+								{
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -636,7 +660,7 @@
 						{
 							"shortName": "update-many",
 							"name": "update_many",
-							"mdxPath": "v0.0.2/pt-br/orm/update-many.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/update-many.mdx",
 							"inPage": [
 								"update_many",
 								{
@@ -660,7 +684,11 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Esempio con worker",
+									"items": []
+								},
+								{
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -668,7 +696,7 @@
 						{
 							"shortName": "count",
 							"name": "count",
-							"mdxPath": "v0.0.2/pt-br/orm/count.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/count.mdx",
 							"inPage": [
 								"count",
 								{
@@ -696,7 +724,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -704,7 +732,7 @@
 						{
 							"shortName": "delete",
 							"name": "delete",
-							"mdxPath": "v0.0.2/pt-br/orm/delete.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/delete.mdx",
 							"inPage": [
 								"delete",
 								{
@@ -724,7 +752,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -732,7 +760,7 @@
 						{
 							"shortName": "delete-many",
 							"name": "delete_many",
-							"mdxPath": "v0.0.2/pt-br/orm/delete-many.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/delete-many.mdx",
 							"inPage": [
 								"delete_many",
 								{
@@ -752,7 +780,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -760,7 +788,7 @@
 						{
 							"shortName": "cache-client",
 							"name": "cache",
-							"mdxPath": "v0.0.2/pt-br/orm/cache-client.mdx",
+							"mdxPath": "v0.0.2/it-it/orm/cache-client.mdx",
 							"inPage": [
 								"cache",
 								{
@@ -804,15 +832,15 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
 						},
 						{
 							"shortName": "queues",
-							"name": "queues",
-							"mdxPath": "v0.0.2/pt-br/orm/queues.mdx",
+							"name": "workers",
+							"mdxPath": "v0.0.2/it-it/orm/queues.mdx",
 							"inPage": [
 								"queues",
 								{
@@ -840,7 +868,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -860,7 +888,7 @@
 						{
 							"shortName": "install",
 							"name": "Installazione",
-							"mdxPath": "v0.0.2/pt-br/cli/install.mdx",
+							"mdxPath": "v0.0.2/it-it/cli/install.mdx",
 							"inPage": [
 								"Installazione",
 								{
@@ -881,7 +909,7 @@
 						{
 							"shortName": "init",
 							"name": "Init",
-							"mdxPath": "v0.0.2/pt-br/cli/init.mdx",
+							"mdxPath": "v0.0.2/it-it/cli/init.mdx",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -893,7 +921,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -901,7 +929,7 @@
 						{
 							"shortName": "database-reset",
 							"name": "Database reset",
-							"mdxPath": "v0.0.2/pt-br/cli/database-reset.mdx",
+							"mdxPath": "v0.0.2/it-it/cli/database-reset.mdx",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -913,7 +941,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -921,7 +949,7 @@
 						{
 							"shortName": "migrate-generate",
 							"name": "Migrate generate",
-							"mdxPath": "v0.0.2/pt-br/cli/migrate-generate.mdx",
+							"mdxPath": "v0.0.2/it-it/cli/migrate-generate.mdx",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -933,7 +961,7 @@
 									"items": ["--apply"]
 								},
 								{
-									"title": "Esempio di utilizzo senza applicare",
+									"title": "Esempio di utilizzo senza applicazione",
 									"items": []
 								},
 								{
@@ -941,7 +969,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -949,7 +977,7 @@
 						{
 							"shortName": "migrate-run",
 							"name": "Migrate run",
-							"mdxPath": "v0.0.2/pt-br/cli/migrate-run.mdx",
+							"mdxPath": "v0.0.2/it-it/cli/migrate-run.mdx",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -961,7 +989,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -969,7 +997,7 @@
 						{
 							"shortName": "migrate-rollback",
 							"name": "Migrate rollback",
-							"mdxPath": "v0.0.2/pt-br/cli/migrate-rollback.mdx",
+							"mdxPath": "v0.0.2/it-it/cli/migrate-rollback.mdx",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -993,7 +1021,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -1001,7 +1029,7 @@
 						{
 							"shortName": "models-generate",
 							"name": "Models generate",
-							"mdxPath": "v0.0.2/pt-br/cli/models-generate.mdx",
+							"mdxPath": "v0.0.2/it-it/cli/models-generate.mdx",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -1013,7 +1041,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -1021,7 +1049,7 @@
 						{
 							"shortName": "schema-restore",
 							"name": "Schema restore",
-							"mdxPath": "v0.0.2/pt-br/cli/schema-restore.mdx",
+							"mdxPath": "v0.0.2/it-it/cli/schema-restore.mdx",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -1037,7 +1065,7 @@
 									"items": []
 								},
 								{
-									"title": "Prossimi passi",
+									"title": "Passi successivi",
 									"items": []
 								}
 							]
@@ -1057,7 +1085,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Introduzione",
-							"mdxPath": "v0.0.2/pt-br/supersonic/introduction.mdx",
+							"mdxPath": "v0.0.2/it-it/supersonic/introduction.mdx",
 							"inPage": ["Introduzione"]
 						}
 					]
@@ -1075,7 +1103,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Introduzione",
-							"mdxPath": "v0.0.2/pt-br/dinocodb/introduction.mdx",
+							"mdxPath": "v0.0.2/it-it/dinocodb/introduction.mdx",
 							"inPage": ["Introduzione"]
 						}
 					]
@@ -1083,6 +1111,6 @@
 			]
 		}
 	],
-	"locale": "pt-br",
+	"locale": "it-it",
 	"name": "v0.0.2"
 }

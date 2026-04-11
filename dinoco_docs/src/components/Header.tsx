@@ -1,6 +1,6 @@
 // 							<DropdownButton isOpen={versionOpen} onClick={() => closeOtherMenus('version')} className="py-1 px-2.5 h-8">
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { useRouter } from 'tuono-router';
 import { FaGithub, FaHeart } from 'react-icons/fa';
@@ -120,16 +120,18 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 						resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName,
 					);
 
-		setLocale(nextLocale);
-		setVersion(resolved?.version.name ?? nextVersion);
-		setConsumer(resolved?.group.shortName ?? nextConsumer);
-		setLocaleOpen(false);
-		setVersionOpen(false);
-		setMobileConsumerOpen(false);
+		startTransition(() => {
+			setLocale(nextLocale);
+			setVersion(resolved?.version.name ?? nextVersion);
+			setConsumer(resolved?.group.shortName ?? nextConsumer);
+			setLocaleOpen(false);
+			setVersionOpen(false);
+			setMobileConsumerOpen(false);
 
-		if (router.pathname !== nextPath) {
-			router.replace(nextPath);
-		}
+			if (router.pathname !== nextPath) {
+				router.replace(nextPath);
+			}
+		});
 	};
 
 	const currentConsumerObj = consumerOptions.find(o => o.shortName === displayedConsumer);

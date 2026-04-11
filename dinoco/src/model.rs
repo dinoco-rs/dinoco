@@ -3,8 +3,9 @@ use dinoco_engine::{DinocoRow, DinocoValue, Expression};
 use crate::{CountNode, IncludeNode};
 
 pub type IncludeApplier<'a, T> = Box<dyn FnOnce(&mut [T]) + Send + 'a>;
-pub type IncludeLoaderFuture<'a, T> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<IncludeApplier<'a, T>>> + Send + 'a>>;
+pub type IncludeLoaderFuture<'a, T> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<IncludeApplier<'a, T>>> + Send + 'a>,
+>;
 
 pub trait Model: Sized {
     type Include: Default;

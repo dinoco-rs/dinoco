@@ -2,7 +2,7 @@ export const title = "count";
 
 # count
 
-Usato per contare i record.
+Utilizzato per contare i record.
 
 ---
 
@@ -13,7 +13,7 @@ Usato per contare i record.
 
 ## Descrizione dei metodi
 
-- `.cond(...)`: restringe quali record sono inclusi nel conteggio.
+- `.cond(...)`: limita quali record sono inclusi nel conteggio.
 - `.execute(&client)`: esegue il conteggio nel database.
 
 ## Ritorno
@@ -50,7 +50,7 @@ let total = dinoco::count::<User>()
     .await?;
 ```
 
-## Passi successivi
+## Prossimi passi
 
 - [**`find_many::<M>()`**](/v0.0.1/orm/find-many): recupera i record in una lista.
 - [**`find_first::<M>()`**](/v0.0.1/orm/find-first): recupera un singolo record.

@@ -102,7 +102,7 @@ struct ArticleWithLabels {
 dinoco::insert_into::<Article>()
     .values(ArticleWithLabels {
         id: "article-10".into(),
-        title: "Connect Existing".into(),
+        title: "Conectar Existente".into(),
         labels: vec![ArticleConnection::Label("label-10".into())],
     })
     .execute(&client)
@@ -125,7 +125,7 @@ struct ArticleWithLabels {
 
 let value = ArticleWithLabels {
     id: "article-20".into(),
-    title: "Connect Existing".into(),
+    title: "Conectar Existente".into(),
     labels: vec![
         ArticleConnection::Label("label-10".into()),
         ArticleConnection::Label("label-11".into()),
@@ -181,6 +181,28 @@ let created = dinoco::insert_into::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Exemplo com worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("Usuário criado: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
 
 ## Próximos passos
 

@@ -149,8 +149,8 @@
 									"items": []
 								},
 								{
-									"title": "Example of fetching users with the Dinoco API",
-									"items": ["Fetch a single record", "Fetch multiple records"]
+									"title": "Example of searching users with the Dinoco API",
+									"items": ["Find a single record", "Find multiple records"]
 								},
 								{
 									"title": "Example of creating a user with the Dinoco API",
@@ -213,7 +213,7 @@
 									"items": []
 								},
 								{
-									"title": "onDelete e onUpdate",
+									"title": "onDelete and onUpdate",
 									"items": []
 								},
 								{
@@ -237,7 +237,7 @@
 									"items": []
 								},
 								{
-									"title": "Example of fetching with all possible relations from User",
+									"title": "Example of search with all possible relations from User",
 									"items": []
 								},
 								{
@@ -412,7 +412,7 @@
 									"items": []
 								},
 								{
-									"title": "Example reading from the primary database",
+									"title": "Example reading from the main database",
 									"items": []
 								},
 
@@ -422,6 +422,10 @@
 								},
 								{
 									"title": "Example with cache and expiration",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
 									"items": []
 								},
 								{
@@ -466,6 +470,10 @@
 									"items": []
 								},
 								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
 									"title": "Next steps",
 									"items": []
 								}
@@ -488,6 +496,10 @@
 								},
 								{
 									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
 									"items": []
 								},
 								{
@@ -544,6 +556,10 @@
 									"items": []
 								},
 								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
 									"title": "Next steps",
 									"items": []
 								}
@@ -569,6 +585,10 @@
 								},
 								{
 									"title": "Example with return",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
 									"items": []
 								},
 								{
@@ -628,6 +648,10 @@
 									"items": []
 								},
 								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
 									"title": "Next steps",
 									"items": []
 								}
@@ -660,6 +684,10 @@
 									"items": []
 								},
 								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
 									"title": "Next steps",
 									"items": []
 								}
@@ -676,7 +704,7 @@
 									"items": []
 								},
 								{
-									"title": "Methods description",
+									"title": "Description of methods",
 									"items": []
 								},
 								{
@@ -811,7 +839,7 @@
 						},
 						{
 							"shortName": "queues",
-							"name": "queues",
+							"name": "workers",
 							"mdxPath": "v0.0.2/en-us/orm/queues.mdx",
 							"inPage": [
 								"queues",
@@ -1029,7 +1057,7 @@
 									"items": []
 								},
 								{
-									"title": "Example of restoration from a specific migration",
+									"title": "Example of restoring from a specific migration",
 									"items": []
 								},
 								{

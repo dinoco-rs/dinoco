@@ -49,15 +49,15 @@ config {
 
 ## Was sich in der generierten API ändert
 
-- Mit `redis` stellt das Projekt Helfer wie `client.cache()`, `.cache(...)` und Warteschlangen mit `workers()` bereit.
-- Mit `read_replicas` können Lesevorgänge Replikate verwenden, während Schreibvorgänge in der Hauptdatenbank verbleiben.
+- Mit `redis` stellt das Projekt Hilfsfunktionen wie `client.cache()`, `.cache(...)` und Warteschlangen mit `workers()` bereit.
+- Mit `read_replicas` können Lesevorgänge Replikate verwenden, während Schreibvorgänge weiterhin in der Hauptdatenbank erfolgen.
 - Ohne `redis` sind Cache- und Warteschlangenfunktionen nicht vollständig verfügbar.
 
 ## Wann dieser Block bearbeitet werden sollte
 
 - Beim Wechsel der Hauptdatenbank des Projekts.
 - Beim Hinzufügen von Redis für Cache oder Warteschlangen.
-- Beim Konfigurieren von Lese-Replikaten.
+- Beim Konfigurieren eines Lese-Replikats.
 - Beim Anpassen von Verbindungsumgebungsvariablen.
 
 ## Nächste Schritte

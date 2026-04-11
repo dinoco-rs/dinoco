@@ -1,13 +1,14 @@
-export const title = 'queues';
+export const title = 'code';
 
-# queues
+# code
 
-Il sistema di code di Dinoco permette di pubblicare eventi asincroni da `insert`, `find` e `update`, salvando in `Redis` solo i dati necessari per re-idratare il record quando il worker deve essere eseguito.
+Il sistema di code di Dinoco permette di pubblicare eventi asincroni da `insert`, `find` e `update`, salvando in `Redis` solo i dati necessari per re-idratare il record quando il worker deve eseguire.
 
 ## Cosa puoi fare
 
-- Permettere l'incatenamento di .enqueue(...), .enqueue_in(...) e .enqueue_at(...) in tutti i metodi del client, eccetto nelle operazioni di eliminazione.
+- Consentire l'incatenamento di .enqueue(...), .enqueue_in(...) e .enqueue_at(...) in tutti i metodi del client, eccetto nelle operazioni di eliminazione.
 - Elaborare i job con `workers().on::<Model>(... )`.
+- Caricare proiezioni con relazioni nel worker usando `workers().on_with_relation::<Model, Projection>(... )`.
 - Ricaricare i dati più recenti prima che l'handler venga eseguito.
 - Ignora automaticamente i job il cui record non esiste più.
 
@@ -55,9 +56,9 @@ insert_into::<User>()
 Usa `workers()` per registrare handler asincroni. Il contesto del worker espone:
 
 - `data`: il record re-idratato.
-- `client`: una copia del `DinocoClient`.
+- `client`: una copia di `DinocoClient`.
 - `success()` o `remove()`: rimuove il job dalla coda.
-- `fail()`: riprogramma con il retry standard.
+- `fail()`: riprogramma con il retry predefinito.
 - `retry_in()` e `retry_at()`: stessa idea di `enqueue_in` e `enqueue_at`.
 - `.run().await?`: avvia il worker in background e ritorna immediatamente con un `JoinHandle`.
 
@@ -68,9 +69,27 @@ use database::*;
 
 let _worker = workers()
     .on::<User, _, _>("user.created", |job| async move {
-        println!("Elaborando {}", job.data.name);
+        println!("Elaborazione {}", job.data.name); // Elaborazione di
         job.success()
     })
+    .run()
+    .await?;
+```
+
+Se hai bisogno di una proiezione con relazioni, usa `on_with_relation`. Dinoco ricarica il record e applica l'albero degli include prima che l'handler venga eseguito.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{} ha {} post", job.data.name, job.data.posts.len()); // ha post
+            job.success()
+        },
+    )
     .run()
     .await?;
 ```

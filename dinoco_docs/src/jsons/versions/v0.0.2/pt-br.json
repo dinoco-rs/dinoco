@@ -425,6 +425,10 @@
 									"items": []
 								},
 								{
+									"title": "Exemplo com worker",
+									"items": []
+								},
+								{
 									"title": "Próximos passos",
 									"items": []
 								}
@@ -466,6 +470,10 @@
 									"items": []
 								},
 								{
+									"title": "Exemplo com worker",
+									"items": []
+								},
+								{
 									"title": "Próximos passos",
 									"items": []
 								}
@@ -488,6 +496,10 @@
 								},
 								{
 									"title": "Exemplo básico",
+									"items": []
+								},
+								{
+									"title": "Exemplo com worker",
 									"items": []
 								},
 								{
@@ -544,6 +556,10 @@
 									"items": []
 								},
 								{
+									"title": "Exemplo com worker",
+									"items": []
+								},
+								{
 									"title": "Próximos passos",
 									"items": []
 								}
@@ -569,6 +585,10 @@
 								},
 								{
 									"title": "Exemplo com retorno",
+									"items": []
+								},
+								{
+									"title": "Exemplo com worker",
 									"items": []
 								},
 								{
@@ -628,6 +648,10 @@
 									"items": []
 								},
 								{
+									"title": "Exemplo com worker",
+									"items": []
+								},
+								{
 									"title": "Próximos passos",
 									"items": []
 								}
@@ -657,6 +681,10 @@
 								},
 								{
 									"title": "Exemplo com filtro",
+									"items": []
+								},
+								{
+									"title": "Exemplo com worker",
 									"items": []
 								},
 								{
@@ -811,7 +839,7 @@
 						},
 						{
 							"shortName": "queues",
-							"name": "queues",
+							"name": "workers",
 							"mdxPath": "v0.0.2/pt-br/orm/queues.mdx",
 							"inPage": [
 								"queues",

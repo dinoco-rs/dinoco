@@ -1,22 +1,22 @@
-export const title = 'Derivazioni';
+export const title = 'Derive';
 
-# Derivazioni
+# Derive
 
-Panoramica delle derivazioni e degli attributi centrali utilizzati in Dinoco.
+Panoramica dei derive e degli attributi centrali utilizzati in Dinoco.
 
 ---
 
-## Cosa sono le derivazioni in Dinoco
+## Cosa sono i derive in Dinoco
 
-Le derivazioni di Dinoco aiutano a collegare le tue struct Rust al comportamento dell'ORM senza dover scrivere manualmente l'intera implementazione.
+I derive di Dinoco aiutano a collegare le tue struct Rust al comportamento dell'ORM senza dover scrivere manualmente l'intera implementazione.
 
-Le più comuni nell'uso quotidiano sono:
+I più comuni nell'uso quotidiano sono:
 
 - `#[derive(Rowable)]`
 - `#[derive(Extend)]`
 - `#[insertable]`
 
-## Derivazione Rowable
+## Derive Rowable
 
 Usa `Rowable` quando la struct rappresenta direttamente un modello che verrà letto e scritto da Dinoco.
 
@@ -29,9 +29,9 @@ struct User {
 }
 ```
 
-Questa derivazione esegue la serializzazione della riga restituita dall'adapter nella struct Rust.
+Questo derive esegue la serializzazione della riga restituita dall'adapter nella struct Rust.
 
-## Derivazione Extend
+## Derive Extend
 
 Usa `Extend` quando desideri una proiezione diversa dal modello base, normalmente per `select`, `include`, `count` o payload arricchiti.
 
@@ -61,7 +61,7 @@ struct ArticleWithLabels {
 }
 ```
 
-In questo modo, Dinoco inserisce il padre e poi elabora automaticamente gli elementi annidati.
+Con questo, Dinoco inserisce il padre e poi elabora automaticamente gli elementi annidati.
 
 ## Esempio con Rowable
 
@@ -133,12 +133,12 @@ dinoco::insert_many::<Article>()
 
 ## Quando usare ciascuno
 
-- Usa `Rowable` per il modello principale generato o per le struct compatibili con la lettura diretta delle righe.
+- Usa `Rowable` per il modello principale generato o per le struct compatibili con la lettura diretta di riga.
 - Usa `Extend` per proiezioni, conteggi, inclusioni e payload specializzati.
-- Usa `#[insertable]` quando `Extend` deve servire anche come payload di scrittura con annidamento.
+- Usa `#[insertable]` quando `Extend` servirà anche come payload di scrittura con annidamento.
 
 ## Prossimi passi
 
-- [**Traits**](/v0.0.2/core/traits): vedi le trait implementate dal modello.
+- [**Traits**](/v0.0.2/core/traits): vedi i trait implementati dal modello.
 - [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into): inserimento singolo con payload ricchi.
 - [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): inserimento in batch con relazioni e connessioni annidate.

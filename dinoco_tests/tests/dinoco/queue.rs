@@ -1,13 +1,16 @@
 mod common;
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
 use dinoco::{
-    DinocoAdapter, DinocoCache, DinocoClient, DinocoClientConfig, DinocoError, DinocoRedisConfig, DinocoResult, Model,
-    Insert, InsertModel, InsertPayload, MySqlAdapter, PostgresAdapter, Projection, QueueWorkers, Rowable,
-    ScalarField, SqliteAdapter, Update, UpdateModel, delete, insert_into, update,
+    DinocoAdapter, DinocoCache, DinocoClient, DinocoClientConfig, DinocoError, DinocoGenericRow, DinocoRedisConfig,
+    DinocoResult, DinocoRow, Extend, FindAndUpdateModel, IncludeLoaderFuture, Insert, InsertModel, InsertPayload,
+    IntoDinocoValue, Model, MySqlAdapter, PostgresAdapter, Projection, QueueWorkers, RelationField, Rowable,
+    ScalarField, SqliteAdapter, Update, UpdateField, UpdateModel, delete, find_and_update, insert_into, update,
 };
+use dinoco_engine::QueryBuilder;
 
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -22,17 +25,64 @@ struct User {
     name: String,
 }
 
+#[derive(Debug, Clone, Rowable)]
+struct Post {
+    id: i64,
+    title: String,
+    authorId: i64,
+}
+
 struct UserWhere {
     id: ScalarField<i64>,
     name: ScalarField<String>,
 }
 
+struct PostWhere {
+    id: ScalarField<i64>,
+    title: ScalarField<String>,
+    authorId: ScalarField<i64>,
+}
+
 #[derive(Default)]
 struct UserInclude {}
+
+#[derive(Default)]
+struct PostInclude {}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+struct PostListItem {
+    id: i64,
+    title: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostListItem>,
+}
+
+struct UserUpdate {
+    name: UpdateField<String>,
+}
 
 impl Default for UserWhere {
     fn default() -> Self {
         Self { id: ScalarField::new("id"), name: ScalarField::new("name") }
+    }
+}
+
+impl Default for UserUpdate {
+    fn default() -> Self {
+        Self { name: UpdateField::new("name") }
+    }
+}
+
+impl Default for PostWhere {
+    fn default() -> Self {
+        Self { id: ScalarField::new("id"), title: ScalarField::new("title"), authorId: ScalarField::new("authorId") }
     }
 }
 
@@ -48,6 +98,21 @@ impl Model for User {
 impl Projection<User> for User {
     fn columns() -> &'static [&'static str] {
         &["id", "name"]
+    }
+}
+
+impl Projection<Post> for Post {
+    fn columns() -> &'static [&'static str] {
+        &["id", "title", "authorId"]
+    }
+}
+
+impl Model for Post {
+    type Include = PostInclude;
+    type Where = PostWhere;
+
+    fn table_name() -> &'static str {
+        "posts"
     }
 }
 
@@ -76,6 +141,91 @@ impl UpdateModel for User {
 
     fn update_identity_conditions(&self) -> Vec<dinoco::Expression> {
         vec![dinoco::Expression::Column("id".to_string()).eq(self.id)]
+    }
+}
+
+impl FindAndUpdateModel for User {
+    type Update = UserUpdate;
+
+    fn primary_key_columns() -> &'static [&'static str] {
+        &["id"]
+    }
+}
+
+impl UserInclude {
+    fn posts(&self) -> RelationField<Post> {
+        RelationField::new("posts")
+    }
+}
+
+impl User {
+    pub fn __dinoco_load_posts<'a, P, C, A>(
+        item_keys: Vec<Option<i64>>,
+        include: &'a dinoco::IncludeNode,
+        client: &'a DinocoClient<A>,
+        read_mode: dinoco::ReadMode,
+        relation_field: impl Fn(&mut P) -> &mut Vec<C> + Copy + Send + 'a,
+    ) -> IncludeLoaderFuture<'a, P>
+    where
+        A: DinocoAdapter,
+        C: Projection<Post> + Clone,
+    {
+        Box::pin(async move {
+            struct ChildRow<C> {
+                item: C,
+                relation_key: i64,
+            }
+
+            impl<C> DinocoRow for ChildRow<C>
+            where
+                C: Projection<Post>,
+            {
+                fn from_row<R: DinocoGenericRow>(row: &R) -> DinocoResult<Self> {
+                    Ok(Self { item: C::from_row(row)?, relation_key: row.get(C::columns().len())? })
+                }
+            }
+
+            let keys = item_keys.iter().flatten().copied().collect::<Vec<_>>();
+
+            if keys.is_empty() {
+                return Ok(Box::new(|_: &mut [P]| {}) as dinoco::IncludeApplier<'a, P>);
+            }
+
+            let adapter = client.read_adapter(matches!(read_mode, dinoco::ReadMode::Primary));
+            let mut statement = include
+                .statement
+                .clone()
+                .unwrap_or_else(|| dinoco_engine::SelectStatement::new().from("posts").select(C::columns()));
+
+            if statement.select.is_empty() {
+                statement.select = C::columns().iter().map(|column| format!("posts.{column}")).collect();
+            }
+
+            statement.select.push("posts.authorId".to_string());
+            statement.conditions.push(
+                dinoco::Expression::Column("posts.authorId".to_string())
+                    .in_values(keys.iter().copied().map(IntoDinocoValue::into_dinoco_value).collect()),
+            );
+
+            let (sql, params) = adapter.dialect().build_select(&statement);
+            let child_rows = adapter.query_as::<ChildRow<C>>(&sql, &params).await?;
+            let relation_keys = child_rows.iter().map(|row| row.relation_key).collect::<Vec<_>>();
+            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
+
+            C::load_includes(&mut children, &include.includes, client, read_mode).await?;
+
+            let mut grouped: HashMap<i64, Vec<C>> = HashMap::new();
+
+            for (relation_key, child) in relation_keys.into_iter().zip(children.into_iter()) {
+                grouped.entry(relation_key).or_default().push(child);
+            }
+
+            Ok(Box::new(move |items: &mut [P]| {
+                for (item, key) in items.iter_mut().zip(item_keys.iter().copied()) {
+                    *relation_field(item) = key.and_then(|key| grouped.remove(&key)).unwrap_or_default();
+                }
+            }) as dinoco::IncludeApplier<'a, P>)
+        })
     }
 }
 
@@ -110,6 +260,22 @@ where
 {
     fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Update<M> {
         self.__enqueue_in(event, delay_ms)
+    }
+}
+
+trait FindAndUpdateQueueExt<M>
+where
+    M: FindAndUpdateModel,
+{
+    fn enqueue(self, event: impl Into<String>) -> dinoco::FindAndUpdate<M>;
+}
+
+impl<M> FindAndUpdateQueueExt<M> for dinoco::FindAndUpdate<M>
+where
+    M: FindAndUpdateModel,
+{
+    fn enqueue(self, event: impl Into<String>) -> dinoco::FindAndUpdate<M> {
+        self.__enqueue(event)
     }
 }
 
@@ -220,19 +386,117 @@ async fn enqueue_in_waits_until_delay_is_reached() -> DinocoResult<()> {
         .await?;
 
     let handled = received.clone();
-    let worker = workers::<SqliteAdapter>().on::<User, _, _>(event, move |job| {
-        let handled = handled.clone();
+    let worker = workers::<SqliteAdapter>()
+        .on::<User, _, _>(event, move |job| {
+            let handled = handled.clone();
 
-        async move {
-            handled.lock().await.push(job.data.name.clone());
-            job.success()
-        }
-    })
-    .run()
-    .await?;
+            async move {
+                handled.lock().await.push(job.data.name.clone());
+                job.success()
+            }
+        })
+        .run()
+        .await?;
 
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(received.lock().await.is_empty());
+
+    wait_for_len(&received, 1).await?;
+    assert_eq!(received.lock().await.as_slice(), &["Depois".to_string()]);
+    worker.abort();
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn enqueue_worker_can_load_relation_with_on_with_relation() -> DinocoResult<()> {
+    let _lock = lock_queue_tests().await;
+    let client = match queue_client("queue-relation").await {
+        Ok(client) => client,
+        Err(error) if common::should_skip_external_adapter_test(&error) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+
+    client
+        .primary()
+        .execute(
+            r#"INSERT INTO posts ("id", "title", "authorId") VALUES (101, 'Post A', 21), (102, 'Post B', 21)"#,
+            &[],
+        )
+        .await?;
+
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let event = format!("user.related.{}", dinoco::Uuid::now_v7());
+
+    insert_into::<User>()
+        .values(User { id: 21, name: "Matheus".to_string() })
+        .enqueue(event.clone())
+        .execute(&client)
+        .await?;
+
+    let handled = received.clone();
+    let worker = workers::<SqliteAdapter>()
+        .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+            event,
+            |user| user.posts().select::<PostListItem>(),
+            move |job| {
+                let handled = handled.clone();
+
+                async move {
+                    let name = job.data.name.clone();
+                    let titles = job.data.posts.iter().map(|post| post.title.clone()).collect::<Vec<_>>();
+
+                    handled.lock().await.push((name, titles));
+                    job.success()
+                }
+            },
+        )
+        .run()
+        .await?;
+
+    wait_for_len(&received, 1).await?;
+
+    let received = received.lock().await;
+    assert_eq!(received[0].0, "Matheus");
+    assert_eq!(received[0].1, vec!["Post A".to_string(), "Post B".to_string()]);
+    worker.abort();
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn find_and_update_can_enqueue_worker_job() -> DinocoResult<()> {
+    let _lock = lock_queue_tests().await;
+    let client = match queue_client("queue-find-and-update").await {
+        Ok(client) => client,
+        Err(error) if common::should_skip_external_adapter_test(&error) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+
+    insert_into::<User>().values(User { id: 31, name: "Antes".to_string() }).execute(&client).await?;
+
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let event = format!("user.find-and-update.{}", dinoco::Uuid::now_v7());
+
+    find_and_update::<User>()
+        .cond(|x| x.id.eq(31_i64))
+        .update(|x| x.name.set("Depois"))
+        .enqueue(event.clone())
+        .execute(&client)
+        .await?;
+
+    let handled = received.clone();
+    let worker = workers::<SqliteAdapter>()
+        .on::<User, _, _>(event, move |job| {
+            let handled = handled.clone();
+
+            async move {
+                handled.lock().await.push(job.data.name.clone());
+                job.success()
+            }
+        })
+        .run()
+        .await?;
 
     wait_for_len(&received, 1).await?;
     assert_eq!(received.lock().await.as_slice(), &["Depois".to_string()]);
@@ -384,16 +648,17 @@ where
         .await?;
 
     let handled = received.clone();
-    let worker = workers::<A>().on::<User, _, _>(event, move |job| {
-        let handled = handled.clone();
+    let worker = workers::<A>()
+        .on::<User, _, _>(event, move |job| {
+            let handled = handled.clone();
 
-        async move {
-            handled.lock().await.push(job.data.name.clone());
-            job.success()
-        }
-    })
-    .run()
-    .await?;
+            async move {
+                handled.lock().await.push(job.data.name.clone());
+                job.success()
+            }
+        })
+        .run()
+        .await?;
 
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(received.lock().await.is_empty());
@@ -471,6 +736,12 @@ async fn create_queue_table_sqlite(client: &DinocoClient<SqliteAdapter>) -> Dino
             CREATE TABLE users (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL
+            );
+
+            CREATE TABLE posts (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                authorId INTEGER NOT NULL
             );
             "#,
         )

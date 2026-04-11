@@ -336,7 +336,7 @@ let created_user = insert_into::<User>()
 	})
 	.with_relation(Profile {
 		id: "profile-1".to_string(),
-		bio: Some("Engenheira de software".to_string()), // Ingénieure logicielle
+		bio: Some("Ingénieure logicielle".to_string()), // Ingénieure logicielle
 		userId: String::new(),
 	})
 	.execute(&client)

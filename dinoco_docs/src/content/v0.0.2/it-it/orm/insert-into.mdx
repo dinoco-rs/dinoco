@@ -73,7 +73,7 @@ struct UserWithProfile {
 dinoco::insert_into::<User>()
     .values(UserWithProfile {
         id: "user-1".to_string(),
-        username: "Bianca".to_string(),
+        username: "bia".to_string(),
         role: Role::USER,
         profile: Some(Profile {
             id: "profile-1".to_string(),
@@ -158,7 +158,7 @@ DinocoResult<T>
 dinoco::insert_into::<User>()
     .values(User {
         id: "usr_1".to_string(),
-        email: "ana@acme.com".to_string(),
+        email: "anna@acme.com".to_string(),
         name: "Anna".to_string(),
     })
     .execute(&client)
@@ -181,6 +181,28 @@ let created = dinoco::insert_into::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Esempio con worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("Utente creato: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matteo".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+Vedi di più sui worker in [**`queues`**](/v0.0.2/orm/queues).
 
 ## Prossimi passi
 

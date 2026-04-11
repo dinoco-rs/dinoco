@@ -8,12 +8,12 @@ export const title = "delete";
 
 ## 您可以做什么
 
-- `.cond(...)`: 定义将要删除的记录。
-- `.execute(&client)`: 在数据库中执行删除操作。
+- `.cond(...)`: 定义将删除哪个记录。
+- `.execute(&client)`: 在数据库中执行删除。
 
-## 返回
+## 返回值
 
-`delete` 的返回值为：
+`delete` 的返回值是：
 
 ```rust
 DinocoResult<()>
@@ -37,7 +37,7 @@ dinoco::delete::<Session>()
     .await?;
 ```
 
-## 下一步
+## 后续步骤
 
 - [**`delete_many::<M>()`**](/v0.0.1/orm/delete-many): 批量删除。
 - [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 在删除前验证记录。

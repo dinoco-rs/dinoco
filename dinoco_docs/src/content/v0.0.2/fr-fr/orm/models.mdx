@@ -2,21 +2,21 @@ export const title = "Modèles";
 
 # Modèles
 
-Les `modèles` définissent les entités centrales de votre application dans le schéma Dinoco. Chaque `modèle` représente généralement une table dans la base de données et sert de base pour la génération de code, les requêtes typées et les opérations avec l'API Dinoco.
+Les `modèle` définissent les entités centrales de votre application dans le schéma Dinoco. Chaque `modèle` représente généralement une table dans la base de données et sert de base pour la génération de code, les requêtes typées et les opérations avec l'API Dinoco.
 
 ---
 
-## Ce qu'un modèle représente
+## Ce que représente un modèle
 
-Un `modèle` décrit :
+Un `model` décrit :
 
 - Le nom de l'entité.
 - Les champs stockés dans la base de données.
-- Quels champs sont obligatoires ou facultatifs.
+- Quels champs sont obligatoires ou optionnels.
 - Quels champs sont uniques ou identifiants.
 - Comment ces données seront utilisées par le codegen et l'API.
 
-Exemple :
+Exemple:
 
 ```dinoco
 model User {
@@ -66,10 +66,10 @@ Chaque champ d'un modèle est composé de :
 
 - Nom
 - Type
-- Modificateur facultatif
-- Attributs facultatifs
+- Modificateur optionnel
+- Attributs optionnels
 
-Exemple :
+Exemple:
 
 ```dinoco
 email String @unique
@@ -87,7 +87,7 @@ Les champs peuvent représenter des valeurs de schéma de base, telles que du te
 
 ### Champs scalaires
 
-Ce sont des champs qui stockent des valeurs directes, comme du texte, des nombres, des booléens et des dates.
+Ce sont des champs qui stockent des valeurs directes, telles que du texte, des nombres, des booléens et des dates.
 
 ```dinoco
 model Product {
@@ -104,12 +104,12 @@ model Product {
 
 Dinoco prend en charge deux modificateurs principaux :
 
-| Modificateur | Signification    | Exemple         |
+| Modificateur | Signification | Exemple         |
 | :---------- | :------------- | :-------------- |
-| `?`         | Champ facultatif | `name String?`  |
+| `?`         | Champ optionnel | `name String?`  |
 | `[]`        | Liste          | `tags String[]` |
 
-### Champ facultatif
+### Champ optionnel
 
 ```dinoco
 model User {
@@ -185,7 +185,7 @@ Cet attribut est idéal pour des champs comme l'email, le nom d'utilisateur et l
 
 ## Décorateurs de modèle
 
-En plus des attributs sur les champs individuels, Dinoco prend également en charge les décorateurs appliqués à l'ensemble du bloc de modèle.
+En plus des attributs sur les champs individuels, Dinoco prend également en charge les décorateurs appliqués à l'ensemble du bloc du modèle.
 
 | Décorateur             | Utilisation                                   |
 | :-------------------- | :------------------------------------ |
@@ -312,7 +312,7 @@ dinoco::delete::<User>()
     .await?;
 ```
 
-Pour les suppressions en masse :
+Pour les suppressions en lot :
 
 ```rust
 dinoco::delete_many::<User>()
@@ -323,19 +323,19 @@ dinoco::delete_many::<User>()
 
 ## Résumé rapide
 
-| Concept       | Exemple                | Objectif                    |
+| Concept        | Exemple                | Objectif                    |
 | :------------- | :--------------------- | :-------------------------- |
-| Modèle          | `model User { ... }`   | Représenter une entité    |
-| Champ scalaire  | `email String`         | Stocker une valeur simple     |
-| Champ facultatif | `name String?`         | Permettre l'absence de valeur  |
+| Modèle         | `model User { ... }`   | Représenter une entité    |
+| Champ scalaire | `email String`         | Stocker une valeur simple     |
+| Champ optionnel | `name String?`         | Permettre l'absence de valeur  |
 | Champ de liste | `tags String[]`        | Stocker plusieurs valeurs |
-| ID             | `id Integer @id`       | Identifier de manière unique      |
-| Par défaut        | `@default(now())`      | Remplir automatiquement   |
+| ID             | `id Integer @id`       | Identifier de manière unique |
+| Par défaut     | `@default(now())`      | Remplir automatiquement   |
 | Unique         | `email String @unique` | Éviter la duplication          |
 
 ## Quand créer un nouveau modèle
 
-Vous créez généralement un nouveau `modèle` lorsqu'une entité de votre application a besoin de :
+Vous créez généralement un nouveau `model` lorsqu'une entité de votre application a besoin de :
 
 - Être persistée dans la base de données.
 - Avoir sa propre identité.

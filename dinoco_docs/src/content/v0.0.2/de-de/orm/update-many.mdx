@@ -11,7 +11,7 @@ Wird verwendet, um mehrere Datensätze gleichzeitig zu aktualisieren.
 - `.cond(...)`: schränkt ein, welche Datensätze aktualisiert werden können.
 - `.values(Vec<M>)`: definiert die Elemente, die bei der Batch-Aktualisierung verwendet werden.
 - `.returning::<T>()`: gibt die aktualisierten Datensätze als typisierte Liste zurück.
-- `.execute(&client)`: führt das Batch-Update aus.
+- `.execute(&client)`: führt die Batch-Aktualisierung aus.
 
 ## Rückgabe
 
@@ -64,6 +64,31 @@ dinoco::update_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        println!("Benutzer aktualisiert: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .enqueue("user.batch-updated")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
 
 ## Nächste Schritte
 

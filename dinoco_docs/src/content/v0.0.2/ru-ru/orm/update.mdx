@@ -17,13 +17,13 @@ export const title = "update";
 
 ## Возвращаемое значение
 
-Без `.returning::<T>()` возвращаемое значение:
+Без `.returning::<T>()`, возвращаемое значение:
 
 ```rust
 DinocoResult<()>
 ```
 
-С `.returning::<T>()` возвращаемое значение становится:
+С `.returning::<T>()`, возвращаемое значение становится:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -31,7 +31,7 @@ DinocoResult<Vec<T>>
 
 Примечание:
 
-- `update().returning()` не поддерживает запись связей с `.connect(...)` или `.disconnect(...)`.
+- `update().returning()` не поддерживает записи отношений с `.connect(...)` или `.disconnect(...)`.
 
 ## Пример обновления полей
 
@@ -70,6 +70,33 @@ dinoco::update::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Пример с воркером
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("Пользователь обновлен: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "Novo Nome".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+Подробнее о воркерах см. в [**`queues`**](/v0.0.2/orm/queues).
 
 ## Доступные фильтры в connect и disconnect
 

@@ -14,8 +14,8 @@ Wird verwendet, um eine Liste von Datensätzen abzurufen.
 - `.skip(...)`: überspringt eine Anzahl von Datensätzen, bevor das Ergebnis zurückgegeben wird.
 - `.order_by(...)`: definiert die Sortierung der Abfrage.
 - `.includes(...)`: lädt Beziehungen zusammen mit den Hauptdatensätzen.
-- `.count(...)`: berechnet Beziehungszähler und füllt Felder wie `posts_count` aus.
-- `.cache(...)`: fragt zuerst in Redis mit dem angegebenen Schlüssel ab; bei einem Cache-Miss wird die Abfrage ausgeführt, das Ergebnis gespeichert und zurückgegeben. Bei einem Cache-Hit protokolliert der Query-Logger `CACHE HIT key=...`.
+- `.count(...)`: berechnet Beziehungszähler und füllt Felder wie `posts_count`.
+- `.cache(...)`: fragt zuerst in Redis mit dem angegebenen Schlüssel ab; bei Cache-Miss wird die Abfrage ausgeführt, gespeichert und das Ergebnis zurückgegeben. Bei Cache-Hit protokolliert der Query-Logger `CACHE HIT key=...`.
 - `.cache_with_expiration(...)`: gleiches Verhalten wie der Standard-Cache, speichert aber mit TTL in Sekunden.
 - `.read_in_primary()`: erzwingt das Lesen aus der primären Datenbank, ohne eine Replik zu verwenden.
 - `.execute(&client)`: führt die Abfrage in der Datenbank aus.
@@ -28,7 +28,7 @@ Ohne `select::<T>()` ist die Rückgabe:
 DinocoResult<Vec<M>>
 ```
 
-Mit `select::<T>()` wird die Rückgabe zu:
+Mit `select::<T>()` wird die Rückgabe:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -180,6 +180,29 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("Batch mit {} Benutzern gelesen", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
+
 ## Beispiel mit Cache
 
 Diese Methode wird nur generiert, wenn das `config {}` des Schemas `redis` enthält.
@@ -194,7 +217,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Beispiel mit Cache und Ablaufzeit
+## Beispiel mit Cache und Ablaufdatum
 
 ```rust
 use database::*;

@@ -2,7 +2,7 @@ export const title = 'cache()';
 
 # cache
 
-`client.cache()` は、`find_first` および `find_many` に組み込まれたキャッシュヘルパーに依存することなく、`DinocoClient` で設定された Redis への直接アクセスを公開します。
+`client.cache()` は、`find_first` および `find_many` に組み込まれたキャッシュヘルパーに依存することなく、`DinocoClient` に設定されたRedisへの直接アクセスを公開します。
 
 ## できること
 
@@ -11,12 +11,12 @@ export const title = 'cache()';
 - `.set_with_ttl(...)` を使用して有効期限付きで保存する
 - `.delete(...)` でキーを削除する
 
-## 使用するタイミング
+## いつ使うか
 
-次の場合に `client.cache()` を使用します。
+`client.cache()` は次の場合に使用します。
 
-- 手動キャッシュを構築する
-- 書き込み後にキーを無効にする
+- 手動でキャッシュを構築する
+- 書き込み操作後にキーを無効にする
 - 複数のクエリ間でペイロードを共有する
 - 高速読み取りのために準備された構造を保存する
 
@@ -28,9 +28,9 @@ export const title = 'cache()';
 
 ## 利用可能なメソッド
 
-- `.get::<T>(key)`: 値を `T` として検索し、デシリアライズします
-- `.set(key, &value)`: シリアライズして TTL なしで保存します
-- `.set_with_ttl(key, &value, ttl_seconds)`: シリアライズして秒単位の有効期限付きで保存します
+- `.get::<T>(key)`: 値を `T` として取得し、逆シリアル化します
+- `.set(key, &value)`: シリアル化して TTL なしで保存します
+- `.set_with_ttl(key, &value, ttl_seconds)`: シリアル化して秒単位の有効期限付きで保存します
 - `.delete(key)`: キーを削除します
 
 ## 基本的な例
@@ -87,16 +87,16 @@ client.cache().delete("users:list").await?;
 
 ## サポートされている型
 
-値は JSON でシリアライズされるため、型は `serde` と互換性がある必要があります。
+値は JSON にシリアル化されるため、型は `serde` と互換性がある必要があります。
 
-一般的な例:
+一般的な例：
 
 - `Vec<User>`
 - `Option<User>`
 - `String`
 - `bool`
 - `i64`
-- シリアライズ可能な構造体
+- シリアル化可能な構造体
 
 ## 注意事項
 

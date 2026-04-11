@@ -326,9 +326,9 @@ dinoco::delete_many::<User>()
 | 概念       | 例                     | 目的            |
 | :------------- | :--------------------- | :-------------- |
 | Model          | `model User { ... }`   | エンティティを表す |
-| Campo escalar  | `email String`         | 単純な値を格納する |
-| Campo opcional | `name String?`         | 値の欠落を許可する |
-| Campo em lista | `tags String[]`        | 複数の値を格納する |
+| スカラフィールド  | `email String`         | 単純な値を格納する |
+| オプションフィールド | `name String?`         | 値の欠落を許可する |
+| リストフィールド | `tags String[]`        | 複数の値を格納する |
 | ID             | `id Integer @id`       | 一意に識別する   |
 | Default        | `@default(now())`      | 自動的に入力する |
 | Unique         | `email String @unique` | 重複を避ける    |

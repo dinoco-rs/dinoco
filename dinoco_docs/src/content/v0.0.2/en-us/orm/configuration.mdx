@@ -7,9 +7,9 @@ The `config {}` block defines how Dinoco will connect to the database and what e
 ## What goes into `config {}`
 
 - `database`: defines the main adapter, such as `sqlite`, `postgresql`, or `mysql`.
-- `database_url`: specifies the main connection URL.
+- `database_url`: informs the main connection URL.
 - `read_replicas`: optional, adds read replicas.
-- `redis`: optional, enables Redis-based caching and queues.
+- `redis`: optional, enables Redis-based cache and queues.
 
 ## Basic example
 
@@ -49,14 +49,14 @@ config {
 
 ## What changes in the generated API
 
-- With `redis`, the project starts exposing helpers like `client.cache()`, `.cache(...)` and queues with `workers()`.
+- With `redis`, the project starts exposing helper functions like `client.cache()`, `.cache(...)` and queues with `workers()`.
 - With `read_replicas`, reads can use a replica while writes continue on the main database.
-- Without `redis`, caching and queue features are not fully available.
+- Without `redis`, cache and queue features are not fully available.
 
 ## When to edit this block
 
 - When changing the project's main database.
-- When adding Redis for caching or queues.
+- When adding Redis for cache or queues.
 - When configuring a read replica.
 - When adjusting connection environment variables.
 

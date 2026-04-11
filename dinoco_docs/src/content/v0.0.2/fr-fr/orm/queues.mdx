@@ -1,13 +1,14 @@
 export const title = 'queues';
 
-# queues
+# files d'attente
 
 Le système de files d'attente de Dinoco permet de publier des événements asynchrones à partir de `insert`, `find` et `update`, en ne stockant dans `Redis` que les données nécessaires pour réhydrater l'enregistrement lorsque le worker s'exécutera.
 
 ## Ce que vous pouvez faire
 
-- Permettre l'enchaînement de .enqueue(...), .enqueue_in(...) et .enqueue_at(...) dans toutes les méthodes du client, à l'exception des opérations de suppression.
+- Permettre l'enchaînement de .enqueue(...), .enqueue_in(...) et .enqueue_at(...) sur toutes les méthodes du client, à l'exception des opérations de suppression.
 - Traiter les jobs avec `workers().on::<Model>(... )`.
+- Charger des projections avec relations dans le worker en utilisant `workers().on_with_relation::<Model, Projection>(... )`.
 - Recharger les données les plus récentes avant l'exécution du handler.
 - Ignorer automatiquement les jobs dont l'enregistrement n'existe plus.
 
@@ -16,17 +17,17 @@ Le système de files d'attente de Dinoco permet de publier des événements asyn
 Lorsque vous utilisez `enqueue`, Dinoco :
 
 1. Exécute l'opération principale normalement.
-2. Sauvegarde dans la file d'attente uniquement les critères de recherche de l'enregistrement.
-3. Dans le worker, recherche les données les plus récentes dans la base de données.
+2. Enregistre dans la file d'attente uniquement les critères de recherche de l'enregistrement.
+3. Dans le worker, récupère les données les plus récentes dans la base de données.
 4. Ce n'est qu'alors qu'il exécute le handler.
 
-Si l'enregistrement n'existe plus au moment de la recherche, le handler ne s'exécute pas et le job est retiré de la file d'attente.
+Si l'enregistrement n'existe plus au moment de la recherche, le handler ne s'exécute pas et le job est supprimé de la file d'attente.
 
-## Méthodes de mise en file d'attente
+## Méthodes d'enfilement
 
-- `.enqueue(evento)` : planifie pour une exécution immédiate.
-- `.enqueue_in(evento, delay_ms)` : planifie avec un délai en millisecondes.
-- `.enqueue_at(evento, data_utc)` : planifie pour une date spécifique en `chrono::DateTime<Utc>`.
+- `.enqueue(événement)`: planifie pour une exécution immédiate.
+- `.enqueue_in(événement, delay_ms)`: planifie avec un délai en millisecondes.
+- `.enqueue_at(événement, date_utc)`: planifie pour une date spécifique en `chrono::DateTime<Utc>`.
 
 ```rust
 use database::*;
@@ -54,12 +55,12 @@ insert_into::<User>()
 
 Utilisez `workers()` pour enregistrer des handlers asynchrones. Le contexte du worker expose :
 
-- `data` : l'enregistrement réhydraté.
-- `client` : une copie du `DinocoClient`.
-- `success()` ou `remove()` : supprime le job de la file d'attente.
-- `fail()` : replanifie avec la reprise par défaut.
-- `retry_in()` et `retry_at()` : même idée que `enqueue_in` et `enqueue_at`.
-- `.run().await?` : démarre le worker en arrière-plan et retourne immédiatement un `JoinHandle`.
+- `data`: l'enregistrement réhydraté.
+- `client`: une copie du `DinocoClient`.
+- `success()` ou `remove()`: supprime le job de la file d'attente.
+- `fail()`: replanifie avec la tentative par défaut.
+- `retry_in()` et `retry_at()`: même idée que `enqueue_in` et `enqueue_at`.
+- `.run().await?`: démarre le worker en arrière-plan et retourne immédiatement un `JoinHandle`.
 
 Lors de l'appel à `run`, Dinoco crée un nouveau `DinocoClient` exclusif pour les workers, avec son propre pool de connexions. Ainsi, la boucle de la file d'attente ne réutilise pas le même pool que l'application principale.
 
@@ -68,9 +69,27 @@ use database::*;
 
 let _worker = workers()
     .on::<User, _, _>("user.created", |job| async move {
-        println!("Traitement de {}", job.data.name);
+        println!("Processando {}", job.data.name); // Traitement de {}
         job.success()
     })
+    .run()
+    .await?;
+```
+
+Si vous avez besoin d'une projection avec des relations, utilisez `on_with_relation`. Dinoco recharge l'enregistrement et applique l'arbre d'inclusions avant l'exécution du handler.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{} tem {} posts", job.data.name, job.data.posts.len()); // {} a {} posts
+            job.success()
+        },
+    )
     .run()
     .await?;
 ```
@@ -99,13 +118,13 @@ Les files d'attente utilisent le `Redis` configuré dans `DinocoClientConfig::wi
 Recommandation : utilisez **AOF + RDB ensemble**.
 
 ```conf
-# Active AOF
+# Ativa AOF
 appendonly yes
 
-# Fréquence de fsync
+# Frequência de fsync
 appendfsync everysec
 
-# Fichier AOF
+# Arquivo AOF
 appendfilename "appendonly.aof"
 
 # --- SNAPSHOT (RDB) ---
@@ -113,7 +132,7 @@ save 900 1
 save 300 10
 save 60 10000
 
-# --- SÉCURITÉ ---
+# --- SEGURANÇA ---
 dir /data
 
 # --- PERFORMANCE ---
@@ -122,7 +141,7 @@ no-appendfsync-on-rewrite yes
 
 ## Observations
 
-- `delete` et `delete_many` ne supportent pas `enqueue`.
+- `delete` et `delete_many` ne prennent pas en charge `enqueue`.
 - Le worker est entièrement asynchrone et utilise `tokio` en coulisses.
 - `run()` ne bloque pas le reste de l'application : il lance la boucle en arrière-plan.
 - `Option<User>` est accepté lors de l'enregistrement du worker, mais le handler ne s'exécute que lorsqu'il y a un enregistrement à réhydrater.

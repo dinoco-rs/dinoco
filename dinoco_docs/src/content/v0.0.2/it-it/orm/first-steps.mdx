@@ -14,13 +14,13 @@ Per creare l'ambiente Dinoco, eseguiamo il seguente comando:
 dinoco init
 ```
 
-Dopo aver scelto il database e tutte le configurazioni necessarie, verrà creata la cartella dinoco nella root del tuo progetto.
+Dopo aver scelto il database e tutte le configurazioni necessarie, verrà creata la cartella dinoco nella radice del tuo progetto.
 
 Questa cartella conterrà:
 
-- **Migrations:** La cronologia delle modifiche del tuo database.
+- **Migrazioni:** La cronologia delle modifiche del tuo database.
 - **Schema:** La definizione centrale della tua struttura dati.
-- **Models:** Le rappresentazioni tipizzate per l'uso nel tuo codice Rust.
+- **Modelli:** Le rappresentazioni tipizzate per l'uso nel tuo codice Rust.
 
 ## Come funziona?
 
@@ -156,4 +156,4 @@ async fn main() -> dinoco::DinocoResult<()> {
 ## Prossimi passi
 
 - [**Schema Dinoco**](/v0.0.2/orm/introduction-dinoco): Comprendi meglio la struttura e la proposta di Dinoco.
-- [**find_many**](/v0.0.2/orm/find-many): vedi filtri, includes e cache nelle query di elenco.
+- [**find_many**](/v0.0.2/orm/find-many): vedi filtri, include e cache nelle query di elenco.

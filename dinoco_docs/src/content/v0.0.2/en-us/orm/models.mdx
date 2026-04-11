@@ -2,7 +2,7 @@ export const title = "Models";
 
 # Models
 
-`model`s define the central entities of your application in the Dinoco schema. Each `model` typically represents a table in the database and serves as the basis for code generation, typed queries, and operations with the Dinoco API.
+The `model` defines the central entities of your application in the Dinoco schema. Each `model` typically represents a table in the database and serves as the basis for code generation, typed queries, and operations with the Dinoco API.
 
 ---
 
@@ -12,7 +12,7 @@ A `model` describes:
 
 - The entity's name.
 - The fields stored in the database.
-- Which fields are required or optional.
+- Which fields are mandatory or optional.
 - Which fields are unique or identifiers.
 - How this data will be used by codegen and the API.
 
@@ -83,11 +83,11 @@ In this line:
 
 ## Field types
 
-Fields can represent basic schema values, such as text, number, boolean, and dates.
+Fields can represent basic schema values, such as text, numbers, booleans, and dates.
 
 ### Scalar fields
 
-These are fields that store direct values, such as text, number, boolean, and dates.
+These are fields that store direct values, such as text, numbers, booleans, and dates.
 
 ```dinoco
 model Product {
@@ -104,10 +104,10 @@ model Product {
 
 Dinoco supports two main modifiers:
 
-| Modifier | Meaning         | Example         |
+| Modifier | Meaning        | Example         |
 | :---------- | :------------- | :-------------- |
 | `?`         | Optional field | `name String?`  |
-| `[]`        | List          | `tags String[]` |
+| `[]`        | List           | `tags String[]` |
 
 ### Optional field
 
@@ -137,9 +137,9 @@ Attributes change the behavior of fields and models.
 
 | Attribute        | Usage                              |
 | :-------------- | :------------------------------- |
-| `@id`           | Defines the primary identifier |
-| `@default(...)` | Defines a default value           |
-| `@unique`       | Ensures uniqueness                |
+| `@id`           | Defines the primary identifier   |
+| `@default(...)` | Defines a default value          |
+| `@unique`       | Ensures uniqueness               |
 
 ### `@id`
 
@@ -165,10 +165,10 @@ Common functions and values:
 
 | Example                     | Usage                 |
 | :-------------------------- | :------------------ |
-| `@default(false)`           | Default boolean     |
+| `@default(false)`           | Default boolean       |
 | `@default(now())`           | Current date          |
-| `@default(autoincrement())` | Incremental integer |
-| `@default(uuid())`          | UUID identifier  |
+| `@default(autoincrement())` | Incremental integer   |
+| `@default(uuid())`          | UUID identifier       |
 
 ### `@unique`
 
@@ -189,7 +189,7 @@ In addition to attributes on individual fields, Dinoco also supports decorators 
 
 | Decorator             | Usage                                   |
 | :-------------------- | :------------------------------------ |
-| `@@ids([...])`        | Defines composite primary key        |
+| `@@ids([...])`        | Defines a composite primary key       |
 | `@@table_name("...")` | Maps the actual table name in the database |
 
 ### `@@ids([...])`
@@ -223,7 +223,7 @@ model User {
 
 In this case:
 
-- The model continues to be named `User` in the schema and the generated API.
+- The model continues to be called `User` in the schema and the generated API.
 - The physical table in the database becomes `users`.
 
 ## User model example
@@ -268,8 +268,8 @@ let users = dinoco::find_many::<User>()
 dinoco::insert_into::<User>()
     .values(User {
         id: 0,
-        email: "bia@dinoco.rs".to_string(),
-        name: Some("Bia".to_string()),
+        email: "bea@dinoco.rs".to_string(),
+        name: Some("Bea".to_string()),
         active: true,
         createdAt: dinoco::Utc::now(),
     })
@@ -284,8 +284,8 @@ dinoco::update::<User>()
     .cond(|x| x.id.eq(1_i64))
     .values(User {
         id: 1,
-        email: "bia@dinoco.rs".to_string(),
-        name: Some("Beatriz".to_string()),
+        email: "bea@dinoco.rs".to_string(),
+        name: Some("Beatrice".to_string()),
         active: true,
         createdAt: dinoco::Utc::now(),
     })
@@ -298,7 +298,7 @@ If you want atomic updates on a single field, the `find_and_update` flow is ofte
 ```rust
 let user = dinoco::find_and_update::<User>()
     .cond(|x| x.id.eq(1_i64))
-    .update(|x| x.name.set("Beatriz"))
+    .update(|x| x.name.set("Beatrice"))
     .execute(&client)
     .await?;
 ```
@@ -323,15 +323,15 @@ dinoco::delete_many::<User>()
 
 ## Quick summary
 
-| Concept       | Example                | Objective                    |
+| Concept        | Example                | Goal                        |
 | :------------- | :--------------------- | :-------------------------- |
-| Model          | `model User { ... }`   | Represent an entity    |
-| Scalar field  | `email String`         | Store simple value     |
-| Optional field | `name String?`         | Allow absence of value  |
-| List field | `tags String[]`        | Store multiple values |
-| ID             | `id Integer @id`       | Uniquely identify      |
-| Default        | `@default(now())`      | Automatically populate   |
-| Unique         | `email String @unique` | Prevent duplication          |
+| Model          | `model User { ... }`   | Represent an entity         |
+| Scalar field   | `email String`         | Store a simple value        |
+| Optional field | `name String?`         | Allow absence of value      |
+| List field     | `tags String[]`        | Store multiple values       |
+| ID             | `id Integer @id`       | Uniquely identify           |
+| Default        | `@default(now())`      | Automatically populate      |
+| Unique         | `email String @unique` | Prevent duplication         |
 
 ## When to create a new model
 
@@ -339,7 +339,7 @@ You typically create a new `model` when an entity in your application needs to:
 
 - Be persisted in the database.
 - Have its own identity.
-- Be queried independently.
+- Be queried in isolation.
 - Have its own read and write rules.
 
 Common examples:

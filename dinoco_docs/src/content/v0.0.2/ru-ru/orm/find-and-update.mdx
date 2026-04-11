@@ -30,6 +30,30 @@ let task = dinoco::find_and_update::<Task>()
     .await?;
 ```
 
+## Пример с воркером
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Task, _, _>("task.reviewed", |job| async move {
+        // Задача обновлена до
+        println!("Task atualizada para {:?}", job.data.status);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .enqueue("task.reviewed")
+    .execute(&client)
+    .await?;
+```
+
+Подробнее о воркерах см. в [**`queues`**](/v0.0.2/orm/queues).
+
 ## Доступные операции в `ModelUpdate`
 
 - `set(value)`
@@ -40,7 +64,7 @@ let task = dinoco::find_and_update::<Task>()
 
 ## Примечания
 
-- Обновление выполняется в одном `UPDATE` запросе.
+- Обновление выполняется в одном `UPDATE`.
 - Если ни одна строка не соответствует условию, будет возвращена ошибка `DinocoError::RecordNotFound`.
 - DSL обновления не раскрывает отношения.
 - В настоящее время поток поддерживает простой первичный ключ для поиска и возврата обновленной записи.

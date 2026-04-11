@@ -1,6 +1,6 @@
-export const title = "시작하기";
+export const title = "첫 단계";
 
-# 시작하기
+# 첫 단계
 
 Dinoco를 사용하려면 마이그레이션 및 기타 시스템을 조작할 수 있도록 CLI를 설치해야 합니다!
 
@@ -18,11 +18,11 @@ dinoco init
 
 이 폴더에는 다음이 포함됩니다:
 
-- **마이그레이션:** 데이터베이스 변경 기록.
-- **스키마:** 데이터 구조의 중앙 정의.
-- **모델:** Rust 코드에서 사용할 타입화된 표현.
+- **Migrations:** 데이터베이스 변경 내역.
+- **Schema:** 데이터 구조의 중앙 정의.
+- **Models:** Rust 코드에서 사용할 타입화된 표현.
 
-## 어떻게 작동하나요?
+## 작동 방식
 
 ### 1. 스키마 및 연결 정의
 
@@ -109,13 +109,13 @@ async fn main() -> dinoco::DinocoResult<()> {
 
     let client = database::create_connection(config).await?;
 
-    // 관련 게시물과 함께 사용자 삽입.
+    // 관련 게시물이 있는 사용자를 삽입합니다.
     insert_into::<User>()
         .values(UserWithPostInsert {
             id: 0,
             email: "bia@dinoco.rs".to_string(),
-            name: Some("Bia".to_string()),
-            posts: vec![Post { id: 0, title: "나의 첫 번째 게시물".to_string(), published: true, authorId: None }],
+            name: Some("비아".to_string()),
+            posts: vec![Post { id: 0, title: "나의 첫 게시물".to_string(), published: true, authorId: None }],
         })
         .execute(&client)
         .await?;
@@ -142,7 +142,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // 		email: "bia@dinoco.rs",
     // 		posts: [
     // 			Post {
-    // 				title: "나의 첫 번째 게시물",
+    // 				title: "나의 첫 게시물",
     // 				published: true,
     // 			},
     // 		],

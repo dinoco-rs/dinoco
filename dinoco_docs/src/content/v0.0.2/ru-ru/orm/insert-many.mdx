@@ -8,19 +8,19 @@ export const title = 'insert_many';
 
 ## Что вы можете сделать
 
-- `.values(Vec<M>):` определяет записи, которые будут вставлены пакетом.
-- `.returning::<T>():` изменяет возвращаемое значение на типизированный список вставленных элементов.
-- `.execute(&client):` выполняет пакетную операцию.
+- `.values(Vec<M>)`: определяет записи, которые будут вставлены в пакетном режиме.
+- `.returning::<T>()`: изменяет возвращаемое значение на типизированный список вставленных элементов.
+- `.execute(&client)`: выполняет пакетную операцию.
 
 ## Возвращаемое значение
 
-Без `.returning::<T>()`, возвращаемое значение:
+Без `.returning::<T>()` возвращаемое значение:
 
 ```rust
 DinocoResult<()>
 ```
 
-С `.returning::<T>()`, возвращаемое значение становится:
+С `.returning::<T>()` возвращаемое значение становится:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -50,6 +50,31 @@ let created = dinoco::insert_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Пример с воркером
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
+        println!("Пользователи, созданные в пакете: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .enqueue("user.batch-created")
+    .execute(&client)
+    .await?;
+```
+
+Подробнее о воркерах см. в разделе [**`queues`**](/v0.0.2/orm/queues).
 
 ## Пример с вложенными отношениями
 
@@ -121,7 +146,7 @@ dinoco::insert_many::<Article>()
 
 ## Пример с ArticleConnection
 
-Когда связанные элементы уже существуют, используйте перечисление, сгенерированное codegen, внутри полезной нагрузки.
+Если связанные элементы уже существуют, используйте перечисление, сгенерированное codegen, внутри полезной нагрузки.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -157,7 +182,7 @@ dinoco::insert_many::<Article>()
 
 ## Пример с Extend #[insertable]
 
-`insert_many` также может принимать более сложные полезные нагрузки через `.values(...)`, когда структура помечена `#[insertable]`. Это полезно для создания родителей и их вложенных отношений в одном рекурсивном потоке.
+`insert_many` также может принимать более сложные полезные нагрузки через `.values(...)`, если структура помечена `#[insertable]`. Это полезно для создания родителей и их вложенных отношений в одном рекурсивном потоке.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]

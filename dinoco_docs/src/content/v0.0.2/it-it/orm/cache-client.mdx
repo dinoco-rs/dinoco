@@ -2,7 +2,7 @@ export const title = 'cache()';
 
 # cache
 
-`client.cache()` espone accesso diretto a Redis configurato in `DinocoClient`, senza dipendere dagli helper di cache accoppiati in `find_first` e `find_many`.
+`client.cache()` espone l'accesso diretto a Redis configurato in `DinocoClient`, senza dipendere dagli helper di cache accoppiati in `find_first` e `find_many`.
 
 ## Cosa puoi fare
 
@@ -11,14 +11,14 @@ export const title = 'cache()';
 - Salvare con scadenza usando `.set_with_ttl(...)`
 - Rimuovere una chiave con `.delete(...)`
 
-## Quando usare
+## Quando usarlo
 
 Usa `client.cache()` quando vuoi:
 
-- montare cache manuale
-- invalidare chiavi dopo le scritture
+- montare una cache manuale
+- invalidare le chiavi dopo operazioni di scrittura
 - condividere payload tra più query
-- conservare strutture pronte per una lettura rapida
+- memorizzare strutture pronte per una lettura rapida
 
 ## Come funziona
 
@@ -77,7 +77,7 @@ use database::*;
 
 dinoco::update::<User>()
     .cond(|x| x.id.eq(1_i64))
-    .values(User { id: 1, name: "Nuovo nome".to_string() })
+    .values(User { id: 1, name: "Novo nome".to_string() })
     .execute(&client)
     .await?;
 
@@ -98,9 +98,9 @@ Esempi comuni:
 - `i64`
 - structs serializzabili
 
-## Note
+## Osservazioni
 
-- `client.cache()` è cache manuale; non esegue query nel database.
+- `client.cache()` è una cache manuale; non esegue query sul database.
 - Per la cache integrata nelle query, usa `find_first().cache(...)` e `find_many().cache(...)`.
 - Puoi chiamare `client.cache()` quante volte vuoi; crea solo un wrapper leggero.
 

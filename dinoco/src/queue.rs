@@ -15,7 +15,7 @@ use futures::FutureExt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Model, Projection, ReadMode, UpdateModel, execute_first, execute_many};
+use crate::{IncludeNode, IntoIncludeNode, Model, Projection, ReadMode, UpdateModel, execute_many};
 
 const DEFAULT_QUEUE_POLL_INTERVAL_MS: u64 = 1_000;
 const DEFAULT_QUEUE_RETRY_DELAY_MS: u64 = 5 * 60 * 1_000;
@@ -75,6 +75,15 @@ where
 }
 
 #[async_trait]
+trait QueueWorkerRelationData<A, M>: Send + Sized + 'static
+where
+    A: DinocoAdapter + Clone + Send + Sync + 'static,
+    M: Model + 'static,
+{
+    async fn load(job: &QueueJob, client: &DinocoClient<A>, includes: &[IncludeNode]) -> DinocoResult<Option<Self>>;
+}
+
+#[async_trait]
 trait QueueWorkerHandler<A>: Send + Sync
 where
     A: DinocoAdapter + Clone + Send + Sync + 'static,
@@ -86,6 +95,12 @@ where
 struct TypedQueueWorkerHandler<A, T, F> {
     handler: F,
     marker: PhantomData<fn() -> (A, T)>,
+}
+
+struct TypedQueueWorkerRelationHandler<A, M, T, F> {
+    handler: F,
+    includes: Vec<IncludeNode>,
+    marker: PhantomData<fn() -> (A, M, T)>,
 }
 
 impl<A> Clone for Box<dyn QueueWorkerHandler<A>>
@@ -103,6 +118,15 @@ where
 {
     fn clone(&self) -> Self {
         Self { handler: self.handler.clone(), marker: PhantomData }
+    }
+}
+
+impl<A, M, T, F> Clone for TypedQueueWorkerRelationHandler<A, M, T, F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self { handler: self.handler.clone(), includes: self.includes.clone(), marker: PhantomData }
     }
 }
 
@@ -182,6 +206,28 @@ where
         self
     }
 
+    #[allow(private_bounds)]
+    pub fn on_with_relation<M, T, I, R, F, Fut>(mut self, event: impl Into<String>, relation: R, handler: F) -> Self
+    where
+        M: Model + 'static,
+        T: QueueWorkerRelationData<A, M>,
+        R: FnOnce(M::Include) -> I,
+        I: IntoIncludeNode,
+        F: Fn(QueueWorkerContext<T, A>) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.handlers.insert(
+            event.into(),
+            Box::new(TypedQueueWorkerRelationHandler::<A, M, T, F> {
+                handler,
+                includes: vec![relation(M::Include::default()).into_include_node()],
+                marker: PhantomData,
+            }),
+        );
+
+        self
+    }
+
     pub async fn run(&self) -> DinocoResult<tokio::task::JoinHandle<DinocoResult<()>>> {
         let worker_client = DinocoClient::<A>::registered_worker_client().await?;
         let handlers = self.handlers.clone();
@@ -189,7 +235,8 @@ where
 
         Ok(tokio::spawn(async move {
             loop {
-                let processed = match AssertUnwindSafe(process_next_job(&handlers, &worker_client)).catch_unwind().await {
+                let processed = match AssertUnwindSafe(process_next_job(&handlers, &worker_client)).catch_unwind().await
+                {
                     Ok(Ok(processed)) => processed,
                     Ok(Err(_)) | Err(_) => {
                         tokio::time::sleep(poll_interval).await;
@@ -221,7 +268,7 @@ where
     A: DinocoAdapter + Clone + Send + Sync + 'static,
 {
     async fn load(job: &QueueJob, client: &DinocoClient<A>) -> DinocoResult<Option<Self>> {
-        load_single_model::<M, A>(&job.lookup, client).await
+        load_single_model::<M, M, A>(&job.lookup, client, &[]).await
     }
 }
 
@@ -232,7 +279,7 @@ where
     A: DinocoAdapter + Clone + Send + Sync + 'static,
 {
     async fn load(job: &QueueJob, client: &DinocoClient<A>) -> DinocoResult<Option<Self>> {
-        load_single_model::<M, A>(&job.lookup, client).await.map(|item| item.map(Some))
+        load_single_model::<M, M, A>(&job.lookup, client, &[]).await.map(|item| item.map(Some))
     }
 }
 
@@ -245,7 +292,8 @@ where
     async fn load(job: &QueueJob, client: &DinocoClient<A>) -> DinocoResult<Option<Self>> {
         let rows = match &job.lookup {
             QueueLookup::Conditions { conditions } => {
-                let Some(item) = load_single_model_by_conditions::<M, A>(conditions.clone(), client).await? else {
+                let Some(item) = load_single_model_by_conditions::<M, M, A>(conditions.clone(), &[], client).await?
+                else {
                     return Ok(None);
                 };
 
@@ -255,7 +303,8 @@ where
                 let mut rows = Vec::with_capacity(conditions.len());
 
                 for item_conditions in conditions {
-                    if let Some(item) = load_single_model_by_conditions::<M, A>(item_conditions.clone(), client).await?
+                    if let Some(item) =
+                        load_single_model_by_conditions::<M, M, A>(item_conditions.clone(), &[], client).await?
                     {
                         rows.push(item);
                     }
@@ -264,12 +313,24 @@ where
                 rows
             }
             QueueLookup::Statement { statement, .. } => {
-                let statement = build_projection_statement::<M>(statement.clone());
+                let statement = build_projection_statement::<M, M>(statement.clone());
                 execute_many::<M, M, A>(statement, &[], &[], ReadMode::Primary, client).await?
             }
         };
 
         if rows.is_empty() { Ok(None) } else { Ok(Some(rows)) }
+    }
+}
+
+#[async_trait]
+impl<M, S, A> QueueWorkerRelationData<A, M> for S
+where
+    M: Model + 'static,
+    S: Projection<M> + Send + 'static,
+    A: DinocoAdapter + Clone + Send + Sync + 'static,
+{
+    async fn load(job: &QueueJob, client: &DinocoClient<A>, includes: &[IncludeNode]) -> DinocoResult<Option<Self>> {
+        load_single_model::<M, S, A>(&job.lookup, client, includes).await
     }
 }
 
@@ -283,6 +344,33 @@ where
 {
     async fn handle(&self, job: &QueueJob, client: &DinocoClient<A>) -> DinocoResult<QueueJobControl> {
         let Some(data) = T::load(job, client).await? else {
+            return Ok(QueueJobControl::Complete);
+        };
+
+        let control = Arc::new(Mutex::new(None));
+        let context = QueueWorkerContext { control: control.clone(), client: client.clone(), data };
+
+        (self.handler)(context).await;
+
+        Ok(control.lock().expect("queue worker control mutex poisoned").clone().unwrap_or(QueueJobControl::Complete))
+    }
+
+    fn clone_box(&self) -> Box<dyn QueueWorkerHandler<A>> {
+        Box::new(self.clone())
+    }
+}
+
+#[async_trait]
+impl<A, M, T, F, Fut> QueueWorkerHandler<A> for TypedQueueWorkerRelationHandler<A, M, T, F>
+where
+    A: DinocoAdapter + Clone + Send + Sync + 'static,
+    M: Model + 'static,
+    T: QueueWorkerRelationData<A, M>,
+    F: Fn(QueueWorkerContext<T, A>) -> Fut + Send + Sync + Clone + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    async fn handle(&self, job: &QueueJob, client: &DinocoClient<A>) -> DinocoResult<QueueJobControl> {
+        let Some(data) = T::load(job, client, &self.includes).await? else {
             return Ok(QueueJobControl::Complete);
         };
 
@@ -350,11 +438,12 @@ where
     output
 }
 
-fn build_projection_statement<M>(mut statement: SelectStatement) -> SelectStatement
+fn build_projection_statement<M, S>(mut statement: SelectStatement) -> SelectStatement
 where
-    M: Model + Projection<M>,
+    M: Model,
+    S: Projection<M>,
 {
-    statement.select = M::columns().iter().map(|column| (*column).to_string()).collect();
+    statement.select = S::columns().iter().map(|column| (*column).to_string()).collect();
     statement.from = M::table_name().to_string();
 
     statement
@@ -434,51 +523,63 @@ where
     cache.sorted_set_add(QUEUE_JOBS_KEY, &job.id, execute_at.timestamp_millis()).await
 }
 
-async fn load_single_model<M, A>(lookup: &QueueLookup, client: &DinocoClient<A>) -> DinocoResult<Option<M>>
+async fn load_single_model<M, S, A>(
+    lookup: &QueueLookup,
+    client: &DinocoClient<A>,
+    includes: &[IncludeNode],
+) -> DinocoResult<Option<S>>
 where
-    M: Model + Projection<M>,
+    M: Model,
+    S: Projection<M>,
     A: DinocoAdapter + Clone + Send + Sync + 'static,
 {
     match lookup {
         QueueLookup::Conditions { conditions } => {
-            load_single_model_by_conditions::<M, A>(conditions.clone(), client).await
+            load_single_model_by_conditions::<M, S, A>(conditions.clone(), includes, client).await
         }
         QueueLookup::ManyConditions { conditions } => {
             let Some(first_conditions) = conditions.first() else {
                 return Ok(None);
             };
 
-            load_single_model_by_conditions::<M, A>(first_conditions.clone(), client).await
+            load_single_model_by_conditions::<M, S, A>(first_conditions.clone(), includes, client).await
         }
         QueueLookup::Statement { statement, take_first } => {
-            let statement = build_projection_statement::<M>(statement.clone());
+            let statement = build_projection_statement::<M, S>(statement.clone());
 
             if *take_first {
-                execute_first::<M, M, A>(statement.limit(1), ReadMode::Primary, client).await
-            } else {
-                let mut rows = execute_many::<M, M, A>(statement, &[], &[], ReadMode::Primary, client).await?;
+                let rows =
+                    execute_many::<M, S, A>(statement.limit(1), includes, &[], ReadMode::Primary, client).await?;
 
-                Ok(rows.drain(..).next())
+                Ok(rows.into_iter().next())
+            } else {
+                let rows = execute_many::<M, S, A>(statement, includes, &[], ReadMode::Primary, client).await?;
+
+                Ok(rows.into_iter().next())
             }
         }
     }
 }
 
-async fn load_single_model_by_conditions<M, A>(
+async fn load_single_model_by_conditions<M, S, A>(
     conditions: Vec<Expression>,
+    includes: &[IncludeNode],
     client: &DinocoClient<A>,
-) -> DinocoResult<Option<M>>
+) -> DinocoResult<Option<S>>
 where
-    M: Model + Projection<M>,
+    M: Model,
+    S: Projection<M>,
     A: DinocoAdapter + Clone + Send + Sync + 'static,
 {
-    let mut statement = SelectStatement::new().from(M::table_name()).select(M::columns());
+    let mut statement = SelectStatement::new().from(M::table_name()).select(S::columns());
 
     for condition in conditions {
         statement = statement.condition(condition);
     }
 
-    execute_first::<M, M, A>(statement, ReadMode::Primary, client).await
+    let rows = execute_many::<M, S, A>(statement.limit(1), includes, &[], ReadMode::Primary, client).await?;
+
+    Ok(rows.into_iter().next())
 }
 
 fn default_retry_at(delay_ms: u64) -> DateTime<Utc> {

@@ -30,6 +30,29 @@ let task = dinoco::find_and_update::<Task>()
     .await?;
 ```
 
+## Exemplo com worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Task, _, _>("task.reviewed", |job| async move {
+        println!("Task atualizada para {:?}", job.data.status);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .enqueue("task.reviewed")
+    .execute(&client)
+    .await?;
+```
+
+Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
+
 ## Operações disponíveis em `ModelUpdate`
 
 - `set(value)`

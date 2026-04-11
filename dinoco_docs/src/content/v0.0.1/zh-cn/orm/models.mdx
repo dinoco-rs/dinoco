@@ -277,22 +277,6 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## 使用 Dinoco API 更新用户的示例
-
-```rust
-dinoco::update::<User>()
-    .cond(|x| x.id.eq(1_i64))
-    .values(User {
-        id: 1,
-        email: "bia@dinoco.rs".to_string(),
-        name: Some("Beatriz".to_string()),
-        active: true,
-        createdAt: dinoco::Utc::now(),
-    })
-    .execute(&client)
-    .await?;
-```
-
 如果您想对单个字段进行原子更新，`find_and_update` 流程通常更直接：
 
 ```rust

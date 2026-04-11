@@ -2,21 +2,21 @@ export const title = '派生';
 
 # 派生
 
-Dinoco 中使用的派生宏和核心属性概述。
+Dinoco 中使用的派生和核心属性概述。
 
 ---
 
-## Dinoco 中的派生宏是什么
+## Dinoco 中的派生是什么
 
-Dinoco 派生宏有助于将您的 Rust 结构体与 ORM 行为关联起来，而无需手动编写所有实现。
+Dinoco 派生有助于将您的 Rust 结构体与 ORM 行为连接起来，而无需手动编写所有实现。
 
-日常生活中最常用的是：
+日常生活中最常见的是：
 
 - `#[derive(Rowable)]`
 - `#[derive(Extend)]`
 - `#[insertable]`
 
-## Rowable 派生宏
+## Rowable 派生
 
 当结构体直接表示将由 Dinoco 读取和写入的模型时，请使用 `Rowable`。
 
@@ -29,9 +29,9 @@ struct User {
 }
 ```
 
-此派生宏将适配器返回的行序列化为 Rust 结构体。
+此派生将适配器返回的行序列化为 Rust 结构体。
 
-## Extend 派生宏
+## Extend 派生
 
 当您想要与基础模型不同的投影时，请使用 `Extend`，通常用于 `select`、`include`、`count` 或富载荷。
 
@@ -44,11 +44,11 @@ struct UserSummary {
 }
 ```
 
-在这种情况下，结构体仍然与 `User` 模型关联，但可以只公开该流程所需的字段。
+在这种情况下，结构体仍然与 `User` 模型关联，但只能暴露该流程所需的字段。
 
 ## #[insertable] 属性
 
-当 `.values(...)` 需要接受载荷中新的关系或现有连接时，请将 `#[insertable]` 与 `Extend` 一起使用。
+当 `.values(...)` 需要接受载荷内的新关系或现有连接时，请将 `#[insertable]` 与 `Extend` 一起使用。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -61,7 +61,7 @@ struct ArticleWithLabels {
 }
 ```
 
-通过此操作，Dinoco 会插入父级，然后自动处理嵌套项。
+这样，Dinoco 会插入父级，然后自动处理嵌套项。
 
 ## Rowable 示例
 
@@ -133,9 +133,9 @@ dinoco::insert_many::<Article>()
 
 ## 何时使用
 
-- 对于生成的主模型或支持直接行读取的结构体，请使用 `Rowable`。
-- 对于投影、计数、包含和专用载荷，请使用 `Extend`。
-- 当 `Extend` 也用作带嵌套的写入载荷时，请使用 `#[insertable]`。
+- 对于生成的主模型或与直接行读取兼容的结构体，请使用 `Rowable`。
+- 对于投影、计数、包含和专门的载荷，请使用 `Extend`。
+- 当 `Extend` 也用作带有嵌套的写入载荷时，请使用 `#[insertable]`。
 
 ## 下一步
 

@@ -2,13 +2,13 @@ export const title = "入门";
 
 # 入门
 
-要开始使用 Dinoco，您需要安装我们的 CLI，以便能够操作迁移和其他系统！
+要开始使用 Dinoco，您需要安装我们的 CLI，以便管理迁移和其他系统！
 
 ```bash
 cargo install dinoco-cli
 ```
 
-要创建 Dinoco 环境，请执行以下命令：
+要创建 Dinoco 环境，请运行以下命令：
 
 ```bash
 dinoco init
@@ -18,15 +18,15 @@ dinoco init
 
 此文件夹将包含：
 
-- **Migrations (迁移):** 您的数据库更改历史记录。
-- **Schema (模式):** 您的数据结构的核心定义。
-- **Models (模型):** 用于 Rust 代码中的类型化表示。
+- **Migrations:** 您的数据库更改历史记录。
+- **Schema:** 数据结构的核心定义。
+- **Models:** 用于 Rust 代码的类型化表示。
 
 ## 工作原理？
 
-### 1. 定义您的模式和连接
+### 1. 定义您的 Schema 和连接
 
-Dinoco 模式定义了您的模型内容和数据库配置。
+Dinoco Schema 定义了您的模型内容和数据库配置。
 
 ```dinoco
 config {
@@ -57,7 +57,7 @@ model Post {
 
 ### 2. 创建迁移
 
-使用 `--apply` 生成迁移时，它将应用于数据库并自动生成模型！
+使用 --apply 生成迁移时，它将应用于数据库并自动生成模型！
 
 ```bash
 dinoco migrate generate --apply
@@ -120,7 +120,7 @@ async fn main() -> dinoco::DinocoResult<()> {
         .execute(&client)
         .await?;
 
-    // 查找所有带有帖子的用户。
+    // 查找所有用户及其帖子。
     let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
 
     let cached_users = find_many::<User>()
@@ -155,5 +155,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## 下一步
 
-- [**Dinoco 模式**](/v0.0.2/orm/introduction-dinoco): 更好地理解 Dinoco 的结构和目的。
+- [**Dinoco schema**](/v0.0.2/orm/introduction-dinoco): 更好地理解 Dinoco 的结构和目的。
 - [**find_many**](/v0.0.2/orm/find-many): 查看列表查询中的过滤器、包含和缓存。

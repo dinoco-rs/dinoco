@@ -229,6 +229,8 @@ export function getLocalizedSections(group: DocsGroup, locale: DocsLocale): Docs
 export function getGroupByShortName(versionName: string, locale: DocsLocale, groupShortName?: string): DocsGroup | undefined {
 	const groups = getGroupsForVersion(versionName, locale);
 
+	console.log(groups);
+
 	if (groupShortName === undefined) {
 		return groups[0];
 	}

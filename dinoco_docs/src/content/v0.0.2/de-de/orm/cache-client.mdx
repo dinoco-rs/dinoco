@@ -2,29 +2,29 @@ export const title = 'cache()';
 
 # cache
 
-`client.cache()` bietet direkten Zugriff auf das in `DinocoClient` konfigurierte Redis, ohne von den in `find_first` und `find_many` integrierten Cache-Helfern abhängig zu sein.
+`client.cache()` bietet direkten Zugriff auf den in `DinocoClient` konfigurierten Redis, ohne von den in `find_first` und `find_many` integrierten Cache-Helfern abhängig zu sein.
 
 ## Was Sie tun können
 
 - Einen Schlüssel mit `.get::<T>(...)` lesen
 - Einen Schlüssel mit `.set(...)` speichern
-- Mit Ablaufzeit unter Verwendung von `.set_with_ttl(...)` speichern
+- Mit Ablaufzeit speichern, indem `.set_with_ttl(...)` verwendet wird
 - Einen Schlüssel mit `.delete(...)` entfernen
 
-## Wann verwenden
+## Wann zu verwenden
 
 Verwenden Sie `client.cache()`, wenn Sie möchten:
 
 - manuellen Cache einrichten
-- Schlüssel nach Schreibvorgängen invalidieren
-- Payloads zwischen mehreren Abfragen teilen
+- Schlüssel nach Schreiboperationen invalidieren
+- Nutzdaten zwischen mehreren Abfragen teilen
 - Strukturen für schnelles Lesen bereithalten
 
 ## Wie es funktioniert
 
-Die Methode verwendet das in `DinocoClientConfig::with_redis(...)` konfigurierte Redis.
+Die Methode verwendet den in `DinocoClientConfig::with_redis(...)` konfigurierten Redis.
 
-Wenn der Client kein Redis konfiguriert hat, gibt die Operation einen Fehler zurück.
+Wenn der Client keinen Redis konfiguriert hat, gibt die Operation einen Fehler zurück.
 
 ## Verfügbare Methoden
 
@@ -89,7 +89,7 @@ client.cache().delete("users:list").await?;
 
 Die Werte werden in JSON serialisiert, daher muss der Typ mit `serde` kompatibel sein.
 
-Gängige Beispiele:
+Häufige Beispiele:
 
 - `Vec<User>`
 - `Option<User>`
@@ -102,7 +102,7 @@ Gängige Beispiele:
 
 - `client.cache()` ist ein manueller Cache; er führt keine Datenbankabfrage aus.
 - Für integrierten Cache in Abfragen verwenden Sie `find_first().cache(...)` und `find_many().cache(...)`.
-- Sie können `client.cache()` beliebig oft aufrufen; es erstellt lediglich einen leichten Wrapper.
+- Sie können `client.cache()` beliebig oft aufrufen; es erstellt nur einen leichten Wrapper.
 
 ## Nächste Schritte
 

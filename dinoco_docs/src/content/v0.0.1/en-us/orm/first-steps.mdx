@@ -98,7 +98,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // Insert a user with a related post.
     insert_into::<User>()
         .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
-        .with_relation(Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None })
+        .with_relation(Post { id: 0, title: "My first post".to_string(), published: true, authorId: None })
         .execute(&client)
         .await?;
 

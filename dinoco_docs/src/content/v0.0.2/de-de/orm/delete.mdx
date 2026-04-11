@@ -19,7 +19,7 @@ Die Rückgabe von `delete` ist:
 DinocoResult<()>
 ```
 
-## Grundlegendes Beispiel
+<h2>Grundlegendes Beispiel</h2>
 
 ```rust
 dinoco::delete::<User>()
@@ -28,7 +28,7 @@ dinoco::delete::<User>()
     .await?;
 ```
 
-## Beispiel mit einem anderen Filter
+<h2>Beispiel mit einem anderen Filter</h2>
 
 ```rust
 dinoco::delete::<Session>()
@@ -37,7 +37,7 @@ dinoco::delete::<Session>()
     .await?;
 ```
 
-## Nächste Schritte
+<h2>Nächste Schritte</h2>
 
 - [**`delete_many::<M>()`**](/v0.0.1/orm/delete-many): Stapelentfernung.
 - [**`find_many::<M>()`**](/v0.0.1/orm/find-many): Datensätze vor dem Entfernen validieren.

@@ -8,27 +8,27 @@ Wird verwendet, um maximal einen Datensatz abzurufen.
 
 ## Was Sie tun können
 
-- `.select::<T>()`: ersetzt die Standardprojektion durch eine benutzerdefinierte Projektion.
+- `.select::<T>()`: tauscht die Standardprojektion gegen eine benutzerdefinierte Projektion aus.
 - `.cond(...)`: fügt Filter zur Suche hinzu.
 - `.take(...)`: begrenzt die maximale Anzahl der berücksichtigten Datensätze.
 - `.skip(...)`: überspringt Datensätze, bevor das erste Ergebnis ausgewählt wird.
 - `.order_by(...)`: definiert, welcher Datensatz zuerst berücksichtigt werden soll.
-- `.includes(...)`: lädt Beziehungen zusammen mit dem Hauptelement.
+- `.includes(...)`: lädt Beziehungen zusammen mit dem Hauptobjekt.
 - `.count(...)`: berechnet Beziehungszähler in der Projektion.
-- `.cache(...)`: versucht zuerst, in Redis zu suchen, und fragt die Datenbank nur ab, wenn der Schlüssel nicht existiert. Bei einem Cache-Treffer protokolliert der Query-Logger `CACHE HIT key=...`.
+- `.cache(...)`: versucht zuerst in Redis zu suchen und fragt die Datenbank nur ab, wenn der Schlüssel nicht existiert. Bei einem Cache-Hit protokolliert der Query-Logger `CACHE HIT key=...`.
 - `.cache_with_expiration(...)`: führt den gleichen Ablauf aus, speichert aber mit TTL in Sekunden.
 - `.read_in_primary()`: erzwingt das Lesen aus der primären Datenbank.
 - `.execute(&client)`: führt die Abfrage aus und gibt maximal ein Element zurück.
 
-## Rückgabe
+## Rückgabewert
 
-Ohne `select::<T>()` ist die Rückgabe:
+Ohne `select::<T>()` ist der Rückgabewert:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-Mit `select::<T>()` wird die Rückgabe:
+Mit `select::<T>()` wird der Rückgabewert:
 
 ```rust
 DinocoResult<Option<T>>
@@ -43,7 +43,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## Beispiel mit Select
+## Beispiel mit select
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,6 +88,28 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.first-read", |job| async move {
+        println!("Erster Benutzer gelesen: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .enqueue("user.first-read")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
+
 ## Beispiel mit Cache
 
 Diese Methode existiert nur, wenn das Schema `redis` konfiguriert hat.
@@ -118,5 +140,5 @@ let user = dinoco::find_first::<User>()
 
 ## Nächste Schritte
 
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): sucht nach mehreren Datensätzen.
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): sucht mehrere Datensätze.
 - [**`count::<M>()`**](/v0.0.2/orm/count): Zählung von Datensätzen.

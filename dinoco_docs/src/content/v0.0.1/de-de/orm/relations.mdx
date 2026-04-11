@@ -336,7 +336,7 @@ let created_user = insert_into::<User>()
 	})
 	.with_relation(Profile {
 		id: "profile-1".to_string(),
-		bio: Some("Engenheira de software".to_string()),
+		bio: Some("Software-Ingenieurin".to_string()),
 		userId: String::new(),
 	})
 	.execute(&client)
@@ -359,14 +359,14 @@ use dinoco::insert_many;
 let posts = vec![
 	Post {
 		id: "post-1".to_string(),
-		title: "Primeiro post".to_string(),
-		content: "Conteudo do primeiro post".to_string(),
+		title: "Erster Beitrag".to_string(),
+		content: "Inhalt des ersten Beitrags".to_string(),
 		authorId: "user-1".to_string(),
 	},
 	Post {
 		id: "post-2".to_string(),
-		title: "Segundo post".to_string(),
-		content: "Conteudo do segundo post".to_string(),
+		title: "Zweiter Beitrag".to_string(),
+		content: "Inhalt des zweiten Beitrags".to_string(),
 		authorId: "user-1".to_string(),
 	},
 ];
@@ -375,14 +375,14 @@ let comments_per_post = vec![
 	vec![
 		Comment {
 			id: "comment-1".to_string(),
-			text: "Muito bom".to_string(),
+			text: "Sehr gut".to_string(),
 			parentId: None,
 			postId: String::new(),
 			authorId: "user-2".to_string(),
 		},
 		Comment {
 			id: "comment-2".to_string(),
-			text: "Gostei do exemplo".to_string(),
+			text: "Mir gefiel das Beispiel".to_string(),
 			parentId: None,
 			postId: String::new(),
 			authorId: "user-3".to_string(),
@@ -391,7 +391,7 @@ let comments_per_post = vec![
 	vec![
 		Comment {
 			id: "comment-3".to_string(),
-			text: "Quero mais detalhes".to_string(),
+			text: "Ich möchte mehr Details".to_string(),
 			parentId: None,
 			postId: String::new(),
 			authorId: "user-2".to_string(),
@@ -423,14 +423,14 @@ insert_many::<Post>()
 	.values(vec![
 		Post {
 			id: "post-10".to_string(),
-			title: "Rust e Dinoco".to_string(),
-			content: "Post sobre produtividade".to_string(),
+			title: "Rust und Dinoco".to_string(),
+			content: "Beitrag über Produktivität".to_string(),
 			authorId: "user-1".to_string(),
 		},
 		Post {
 			id: "post-11".to_string(),
-			title: "Relações avançadas".to_string(),
-			content: "Post sobre includes e relacoes".to_string(),
+			title: "Erweiterte Beziehungen".to_string(),
+			content: "Beitrag über Includes und Beziehungen".to_string(),
 			authorId: "user-1".to_string(),
 		},
 	])

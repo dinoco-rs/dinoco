@@ -24,7 +24,7 @@
 									"items": []
 								},
 								{
-									"title": "우리는 어디에 위치하는가?",
+									"title": "우리는 어디에 위치하고 있나요?",
 									"items": []
 								}
 							]
@@ -36,8 +36,8 @@
 							"inPage": [
 								"첫 단계",
 								{
-									"title": "어떻게 작동하는가?",
-									"items": ["1. 스키마 및 연결 정의", "2. 마이그레이션 생성", "3. DinocoClient로 쿼리"]
+									"title": "어떻게 작동하나요?",
+									"items": ["1. 스키마와 연결 정의", "2. 마이그레이션 생성", "3. DinocoClient로 쿼리"]
 								},
 								{
 									"title": "다음 단계",
@@ -56,7 +56,7 @@
 									"items": []
 								},
 								{
-									"title": "연결 설정",
+									"title": "연결 구성",
 									"items": ["SQLite"]
 								},
 								{
@@ -76,12 +76,12 @@
 					"items": [
 						{
 							"shortName": "configuration",
-							"name": "설정",
+							"name": "구성",
 							"mdxPath": "v0.0.2/pt-br/orm/configuration.mdx",
 							"inPage": [
-								"설정",
+								"구성",
 								{
-									"title": "`config {}`에 포함되는 내용",
+									"title": "`config {}`에 들어가는 내용",
 									"items": []
 								},
 								{
@@ -97,11 +97,11 @@
 									"items": []
 								},
 								{
-									"title": "생성된 API에서 변경되는 내용",
+									"title": "생성된 API에서 변경되는 사항",
 									"items": []
 								},
 								{
-									"title": "이 블록을 편집할 때",
+									"title": "이 블록을 편집할 시기",
 									"items": []
 								},
 								{
@@ -125,7 +125,7 @@
 									"items": []
 								},
 								{
-									"title": "필드 구조",
+									"title": "필드의 구조",
 									"items": []
 								},
 								{
@@ -169,7 +169,7 @@
 									"items": []
 								},
 								{
-									"title": "새 모델을 생성할 때",
+									"title": "새 모델을 생성할 시기",
 									"items": []
 								}
 							]
@@ -181,7 +181,7 @@
 							"inPage": [
 								"열거형",
 								{
-									"title": "열거형이란 무엇인가",
+									"title": "열거형이란 무엇인가요?",
 									"items": []
 								},
 								{
@@ -189,7 +189,7 @@
 									"items": []
 								},
 								{
-									"title": "열거형을 사용할 때",
+									"title": "열거형을 사용할 시기",
 									"items": []
 								},
 								{
@@ -245,11 +245,11 @@
 									"items": []
 								},
 								{
-									"title": "중첩 관계를 사용한 insert_many 예시",
+									"title": "중첩된 관계를 사용한 insert_many 예시",
 									"items": []
 								},
 								{
-									"title": "중첩 연결을 사용한 insert_many 예시",
+									"title": "중첩된 연결을 사용한 insert_many 예시",
 									"items": []
 								},
 								{
@@ -261,16 +261,16 @@
 					]
 				},
 				{
-					"title": "Dinoco Core",
+					"title": "Dinoco 코어",
 					"items": [
 						{
 							"shortName": "derives",
-							"name": "Derives",
+							"name": "파생",
 							"mdxPath": "v0.0.2/pt-br/core/derives.mdx",
 							"inPage": [
-								"Derives",
+								"파생",
 								{
-									"title": "Dinoco의 derives란 무엇인가",
+									"title": "Dinoco의 파생이란 무엇인가요?",
 									"items": []
 								},
 								{
@@ -282,7 +282,7 @@
 									"items": []
 								},
 								{
-									"title": "#[insertable] 속성",
+									"title": "Atributo #[insertable]",
 									"items": []
 								},
 								{
@@ -298,7 +298,7 @@
 									"items": []
 								},
 								{
-									"title": "각각을 사용할 때",
+									"title": "각각을 사용할 시기",
 									"items": []
 								},
 								{
@@ -309,12 +309,12 @@
 						},
 						{
 							"shortName": "traits",
-							"name": "Traits",
+							"name": "트레이트",
 							"mdxPath": "v0.0.2/pt-br/core/traits.mdx",
 							"inPage": [
-								"Traits",
+								"트레이트",
 								{
-									"title": "Dinoco의 traits란 무엇인가",
+									"title": "Dinoco의 트레이트란 무엇인가요?",
 									"items": []
 								},
 								{
@@ -342,15 +342,15 @@
 									"items": []
 								},
 								{
-									"title": "모델에 의해 구현된 Traits",
+									"title": "모델에 의해 구현된 트레이트",
 									"items": []
 								},
 								{
-									"title": "traits와 derive를 함께 사용한 예시",
+									"title": "트레이트와 파생을 함께 사용한 예시",
 									"items": []
 								},
 								{
-									"title": "각각을 사용할 때",
+									"title": "각각을 사용할 시기",
 									"items": []
 								},
 								{
@@ -374,6 +374,7 @@
 									"title": "수행할 수 있는 작업",
 									"items": []
 								},
+
 								{
 									"title": "반환",
 									"items": []
@@ -395,7 +396,7 @@
 									"items": []
 								},
 								{
-									"title": "단순 포함 예시",
+									"title": "간단한 포함 예시",
 									"items": []
 								},
 								{
@@ -403,7 +404,7 @@
 									"items": []
 								},
 								{
-									"title": "중첩 포함 예시",
+									"title": "중첩된 포함 예시",
 									"items": []
 								},
 								{
@@ -411,15 +412,20 @@
 									"items": []
 								},
 								{
-									"title": "주요 데이터베이스에서 읽기 예시",
+									"title": "주 데이터베이스에서 읽기 예시",
 									"items": []
 								},
+
 								{
 									"title": "캐시 예시",
 									"items": []
 								},
 								{
 									"title": "캐시 및 만료 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
 									"items": []
 								},
 								{
@@ -438,6 +444,7 @@
 									"title": "수행할 수 있는 작업",
 									"items": []
 								},
+
 								{
 									"title": "반환",
 									"items": []
@@ -463,6 +470,10 @@
 									"items": []
 								},
 								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
 									"title": "다음 단계",
 									"items": []
 								}
@@ -478,12 +489,17 @@
 									"title": "수행할 수 있는 작업",
 									"items": []
 								},
+
 								{
 									"title": "반환",
 									"items": []
 								},
 								{
 									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
 									"items": []
 								},
 								{
@@ -510,20 +526,21 @@
 									"title": "수행할 수 있는 작업",
 									"items": []
 								},
+
 								{
 									"title": "Extend #[insertable] 예시",
 									"items": []
 								},
 								{
-									"title": "중첩 관계 예시",
+									"title": "중첩된 관계 예시",
 									"items": []
 								},
 								{
-									"title": "중첩 연결 예시",
+									"title": "중첩된 연결 예시",
 									"items": []
 								},
 								{
-									"title": "ArticleConnection 예시",
+									"title": "ArticleConnection",
 									"items": []
 								},
 								{
@@ -536,6 +553,10 @@
 								},
 								{
 									"title": "타입이 지정된 반환 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
 									"items": []
 								},
 								{
@@ -567,15 +588,19 @@
 									"items": []
 								},
 								{
-									"title": "중첩 관계 예시",
+									"title": "워커 예시",
 									"items": []
 								},
 								{
-									"title": "중첩 연결 예시",
+									"title": "중첩된 관계 예시",
 									"items": []
 								},
 								{
-									"title": "ArticleConnection 예시",
+									"title": "중첩된 연결 예시",
+									"items": []
+								},
+								{
+									"title": "ArticleConnection",
 									"items": []
 								},
 								{
@@ -623,6 +648,10 @@
 									"items": []
 								},
 								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
 									"title": "다음 단계",
 									"items": []
 								}
@@ -652,6 +681,10 @@
 								},
 								{
 									"title": "필터 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
 									"items": []
 								},
 								{
@@ -806,7 +839,7 @@
 						},
 						{
 							"shortName": "queues",
-							"name": "queues",
+							"name": "workers",
 							"mdxPath": "v0.0.2/pt-br/orm/queues.mdx",
 							"inPage": [
 								"queues",
@@ -827,7 +860,7 @@
 									"items": []
 								},
 								{
-									"title": "Redis 설정",
+									"title": "Redis 구성",
 									"items": []
 								},
 								{
@@ -863,7 +896,7 @@
 									"items": []
 								},
 								{
-									"title": "설정",
+									"title": "구성",
 									"items": []
 								}
 							]
@@ -1078,6 +1111,6 @@
 			]
 		}
 	],
-	"locale": "ko-kr",
+	"locale": "pt-br",
 	"name": "v0.0.2"
 }

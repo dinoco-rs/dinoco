@@ -8,15 +8,15 @@ Used to fetch at most one record.
 
 ## What you can do
 
-- `.select::<T>()`: changes the default projection to a custom projection.
+- `.select::<T>()`: swaps the default projection for a custom projection.
 - `.cond(...)`: adds filters to the search.
 - `.take(...)`: limits the maximum number of records considered.
 - `.skip(...)`: skips records before selecting the first result.
 - `.order_by(...)`: defines which record should be considered first.
-- `.includes(...)`: loads relationships along with the main item.
-- `.count(...)`: calculates relationship counters in the projection.
-- `.cache(...)`: tries to fetch from Redis first and only queries the database if the key does not exist. On a cache hit, the query logger records `CACHE HIT key=...`.
-- `.cache_with_expiration(...)`: performs the same flow, but saves with TTL in seconds.
+- `.includes(...)`: loads relations along with the main item.
+- `.count(...)`: calculates relation counters in the projection.
+- `.cache(...)`: tries to fetch from Redis first and only queries the database if the key does not exist. On cache hit, the query logger logs `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: does the same flow, but saves with TTL in seconds.
 - `.read_in_primary()`: forces reading from the primary database.
 - `.execute(&client)`: executes the query and returns at most one item.
 
@@ -60,7 +60,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## Example with relationship
+## Example with relation
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -87,6 +87,29 @@ let latest_user = dinoco::find_first::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Example with worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.first-read", |job| async move {
+        // First user read:
+        println!("First user read: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .enqueue("user.first-read")
+    .execute(&client)
+    .await?;
+```
+
+See more about workers in [**`queues`**](/v0.0.2/orm/queues).
 
 ## Example with cache
 

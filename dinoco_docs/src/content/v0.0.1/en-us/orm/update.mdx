@@ -41,7 +41,7 @@ dinoco::update::<User>()
     .values(User {
         id: 10,
         email: "novo@acme.com".to_string(),
-        name: "Novo Nome".to_string(),
+        name: "New Name".to_string(),
     })
     .execute(&client)
     .await?;

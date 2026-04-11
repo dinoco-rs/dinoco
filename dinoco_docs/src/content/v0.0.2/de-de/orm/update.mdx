@@ -10,8 +10,8 @@ Wird verwendet, um gefilterte Datensätze zu aktualisieren.
 
 - `.cond(...)`: definiert, welche Datensätze aktualisiert werden sollen.
 - `.values(item)`: gibt die neuen Werte des Datensatzes an.
-- `.connect(...)`: erstellt unterstützte Schreibbeziehungen.
-- `.disconnect(...)`: entfernt unterstützte Schreibbeziehungen.
+- `.connect(...)`: erstellt unterstützte Beziehungsverknüpfungen zum Schreiben.
+- `.disconnect(...)`: entfernt unterstützte Beziehungsverknüpfungen zum Schreiben.
 - `.returning::<T>()`: gibt die aktualisierten Datensätze in einer typisierten Projektion zurück.
 - `.execute(&client)`: führt die Aktualisierung in der Datenbank aus.
 
@@ -31,7 +31,7 @@ DinocoResult<Vec<T>>
 
 Hinweis:
 
-- `update().returning()` unterstützt keine Schreibbeziehungen mit `.connect(...)` oder `.disconnect(...)`.
+- `update().returning()` unterstützt keine Beziehungs-Schreibvorgänge mit `.connect(...)` oder `.disconnect(...)`.
 
 ## Beispiel für die Aktualisierung von Feldern
 
@@ -41,7 +41,7 @@ dinoco::update::<User>()
     .values(User {
         id: 10,
         email: "novo@acme.com".to_string(),
-        name: "Novo Nome".to_string(),
+        name: "Neuer Name".to_string(),
     })
     .execute(&client)
     .await?;
@@ -49,7 +49,7 @@ dinoco::update::<User>()
 
 ## Beispiel mit connect(...)
 
-Wird verwendet, um unterstützte Schreibbeziehungen zu verbinden, normalerweise Many-to-Many.
+Wird verwendet, um unterstützte Beziehungen zum Schreiben zu verbinden, normalerweise Many-to-Many.
 
 ```rust
 dinoco::update::<User>()
@@ -70,6 +70,33 @@ dinoco::update::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("Benutzer aktualisiert: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "Neuer Name".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
 
 ## Verfügbare Filter in connect und disconnect
 

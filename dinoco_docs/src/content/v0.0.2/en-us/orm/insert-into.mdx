@@ -57,7 +57,7 @@ dinoco::insert_into::<User>()
 
 ## Example with nested relationship
 
-Use an `Extend` payload with `#[insertable]` to create the parent and also create the related record in the same flow.
+Use an `Extend` payload with `#[insertable]` to create the parent and also create the related item in the same flow.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -182,8 +182,30 @@ let created = dinoco::insert_into::<User>()
     .await?;
 ```
 
+## Example with worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("User created: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+Learn more about workers in [**`queues`**](/v0.0.2/orm/queues).
+
 ## Next steps
 
 - [**Derives**](/v0.0.2/core/derives): understand when to use `Rowable`, `Extend`, and `#[insertable]`.
 - [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): batch insertion.
-- [**`update::<M>()`**](/v0.0.2/orm/update): updating records.
+- [**`update::<M>()`**](/v0.0.2/orm/update): record update.

@@ -2,7 +2,7 @@ export const title = 'find_first';
 
 # find_first
 
-Usato per cercare al massimo un record.
+Utilizzato per recuperare al massimo un record.
 
 ---
 
@@ -88,9 +88,31 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
+## Esempio con worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.first-read", |job| async move {
+        println!("Primo utente letto: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .enqueue("user.first-read")
+    .execute(&client)
+    .await?;
+```
+
+Scopri di più sui worker in [**`queues`**](/v0.0.2/orm/queues).
+
 ## Esempio con cache
 
-Questo metodo esiste solo quando lo schema ha `redis` configurato.
+Questo metodo esiste solo se lo schema ha `redis` configurato.
 
 ```rust
 use database::*;
@@ -104,7 +126,7 @@ let user = dinoco::find_first::<User>()
 
 ## Esempio con cache
 
-Questo metodo esiste solo quando lo schema ha `redis` configurato.
+Questo metodo esiste solo se lo schema ha `redis` configurato.
 
 ```rust
 use database::*;

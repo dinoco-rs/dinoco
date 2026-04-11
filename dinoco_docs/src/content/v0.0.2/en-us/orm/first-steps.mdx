@@ -18,9 +18,9 @@ After choosing the database and all necessary configurations, the `dinoco` folde
 
 This folder will contain:
 
--   **Migrations:** The history of changes to your database.
--   **Schema:** The central definition of your data structure.
--   **Models:** The typed representations for use in your Rust code.
+- **Migrations:** The history of changes to your database.
+- **Schema:** The central definition of your data structure.
+- **Models:** The typed representations for use in your Rust code.
 
 ## How does it work?
 
@@ -115,7 +115,7 @@ async fn main() -> dinoco::DinocoResult<()> {
             id: 0,
             email: "bia@dinoco.rs".to_string(),
             name: Some("Bia".to_string()),
-            posts: vec![Post { id: 0, title: "My first post".to_string(), published: true, authorId: None }],
+            posts: vec![Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None }],
         })
         .execute(&client)
         .await?;
@@ -142,7 +142,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // 		email: "bia@dinoco.rs",
     // 		posts: [
     // 			Post {
-    // 				title: "My first post",
+    // 				title: "Meu primeiro post",
     // 				published: true,
     // 			},
     // 		],
@@ -155,5 +155,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## Next steps
 
--   [**Dinoco schema**](/v0.0.2/orm/introduction-dinoco): Understand the structure and purpose of Dinoco better.
--   [**find_many**](/v0.0.2/orm/find-many): See filters, includes, and caching in list queries.
+- [**Dinoco schema**](/v0.0.2/orm/introduction-dinoco): Understand the structure and purpose of Dinoco better.
+- [**find_many**](/v0.0.2/orm/find-many): see filters, includes, and cache in list queries.

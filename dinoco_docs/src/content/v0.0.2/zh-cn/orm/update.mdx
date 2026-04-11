@@ -8,14 +8,14 @@ export const title = "update";
 
 ## 您可以做什么
 
-- `.cond(...)`: 定义将要更新的记录。
+- `.cond(...)`: 定义哪些记录将被更新。
 - `.values(item)`: 指定记录的新值。
 - `.connect(...)`: 创建支持写入的关系链接。
 - `.disconnect(...)`: 移除支持写入的关系链接。
 - `.returning::<T>()`: 以类型化投影返回更新后的记录。
 - `.execute(&client)`: 在数据库中执行更新。
 
-## 返回
+## 返回值
 
 如果没有 `.returning::<T>()`，返回值为：
 
@@ -23,7 +23,7 @@ export const title = "update";
 DinocoResult<()>
 ```
 
-如果使用 `.returning::<T>()`，返回值为：
+如果使用 `.returning::<T>()`，返回值将是：
 
 ```rust
 DinocoResult<Vec<T>>
@@ -71,6 +71,33 @@ dinoco::update::<User>()
     .await?;
 ```
 
+## worker 示例
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("用户已更新: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "新名称".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+在 [**`queues`**](/v0.0.2/orm/queues) 中查看更多关于 worker 的信息。
+
 ## connect 和 disconnect 中可用的过滤器
 
 - `eq`
@@ -90,4 +117,4 @@ dinoco::update::<User>()
 ## 下一步
 
 - [**`update_many::<M>()`**](/v0.0.1/orm/update-many): 批量更新。
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 带返回值的原子更新。
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 带有返回值的原子更新。

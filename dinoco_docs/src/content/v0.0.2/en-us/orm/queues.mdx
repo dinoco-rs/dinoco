@@ -2,12 +2,13 @@ export const title = 'queues';
 
 # queues
 
-Dinoco's queue system allows publishing asynchronous events from `insert`, `find`, and `update`, storing in `Redis` only the necessary data to re-hydrate the record when the worker executes.
+Dinoco's queue system allows publishing asynchronous events from `insert`, `find`, and `update`, storing only the necessary data in `Redis` to re-hydrate the record when the worker executes.
 
 ## What you can do
 
-- Allow chaining .enqueue(...), .enqueue_in(...) and .enqueue_at(...) on all client methods, except for delete operations.
+- Allow chaining of .enqueue(...), .enqueue_in(...) and .enqueue_at(...) on all client methods, except delete operations.
 - Process jobs with `workers().on::<Model>(... )`.
+- Load projections with relations in the worker using `workers().on_with_relation::<Model, Projection>(... )`.
 - Reload the latest data before the handler runs.
 - Automatically ignores jobs whose record no longer exists.
 
@@ -22,11 +23,11 @@ When you use `enqueue`, Dinoco:
 
 If the record no longer exists at the time of the fetch, the handler does not run, and the job is removed from the queue.
 
-## Enqueueing Methods
+## Enqueueing methods
 
 - `.enqueue(event)`: schedules for immediate execution.
 - `.enqueue_in(event, delay_ms)`: schedules with a delay in milliseconds.
-- `.enqueue_at(event, date_utc)`: schedules for a specific date in `chrono::DateTime<Utc>`.
+- `.enqueue_at(event, datetime_utc)`: schedules for a specific date in `chrono::DateTime<Utc>`.
 
 ```rust
 use database::*;
@@ -61,16 +62,34 @@ Use `workers()` to register asynchronous handlers. The worker context exposes:
 - `retry_in()` and `retry_at()`: same idea as `enqueue_in` and `enqueue_at`.
 - `.run().await?`: starts the worker in the background and returns immediately with a `JoinHandle`.
 
-When calling `run`, Dinoco creates a new `DinocoClient` exclusive to the workers, with its own connection pool. This way, the queue loop does not reuse the same pool as the main application.
+When calling `run`, Dinoco creates a new `DinocoClient` exclusive for the workers, with its own connection pool. This way, the queue loop does not reuse the same pool as the main application.
 
 ```rust
 use database::*;
 
 let _worker = workers()
     .on::<User, _, _>("user.created", |job| async move {
-        println!("Processing {}", job.data.name);
+        println!("Processing {}", job.data.name); // Processing
         job.success()
     })
+    .run()
+    .await?;
+```
+
+If you need a projection with relations, use `on_with_relation`. Dinoco reloads the record and applies the include tree before the handler runs.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{} has {} posts", job.data.name, job.data.posts.len()); // has posts
+            job.success()
+        },
+    )
     .run()
     .await?;
 ```
@@ -120,7 +139,7 @@ dir /data
 no-appendfsync-on-rewrite yes
 ```
 
-## Notes
+## Observations
 
 - `delete` and `delete_many` do not support `enqueue`.
 - The worker is fully asynchronous and uses `tokio` under the hood.

@@ -14,7 +14,7 @@ export const title = 'insert_into';
 
 ## 使用 Extend #[insertable] 的示例
 
-当您希望 `.values(...)` 接受包含新关系和现有连接的更丰富的有效载荷时，请将 `#[insertable]` 与 `#[derive(Extend)]` 一起使用。Dinoco 会首先插入父级，然后递归处理所有内容。
+当您希望 `.values(...)` 接受包含新关系和现有连接的更丰富负载时，请将 `#[insertable]` 与 `#[derive(Extend)]` 一起使用。Dinoco 会首先插入父级，然后递归处理所有内容。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -57,7 +57,7 @@ dinoco::insert_into::<User>()
 
 ## 嵌套关系的示例
 
-使用带有 `#[insertable]` 的 `Extend` 有效载荷来创建父级，并在同一流程中创建相关项。
+使用带有 `#[insertable]` 的 Extend 负载来创建父级，并在同一流程中创建相关项。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -87,7 +87,7 @@ dinoco::insert_into::<User>()
 
 ## 嵌套连接的示例
 
-当关系指向已存在的记录时，代码生成器会生成一个像 `ArticleConnection` 这样的枚举，用于有效载荷中。
+当关系指向已存在的记录时，代码生成器会生成一个像 `ArticleConnection` 这样的枚举，用于负载中。
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## 返回值
 
-如果没有 `.returning::<T>()`，返回值是：
+如果没有 `.returning::<T>()`，返回值为：
 
 ```rust
 DinocoResult<()>
 ```
 
-有了 `.returning::<T>()`，返回值变为：
+有了 `.returning::<T>()`，返回值为：
 
 ```rust
 DinocoResult<T>
@@ -182,8 +182,30 @@ let created = dinoco::insert_into::<User>()
     .await?;
 ```
 
-## 下一步
+## Worker 示例
 
-- [**Derives**](/v0.0.2/core/derives): 了解何时使用 `Rowable`、`Extend` 和 `#[insertable]`。
-- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): 批量插入。
-- [**`update::<M>()`**](/v0.0.2/orm/update): 记录更新。
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("用户已创建: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "马修斯".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+在 [**`queues`**](/v0.0.2/orm/queues) 中了解更多关于 worker 的信息。
+
+## 后续步骤
+
+- [**派生**](/v0.0.2/core/derives)：了解何时使用 `Rowable`、`Extend` 和 `#[insertable]`。
+- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many)：批量插入。
+- [**`update::<M>()`**](/v0.0.2/orm/update)：更新记录。

@@ -40,7 +40,7 @@ struct PostWithComments {
 dinoco::insert_into::<User>()
     .values(UserWithPosts {
         id: 1,
-        name: "Anna".to_string(),
+        name: "Ana".to_string(),
         posts: vec![
             PostWithComments {
                 id: 10,
@@ -77,7 +77,7 @@ dinoco::insert_into::<User>()
         role: Role::USER,
         profile: Some(Profile {
             id: "profile-1".to_string(),
-            bio: Some("Ingénieure logicielle".to_string()),
+            bio: Some("Ingénieure en logiciel".to_string()),
             userId: String::new(),
         }),
     })
@@ -102,7 +102,7 @@ struct ArticleWithLabels {
 dinoco::insert_into::<Article>()
     .values(ArticleWithLabels {
         id: "article-10".into(),
-        title: "Connect Existing".into(),
+        title: "Connecter Existant".into(),
         labels: vec![ArticleConnection::Label("label-10".into())],
     })
     .execute(&client)
@@ -125,7 +125,7 @@ struct ArticleWithLabels {
 
 let value = ArticleWithLabels {
     id: "article-20".into(),
-    title: "Connect Existing".into(),
+    title: "Connecter Existant".into(),
     labels: vec![
         ArticleConnection::Label("label-10".into()),
         ArticleConnection::Label("label-11".into()),
@@ -158,8 +158,8 @@ DinocoResult<T>
 dinoco::insert_into::<User>()
     .values(User {
         id: "usr_1".to_string(),
-        email: "anna@acme.com".to_string(),
-        name: "Anna".to_string(),
+        email: "ana@acme.com".to_string(),
+        name: "Ana".to_string(),
     })
     .execute(&client)
     .await?;
@@ -176,14 +176,36 @@ struct UserSummary {
 }
 
 let created = dinoco::insert_into::<User>()
-    .values(User { id: 1, name: "Mathieu".to_string() })
+    .values(User { id: 1, name: "Matheus".to_string() })
     .returning::<UserSummary>()
     .execute(&client)
     .await?;
 ```
 
+## Exemple avec worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("Utilisateur créé : {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+Voir plus sur les workers dans [**`queues`**](/v0.0.2/orm/queues).
+
 ## Prochaines étapes
 
 - [**Derives**](/v0.0.2/core/derives): comprenez quand utiliser `Rowable`, `Extend` et `#[insertable]`.
 - [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): insertion par lot.
-- [**`update::<M>()`**](/v0.0.2/orm/update): mise à jour des enregistrements.
+- [**`update::<M>()`**](/v0.0.2/orm/update): mise à jour d'enregistrements.

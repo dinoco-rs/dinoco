@@ -1,5 +1,5 @@
 {
-	"description": "Документация версии v0.0.2 Dinoco.",
+	"description": "Документация Dinoco версии v0.0.2.",
 	"groups": [
 		{
 			"icon": "database",
@@ -72,7 +72,7 @@
 					]
 				},
 				{
-					"title": "Dinoco schema",
+					"title": "Схема Dinoco",
 					"items": [
 						{
 							"shortName": "configuration",
@@ -150,7 +150,7 @@
 								},
 								{
 									"title": "Пример поиска пользователей с помощью API Dinoco",
-									"items": ["Найти одну запись", "Найти несколько записей"]
+									"items": ["Поиск одной записи", "Поиск нескольких записей"]
 								},
 								{
 									"title": "Пример создания пользователя с помощью API Dinoco",
@@ -204,10 +204,10 @@
 						},
 						{
 							"shortName": "relations",
-							"name": "Связи",
+							"name": "Отношения",
 							"mdxPath": "v0.0.2/ru-ru/orm/relations.mdx",
 							"inPage": [
-								"Связи",
+								"Отношения",
 								{
 									"title": "@relation(...)",
 									"items": []
@@ -217,15 +217,15 @@
 									"items": []
 								},
 								{
-									"title": "One to many",
+									"title": "Один ко многим",
 									"items": []
 								},
 								{
-									"title": "Many to many",
+									"title": "Многие ко многим",
 									"items": []
 								},
 								{
-									"title": "Self relation",
+									"title": "Самоотношение",
 									"items": []
 								},
 								{
@@ -233,23 +233,23 @@
 									"items": []
 								},
 								{
-									"title": "Справочная схема для примеров",
+									"title": "Схема-ссылка для примеров",
 									"items": []
 								},
 								{
-									"title": "Пример поиска со всеми возможными связями от User",
+									"title": "Пример поиска со всеми возможными отношениями от User",
 									"items": []
 								},
 								{
-									"title": "Пример вставки со связью, использующей User и Profile",
+									"title": "Пример вставки с отношением, использующим User и Profile",
 									"items": []
 								},
 								{
-									"title": "Пример insert_many с вложенными связями",
+									"title": "Пример insert_many с вложенными отношениями",
 									"items": []
 								},
 								{
-									"title": "Пример insert_many с вложенными подключениями",
+									"title": "Пример insert_many с вложенными соединениями",
 									"items": []
 								},
 								{
@@ -318,27 +318,27 @@
 									"items": []
 								},
 								{
-									"title": "Trait Model",
+									"title": "Трейт Model",
 									"items": []
 								},
 								{
-									"title": "Trait Projection",
+									"title": "Трейт Projection",
 									"items": []
 								},
 								{
-									"title": "Trait InsertModel",
+									"title": "Трейт InsertModel",
 									"items": []
 								},
 								{
-									"title": "Trait UpdateModel",
+									"title": "Трейт UpdateModel",
 									"items": []
 								},
 								{
-									"title": "Trait InsertPayload",
+									"title": "Трейт InsertPayload",
 									"items": []
 								},
 								{
-									"title": "Trait InsertConnectionPayload",
+									"title": "Трейт InsertConnectionPayload",
 									"items": []
 								},
 								{
@@ -362,7 +362,7 @@
 					]
 				},
 				{
-					"title": "Dinoco client",
+					"title": "Клиент Dinoco",
 					"items": [
 						{
 							"shortName": "find-many",
@@ -392,23 +392,23 @@
 									"items": []
 								},
 								{
-									"title": "Пример пользовательского выбора",
+									"title": "Пример пользовательского select",
 									"items": []
 								},
 								{
-									"title": "Пример с простым включением",
+									"title": "Пример с простым include",
 									"items": []
 								},
 								{
-									"title": "Пример с отфильтрованным включением",
+									"title": "Пример с отфильтрованным include",
 									"items": []
 								},
 								{
-									"title": "Пример с вложенным включением",
+									"title": "Пример с вложенным include",
 									"items": []
 								},
 								{
-									"title": "Пример с подсчетом связей",
+									"title": "Пример с подсчетом отношения",
 									"items": []
 								},
 								{
@@ -422,6 +422,10 @@
 								},
 								{
 									"title": "Пример с кешем и истечением срока действия",
+									"items": []
+								},
+								{
+									"title": "Пример с воркером",
 									"items": []
 								},
 								{
@@ -450,11 +454,11 @@
 									"items": []
 								},
 								{
-									"title": "Пример с выбором",
+									"title": "Пример с select",
 									"items": []
 								},
 								{
-									"title": "Пример со связью",
+									"title": "Пример с отношением",
 									"items": []
 								},
 								{
@@ -463,6 +467,10 @@
 								},
 								{
 									"title": "Пример с кешем",
+									"items": []
+								},
+								{
+									"title": "Пример с воркером",
 									"items": []
 								},
 								{
@@ -488,6 +496,10 @@
 								},
 								{
 									"title": "Базовый пример",
+									"items": []
+								},
+								{
+									"title": "Пример с воркером",
 									"items": []
 								},
 								{
@@ -520,11 +532,11 @@
 									"items": []
 								},
 								{
-									"title": "Пример с вложенной связью",
+									"title": "Пример с вложенным отношением",
 									"items": []
 								},
 								{
-									"title": "Пример с вложенным подключением",
+									"title": "Пример с вложенным соединением",
 									"items": []
 								},
 								{
@@ -541,6 +553,10 @@
 								},
 								{
 									"title": "Пример с типизированным возвращаемым значением",
+									"items": []
+								},
+								{
+									"title": "Пример с воркером",
 									"items": []
 								},
 								{
@@ -572,11 +588,15 @@
 									"items": []
 								},
 								{
-									"title": "Пример с вложенными связями",
+									"title": "Пример с воркером",
 									"items": []
 								},
 								{
-									"title": "Пример с вложенными подключениями",
+									"title": "Пример с вложенными отношениями",
+									"items": []
+								},
+								{
+									"title": "Пример с вложенными соединениями",
 									"items": []
 								},
 								{
@@ -624,7 +644,11 @@
 									"items": []
 								},
 								{
-									"title": "Фильтры, доступные в connect и disconnect",
+									"title": "Доступные фильтры в connect и disconnect",
+									"items": []
+								},
+								{
+									"title": "Пример с воркером",
 									"items": []
 								},
 								{
@@ -657,6 +681,10 @@
 								},
 								{
 									"title": "Пример с фильтром",
+									"items": []
+								},
+								{
+									"title": "Пример с воркером",
 									"items": []
 								},
 								{
@@ -811,10 +839,10 @@
 						},
 						{
 							"shortName": "queues",
-							"name": "Очереди",
+							"name": "workers",
 							"mdxPath": "v0.0.2/ru-ru/orm/queues.mdx",
 							"inPage": [
-								"Очереди",
+								"queues",
 								{
 									"title": "Что вы можете сделать",
 									"items": []

@@ -2,7 +2,7 @@ export const title = 'cache()';
 
 # cache
 
-`client.cache()` expose un accès direct à Redis configuré dans le `DinocoClient`, sans dépendre des helpers de cache couplés à `find_first` et `find_many`.
+`client.cache()` expose un accès direct à Redis configuré dans le `DinocoClient`, sans dépendre des helpers de cache couplés dans `find_first` et `find_many`.
 
 ## Ce que vous pouvez faire
 
@@ -13,11 +13,11 @@ export const title = 'cache()';
 
 ## Quand l'utiliser
 
-Utilisez `client.cache()` lorsque vous voulez :
+Utilisez `client.cache()` lorsque vous souhaitez :
 
 - monter un cache manuel
-- invalider des clés après des écritures
-- partager des payloads entre plusieurs requêtes
+- invalider des clés après des opérations d'écriture
+- partager des charges utiles entre plusieurs requêtes
 - stocker des structures prêtes pour une lecture rapide
 
 ## Comment ça marche
@@ -100,7 +100,7 @@ Exemples courants :
 
 ## Remarques
 
-- `client.cache()` est un cache manuel ; il n'exécute pas de requête sur la base de données.
+- `client.cache()` est un cache manuel ; il n'exécute pas de requête en base de données.
 - Pour un cache intégré aux requêtes, utilisez `find_first().cache(...)` et `find_many().cache(...)`.
 - Vous pouvez appeler `client.cache()` autant de fois que vous le souhaitez ; il ne crée qu'un wrapper léger.
 

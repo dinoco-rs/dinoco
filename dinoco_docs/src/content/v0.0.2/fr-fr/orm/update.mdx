@@ -2,14 +2,14 @@ export const title = "update";
 
 # update
 
-Utilisé pour mettre à jour les enregistrements filtrés.
+Utilisé pour mettre à jour des enregistrements filtrés.
 
 ---
 
 ## Ce que vous pouvez faire
 
 - `.cond(...)`: définit quels enregistrements seront mis à jour.
-- `.values(item)`: indique les nouvelles valeurs de l'enregistrement.
+- `.values(item)`: spécifie les nouvelles valeurs de l'enregistrement.
 - `.connect(...)`: crée des liens de relation pris en charge pour l'écriture.
 - `.disconnect(...)`: supprime les liens de relation pris en charge pour l'écriture.
 - `.returning::<T>()`: renvoie les enregistrements mis à jour dans une projection typée.
@@ -29,7 +29,7 @@ Avec `.returning::<T>()`, le retour devient :
 DinocoResult<Vec<T>>
 ```
 
-Remarque :
+Observation :
 
 - `update().returning()` ne prend pas en charge les écritures de relation avec `.connect(...)` ou `.disconnect(...)`.
 
@@ -40,8 +40,8 @@ dinoco::update::<User>()
     .cond(|w| w.id.eq(10))
     .values(User {
         id: 10,
-        email: "nouveau@acme.com".to_string(),
-        name: "Nouveau Nom".to_string(),
+        email: "novo@acme.com".to_string(),
+        name: "Novo Nome".to_string(),
     })
     .execute(&client)
     .await?;
@@ -71,6 +71,33 @@ dinoco::update::<User>()
     .await?;
 ```
 
+## Exemple avec worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("Utilisateur mis à jour : {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "Novo Nome".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+Voir plus sur les workers dans [**`queues`**](/v0.0.2/orm/queues).
+
 ## Filtres disponibles dans connect et disconnect
 
 - `eq`
@@ -89,5 +116,5 @@ dinoco::update::<User>()
 
 ## Prochaines étapes
 
-- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): mise à jour par lot.
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): mise à jour par lots.
 - [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): mise à jour atomique avec retour.

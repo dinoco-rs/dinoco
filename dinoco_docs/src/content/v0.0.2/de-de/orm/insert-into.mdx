@@ -2,7 +2,7 @@ export const title = 'insert_into';
 
 # insert_into
 
-Wird verwendet, um einen Datensatz einzufügen.
+Wird zum Einfügen eines Datensatzes verwendet.
 
 ---
 
@@ -40,7 +40,7 @@ struct PostWithComments {
 dinoco::insert_into::<User>()
     .values(UserWithPosts {
         id: 1,
-        name: "Anna".to_string(),
+        name: "Ana".to_string(),
         posts: vec![
             PostWithComments {
                 id: 10,
@@ -57,7 +57,7 @@ dinoco::insert_into::<User>()
 
 ## Beispiel mit verschachtelter Beziehung
 
-Verwenden Sie eine `Extend`-Nutzlast mit `#[insertable]`, um das übergeordnete Element zu erstellen und auch das zugehörige Element im selben Fluss zu erstellen.
+Verwenden Sie eine Extend-Nutzlast mit `#[insertable]`, um das übergeordnete Element zu erstellen und auch das zugehörige Element im selben Fluss zu erstellen.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -72,11 +72,11 @@ struct UserWithProfile {
 
 dinoco::insert_into::<User>()
     .values(UserWithProfile {
-        id: "benutzer-1".to_string(),
-        username: "pia".to_string(),
+        id: "user-1".to_string(),
+        username: "bia".to_string(),
         role: Role::USER,
         profile: Some(Profile {
-            id: "profil-1".to_string(),
+            id: "profile-1".to_string(),
             bio: Some("Software-Ingenieurin".to_string()),
             userId: String::new(),
         }),
@@ -101,7 +101,7 @@ struct ArticleWithLabels {
 
 dinoco::insert_into::<Article>()
     .values(ArticleWithLabels {
-        id: "artikel-10".into(),
+        id: "article-10".into(),
         title: "Bestehende verbinden".into(),
         labels: vec![ArticleConnection::Label("label-10".into())],
     })
@@ -124,7 +124,7 @@ struct ArticleWithLabels {
 }
 
 let value = ArticleWithLabels {
-    id: "artikel-20".into(),
+    id: "article-20".into(),
     title: "Bestehende verbinden".into(),
     labels: vec![
         ArticleConnection::Label("label-10".into()),
@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## Rückgabe
 
-Ohne `.returning::<T>()` ist die Rückgabe:
+Ohne `.returning::<T>()` ist der Rückgabewert:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::<T>()` wird die Rückgabe:
+Mit `.returning::<T>()` wird der Rückgabewert zu:
 
 ```rust
 DinocoResult<T>
@@ -157,9 +157,9 @@ DinocoResult<T>
 ```rust
 dinoco::insert_into::<User>()
     .values(User {
-        id: "benutzer_1".to_string(),
-        email: "anna@acme.com".to_string(),
-        name: "Anna".to_string(),
+        id: "usr_1".to_string(),
+        email: "ana@acme.com".to_string(),
+        name: "Ana".to_string(),
     })
     .execute(&client)
     .await?;
@@ -176,14 +176,36 @@ struct UserSummary {
 }
 
 let created = dinoco::insert_into::<User>()
-    .values(User { id: 1, name: "Matthias".to_string() })
+    .values(User { id: 1, name: "Matheus".to_string() })
     .returning::<UserSummary>()
     .execute(&client)
     .await?;
 ```
 
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("Benutzer erstellt: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
+
 ## Nächste Schritte
 
-- [**Derives**](/v0.0.2/core/derives): verstehen Sie, wann `Rowable`, `Extend` und `#[insertable]` verwendet werden sollen.
+- [**Derives**](/v0.0.2/core/derives): Verstehen Sie, wann `Rowable`, `Extend` und `#[insertable]` verwendet werden.
 - [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): Batch-Einfügung.
 - [**`update::<M>()`**](/v0.0.2/orm/update): Aktualisierung von Datensätzen.

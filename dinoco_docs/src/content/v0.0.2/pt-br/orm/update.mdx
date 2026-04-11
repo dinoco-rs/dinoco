@@ -71,6 +71,33 @@ dinoco::update::<User>()
     .await?;
 ```
 
+## Exemplo com worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("Usuário atualizado: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "Novo Nome".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
+
 ## Filtros disponíveis em connect e disconnect
 
 - `eq`
@@ -91,4 +118,3 @@ dinoco::update::<User>()
 
 - [**`update_many::<M>()`**](/v0.0.1/orm/update-many): atualização em lote.
 - [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): update atômico com retorno.
-

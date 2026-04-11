@@ -14,7 +14,7 @@ export const title = 'insert_into';
 
 ## Пример с Extend #[insertable]
 
-Используйте `#[insertable]` вместе с `#[derive(Extend)]`, когда вы хотите, чтобы `.values(...)` принимал более сложную полезную нагрузку с новыми отношениями и существующими связями. Dinoco сначала вставляет родителя, а затем рекурсивно обрабатывает все остальное.
+Используйте `#[insertable]` вместе с `#[derive(Extend)]`, когда вы хотите, чтобы `.values(...)` принимал более богатую полезную нагрузку с новыми отношениями и существующими связями. Dinoco сначала вставляет родителя, а затем рекурсивно обрабатывает все остальное.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -40,7 +40,7 @@ struct PostWithComments {
 dinoco::insert_into::<User>()
     .values(UserWithPosts {
         id: 1,
-        name: "Анна".to_string(),
+        name: "Ана".to_string(),
         posts: vec![
             PostWithComments {
                 id: 10,
@@ -57,7 +57,7 @@ dinoco::insert_into::<User>()
 
 ## Пример с вложенным отношением
 
-Используйте полезную нагрузку `Extend` с `#[insertable]` для создания родителя, а также для создания связанного элемента в одном потоке.
+Используйте полезную нагрузку `Extend` с `#[insertable]`, чтобы создать родителя, а также создать связанный элемент в том же потоке.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -73,7 +73,7 @@ struct UserWithProfile {
 dinoco::insert_into::<User>()
     .values(UserWithProfile {
         id: "user-1".to_string(),
-        username: "bia".to_string(),
+        username: "биа".to_string(),
         role: Role::USER,
         profile: Some(Profile {
             id: "profile-1".to_string(),
@@ -87,7 +87,7 @@ dinoco::insert_into::<User>()
 
 ## Пример с вложенным подключением
 
-Когда отношение указывает на уже существующие записи, кодогенератор создает перечисление, такое как `ArticleConnection`, для использования внутри полезной нагрузки.
+Когда отношение указывает на уже существующие записи, codegen генерирует перечисление, такое как `ArticleConnection`, для использования внутри полезной нагрузки.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -102,7 +102,7 @@ struct ArticleWithLabels {
 dinoco::insert_into::<Article>()
     .values(ArticleWithLabels {
         id: "article-10".into(),
-        title: "Подключение существующего".into(),
+        title: "Подключить существующее".into(),
         labels: vec![ArticleConnection::Label("label-10".into())],
     })
     .execute(&client)
@@ -125,7 +125,7 @@ struct ArticleWithLabels {
 
 let value = ArticleWithLabels {
     id: "article-20".into(),
-    title: "Подключение существующего".into(),
+    title: "Подключить существующее".into(),
     labels: vec![
         ArticleConnection::Label("label-10".into()),
         ArticleConnection::Label("label-11".into()),
@@ -159,7 +159,7 @@ dinoco::insert_into::<User>()
     .values(User {
         id: "usr_1".to_string(),
         email: "ana@acme.com".to_string(),
-        name: "Анна".to_string(),
+        name: "Ана".to_string(),
     })
     .execute(&client)
     .await?;
@@ -176,14 +176,36 @@ struct UserSummary {
 }
 
 let created = dinoco::insert_into::<User>()
-    .values(User { id: 1, name: "Матеус".to_string() })
+    .values(User { id: 1, name: "Матвей".to_string() })
     .returning::<UserSummary>()
     .execute(&client)
     .await?;
 ```
 
+## Пример с воркером
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("Пользователь создан: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Матвей".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+Подробнее о воркерах см. в [**`queues`**](/v0.0.2/orm/queues).
+
 ## Следующие шаги
 
-- [**Derives**](/v0.0.2/core/derives): поймите, когда использовать `Rowable`, `Extend` и `#[insertable]`.
+- [**Derives**](/v0.0.2/core/derives): узнайте, когда использовать `Rowable`, `Extend` и `#[insertable]`.
 - [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): пакетная вставка.
 - [**`update::<M>()`**](/v0.0.2/orm/update): обновление записей.

@@ -2,15 +2,15 @@ export const title = 'insert_many';
 
 # insert_many
 
-Utilisé pour l'insertion en lot.
+Utilisé pour l'insertion par lots.
 
 ---
 
 ## Ce que vous pouvez faire
 
-- `.values(Vec<M>)`: définit les enregistrements qui seront insérés en lot.
-- `.returning::<T>()`: modifie le retour en une liste typée des éléments insérés.
-- `.execute(&client)`: exécute l'opération en lot.
+- `.values(Vec<M>)`: définit les enregistrements qui seront insérés par lots.
+- `.returning::<T>()`: modifie le retour pour une liste typée des éléments insérés.
+- `.execute(&client)`: exécute l'opération par lots.
 
 ## Retour
 
@@ -50,6 +50,31 @@ let created = dinoco::insert_many::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Exemple avec worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
+        println!("Utilisateurs créés dans le lot : {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .enqueue("user.batch-created")
+    .execute(&client)
+    .await?;
+```
+
+Voir plus sur les workers dans [**`queues`**](/v0.0.2/orm/queues).
 
 ## Exemple avec relations imbriquées
 
@@ -196,7 +221,7 @@ dinoco::insert_many::<Article>()
 - `#[insertable]` sur une struct `Extend` permet à `.values(...)` d'insérer de nouvelles relations de manière récursive.
 - Pour les connexions avec des enregistrements existants, utilisez l'énumération `ModelConnection` générée par le codegen.
 - Les nouvelles relations peuvent utiliser `Vec<ModelRelacionado>` ou d'autres payloads `Extend` marqués avec `#[insertable]`.
-- Les connexions existantes fonctionnent bien dans les scénarios many-to-many et aussi dans les flux supportés par le modèle généré.
+- Les connexions existantes fonctionnent bien dans les scénarios many-to-many et également dans les flux supportés par le modèle généré.
 
 ## Prochaines étapes
 

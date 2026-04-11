@@ -31,7 +31,7 @@ DinocoResult<Vec<T>>
 
 Nota:
 
-- `update().returning()` non supporta scritture di relazione con `.connect(...)` o `.disconnect(...)`.
+- `update().returning()` non supporta le scritture di relazione con `.connect(...)` o `.disconnect(...)`.
 
 ## Esempio di aggiornamento di campi
 
@@ -70,6 +70,33 @@ dinoco::update::<User>()
     .execute(&client)
     .await?;
 ```
+
+## Esempio con worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("Utente aggiornato: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "nuovo@acme.com".to_string(),
+        name: "Nuovo Nome".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+Scopri di più sui worker in [**`queues`**](/v0.0.2/orm/queues).
 
 ## Filtri disponibili in connect e disconnect
 

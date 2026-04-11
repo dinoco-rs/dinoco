@@ -44,7 +44,7 @@ struct UserSummary {
 }
 ```
 
-Dans ce cas, la struct reste liée au modèle `User`, mais ne peut exposer que les champs nécessaires à ce flux.
+Dans ce cas, la struct reste liée au modèle `User`, mais peut n'exposer que les champs nécessaires à ce flux.
 
 ## Attribut #[insertable]
 
@@ -134,11 +134,11 @@ dinoco::insert_many::<Article>()
 ## Quand utiliser chacun
 
 - Utilisez `Rowable` pour le modèle principal généré ou les structs compatibles avec la lecture directe de ligne.
-- Utilisez `Extend` pour les projections, les comptages, les includes et les charges utiles spécialisées.
+- Utilisez `Extend` pour les projections, les comptages, les inclusions et les charges utiles spécialisées.
 - Utilisez `#[insertable]` lorsque `Extend` doit également servir de charge utile d'écriture avec imbrication.
 
 ## Prochaines étapes
 
-- [**Traits**](/v0.0.2/core/traits) : voir les traits implémentés par le modèle.
+- [**Traits**](/v0.0.2/core/traits) : consultez les traits implémentés par le modèle.
 - [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into) : insertion unique avec des charges utiles riches.
 - [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many) : insertion par lot avec des relations et des connexions imbriquées.

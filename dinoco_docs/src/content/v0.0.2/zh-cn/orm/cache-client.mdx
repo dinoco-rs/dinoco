@@ -15,14 +15,14 @@ export const title = '缓存()';
 
 当您需要时，请使用 `client.cache()`:
 
-- 手动设置缓存
-- 在写入后使键失效
-- 在多个查询之间共享负载
+- 设置手动缓存
+- 在写入操作后使键失效
+- 在多个查询之间共享有效负载
 - 存储准备好快速读取的结构
 
 ## 工作原理
 
-此方法使用在 `DinocoClientConfig::with_redis(...)` 中配置的 Redis。
+该方法使用在 `DinocoClientConfig::with_redis(...)` 中配置的 Redis。
 
 如果客户端未配置 Redis，则操作将返回错误。
 
@@ -30,7 +30,7 @@ export const title = '缓存()';
 
 - `.get::<T>(key)`: 查找并将值反序列化为 `T`
 - `.set(key, &value)`: 序列化并保存，无 TTL
-- `.set_with_ttl(key, &value, ttl_seconds)`: 序列化并保存，以秒为单位设置过期时间
+- `.set_with_ttl(key, &value, ttl_seconds)`: 序列化并保存，过期时间以秒为单位
 - `.delete(key)`: 删除键
 
 ## 基本示例
@@ -96,16 +96,16 @@ client.cache().delete("users:list").await?;
 - `String`
 - `bool`
 - `i64`
-- 可序列化的结构体
+- 可序列化结构体
 
 ## 注意事项
 
 - `client.cache()` 是手动缓存；它不执行数据库查询。
-- 对于查询中集成的缓存，请使用 `find_first().cache(...)` 和 `find_many().cache(...)`。
+- 对于查询中的集成缓存，请使用 `find_first().cache(...)` 和 `find_many().cache(...)`。
 - 您可以根据需要多次调用 `client.cache()`；它只创建一个轻量级包装器。
 
 ## 下一步
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
-- [**`queues`**](/v0.0.2/orm/queues)
+- [**`查找第一个::<M>()`**](/v0.0.2/orm/find-first)
+- [**`查找多个::<M>()`**](/v0.0.2/orm/find-many)
+- [**`队列`**](/v0.0.2/orm/queues)

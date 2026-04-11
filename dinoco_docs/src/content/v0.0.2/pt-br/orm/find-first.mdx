@@ -88,6 +88,28 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
+## Exemplo com worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.first-read", |job| async move {
+        println!("Primeiro usuário lido: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .enqueue("user.first-read")
+    .execute(&client)
+    .await?;
+```
+
+Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
+
 ## Exemplo com cache
 
 Esse método só existe quando o schema tiver `redis` configurado.

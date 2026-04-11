@@ -4,7 +4,7 @@ export const title = "Enums";
 
 Gli enum consentono di limitare un campo a un insieme fisso di valori noti nello schema di Dinoco.
 
-Sono utili quando il valore deve essere prevedibile, validato e riutilizzato tra i modelli.
+Sono utili quando il valore deve essere prevedibile, convalidato e riutilizzato tra i modelli.
 
 ---
 
@@ -21,9 +21,9 @@ enum Role {
 
 In questo caso, `Role` può assumere solo `USER` o `ADMIN`.
 
-## Uso nei modelli
+## Utilizzo nei modelli
 
-Una volta definito, l'enum può essere usato come tipo di campo in qualsiasi modello.
+Una volta definito, l'enum può essere utilizzato come tipo di campo in qualsiasi modello.
 
 ```dinoco
 enum Role {
@@ -39,7 +39,7 @@ model User {
 
 Qui:
 
-- `role` usa l'enum `Role`.
+- `role` utilizza l'enum `Role`.
 - `@default(USER)` definisce il valore predefinito del campo.
 
 ## Quando usare gli enum

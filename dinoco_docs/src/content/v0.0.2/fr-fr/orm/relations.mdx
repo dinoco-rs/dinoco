@@ -14,13 +14,13 @@ L'attribut `@relation(...)` définit comment deux modèles se connectent.
 
 Paramètres supportés :
 
-| Paramètre    | Utilisation                                      |
-| :----------- | :----------------------------------------------- |
-| `name`       | Nom explicite de la relation                     |
-| `fields`     | Champs locaux utilisés comme clé                 |
-| `references` | Champs référencés dans le modèle cible           |
+| Paramètre    | Utilisation                                              |
+| :----------- | :------------------------------------------------------- |
+| `name`       | Nom explicite de la relation                             |
+| `fields`     | Champs locaux utilisés comme clé                         |
+| `references` | Champs référencés dans le modèle cible                   |
 | `onDelete`   | Comportement lors de la suppression de l'enregistrement référencé |
-| `onUpdate`   | Comportement lors de la mise à jour de la valeur référencée  |
+| `onUpdate`   | Comportement lors de la mise à jour de la valeur référencée |
 
 Exemple complet :
 
@@ -39,11 +39,11 @@ Dinoco expose des actions référentielles pour contrôler ce qui se passe lorsq
 
 Valeurs supportées :
 
-| Action       | Signification                                    |
-| :----------- | :----------------------------------------------- |
-| `Cascade`    | Propage l'opération aux enregistrements dépendants |
-| `SetNull`    | Définit la clé étrangère comme `null`            |
-| `SetDefault` | Définit la valeur par défaut configurée pour le champ |
+| Action         | Signification                                      |
+| :----------- | :------------------------------------------------- |
+| `Cascade`    | Propager l'opération aux enregistrements dépendants |
+| `SetNull`    | Définir la clé étrangère comme `null`              |
+| `SetDefault` | Définir la valeur par défaut configurée pour le champ |
 
 Exemple :
 
@@ -55,7 +55,7 @@ model Comment {
 }
 ```
 
-Utilisez `SetNull` uniquement lorsque le champ local est facultatif.
+Utilisez `SetNull` uniquement lorsque le champ local est optionnel.
 
 ## Un à plusieurs
 
@@ -104,11 +104,11 @@ model Role {
 Lecture mentale :
 
 - Un `User` peut avoir plusieurs `Role`.
-- Un `Role` peut appartenir à plusieurs `User`.
+- Une `Role` peut appartenir à plusieurs `User`.
 
 ## Auto-relation
 
-Une auto-relation se produit lorsqu'un modèle se lie à lui-même.
+L'auto-relation se produit lorsqu'un modèle se relie à lui-même.
 
 ```dinoco
 model User {
@@ -130,7 +130,7 @@ Lecture mentale :
 - Utilisez `name` lorsqu'il y a plus d'une relation entre les mêmes modèles.
 - Utilisez `onDelete: Cascade` lorsque l'enfant n'a pas de sens sans le parent.
 - Utilisez `onDelete: SetNull` lorsque la relation peut être rompue sans supprimer l'enregistrement enfant.
-- Utilisez des auto-relations avec des noms explicites pour faciliter la lecture et la génération de code.
+- Utilisez des auto-relations avec des noms explicites pour faciliter la lecture et le codegen.
 
 ## Schéma de référence pour les exemples
 
@@ -319,11 +319,11 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-Ce modèle est utile lorsque vous souhaitez construire une vue riche de l'utilisateur en une seule lecture orientée relations.
+Ce modèle est utile lorsque vous souhaitez créer une vue riche de l'utilisateur en une seule lecture orientée relations.
 
 ## Exemple d'insertion avec relation utilisant User et Profile
 
-Pour insérer un enregistrement avec une relation 1:1 en utilisant la nouvelle API, placez la relation à l'intérieur d'un payload `Extend` marqué avec `#[insertable]`.
+Pour insérer un enregistrement avec une relation 1:1 en utilisant la nouvelle API, placez la relation dans une charge utile `Extend` marquée avec `#[insertable]`.
 
 ```rust
 use dinoco::insert_into;
@@ -355,13 +355,13 @@ let created_user = insert_into::<User>()
 
 Dans ce flux :
 
-- L'`User` est inséré en premier.
+- Le `User` est inséré en premier.
 - Le `Profile` lié est créé ensuite.
 - La clé `userId` est liée par le flux de relation de Dinoco.
 
-## Exemple d'insert_many avec relations imbriquées
+## Exemple d'insert_many avec des relations imbriquées
 
-Utilisez `#[insertable]` lorsque vous souhaitez insérer plusieurs enregistrements parents et, pour chacun d'eux, insérer également plusieurs nouveaux enregistrements liés.
+Utilisez `#[insertable]` lorsque vous souhaitez insérer plusieurs enregistrements parents et, pour chacun d'eux, également insérer plusieurs nouveaux enregistrements liés.
 
 ```rust
 use dinoco::insert_many;
@@ -386,7 +386,7 @@ let posts = vec![
 		comments: vec![
 			Comment {
 				id: "comment-1".to_string(),
-				text: "Très bon".to_string(),
+				text: "Très bien".to_string(),
 				parentId: None,
 				postId: String::new(),
 				authorId: "user-2".to_string(),
@@ -426,9 +426,9 @@ insert_many::<Post>()
 Dans ce flux :
 
 - Chaque `Post` est inséré.
-- Dinoco crée les `Comment` imbriqués et lie chaque groupe au `Post` correct lors de l'écriture.
+- Dinoco crée les `Comment` imbriqués et lie chaque groupe au `Post` correct pendant l'écriture.
 
-## Exemple d'insert_many avec connexions imbriquées
+## Exemple d'insert_many avec des connexions imbriquées
 
 Utilisez l'énumération `PostConnection` générée par le codegen lorsque vous souhaitez insérer plusieurs enregistrements parents et connecter chacun d'eux à plusieurs enregistrements déjà existants.
 
@@ -476,8 +476,8 @@ insert_many::<Post>()
 Dans ce flux :
 
 - Les `Post` sont insérés.
-- Les `Tag` déjà existantes sont connectées aux articles correspondants.
-- Chaque payload définit ses connexions en utilisant l'énumération générée par le codegen.
+- Les `Tag` déjà existants sont connectés aux articles correspondants.
+- Chaque charge utile définit ses connexions en utilisant l'énumération générée par le codegen.
 
 ## Prochaines étapes
 

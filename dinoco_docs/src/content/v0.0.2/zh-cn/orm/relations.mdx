@@ -2,9 +2,9 @@ export const title = "关系";
 
 # 关系
 
-关系在 Dinoco schema 中连接模型。
+关系将 Dinoco schema 中的模型相互连接起来。
 
-本页面涵盖 `@relation(...)`、`onDelete`、`onUpdate` 以及最常见的关系模式。
+本页涵盖 `@relation(...)`、`onDelete`、`onUpdate` 以及最常见的关系模式。
 
 ---
 
@@ -12,17 +12,17 @@ export const title = "关系";
 
 `@relation(...)` 属性定义了两个模型如何连接。
 
-支持的参数：
+支持的参数:
 
-| 参数         | 用途                                             |
-| :----------- | :----------------------------------------------- |
-| `name`       | 关系的显式名称                                   |
-| `fields`     | 用作键的本地字段                                 |
-| `references` | 目标模型中引用的字段                             |
-| `onDelete`   | 删除引用记录时的行为                             |
-| `onUpdate`   | 更新引用值时的行为                               |
+| 参数         | 用途                               |
+| :----------- | :--------------------------------- |
+| `name`       | 关系的显式名称                     |
+| `fields`     | 用作键的本地字段                   |
+| `references` | 目标模型中引用的字段               |
+| `onDelete`   | 删除引用记录时的行为               |
+| `onUpdate`   | 更新引用值时的行为                 |
 
-完整示例：
+完整示例:
 
 ```dinoco
 model Post {
@@ -35,17 +35,17 @@ model Post {
 
 ## onDelete 和 onUpdate
 
-Dinoco 暴露引用操作来控制相关记录被更改或删除时发生的情况。
+Dinoco 暴露了引用操作，用于控制相关记录被更改或删除时发生的情况。
 
-支持的值：
+支持的值:
 
-| 操作         | 含义                                             |
-| :----------- | :----------------------------------------------- |
-| `Cascade`    | 将操作传播到依赖记录                             |
-| `SetNull`    | 将外键设置为 `null`                              |
-| `SetDefault` | 将字段设置为配置的默认值                         |
+| 操作         | 含义                               |
+| :----------- | :--------------------------------- |
+| `Cascade`    | 将操作传播到依赖记录               |
+| `SetNull`    | 将外键设置为 `null`                |
+| `SetDefault` | 将字段设置为配置的默认值           |
 
-示例：
+示例:
 
 ```dinoco
 model Comment {
@@ -55,9 +55,9 @@ model Comment {
 }
 ```
 
-仅当本地字段是可选时才使用 `SetNull`。
+仅当本地字段为可选时才使用 `SetNull`。
 
-## 一对多
+## One to many
 
 这是最常见的关系：一个父记录拥有多个子记录。
 
@@ -76,12 +76,12 @@ model Post {
 }
 ```
 
-心智解读：
+心智解读:
 
 - 一个 `User` 可以有多个 `Post`。
-- 每个 `Post` 属于一个 `User`。
+- 每个 `Post` 属于一个唯一的 `User`。
 
-## 多对多
+## Many to many
 
 在多对多关系中，双方都有列表。
 
@@ -101,12 +101,12 @@ model Role {
 }
 ```
 
-心智解读：
+心智解读:
 
 - 一个 `User` 可以有多个 `Role`。
 - 一个 `Role` 可以属于多个 `User`。
 
-## 自引用关系
+## Self relation
 
 自引用关系发生在模型与自身关联时。
 
@@ -120,7 +120,7 @@ model User {
 }
 ```
 
-心智解读：
+心智解读:
 
 - 一个用户可以有一个经理。
 - 一个用户可以有多个下属。
@@ -129,12 +129,12 @@ model User {
 
 - 当相同模型之间存在多个关系时，使用 `name`。
 - 当子记录在没有父记录的情况下没有意义时，使用 `onDelete: Cascade`。
-- 当可以在不删除子记录的情况下解除关系时，使用 `onDelete: SetNull`。
-- 使用带有显式名称的自引用关系，以方便阅读和代码生成。
+- 当关系可以在不删除子记录的情况下解除时，使用 `onDelete: SetNull`。
+- 使用带有显式名称的自引用关系，以便于阅读和代码生成。
 
 ## 示例的参考 Schema
 
-以下示例使用以下 schema：
+以下示例使用以下 schema:
 
 ```dinoco
 config {
@@ -211,7 +211,7 @@ model Tag {
 }
 ```
 
-## 从 User 查询所有可能关系的示例
+## 从 User 模型开始查询所有可能关系的示例
 
 当您想从 `User` 模型开始并在同一个读取查询中加载所有直接关系时，可以将 `select::<T>()` 与多个 `includes(...)` 结合使用。
 
@@ -319,11 +319,11 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-当您想通过一次面向关系的读取来构建丰富的用户视图时，此模式非常有用。
+当您想在一次面向关系的读取中构建丰富的用户视图时，此模式非常有用。
 
 ## 使用 User 和 Profile 进行带关系插入的示例
 
-要使用新 API 插入具有 1:1 关系的记录，请将关系放在标记为 `#[insertable]` 的 `Extend` payload 中。
+要使用新 API 插入具有 1:1 关系的记录，请将关系放入标记为 `#[insertable]` 的 `Extend` payload 中。
 
 ```rust
 use dinoco::insert_into;
@@ -353,13 +353,13 @@ let created_user = insert_into::<User>()
 	.await?;
 ```
 
-在此流程中：
+在此流程中:
 
-- 首先插入 `User`。
-- 接着创建相关的 `Profile`。
-- `userId` 键由 Dinoco 的关系流绑定。
+- `User` 首先被插入。
+- 相关的 `Profile` 随后被创建。
+- `userId` 键由 Dinoco 的关系流程绑定。
 
-## 带有嵌套关系的 insert_many 示例
+## 使用嵌套关系进行 insert_many 的示例
 
 当您想插入多个父记录，并且为每个父记录插入多个新的相关记录时，请使用 `#[insertable]`。
 
@@ -423,14 +423,14 @@ insert_many::<Post>()
 	.await?;
 ```
 
-在此流程中：
+在此流程中:
 
 - 每个 `Post` 都被插入。
-- Dinoco 创建嵌套的 `Comment` 并在写入期间将每个组绑定到正确的 `Post`。
+- Dinoco 创建嵌套的 `Comment`，并在写入期间将每个组绑定到正确的 `Post`。
 
-## 带有嵌套连接的 insert_many 示例
+## 使用嵌套连接进行 insert_many 的示例
 
-当您想插入多个父记录并将每个父记录连接到多个已存在的记录时，请使用由代码生成器生成的 `PostConnection` 枚举。
+当您想插入多个父记录并将每个父记录连接到多个已存在的记录时，请使用代码生成器生成的 `PostConnection` 枚举。
 
 ```rust
 use dinoco::insert_many;
@@ -473,11 +473,11 @@ insert_many::<Post>()
 	.await?;
 ```
 
-在此流程中：
+在此流程中:
 
-- 插入 `Post`。
+- `Post` 被插入。
 - 已存在的 `Tag` 被连接到相应的 `Post`。
-- 每个 payload 使用由代码生成器生成的枚举定义其连接。
+- 每个 payload 使用代码生成器生成的枚举定义其连接。
 
 ## 下一步
 
