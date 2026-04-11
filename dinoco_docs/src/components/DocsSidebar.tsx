@@ -47,9 +47,7 @@ const NavItem = ({
 					<div
 						className={clsx(
 							'flex items-center border-l -ml-[1px] text-sm transition-colors',
-							isItemActive || isChildActive
-								? 'border-dinoco-brand dark:border-dinoco-cyan'
-								: 'border-transparent hover:border-slate-300 dark:hover:border-slate-600',
+							isItemActive || isChildActive ? 'border-dinoco-brand dark:border-dinoco-cyan' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600',
 						)}
 					>
 						<Link
@@ -143,7 +141,7 @@ const DocsSidebar: React.FC<DocsSidebarProps> = ({ currentGroup, currentItem, cu
 					</div>
 				</div>
 
-				<nav className="space-y-8">
+				<nav className="space-y-8 pt-6">
 					{sections.map(section => (
 						<div key={section.title}>
 							<h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-900 dark:text-white">{section.title}</h4>
