@@ -8,23 +8,23 @@ Usado para inserção em lote.
 
 ## O que você pode fazer
 
-- `.values(Vec\<M\>)`: define os registros que serão inseridos em lote.
-- `.with_relation(Vec\<R\>)`: insere exatamente um relacionado novo para cada pai.
-- `.with_relations(Vec\<Vec\<R\>\>)` : insere vários relacionados novos para cada pai.
-- `.with_connection(Vec\<R\>)`: conecta exatamente uma relação já existente para cada pai inserido.
-- `.with_connections(Vec\<Vec\<R\>\>)` : conecta várias relações já existentes para cada pai inserido, normalmente em cenários many-to-many.
-- `.returning::\<T\>()`: muda o retorno para uma lista tipada dos itens inseridos.
+- `.values(Vec&lt;M&gt;)`: define os registros que serão inseridos em lote.
+- `.with_relation(Vec&lt;R&gt;)`: insere exatamente um relacionado novo para cada pai.
+- `.with_relations(Vec&lt;Vec\<R&gt;\>)` : insere vários relacionados novos para cada pai.
+- `.with_connection(Vec&lt;R&gt;)`: conecta exatamente uma relação já existente para cada pai inserido.
+- `.with_connections(Vec&lt;Vec\<R&gt;\>)` : conecta várias relações já existentes para cada pai inserido, normalmente em cenários many-to-many.
+- `.returning::&lt;T&gt;()`: muda o retorno para uma lista tipada dos itens inseridos.
 - `.execute(&client)`: executa a operação em lote.
 
 ## Retorno
 
-Sem `.returning::\<T\>()`, o retorno é:
+Sem `.returning::&lt;T&gt;()`, o retorno é:
 
 ```rust
 DinocoResult<()>
 ```
 
-Com `.returning::\<T\>()`, o retorno passa a ser:
+Com `.returning::&lt;T&gt;()`, o retorno passa a ser:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -146,5 +146,5 @@ dinoco::insert_many::<Article>()
 
 ## Próximos passos
 
-- [**`insert_into::\<M\>()`**](/v0.0.1/orm/insert-into): inserção única.
-- [**`update::\<M\>()`**](/v0.0.1/orm/update): atualização com filtro.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.1/orm/insert-into): inserção única.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): atualização com filtro.

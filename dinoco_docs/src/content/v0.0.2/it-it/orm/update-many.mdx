@@ -9,19 +9,19 @@ Utilizzato per aggiornare più record contemporaneamente.
 ## Cosa puoi fare
 
 - `.cond(...)`: limita quali record possono essere aggiornati.
-- `.values(Vec\<M\>)`: definisce gli elementi utilizzati nell'aggiornamento in batch.
-- `.returning::\<T\>()`: restituisce i record aggiornati come una lista tipizzata.
+- `.values(Vec&lt;M&gt;)`: definisce gli elementi utilizzati nell'aggiornamento in batch.
+- `.returning::&lt;T&gt;()`: restituisce i record aggiornati come una lista tipizzata.
 - `.execute(&client)`: esegue l'aggiornamento in batch.
 
 ## Ritorno
 
-Senza `.returning::\<T\>()`, il ritorno è:
+Senza `.returning::&lt;T&gt;()`, il ritorno è:
 
 ```rust
 DinocoResult<()>
 ```
 
-Con `.returning::\<T\>()`, il ritorno diventa:
+Con `.returning::&lt;T&gt;()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -93,5 +93,5 @@ Scopri di più sui worker in [**`queues`**](/v0.0.2/orm/queues).
 
 ## Prossimi passi
 
-- [**`update::\<M\>()`**](/v0.0.1/orm/update): aggiornamento tradizionale con condizione.
-- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): aggiornamento atomico su un singolo record.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): aggiornamento tradizionale con condizione.
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): aggiornamento atomico su un singolo record.

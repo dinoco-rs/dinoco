@@ -12,18 +12,18 @@ export const title = "update";
 - `.values(item)`: 指定记录的新值。
 - `.connect(...)`: 创建支持写入的关系链接。
 - `.disconnect(...)`: 移除支持写入的关系链接。
-- `.returning::\<T\>()`: 以类型化投影返回更新后的记录。
+- `.returning::&lt;T&gt;()`: 以类型化投影返回更新后的记录。
 - `.execute(&client)`: 在数据库中执行更新。
 
 ## 返回值
 
-如果没有 `.returning::\<T\>()`，返回值为：
+如果没有 `.returning::&lt;T&gt;()`，返回值为：
 
 ```rust
 DinocoResult<()>
 ```
 
-如果有 `.returning::\<T\>()`，返回值将是：
+如果有 `.returning::&lt;T&gt;()`，返回值将是：
 
 ```rust
 DinocoResult<Vec<T>>
@@ -89,5 +89,5 @@ dinoco::update::<User>()
 
 ## 下一步
 
-- [**`update_many::\<M\>()`**](/v0.0.1/orm/update-many): 批量更新。
-- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): 带返回值的原子更新。
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): 批量更新。
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): 带返回值的原子更新。

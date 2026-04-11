@@ -213,7 +213,7 @@ model Tag {
 
 ## User로부터 가능한 모든 관계를 포함하는 검색 예시
 
-`User` 모델에서 시작하여 단일 읽기 쿼리에서 모든 직접 관계를 로드하려면 `select::\<T\>()`와 여러 `includes(...)`를 결합할 수 있습니다.
+`User` 모델에서 시작하여 단일 읽기 쿼리에서 모든 직접 관계를 로드하려면 `select::&lt;T&gt;()`와 여러 `includes(...)`를 결합할 수 있습니다.
 
 ```rust
 use dinoco::{Extend, find_many};

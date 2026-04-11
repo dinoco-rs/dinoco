@@ -8,7 +8,7 @@ Utilisé pour récupérer une liste d'enregistrements.
 
 ## Ce que vous pouvez faire
 
-- Sélectionner une projection avec `.select::\<T\>()`
+- Sélectionner une projection avec `.select::&lt;T&gt;()`
 - Filtrer avec `.cond(...)`
 - Limiter avec `.take(...)`
 - Paginer avec `.skip(...)`
@@ -20,7 +20,7 @@ Utilisé pour récupérer une liste d'enregistrements.
 
 ## Description des méthodes
 
-- `.select::\<T\>()`: remplace la projection par défaut du modèle par une projection personnalisée.
+- `.select::&lt;T&gt;()`: remplace la projection par défaut du modèle par une projection personnalisée.
 - `.cond(...)`: ajoute des conditions de filtre à la requête.
 - `.take(...)`: limite le nombre d'enregistrements retournés.
 - `.skip(...)`: saute un nombre d'enregistrements avant de retourner le résultat.
@@ -32,13 +32,13 @@ Utilisé pour récupérer une liste d'enregistrements.
 
 ## Retour
 
-Sans `select::\<T\>()`, le retour est :
+Sans `select::&lt;T&gt;()`, le retour est :
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-Avec `select::\<T\>()`, le retour devient :
+Avec `select::&lt;T&gt;()`, le retour devient :
 
 ```rust
 DinocoResult<Vec<T>>
@@ -192,5 +192,5 @@ let users = dinoco::find_many::<User>()
 
 ## Prochaines étapes
 
-- [**`find_first::\<M\>()`**](/v0.0.1/orm/find-first): version pour récupérer au maximum un enregistrement.
-- [**`count::\<M\>()`**](/v0.0.1/orm/count): comptage d'enregistrements avec filtre.
+- [**`find_first::&lt;M&gt;()`**](/v0.0.1/orm/find-first): version pour récupérer au maximum un enregistrement.
+- [**`count::&lt;M&gt;()`**](/v0.0.1/orm/count): comptage d'enregistrements avec filtre.

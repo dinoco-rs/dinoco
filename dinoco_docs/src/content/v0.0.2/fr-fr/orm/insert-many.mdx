@@ -8,19 +8,19 @@ Utilisé pour l'insertion par lots.
 
 ## Ce que vous pouvez faire
 
-- `.values(Vec\<M\>)`: définit les enregistrements qui seront insérés par lots.
-- `.returning::\<T\>()`: modifie le retour pour une liste typée des éléments insérés.
+- `.values(Vec&lt;M&gt;)`: définit les enregistrements qui seront insérés par lots.
+- `.returning::&lt;T&gt;()`: modifie le retour pour une liste typée des éléments insérés.
 - `.execute(&client)`: exécute l'opération par lots.
 
 ## Retour
 
-Sans `.returning::\<T\>()`, le retour est :
+Sans `.returning::&lt;T&gt;()`, le retour est :
 
 ```rust
 DinocoResult<()>
 ```
 
-Avec `.returning::\<T\>()`, le retour devient :
+Avec `.returning::&lt;T&gt;()`, le retour devient :
 
 ```rust
 DinocoResult<Vec<T>>
@@ -220,11 +220,11 @@ dinoco::insert_many::<Article>()
 
 - `#[insertable]` sur une struct `Extend` permet à `.values(...)` d'insérer de nouvelles relations de manière récursive.
 - Pour les connexions avec des enregistrements existants, utilisez l'énumération `ModelConnection` générée par le codegen.
-- Les nouvelles relations peuvent utiliser `Vec\<ModelRelacionado\>` ou d'autres payloads `Extend` marqués avec `#[insertable]`.
+- Les nouvelles relations peuvent utiliser `Vec&lt;ModelRelacionado&gt;` ou d'autres payloads `Extend` marqués avec `#[insertable]`.
 - Les connexions existantes fonctionnent bien dans les scénarios many-to-many et également dans les flux supportés par le modèle généré.
 
 ## Prochaines étapes
 
 - [**Derives**](/v0.0.2/core/derives): comprenez comment assembler des payloads avec `Extend` et `#[insertable]`.
-- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into): insertion unique.
-- [**`update::\<M\>()`**](/v0.0.2/orm/update): mise à jour avec filtre.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into): insertion unique.
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update): mise à jour avec filtre.

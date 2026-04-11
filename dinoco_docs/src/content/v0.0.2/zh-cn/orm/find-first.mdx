@@ -8,7 +8,7 @@ export const title = 'find_first';
 
 ## 您可以做什么
 
-- `.select::\<T\>()`: 将默认投影替换为自定义投影。
+- `.select::&lt;T&gt;()`: 将默认投影替换为自定义投影。
 - `.cond(...)`: 在查询中添加过滤器。
 - `.take(...)`: 限制要考虑的最大记录数量。
 - `.skip(...)`: 在选择第一个结果之前跳过记录。
@@ -22,13 +22,13 @@ export const title = 'find_first';
 
 ## 返回值
 
-如果没有 `select::\<T\>()`，返回值为：
+如果没有 `select::&lt;T&gt;()`，返回值为：
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-如果使用 `select::\<T\>()`，返回值为：
+如果使用 `select::&lt;T&gt;()`，返回值为：
 
 ```rust
 DinocoResult<Option<T>>
@@ -140,5 +140,5 @@ let user = dinoco::find_first::<User>()
 
 ## 下一步
 
-- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many): 查找多个记录。
-- [**`count::\<M\>()`**](/v0.0.2/orm/count): 记录计数。
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many): 查找多个记录。
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): 记录计数。

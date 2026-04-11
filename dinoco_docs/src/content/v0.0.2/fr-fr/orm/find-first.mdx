@@ -8,7 +8,7 @@ Utilisé pour rechercher au maximum un enregistrement.
 
 ## Ce que vous pouvez faire
 
-- `.select::\<T\>()`: échange la projection par défaut contre une projection personnalisée.
+- `.select::&lt;T&gt;()`: échange la projection par défaut contre une projection personnalisée.
 - `.cond(...)`: ajoute des filtres à la recherche.
 - `.take(...)`: limite la quantité maximale d'enregistrements considérés.
 - `.skip(...)`: saute des enregistrements avant de sélectionner le premier résultat.
@@ -22,13 +22,13 @@ Utilisé pour rechercher au maximum un enregistrement.
 
 ## Retour
 
-Sans `select::\<T\>()`, le retour est :
+Sans `select::&lt;T&gt;()`, le retour est :
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-Avec `select::\<T\>()`, le retour devient :
+Avec `select::&lt;T&gt;()`, le retour devient :
 
 ```rust
 DinocoResult<Option<T>>
@@ -140,5 +140,5 @@ let user = dinoco::find_first::<User>()
 
 ## Prochaines étapes
 
-- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many): recherche plusieurs enregistrements.
-- [**`count::\<M\>()`**](/v0.0.2/orm/count): comptage d'enregistrements.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many): recherche plusieurs enregistrements.
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): comptage d'enregistrements.

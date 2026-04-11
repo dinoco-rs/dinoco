@@ -7,8 +7,8 @@ Das Dinoco-Warteschlangensystem ermöglicht die Veröffentlichung asynchroner Er
 ## Was Sie tun können
 
 - Ermöglichen Sie das Verketten von .enqueue(...), .enqueue_in(...) und .enqueue_at(...) in allen Client-Methoden, außer bei Löschvorgängen.
-- Verarbeiten Sie Jobs mit `workers().on::\<Model\>(... )`.
-- Laden Sie Projektionen mit Beziehungen im Worker mithilfe von `workers().on_with_relation::\<Model, Projection\>(... )`.
+- Verarbeiten Sie Jobs mit `workers().on::&lt;Model&gt;(... )`.
+- Laden Sie Projektionen mit Beziehungen im Worker mithilfe von `workers().on_with_relation::&lt;Model, Projection&gt;(... )`.
 - Laden Sie die neuesten Daten neu, bevor der Handler ausgeführt wird.
 - Ignoriert automatisch Jobs, deren Datensatz nicht mehr existiert.
 
@@ -27,7 +27,7 @@ Wenn der Datensatz zum Zeitpunkt der Suche nicht mehr existiert, wird der Handle
 
 - `.enqueue(evento)`: plant die sofortige Ausführung.
 - `.enqueue_in(evento, delay_ms)`: plant mit einer Verzögerung in Millisekunden.
-- `.enqueue_at(evento, data_utc)`: plant für ein bestimmtes Datum in `chrono::DateTime\<Utc\>`.
+- `.enqueue_at(evento, data_utc)`: plant für ein bestimmtes Datum in `chrono::DateTime&lt;Utc&gt;`.
 
 ```rust
 use database::*;
@@ -144,10 +144,10 @@ no-appendfsync-on-rewrite yes
 - `delete` und `delete_many` unterstützen `enqueue` nicht.
 - Der Worker ist vollständig asynchron und verwendet `tokio` unter der Haube.
 - `run()` blockiert den Rest der Anwendung nicht: Es startet den Loop im Hintergrund.
-- `Option\<User\>` wird bei der Worker-Registrierung akzeptiert, aber der Handler wird nur ausgeführt, wenn ein Datensatz zur Re-Hydrierung vorhanden ist.
+- `Option&lt;User&gt;` wird bei der Worker-Registrierung akzeptiert, aber der Handler wird nur ausgeführt, wenn ein Datensatz zur Re-Hydrierung vorhanden ist.
 
 ## Nächste Schritte
 
-- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into)
-- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
-- [**`update::\<M\>()`**](/v0.0.2/orm/update)
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into)
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many)
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update)

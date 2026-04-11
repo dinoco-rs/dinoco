@@ -18,18 +18,18 @@ Wird verwendet, um einen Datensatz einzufügen.
 - `.values(item)`: Definiert den Datensatz, der eingefügt werden soll.
 - `.with_relation(related)`: Fügt einen neuen verwandten Datensatz zusammen mit dem Elternteil ein.
 - `.with_connection(connected)`: Verbindet den eingefügten Datensatz mit einem bereits vorhandenen Element, normalerweise in Beziehungsflüssen, die für die Verbindung unterstützt werden.
-- `.returning::\<T\>()`: Ändert den Rückgabewert zu einer typisierten Projektion des eingefügten Elements.
+- `.returning::&lt;T&gt;()`: Ändert den Rückgabewert zu einer typisierten Projektion des eingefügten Elements.
 - `.execute(&client)`: Führt den Schreibvorgang in die Datenbank aus.
 
 ## Rückgabe
 
-Ohne `.returning::\<T\>()` ist der Rückgabewert:
+Ohne `.returning::&lt;T&gt;()` ist der Rückgabewert:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::\<T\>()` wird der Rückgabewert:
+Mit `.returning::&lt;T&gt;()` wird der Rückgabewert:
 
 ```rust
 DinocoResult<T>
@@ -91,5 +91,5 @@ let created = dinoco::insert_into::<User>()
 
 ## Nächste Schritte
 
-- [**`insert_many::\<M\>()`**](/v0.0.1/orm/insert-many): Batch-Einfügung.
-- [**`update::\<M\>()`**](/v0.0.1/orm/update): Aktualisierung von Datensätzen.
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.1/orm/insert-many): Batch-Einfügung.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): Aktualisierung von Datensätzen.

@@ -22,7 +22,7 @@ Ele expõe os mesmos métodos de `find_many`:
 
 ## Descrição dos métodos
 
-- `.select::\<T\>()`: troca a projeção padrão por uma projeção customizada.
+- `.select::&lt;T&gt;()`: troca a projeção padrão por uma projeção customizada.
 - `.cond(...)`: adiciona filtros na busca.
 - `.take(...)`: limita a quantidade máxima de registros considerados.
 - `.skip(...)`: pula registros antes de selecionar o primeiro resultado.
@@ -34,13 +34,13 @@ Ele expõe os mesmos métodos de `find_many`:
 
 ## Retorno
 
-Sem `select::\<T\>()`, o retorno é:
+Sem `select::&lt;T&gt;()`, o retorno é:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-Com `select::\<T\>()`, o retorno passa a ser:
+Com `select::&lt;T&gt;()`, o retorno passa a ser:
 
 ```rust
 DinocoResult<Option<T>>
@@ -102,5 +102,5 @@ let latest_user = dinoco::find_first::<User>()
 
 ## Próximos passos
 
-- [**`find_many::\<M\>()`**](/v0.0.1/orm/find-many): busca múltiplos registros.
-- [**`count::\<M\>()`**](/v0.0.1/orm/count): contagem de registros.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): busca múltiplos registros.
+- [**`count::&lt;M&gt;()`**](/v0.0.1/orm/count): contagem de registros.

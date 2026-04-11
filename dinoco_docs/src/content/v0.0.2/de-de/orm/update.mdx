@@ -12,18 +12,18 @@ Wird verwendet, um gefilterte Datensätze zu aktualisieren.
 - `.values(item)`: gibt die neuen Werte des Datensatzes an.
 - `.connect(...)`: erstellt unterstützte Beziehungsverknüpfungen zum Schreiben.
 - `.disconnect(...)`: entfernt unterstützte Beziehungsverknüpfungen zum Schreiben.
-- `.returning::\<T\>()`: gibt die aktualisierten Datensätze in einer typisierten Projektion zurück.
+- `.returning::&lt;T&gt;()`: gibt die aktualisierten Datensätze in einer typisierten Projektion zurück.
 - `.execute(&client)`: führt die Aktualisierung in der Datenbank aus.
 
 ## Rückgabe
 
-Ohne `.returning::\<T\>()` ist die Rückgabe:
+Ohne `.returning::&lt;T&gt;()` ist die Rückgabe:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::\<T\>()` wird die Rückgabe:
+Mit `.returning::&lt;T&gt;()` wird die Rückgabe:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -116,5 +116,5 @@ Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
 
 ## Nächste Schritte
 
-- [**`update_many::\<M\>()`**](/v0.0.1/orm/update-many): Stapelaktualisierung.
-- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): atomares Update mit Rückgabe.
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): Stapelaktualisierung.
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): atomares Update mit Rückgabe.

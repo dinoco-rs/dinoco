@@ -8,7 +8,7 @@ Used to fetch a list of records.
 
 ## What you can do
 
-- Select a projection with `.select::\<T\>()`
+- Select a projection with `.select::&lt;T&gt;()`
 - Filter with `.cond(...)`
 - Limit with `.take(...)`
 - Paginate with `.skip(...)`
@@ -20,7 +20,7 @@ Used to fetch a list of records.
 
 ## Method descriptions
 
-- `.select::\<T\>()`: replaces the model's default projection with a custom projection.
+- `.select::&lt;T&gt;()`: replaces the model's default projection with a custom projection.
 - `.cond(...)`: adds filter conditions to the query.
 - `.take(...)`: limits the quantity of records returned.
 - `.skip(...)`: skips a quantity of records before returning the result.
@@ -32,13 +32,13 @@ Used to fetch a list of records.
 
 ## Return
 
-Without `select::\<T\>()`, the return is:
+Without `select::&lt;T&gt;()`, the return is:
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-With `select::\<T\>()`, the return becomes:
+With `select::&lt;T&gt;()`, the return becomes:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -192,5 +192,5 @@ let users = dinoco::find_many::<User>()
 
 ## Next steps
 
-- [**`find_first::\<M\>()`**](/v0.0.1/orm/find-first): version to fetch at most one record.
-- [**`count::\<M\>()`**](/v0.0.1/orm/count): record count with filter.
+- [**`find_first::&lt;M&gt;()`**](/v0.0.1/orm/find-first): version to fetch at most one record.
+- [**`count::&lt;M&gt;()`**](/v0.0.1/orm/count): record count with filter.

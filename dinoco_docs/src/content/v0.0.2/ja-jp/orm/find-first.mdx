@@ -8,7 +8,7 @@ export const title = 'find_first';
 
 ## できること
 
-- `.select::\<T\>()`: デフォルトのプロジェクションをカスタムプロジェクションに置き換えます。
+- `.select::&lt;T&gt;()`: デフォルトのプロジェクションをカスタムプロジェクションに置き換えます。
 - `.cond(...)`: 検索にフィルターを追加します。
 - `.take(...)`: 考慮されるレコードの最大数を制限します。
 - `.skip(...)`: 最初の結果を選択する前にレコードをスキップします。
@@ -22,13 +22,13 @@ export const title = 'find_first';
 
 ## 戻り値
 
-`select::\<T\>()` がない場合、戻り値は次のようになります。
+`select::&lt;T&gt;()` がない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-`select::\<T\>()` がある場合、戻り値は次のようになります。
+`select::&lt;T&gt;()` がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Option<T>>
@@ -140,5 +140,5 @@ let user = dinoco::find_first::<User>()
 
 ## 次のステップ
 
-- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many): 複数のレコードを検索します。
-- [**`count::\<M\>()`**](/v0.0.2/orm/count): レコードの数を数えます。
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many): 複数のレコードを検索します。
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): レコードの数を数えます。

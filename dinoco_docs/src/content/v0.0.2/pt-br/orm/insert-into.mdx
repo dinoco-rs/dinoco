@@ -9,7 +9,7 @@ Usado para inserir um registro.
 ## O que você pode fazer
 
 - `.values(item)`: define o registro que será inserido.
-- `.returning::\<T\>()`: muda o retorno para uma projeção tipada do item inserido.
+- `.returning::&lt;T&gt;()`: muda o retorno para uma projeção tipada do item inserido.
 - `.execute(&client)`: executa a escrita no banco.
 
 ## Exemplo com Extend #[insertable]
@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## Retorno
 
-Sem `.returning::\<T\>()`, o retorno é:
+Sem `.returning::&lt;T&gt;()`, o retorno é:
 
 ```rust
 DinocoResult<()>
 ```
 
-Com `.returning::\<T\>()`, o retorno passa a ser:
+Com `.returning::&lt;T&gt;()`, o retorno passa a ser:
 
 ```rust
 DinocoResult<T>
@@ -207,5 +207,5 @@ Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
 ## Próximos passos
 
 - [**Derives**](/v0.0.2/core/derives): entenda quando usar `Rowable`, `Extend` e `#[insertable]`.
-- [**`insert_many::\<M\>()`**](/v0.0.2/orm/insert-many): inserção em lote.
-- [**`update::\<M\>()`**](/v0.0.2/orm/update): atualização de registros.
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.2/orm/insert-many): inserção em lote.
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update): atualização de registros.

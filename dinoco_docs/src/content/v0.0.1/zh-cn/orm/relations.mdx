@@ -213,7 +213,7 @@ model Tag {
 
 ## 从 User 获取所有可能关系的查询示例
 
-当您想从 `User` 模型开始并在同一个读取查询中加载所有直接关系时，可以结合 `select::\<T\>()` 和多个 `includes(...)`。
+当您想从 `User` 模型开始并在同一个读取查询中加载所有直接关系时，可以结合 `select::&lt;T&gt;()` 和多个 `includes(...)`。
 
 ```rust
 use dinoco::{Extend, find_many};

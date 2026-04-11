@@ -9,19 +9,19 @@ Utilisé pour mettre à jour plusieurs enregistrements à la fois.
 ## Ce que vous pouvez faire
 
 - `.cond(...)`: restreint les enregistrements qui peuvent être mis à jour.
-- `.values(Vec\<M\>)`: définit les éléments utilisés dans la mise à jour par lots.
-- `.returning::\<T\>()`: retourne les enregistrements mis à jour sous forme de liste typée.
+- `.values(Vec&lt;M&gt;)`: définit les éléments utilisés dans la mise à jour par lots.
+- `.returning::&lt;T&gt;()`: retourne les enregistrements mis à jour sous forme de liste typée.
 - `.execute(&client)`: exécute la mise à jour par lots.
 
 ## Retour
 
-Sans `.returning::\<T\>()`, le retour est :
+Sans `.returning::&lt;T&gt;()`, le retour est :
 
 ```rust
 DinocoResult<()>
 ```
 
-Avec `.returning::\<T\>()`, le retour devient :
+Avec `.returning::&lt;T&gt;()`, le retour devient :
 
 ```rust
 DinocoResult<Vec<T>>
@@ -67,5 +67,5 @@ dinoco::update_many::<User>()
 
 ## Étapes suivantes
 
-- [**`update::\<M\>()`**](/v0.0.1/orm/update): mise à jour traditionnelle avec condition.
-- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): mise à jour atomique d'un seul enregistrement.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): mise à jour traditionnelle avec condition.
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): mise à jour atomique d'un seul enregistrement.

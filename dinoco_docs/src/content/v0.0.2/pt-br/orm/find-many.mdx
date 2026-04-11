@@ -8,7 +8,7 @@ Usado para buscar uma lista de registros.
 
 ## O que você pode fazer
 
-- `.select::\<T\>()`: troca a projeção padrão do model por uma projeção customizada.
+- `.select::&lt;T&gt;()`: troca a projeção padrão do model por uma projeção customizada.
 - `.cond(...)`: adiciona condições de filtro na query.
 - `.take(...)`: limita a quantidade de registros retornados.
 - `.skip(...)`: pula uma quantidade de registros antes de retornar o resultado.
@@ -22,13 +22,13 @@ Usado para buscar uma lista de registros.
 
 ## Retorno
 
-Sem `select::\<T\>()`, o retorno é:
+Sem `select::&lt;T&gt;()`, o retorno é:
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-Com `select::\<T\>()`, o retorno passa a ser:
+Com `select::&lt;T&gt;()`, o retorno passa a ser:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -231,5 +231,5 @@ let users = dinoco::find_many::<User>()
 
 ## Próximos passos
 
-- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first): versão para buscar no máximo um registro.
-- [**`count::\<M\>()`**](/v0.0.2/orm/count): contagem de registros com filtro.
+- [**`find_first::&lt;M&gt;()`**](/v0.0.2/orm/find-first): versão para buscar no máximo um registro.
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): contagem de registros com filtro.

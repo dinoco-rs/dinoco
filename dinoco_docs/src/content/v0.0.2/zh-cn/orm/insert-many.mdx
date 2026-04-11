@@ -8,19 +8,19 @@ export const title = 'insert_many';
 
 ## 您可以做什么
 
-- `.values(Vec\<M\>)`: 定义将批量插入的记录。
-- `.returning::\<T\>()`: 将返回值更改为已插入项的类型化列表。
+- `.values(Vec&lt;M&gt;)`: 定义将批量插入的记录。
+- `.returning::&lt;T&gt;()`: 将返回值更改为已插入项的类型化列表。
 - `.execute(&client)`: 执行批量操作。
 
 ## 返回值
 
-如果没有 `.returning::\<T\>()`，返回值为：
+如果没有 `.returning::&lt;T&gt;()`，返回值为：
 
 ```rust
 DinocoResult<()>
 ```
 
-如果使用 `.returning::\<T\>()`，返回值将变为：
+如果使用 `.returning::&lt;T&gt;()`，返回值将变为：
 
 ```rust
 DinocoResult<Vec<T>>
@@ -221,11 +221,11 @@ dinoco::insert_many::<Article>()
 
 - 在 `Extend` struct 中使用 `#[insertable]` 允许 `.values(...)` 以递归方式插入新关系。
 - 对于与现有记录的连接，请使用 codegen 生成的 `ModelConnection` 枚举。
-- 新关系可以使用 `Vec\<ModelRelacionado\>` 或其他标记为 `#[insertable]` 的 `Extend` payload。
+- 新关系可以使用 `Vec&lt;ModelRelacionado&gt;` 或其他标记为 `#[insertable]` 的 `Extend` payload。
 - 现有连接在多对多场景以及生成模型支持的流中运行良好。
 
 ## 下一步
 
 - [**派生**](/v0.0.2/core/derives)：了解如何使用 `Extend` 和 `#[insertable]` 构建 payload。
-- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into)：单次插入。
-- [**`update::\<M\>()`**](/v0.0.2/orm/update)：带过滤器的更新。
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into)：单次插入。
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update)：带过滤器的更新。

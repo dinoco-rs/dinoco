@@ -8,19 +8,19 @@ export const title = 'insert_many';
 
 ## できること
 
-- `.values(Vec\<M\>)`: バッチで挿入されるレコードを定義します。
-- `.returning::\<T\>()`: 戻り値を、挿入されたアイテムの型付きリストに変更します。
+- `.values(Vec&lt;M&gt;)`: バッチで挿入されるレコードを定義します。
+- `.returning::&lt;T&gt;()`: 戻り値を、挿入されたアイテムの型付きリストに変更します。
 - `.execute(&client)`: バッチ操作を実行します。
 
 ## 戻り値
 
-`.returning::\<T\>()`がない場合、戻り値は次のようになります。
+`.returning::&lt;T&gt;()`がない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::\<T\>()`がある場合、戻り値は次のようになります。
+`.returning::&lt;T&gt;()`がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
@@ -220,11 +220,11 @@ dinoco::insert_many::<Article>()
 
 - `Extend` structの`#[insertable]`は、`.values(...)`が新しいリレーションを再帰的に挿入することを可能にします。
 - 既存のレコードとのコネクションには、コード生成された`ModelConnection` enumを使用します。
-- 新しいリレーションは、`Vec\<ModelRelacionado\>`または`#[insertable]`でマークされた他の`Extend`ペイロードを使用できます。
+- 新しいリレーションは、`Vec&lt;ModelRelacionado&gt;`または`#[insertable]`でマークされた他の`Extend`ペイロードを使用できます。
 - 既存のコネクションは、多対多のシナリオや、生成されたモデルによってサポートされるフローでうまく機能します。
 
 ## 次のステップ
 
 - [**Derives**](/v0.0.2/core/derives): `Extend`と`#[insertable]`でペイロードを構築する方法を理解します。
-- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into): 単一の挿入。
-- [**`update::\<M\>()`**](/v0.0.2/orm/update): フィルターによる更新。
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into): 単一の挿入。
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update): フィルターによる更新。

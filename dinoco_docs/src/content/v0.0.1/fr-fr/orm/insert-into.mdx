@@ -18,18 +18,18 @@ Utilisé pour insérer un enregistrement.
 - `.values(item)`: définit l'enregistrement qui sera inséré.
 - `.with_relation(related)`: insère un nouvel enregistrement lié avec le parent.
 - `.with_connection(connected)`: connecte l'enregistrement inséré à un élément existant, généralement dans des flux de relation pris en charge pour la connexion.
-- `.returning::\<T\>()`: modifie le retour pour une projection typée de l'élément inséré.
+- `.returning::&lt;T&gt;()`: modifie le retour pour une projection typée de l'élément inséré.
 - `.execute(&client)`: exécute l'écriture dans la base de données.
 
 ## Retour
 
-Sans `.returning::\<T\>()`, le retour est :
+Sans `.returning::&lt;T&gt;()`, le retour est :
 
 ```rust
 DinocoResult<()>
 ```
 
-Avec `.returning::\<T\>()`, le retour devient :
+Avec `.returning::&lt;T&gt;()`, le retour devient :
 
 ```rust
 DinocoResult<T>
@@ -91,5 +91,5 @@ let created = dinoco::insert_into::<User>()
 
 ## Prochaines étapes
 
-- [**`insert_many::\<M\>()`**](/v0.0.1/orm/insert-many): insertion par lot.
-- [**`update::\<M\>()`**](/v0.0.1/orm/update): mise à jour d'enregistrements.
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.1/orm/insert-many): insertion par lot.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): mise à jour d'enregistrements.

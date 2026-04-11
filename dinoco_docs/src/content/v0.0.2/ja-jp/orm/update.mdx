@@ -12,18 +12,18 @@ export const title = "update";
 - `.values(item)`: レコードの新しい値を指定します。
 - `.connect(...)`: 書き込みがサポートされているリレーションシップリンクを作成します。
 - `.disconnect(...)`: 書き込みがサポートされているリレーションシップリンクを削除します。
-- `.returning::\<T\>()`: 型付きプロジェクションで更新されたレコードを返します。
+- `.returning::&lt;T&gt;()`: 型付きプロジェクションで更新されたレコードを返します。
 - `.execute(&client)`: データベースで更新を実行します。
 
 ## 戻り値
 
-`.returning::\<T\>()`がない場合、戻り値は次のようになります。
+`.returning::&lt;T&gt;()`がない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::\<T\>()`がある場合、戻り値は次のようになります。
+`.returning::&lt;T&gt;()`がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
@@ -116,5 +116,5 @@ dinoco::update::<User>()
 
 ## 次のステップ
 
-- [**`update_many::\<M\>()`**](/v0.0.1/orm/update-many): バッチ更新。
-- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): 戻り値付きのアトミックな更新。
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): バッチ更新。
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): 戻り値付きのアトミックな更新。

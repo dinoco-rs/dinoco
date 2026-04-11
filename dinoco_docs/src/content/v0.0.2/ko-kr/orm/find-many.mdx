@@ -8,7 +8,7 @@ export const title = 'find_many';
 
 ## 수행할 수 있는 작업
 
-- `.select::\<T\>()`: 모델의 기본 프로젝션을 사용자 지정 프로젝션으로 바꿉니다.
+- `.select::&lt;T&gt;()`: 모델의 기본 프로젝션을 사용자 지정 프로젝션으로 바꿉니다.
 - `.cond(...)`: 쿼리에 필터 조건을 추가합니다.
 - `.take(...)`: 반환되는 레코드 수를 제한합니다.
 - `.skip(...)`: 결과를 반환하기 전에 지정된 수의 레코드를 건너뜠니다.
@@ -22,13 +22,13 @@ export const title = 'find_many';
 
 ## 반환
 
-`select::\<T\>()`가 없으면 반환 값은 다음과 같습니다:
+`select::&lt;T&gt;()`가 없으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-`select::\<T\>()`가 있으면 반환 값은 다음과 같이 변경됩니다:
+`select::&lt;T&gt;()`가 있으면 반환 값은 다음과 같이 변경됩니다:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -231,5 +231,5 @@ let users = dinoco::find_many::<User>()
 
 ## 다음 단계
 
-- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first): 최대 하나의 레코드를 가져오는 버전입니다.
-- [**`count::\<M\>()`**](/v0.0.2/orm/count): 필터가 적용된 레코드 수입니다.
+- [**`find_first::&lt;M&gt;()`**](/v0.0.2/orm/find-first): 최대 하나의 레코드를 가져오는 버전입니다.
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): 필터가 적용된 레코드 수입니다.

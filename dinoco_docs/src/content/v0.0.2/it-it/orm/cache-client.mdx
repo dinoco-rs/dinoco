@@ -6,7 +6,7 @@ export const title = 'cache()';
 
 ## Cosa puoi fare
 
-- Leggere una chiave con `.get::\<T\>(...)`
+- Leggere una chiave con `.get::&lt;T&gt;(...)`
 - Salvare una chiave con `.set(...)`
 - Salvare con scadenza usando `.set_with_ttl(...)`
 - Rimuovere una chiave con `.delete(...)`
@@ -28,7 +28,7 @@ Se il client non ha Redis configurato, l'operazione restituisce un errore.
 
 ## Metodi disponibili
 
-- `.get::\<T\>(key)`: cerca e deserializza il valore come `T`
+- `.get::&lt;T&gt;(key)`: cerca e deserializza il valore come `T`
 - `.set(key, &value)`: serializza e salva senza TTL
 - `.set_with_ttl(key, &value, ttl_seconds)`: serializza e salva con scadenza in secondi
 - `.delete(key)`: rimuove la chiave
@@ -91,8 +91,8 @@ I valori sono serializzati in JSON, quindi il tipo deve essere compatibile con `
 
 Esempi comuni:
 
-- `Vec\<User\>`
-- `Option\<User\>`
+- `Vec&lt;User&gt;`
+- `Option&lt;User&gt;`
 - `String`
 - `bool`
 - `i64`
@@ -106,6 +106,6 @@ Esempi comuni:
 
 ## Prossimi passi
 
-- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first)
-- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
+- [**`find_first::&lt;M&gt;()`**](/v0.0.2/orm/find-first)
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many)
 - [**`queues`**](/v0.0.2/orm/queues)

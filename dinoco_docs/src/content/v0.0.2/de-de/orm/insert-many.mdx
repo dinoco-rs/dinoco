@@ -8,19 +8,19 @@ Wird für die Batch-Einfügung verwendet.
 
 ## Was Sie tun können
 
-- `.values(Vec\<M\>)`: definiert die Datensätze, die im Batch eingefügt werden sollen.
-- `.returning::\<T\>()`: ändert den Rückgabewert in eine typisierte Liste der eingefügten Elemente.
+- `.values(Vec&lt;M&gt;)`: definiert die Datensätze, die im Batch eingefügt werden sollen.
+- `.returning::&lt;T&gt;()`: ändert den Rückgabewert in eine typisierte Liste der eingefügten Elemente.
 - `.execute(&client)`: führt die Batch-Operation aus.
 
 ## Rückgabe
 
-Ohne `.returning::\<T\>()` ist der Rückgabewert:
+Ohne `.returning::&lt;T&gt;()` ist der Rückgabewert:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::\<T\>()` wird der Rückgabewert zu:
+Mit `.returning::&lt;T&gt;()` wird der Rückgabewert zu:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -220,11 +220,11 @@ dinoco::insert_many::<Article>()
 
 - `#[insertable]` in einer `Extend`-Struktur ermöglicht es `.values(...)`, neue Beziehungen rekursiv einzufügen.
 - Für Verbindungen mit bereits existierenden Datensätzen verwenden Sie das vom Codegen generierte Enum `ModelConnection`.
-- Neue Beziehungen können `Vec\<ModelRelacionado\>` oder andere `Extend`-Payloas verwenden, die mit `#[insertable]` markiert sind.
+- Neue Beziehungen können `Vec&lt;ModelRelacionado&gt;` oder andere `Extend`-Payloas verwenden, die mit `#[insertable]` markiert sind.
 - Bestehende Verbindungen funktionieren gut in Many-to-Many-Szenarien und auch in Flüssen, die vom generierten Modell unterstützt werden.
 
 ## Nächste Schritte
 
 - [**Derives**](/v0.0.2/core/derives): verstehen Sie, wie Payloads mit `Extend` und `#[insertable]` erstellt werden.
-- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into): einzelne Einfügung.
-- [**`update::\<M\>()`**](/v0.0.2/orm/update): Aktualisierung mit Filter.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into): einzelne Einfügung.
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update): Aktualisierung mit Filter.

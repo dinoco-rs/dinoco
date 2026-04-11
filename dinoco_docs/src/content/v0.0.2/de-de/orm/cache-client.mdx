@@ -6,7 +6,7 @@ export const title = 'cache()';
 
 ## Was Sie tun können
 
-- Einen Schlüssel mit `.get::\<T\>(...)` lesen
+- Einen Schlüssel mit `.get::&lt;T&gt;(...)` lesen
 - Einen Schlüssel mit `.set(...)` speichern
 - Mit Ablaufzeit speichern, indem `.set_with_ttl(...)` verwendet wird
 - Einen Schlüssel mit `.delete(...)` entfernen
@@ -28,7 +28,7 @@ Wenn der Client keinen Redis konfiguriert hat, gibt die Operation einen Fehler z
 
 ## Verfügbare Methoden
 
-- `.get::\<T\>(key)`: sucht und deserialisiert den Wert als `T`
+- `.get::&lt;T&gt;(key)`: sucht und deserialisiert den Wert als `T`
 - `.set(key, &value)`: serialisiert und speichert ohne TTL
 - `.set_with_ttl(key, &value, ttl_seconds)`: serialisiert und speichert mit Ablaufzeit in Sekunden
 - `.delete(key)`: entfernt den Schlüssel
@@ -91,8 +91,8 @@ Die Werte werden in JSON serialisiert, daher muss der Typ mit `serde` kompatibel
 
 Häufige Beispiele:
 
-- `Vec\<User\>`
-- `Option\<User\>`
+- `Vec&lt;User&gt;`
+- `Option&lt;User&gt;`
 - `String`
 - `bool`
 - `i64`
@@ -106,6 +106,6 @@ Häufige Beispiele:
 
 ## Nächste Schritte
 
-- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first)
-- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
+- [**`find_first::&lt;M&gt;()`**](/v0.0.2/orm/find-first)
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many)
 - [**`queues`**](/v0.0.2/orm/queues)

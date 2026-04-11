@@ -18,18 +18,18 @@ export const title = "insert_into";
 - `.values(item)`: 삽입할 레코드를 정의합니다.
 - `.with_relation(related)`: 부모와 함께 새로운 관련 레코드를 삽입합니다.
 - `.with_connection(connected)`: 삽입된 레코드를 기존 항목에 연결합니다. 일반적으로 연결을 지원하는 관계 흐름에서 사용됩니다.
-- `.returning::\<T\>()`: 반환 값을 삽입된 항목의 타입화된 프로젝션으로 변경합니다.
+- `.returning::&lt;T&gt;()`: 반환 값을 삽입된 항목의 타입화된 프로젝션으로 변경합니다.
 - `.execute(&client)`: 데이터베이스에 쓰기 작업을 실행합니다.
 
 ## 반환
 
-`.returning::\<T\>()`가 없으면 반환 값은 다음과 같습니다:
+`.returning::&lt;T&gt;()`가 없으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::\<T\>()`가 있으면 반환 값은 다음과 같이 변경됩니다:
+`.returning::&lt;T&gt;()`가 있으면 반환 값은 다음과 같이 변경됩니다:
 
 ```rust
 DinocoResult<T>
@@ -91,5 +91,5 @@ let created = dinoco::insert_into::<User>()
 
 ## 다음 단계
 
-- [**`insert_many::\<M\>()`**](/v0.0.1/orm/insert-many): 일괄 삽입.
-- [**`update::\<M\>()`**](/v0.0.1/orm/update): 레코드 업데이트.
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.1/orm/insert-many): 일괄 삽입.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): 레코드 업데이트.

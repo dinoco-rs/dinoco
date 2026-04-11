@@ -8,7 +8,7 @@ Utilizzato per recuperare un elenco di record.
 
 ## Cosa puoi fare
 
-- Selezionare una proiezione con `.select::\<T\>()`
+- Selezionare una proiezione con `.select::&lt;T&gt;()`
 - Filtrare con `.cond(...)`
 - Limitare con `.take(...)`
 - Paginare con `.skip(...)`
@@ -20,7 +20,7 @@ Utilizzato per recuperare un elenco di record.
 
 ## Descrizione dei metodi
 
-- `.select::\<T\>()`: sostituisce la proiezione predefinita del modello con una proiezione personalizzata.
+- `.select::&lt;T&gt;()`: sostituisce la proiezione predefinita del modello con una proiezione personalizzata.
 - `.cond(...)`: aggiunge condizioni di filtro alla query.
 - `.take(...)`: limita la quantità di record restituiti.
 - `.skip(...)`: salta una quantità di record prima di restituire il risultato.
@@ -32,13 +32,13 @@ Utilizzato per recuperare un elenco di record.
 
 ## Ritorno
 
-Senza `select::\<T\>()`, il ritorno è:
+Senza `select::&lt;T&gt;()`, il ritorno è:
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-Con `select::\<T\>()`, il ritorno diventa:
+Con `select::&lt;T&gt;()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -192,5 +192,5 @@ let users = dinoco::find_many::<User>()
 
 ## Prossimi passi
 
-- [**`find_first::\<M\>()`**](/v0.0.1/orm/find-first): versione per cercare al massimo un record.
-- [**`count::\<M\>()`**](/v0.0.1/orm/count): conteggio di record con filtro.
+- [**`find_first::&lt;M&gt;()`**](/v0.0.1/orm/find-first): versione per cercare al massimo un record.
+- [**`count::&lt;M&gt;()`**](/v0.0.1/orm/count): conteggio di record con filtro.

@@ -39,7 +39,7 @@ impl dinoco::Projection<User> for UserSummary {
 }
 ```
 
-Elle est très utilisée avec `select::\<T\>()`, `include` et les structs dérivées avec `Extend`.
+Elle est très utilisée avec `select::&lt;T&gt;()`, `include` et les structs dérivées avec `Extend`.
 
 ## Trait InsertModel
 
@@ -109,8 +109,8 @@ Dans un modèle généré par Dinoco, le plus courant est de recevoir déjà des
 
 Selon les relations du schéma, le modèle peut également recevoir :
 
-- `InsertRelation\<T\>`
-- `InsertConnection\<T\>`
+- `InsertRelation&lt;T&gt;`
+- `InsertConnection&lt;T&gt;`
 
 ## Exemple avec traits et derive ensemble
 

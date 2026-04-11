@@ -9,7 +9,7 @@ export const title = 'insert_into';
 ## 您可以做什么
 
 - `.values(item)`: 定义要插入的记录。
-- `.returning::\<T\>()`: 将返回值更改为插入项的类型化投影。
+- `.returning::&lt;T&gt;()`: 将返回值更改为插入项的类型化投影。
 - `.execute(&client)`: 执行数据库写入操作。
 
 ## 使用 Extend #[insertable] 的示例
@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## 返回值
 
-如果没有 `.returning::\<T\>()`，返回值为：
+如果没有 `.returning::&lt;T&gt;()`，返回值为：
 
 ```rust
 DinocoResult<()>
 ```
 
-有了 `.returning::\<T\>()`，返回值为：
+有了 `.returning::&lt;T&gt;()`，返回值为：
 
 ```rust
 DinocoResult<T>
@@ -207,5 +207,5 @@ dinoco::insert_into::<User>()
 ## 后续步骤
 
 - [**派生**](/v0.0.2/core/derives)：了解何时使用 `Rowable`、`Extend` 和 `#[insertable]`。
-- [**`insert_many::\<M\>()`**](/v0.0.2/orm/insert-many)：批量插入。
-- [**`update::\<M\>()`**](/v0.0.2/orm/update)：更新记录。
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.2/orm/insert-many)：批量插入。
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update)：更新记录。

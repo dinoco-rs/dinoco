@@ -12,18 +12,18 @@ Usado para atualizar registros filtrados.
 - `.values(item)`: informa os novos valores do registro.
 - `.connect(...)`: cria vínculos de relação suportados para escrita.
 - `.disconnect(...)`: remove vínculos de relação suportados para escrita.
-- `.returning::\<T\>()`: retorna os registros atualizados em uma projeção tipada.
+- `.returning::&lt;T&gt;()`: retorna os registros atualizados em uma projeção tipada.
 - `.execute(&client)`: executa a atualização no banco.
 
 ## Retorno
 
-Sem `.returning::\<T\>()`, o retorno é:
+Sem `.returning::&lt;T&gt;()`, o retorno é:
 
 ```rust
 DinocoResult<()>
 ```
 
-Com `.returning::\<T\>()`, o retorno passa a ser:
+Com `.returning::&lt;T&gt;()`, o retorno passa a ser:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -116,5 +116,5 @@ Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
 
 ## Próximos passos
 
-- [**`update_many::\<M\>()`**](/v0.0.1/orm/update-many): atualização em lote.
-- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): update atômico com retorno.
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): atualização em lote.
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): update atômico com retorno.

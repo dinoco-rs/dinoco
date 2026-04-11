@@ -8,23 +8,23 @@ export const title = "insert_many";
 
 ## できること
 
-- `.values(Vec\<M\>)`: バッチで挿入されるレコードを定義します。
-- `.with_relation(Vec\<R\>)`: 各親に対して、正確に1つの新しい関連レコードを挿入します。
-- `.with_relations(Vec\<Vec\<R\>\>)` : 各親に対して、複数の新しい関連レコードを挿入します。
-- `.with_connection(Vec\<R\>)`: 挿入された各親に対して、正確に1つの既存の関連を接続します。
-- `.with_connections(Vec\<Vec\<R\>\>)` : 挿入された各親に対して、複数の既存の関連を接続します。これは通常、多対多のシナリオで使用されます。
-- `.returning::\<T\>()`: 戻り値を、挿入されたアイテムの型付きリストに変更します。
+- `.values(Vec&lt;M&gt;)`: バッチで挿入されるレコードを定義します。
+- `.with_relation(Vec&lt;R&gt;)`: 各親に対して、正確に1つの新しい関連レコードを挿入します。
+- `.with_relations(Vec&lt;Vec\<R&gt;\>)` : 各親に対して、複数の新しい関連レコードを挿入します。
+- `.with_connection(Vec&lt;R&gt;)`: 挿入された各親に対して、正確に1つの既存の関連を接続します。
+- `.with_connections(Vec&lt;Vec\<R&gt;\>)` : 挿入された各親に対して、複数の既存の関連を接続します。これは通常、多対多のシナリオで使用されます。
+- `.returning::&lt;T&gt;()`: 戻り値を、挿入されたアイテムの型付きリストに変更します。
 - `.execute(&client)`: バッチ操作を実行します。
 
 ## 戻り値
 
-`.returning::\<T\>()`がない場合、戻り値は次のようになります。
+`.returning::&lt;T&gt;()`がない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::\<T\>()`がある場合、戻り値は次のようになります。
+`.returning::&lt;T&gt;()`がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
@@ -146,5 +146,5 @@ dinoco::insert_many::<Article>()
 
 ## 次のステップ
 
-- [**`insert_into::\<M\>()`**](/v0.0.1/orm/insert-into): 単一挿入。
-- [**`update::\<M\>()`**](/v0.0.1/orm/update): フィルター付き更新。
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.1/orm/insert-into): 単一挿入。
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): フィルター付き更新。

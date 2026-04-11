@@ -8,19 +8,19 @@ export const title = 'insert_many';
 
 ## 수행할 수 있는 작업
 
-- `.values(Vec\<M\>)`: 일괄 삽입될 레코드를 정의합니다.
-- `.returning::\<T\>()`: 반환 값을 삽입된 항목의 유형화된 목록으로 변경합니다.
+- `.values(Vec&lt;M&gt;)`: 일괄 삽입될 레코드를 정의합니다.
+- `.returning::&lt;T&gt;()`: 반환 값을 삽입된 항목의 유형화된 목록으로 변경합니다.
 - `.execute(&client)`: 일괄 작업을 실행합니다.
 
 ## 반환
 
-`.returning::\<T\>()`가 없으면 반환 값은 다음과 같습니다:
+`.returning::&lt;T&gt;()`가 없으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::\<T\>()`가 있으면 반환 값은 다음과 같습니다:
+`.returning::&lt;T&gt;()`가 있으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -220,11 +220,11 @@ dinoco::insert_many::<Article>()
 
 - `Extend` struct의 `#[insertable]`은 `.values(...)`가 새로운 관계를 재귀적으로 삽입할 수 있도록 합니다.
 - 이미 존재하는 레코드와의 연결을 위해서는 코드 생성기가 생성한 `ModelConnection` enum을 사용하십시오.
-- 새로운 관계는 `Vec\<ModelRelacionado\>` 또는 `#[insertable]`로 표시된 다른 `Extend` 페이로드를 사용할 수 있습니다.
+- 새로운 관계는 `Vec&lt;ModelRelacionado&gt;` 또는 `#[insertable]`로 표시된 다른 `Extend` 페이로드를 사용할 수 있습니다.
 - 기존 연결은 다대다 시나리오와 생성된 모델이 지원하는 흐름에서 잘 작동합니다.
 
 ## 다음 단계
 
 - [**Derives**](/v0.0.2/core/derives): `Extend` 및 `#[insertable]`을 사용하여 페이로드를 구성하는 방법을 이해하십시오.
-- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into): 단일 삽입.
-- [**`update::\<M\>()`**](/v0.0.2/orm/update): 필터가 있는 업데이트.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into): 단일 삽입.
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update): 필터가 있는 업데이트.
