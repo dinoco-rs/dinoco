@@ -1,26 +1,26 @@
-export const title = "Связи";
+export const title = "Отношения";
 
-# Связи
+# Отношения
 
-Связи соединяют модели в схеме Dinoco.
+Отношения связывают модели друг с другом в схеме Dinoco.
 
-На этой странице рассматриваются `@relation(...)`, `onDelete`, `onUpdate` и наиболее распространенные шаблоны связей.
+Эта страница охватывает `@relation(...)`, `onDelete`, `onUpdate` и наиболее распространенные шаблоны отношений.
 
 ---
 
 ## @relation(...)
 
-Атрибут `@relation(...)` определяет, как две модели связаны друг с другом.
+Атрибут `@relation(...)` определяет, как две модели связаны.
 
 Поддерживаемые параметры:
 
-| Параметр     | Использование                                           |
-| :----------- | :------------------------------------------------------ |
-| `name`       | Явное имя связи                                         |
-| `fields`     | Локальные поля, используемые в качестве ключей          |
-| `references` | Ссылочные поля в целевой модели                         |
-| `onDelete`   | Поведение при удалении ссылочной записи                 |
-| `onUpdate`   | Поведение при обновлении ссылочного значения            |
+| Параметр     | Использование                                    |
+| :----------- | :----------------------------------------------- |
+| `name`       | Явное имя отношения                              |
+| `fields`     | Локальные поля, используемые в качестве ключа    |
+| `references` | Поля, на которые ссылается целевая модель        |
+| `onDelete`   | Поведение при удалении связанной записи          |
+| `onUpdate`   | Поведение при обновлении связанного значения     |
 
 Полный пример:
 
@@ -35,15 +35,15 @@ model Post {
 
 ## onDelete и onUpdate
 
-Dinoco предоставляет ссылочные действия для управления тем, что происходит при изменении или удалении связанной записи.
+Dinoco предоставляет ссылочные действия для управления тем, что происходит, когда связанная запись изменяется или удаляется.
 
 Поддерживаемые значения:
 
-| Действие       | Значение                                                  |
-| :------------- | :-------------------------------------------------------- |
-| `Cascade`      | Распространяет операцию на зависимые записи               |
-| `SetNull`      | Устанавливает внешний ключ в `null`                       |
-| `SetDefault`   | Устанавливает настроенное значение по умолчанию для поля  |
+| Действие     | Значение                                         |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | Распространяет операцию на зависимые записи      |
+| `SetNull`    | Устанавливает внешний ключ в `null`              |
+| `SetDefault` | Устанавливает значение по умолчанию, настроенное для поля |
 
 Пример:
 
@@ -55,11 +55,11 @@ model Comment {
 }
 ```
 
-Используйте `SetNull` только в том случае, если локальное поле является необязательным.
+Используйте `SetNull` только тогда, когда локальное поле является необязательным.
 
 ## Один ко многим
 
-Это наиболее распространенная связь: одна родительская запись имеет несколько дочерних.
+Это наиболее распространенное отношение: одна родительская запись имеет несколько дочерних.
 
 ```dinoco
 model User {
@@ -76,14 +76,14 @@ model Post {
 }
 ```
 
-Гedankliche Lesart:
+Мысленное прочтение:
 
 - Один `User` может иметь несколько `Post`.
 - Каждый `Post` принадлежит одному `User`.
 
 ## Многие ко многим
 
-В связях «многие ко многим» обе стороны имеют списки.
+В отношениях многие ко многим обе стороны имеют списки.
 
 ```dinoco
 model User {
@@ -101,14 +101,14 @@ model Role {
 }
 ```
 
-Гedankliche Lesart:
+Мысленное прочтение:
 
 - Один `User` может иметь несколько `Role`.
 - Одна `Role` может принадлежать нескольким `User`.
 
-## Самоссылка
+## Самостоятельное отношение
 
-Самоссылка возникает, когда модель ссылается сама на себя.
+Самостоятельное отношение возникает, когда модель связана сама с собой.
 
 ```dinoco
 model User {
@@ -120,21 +120,21 @@ model User {
 }
 ```
 
-Гedankliche Lesart:
+Мысленное прочтение:
 
 - У пользователя может быть менеджер.
 - У пользователя может быть несколько подчиненных.
 
 ## Практические советы
 
-- Используйте `name`, если между одними и теми же моделями существует более одной связи.
-- Используйте `onDelete: Cascade`, если дочерний элемент не имеет смысла без родительского.
-- Используйте `onDelete: SetNull`, если связь может быть разорвана без удаления дочерней записи.
-- Используйте самоссылки с явными именами для облегчения читаемости и генерации кода.
+- Используйте `name`, когда между одними и теми же моделями существует более одного отношения.
+- Используйте `onDelete: Cascade`, когда дочерний элемент не имеет смысла без родительского.
+- Используйте `onDelete: SetNull`, когда отношение может быть разорвано без удаления дочерней записи.
+- Используйте самостоятельные отношения с явными именами для облегчения чтения и генерации кода.
 
 ## Справочная схема для примеров
 
-Следующие примеры используют следующую схему:
+Приведенные ниже примеры используют следующую схему:
 
 ```dinoco
 config {
@@ -211,9 +211,9 @@ model Tag {
 }
 ```
 
-## Пример запроса со всеми возможными связями, начиная от User
+## Пример поиска со всеми возможными отношениями, начиная с User
 
-Если вы хотите начать с модели `User` и загрузить все прямые связи в одном запросе на чтение, вы можете комбинировать `select::<T>()` с несколькими `includes(...)`.
+Если вы хотите начать с модели `User` и загрузить все прямые отношения в одном запросе на чтение, вы можете комбинировать `select::<T>()` с несколькими `includes(...)`.
 
 ```rust
 use dinoco::{Extend, find_many};
@@ -319,142 +319,167 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-Этот шаблон полезен, если вы хотите создать комплексное представление пользователя в одной операции чтения, ориентированной на связи.
+Этот шаблон полезен, когда вы хотите создать полное представление о пользователе за одно чтение, ориентированное на отношения.
 
-## Пример вставки со связью с использованием User и Profile
+## Пример вставки с отношением, использующим User и Profile
 
-Чтобы вставить запись с отношением 1:1, используйте `with_relation(...)`.
+Чтобы вставить запись с отношением 1:1, используя новый API, поместите отношение в полезную нагрузку `Extend`, помеченную `#[insertable]`.
 
 ```rust
 use dinoco::insert_into;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+	id: String,
+	username: String,
+	role: Role,
+	profile: Option<Profile>,
+}
+
 let created_user = insert_into::<User>()
-	.values(User {
+	.values(UserWithProfile {
 		id: "user-1".to_string(),
 		username: "bia".to_string(),
 		role: Role::USER,
-	})
-	.with_relation(Profile {
-		id: "profile-1".to_string(),
-		bio: Some("Engenheira de software".to_string()),
-		userId: String::new(),
+		profile: Some(Profile {
+			id: "profile-1".to_string(),
+			bio: Some("Engenheira de software".to_string()),
+			userId: String::new(),
+		}),
 	})
 	.execute(&client)
 	.await?;
 ```
 
-В этом процессе:
+В этом потоке:
 
-- `User` вставляется первым.
-- Связанный `Profile` создается после.
-- Ключ `userId` связывается через поток связей Dinoco.
+- Сначала вставляется `User`.
+- Затем создается связанный `Profile`.
+- Ключ `userId` связывается потоком отношений Dinoco.
 
-## Пример `insert_many` с `with_relations(...)`
+## Пример insert_many с вложенными отношениями
 
-Используйте `with_relations(...)`, если вы хотите вставить несколько родительских записей и для каждой из них также вставить несколько новых связанных записей.
+Используйте `#[insertable]`, когда вы хотите вставить несколько родительских записей, а для каждой из них также вставить несколько новых связанных записей.
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	comments: Vec<Comment>,
+}
+
 let posts = vec![
-	Post {
+	PostWithComments {
 		id: "post-1".to_string(),
 		title: "Primeiro post".to_string(),
 		content: "Conteudo do primeiro post".to_string(),
 		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-1".to_string(),
+				text: "Muito bom".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+			Comment {
+				id: "comment-2".to_string(),
+				text: "Gostei do exemplo".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-3".to_string(),
+			},
+		],
 	},
-	Post {
+	PostWithComments {
 		id: "post-2".to_string(),
 		title: "Segundo post".to_string(),
 		content: "Conteudo do segundo post".to_string(),
 		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-3".to_string(),
+				text: "Quero mais detalhes".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+		],
 	},
-];
-
-let comments_per_post = vec![
-	vec![
-		Comment {
-			id: "comment-1".to_string(),
-			text: "Muito bom".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-		Comment {
-			id: "comment-2".to_string(),
-			text: "Gostei do exemplo".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-3".to_string(),
-		},
-	],
-	vec![
-		Comment {
-			id: "comment-3".to_string(),
-			text: "Quero mais detalhes".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-	],
 ];
 
 insert_many::<Post>()
 	.values(posts)
-	.with_relations(comments_per_post)
 	.execute(&client)
 	.await?;
 ```
 
-В этом процессе:
+В этом потоке:
 
 - Каждый `Post` вставляется.
-- Каждая группа в `comments_per_post` соответствует `Post` на той же позиции.
-- Dinoco связывает `Comment` с правильным постом при записи.
+- Dinoco создает вложенные `Comment` и связывает каждую группу с правильным `Post` во время записи.
 
-## Пример `insert_many` с `with_connections(...)`
+## Пример insert_many с вложенными соединениями
 
-Используйте `with_connections(...)`, если вы хотите вставить несколько родительских записей и каждую из них связать с несколькими уже существующими записями.
+Используйте перечисление `PostConnection`, сгенерированное codegen, когда вы хотите вставить несколько родительских записей и связать каждую из них с несколькими уже существующими записями.
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithTags {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	tags: Vec<PostConnection>,
+}
+
 insert_many::<Post>()
 	.values(vec![
-		Post {
+		PostWithTags {
 			id: "post-10".to_string(),
 			title: "Rust e Dinoco".to_string(),
 			content: "Post sobre produtividade".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-1".to_string()),
+				PostConnection::Tag("tag-2".to_string()),
+			],
 		},
-		Post {
+		PostWithTags {
 			id: "post-11".to_string(),
 			title: "Relações avançadas".to_string(),
 			content: "Post sobre includes e relacoes".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-2".to_string()),
+				PostConnection::Tag("tag-3".to_string()),
+			],
 		},
-	])
-	.with_connections(vec![
-		vec![
-			Tag { id: "tag-1".to_string(), name: "rust".to_string() },
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-		],
-		vec![
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-			Tag { id: "tag-3".to_string(), name: "sqlite".to_string() },
-		],
 	])
 	.execute(&client)
 	.await?;
 ```
 
-В этом процессе:
+В этом потоке:
 
 - `Post` вставляются.
-- Уже существующие `Tag` связываются с соответствующими постами.
-- Каждая группа внешнего вектора представляет связи поста на той же позиции.
+- Существующие `Tag` связываются с соответствующими постами.
+- Каждая полезная нагрузка определяет свои соединения с помощью перечисления, сгенерированного codegen.
 
 ## Следующие шаги
 
-- [**Enums**](/v0.0.1/orm/enums): узнайте, как представлять контролируемые значения в схеме.
-- [**Models**](/v0.0.1/orm/models): ознакомьтесь со структурой полей и примерами поиска, вставки, обновления и удаления с помощью Dinoco API.
+- [**Перечисления**](/v0.0.2/orm/enums): узнайте, как представлять контролируемые значения в схеме.
+- [**Модели**](/v0.0.2/orm/models): ознакомьтесь со структурой полей и примерами поиска, вставки, обновления и удаления с помощью API Dinoco.

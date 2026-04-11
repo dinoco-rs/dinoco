@@ -2,14 +2,14 @@ export const title = "delete_many";
 
 # delete_many
 
-Est utilisé pour supprimer plusieurs entrées avec une ou plusieurs conditions.
+Utilisé pour supprimer plusieurs enregistrements avec une ou plusieurs conditions.
 
 ---
 
 ## Ce que vous pouvez faire
 
-- `.cond(...)`: ajoute des filtres pour la suppression en masse.
-- `.execute(&client)`: exécute la suppression des entrées correspondantes.
+- `.cond(...)`: ajoute des filtres pour la suppression par lot.
+- `.execute(&client)`: exécute la suppression des enregistrements correspondants.
 
 ## Retour
 
@@ -21,7 +21,7 @@ DinocoResult<()>
 
 ## Exemple de base
 
-Ceci supprime uniquement les entrées qui correspondent à la condition.
+Ceci supprime uniquement les enregistrements qui remplissent la condition.
 
 ```rust
 dinoco::delete_many::<Session>()
@@ -42,5 +42,5 @@ dinoco::delete_many::<TaskAssignees>()
 
 ## Prochaines étapes
 
-- [**`delete::<M>()`**](/v0.0.1/orm/delete): Suppression ponctuelle avec filtre explicite.
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): Lister avant la suppression en masse.
+- [**`delete::<M>()`**](/v0.0.1/orm/delete): suppression ponctuelle avec filtre explicite.
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): lister avant de supprimer par lot.

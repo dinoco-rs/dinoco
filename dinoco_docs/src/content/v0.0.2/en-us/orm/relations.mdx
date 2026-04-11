@@ -4,7 +4,7 @@ export const title = "Relations";
 
 Relations connect models to each other in the Dinoco schema.
 
-This page covers `@relation(...)`, `onDelete`, `onUpdate` and the most common relationship patterns.
+This page covers `@relation(...)`, `onDelete`, `onUpdate`, and the most common relationship patterns.
 
 ---
 
@@ -14,15 +14,15 @@ The `@relation(...)` attribute defines how two models connect.
 
 Supported parameters:
 
-| Parameter    | Usage                                              |
-| :----------- | :----------------------------------------------- |
-| `name`       | Explicit name of the relation                        |
+| Parameter    | Usage                                     |
+| :----------- | :---------------------------------------- |
+| `name`       | Explicit name of the relation             |
 | `fields`     | Local fields used as key                  |
-| `references` | Referenced fields in the target model               |
+| `references` | Referenced fields in the target model     |
 | `onDelete`   | Behavior when deleting the referenced record |
-| `onUpdate`   | Behavior when updating the referenced value  |
+| `onUpdate`   | Behavior when updating the referenced value |
 
-Complete example:
+Full example:
 
 ```dinoco
 model Post {
@@ -39,11 +39,11 @@ Dinoco exposes referential actions to control what happens when the related reco
 
 Supported values:
 
-| Action         | Meaning                                      |
-| :----------- | :----------------------------------------------- |
+| Action         | Meaning                                       |
+| :----------- | :-------------------------------------------- |
 | `Cascade`    | Propagates the operation to dependent records |
-| `SetNull`    | Sets the foreign key to `null`           |
-| `SetDefault` | Sets the default value configured for the field   |
+| `SetNull`    | Sets the foreign key to `null`                |
+| `SetDefault` | Sets the default value configured for the field |
 
 Example:
 
@@ -76,9 +76,9 @@ model Post {
 }
 ```
 
-Mental reading:
+Mental read:
 
-- A `User` can have multiple `Post`.
+- A `User` can have multiple `Post`s.
 - Each `Post` belongs to a single `User`.
 
 ## Many to many
@@ -101,14 +101,14 @@ model Role {
 }
 ```
 
-Mental reading:
+Mental read:
 
-- A `User` can have multiple `Role`.
-- A `Role` can belong to multiple `User`.
+- A `User` can have multiple `Role`s.
+- A `Role` can belong to multiple `User`s.
 
 ## Self relation
 
-Self relation occurs when a model relates to itself.
+Self relation happens when a model relates to itself.
 
 ```dinoco
 model User {
@@ -120,15 +120,15 @@ model User {
 }
 ```
 
-Mental reading:
+Mental read:
 
-- A user can have one manager.
-- A user can have multiple reports.
+- A user can have a manager.
+- A user can have multiple subordinates.
 
 ## Practical tips
 
 - Use `name` when there is more than one relation between the same models.
-- Use `onDelete: Cascade` when the child does not make sense without the parent.
+- Use `onDelete: Cascade` when the child doesn't make sense without the parent.
 - Use `onDelete: SetNull` when the relationship can be undone without removing the child record.
 - Use self relations with explicit names to facilitate readability and codegen.
 
@@ -211,9 +211,9 @@ model Tag {
 }
 ```
 
-## Example of a fetch with all possible relations starting from User
+## Example of fetching all possible relations from User
 
-When you want to start from the `User` model and load all direct relations in a single read query, you can combine `select::<T>()` with multiple `includes(...)`.
+When you want to start from the `User` model and load all direct relations in the same read query, you can combine `select::<T>()` with multiple `includes(...)`.
 
 ```rust
 use dinoco::{Extend, find_many};
@@ -319,25 +319,35 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-This pattern is useful when you want to build a rich view of the user in a single relation-oriented read.
+This pattern is useful when you want to build a rich user view in a single relation-oriented read.
 
-## Example of an insert with relation using User and Profile
+## Example of insert with relation using User and Profile
 
-To insert a record with a 1:1 relation, use `with_relation(...)`.
+To insert a record with a 1:1 relation using the new API, place the relation inside an `Extend` payload marked with `#[insertable]`.
 
 ```rust
 use dinoco::insert_into;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+	id: String,
+	username: String,
+	role: Role,
+	profile: Option<Profile>,
+}
+
 let created_user = insert_into::<User>()
-	.values(User {
+	.values(UserWithProfile {
 		id: "user-1".to_string(),
 		username: "bia".to_string(),
 		role: Role::USER,
-	})
-	.with_relation(Profile {
-		id: "profile-1".to_string(),
-		bio: Some("Engenheira de software".to_string()),
-		userId: String::new(),
+		profile: Some(Profile {
+			id: "profile-1".to_string(),
+			bio: Some("Software Engineer".to_string()),
+			userId: String::new(),
+		}),
 	})
 	.execute(&client)
 	.await?;
@@ -346,62 +356,69 @@ let created_user = insert_into::<User>()
 In this flow:
 
 - The `User` is inserted first.
-- The related `Profile` is then created.
+- The related `Profile` is created next.
 - The `userId` key is linked by Dinoco's relation flow.
 
-## Example of insert_many with with_relations(...)
+## Example of insert_many with nested relations
 
-Use `with_relations(...)` when you want to insert multiple parent records and, for each of them, also insert multiple new related records.
+Use `#[insertable]` when you want to insert multiple parent records and, for each of them, also insert multiple new related records.
 
 ```rust
 use dinoco::insert_many;
 
-let posts = vec![
-	Post {
-		id: "post-1".to_string(),
-		title: "Primeiro post".to_string(),
-		content: "Conteudo do primeiro post".to_string(),
-		authorId: "user-1".to_string(),
-	},
-	Post {
-		id: "post-2".to_string(),
-		title: "Segundo post".to_string(),
-		content: "Conteudo do segundo post".to_string(),
-		authorId: "user-1".to_string(),
-	},
-];
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	comments: Vec<Comment>,
+}
 
-let comments_per_post = vec![
-	vec![
-		Comment {
-			id: "comment-1".to_string(),
-			text: "Muito bom".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-		Comment {
-			id: "comment-2".to_string(),
-			text: "Gostei do exemplo".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-3".to_string(),
-		},
-	],
-	vec![
-		Comment {
-			id: "comment-3".to_string(),
-			text: "Quero mais detalhes".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-	],
+let posts = vec![
+	PostWithComments {
+		id: "post-1".to_string(),
+		title: "First post".to_string(),
+		content: "Content of the first post".to_string(),
+		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-1".to_string(),
+				text: "Very good".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+			Comment {
+				id: "comment-2".to_string(),
+				text: "I liked the example".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-3".to_string(),
+			},
+		],
+	},
+	PostWithComments {
+		id: "post-2".to_string(),
+		title: "Second post".to_string(),
+		content: "Content of the second post".to_string(),
+		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-3".to_string(),
+				text: "I want more details".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+		],
+	},
 ];
 
 insert_many::<Post>()
 	.values(posts)
-	.with_relations(comments_per_post)
 	.execute(&client)
 	.await?;
 ```
@@ -409,40 +426,48 @@ insert_many::<Post>()
 In this flow:
 
 - Each `Post` is inserted.
-- Each group in `comments_per_post` corresponds to the `Post` at the same position.
-- Dinoco links the `Comment` records to the correct post during writing.
+- Dinoco creates the nested `Comment`s and links each group to the correct `Post` during the write.
 
-## Example of insert_many with with_connections(...)
+## Example of insert_many with nested connections
 
-Use `with_connections(...)` when you want to insert multiple parent records and connect each of them to multiple already existing records.
+Use the `PostConnection` enum generated by codegen when you want to insert multiple parent records and connect each of them to multiple existing records.
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithTags {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	tags: Vec<PostConnection>,
+}
+
 insert_many::<Post>()
 	.values(vec![
-		Post {
+		PostWithTags {
 			id: "post-10".to_string(),
-			title: "Rust e Dinoco".to_string(),
-			content: "Post sobre produtividade".to_string(),
+			title: "Rust and Dinoco".to_string(),
+			content: "Post about productivity".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-1".to_string()),
+				PostConnection::Tag("tag-2".to_string()),
+			],
 		},
-		Post {
+		PostWithTags {
 			id: "post-11".to_string(),
-			title: "Relações avançadas".to_string(),
-			content: "Post sobre includes e relacoes".to_string(),
+			title: "Advanced relations".to_string(),
+			content: "Post about includes and relations".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-2".to_string()),
+				PostConnection::Tag("tag-3".to_string()),
+			],
 		},
-	])
-	.with_connections(vec![
-		vec![
-			Tag { id: "tag-1".to_string(), name: "rust".to_string() },
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-		],
-		vec![
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-			Tag { id: "tag-3".to_string(), name: "sqlite".to_string() },
-		],
 	])
 	.execute(&client)
 	.await?;
@@ -450,11 +475,11 @@ insert_many::<Post>()
 
 In this flow:
 
-- The `Post` records are inserted.
-- The existing `Tag` records are connected to the corresponding posts.
-- Each group in the outer vector represents the connections for the post at the same position.
+- The `Post`s are inserted.
+- The existing `Tag`s are connected to the corresponding posts.
+- Each payload defines its connections using the codegen-generated enum.
 
 ## Next steps
 
-- [**Enums**](/v0.0.1/orm/enums): see how to represent controlled values in the schema.
-- [**Models**](/v0.0.1/orm/models): see field structure and examples of fetch, insert, update, and delete with the Dinoco API.
+- [**Enums**](/v0.0.2/orm/enums): see how to represent controlled values in the schema.
+- [**Models**](/v0.0.2/orm/models): see field structure and examples of find, insert, update, and delete with the Dinoco API.

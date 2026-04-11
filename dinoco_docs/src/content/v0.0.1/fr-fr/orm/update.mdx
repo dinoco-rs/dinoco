@@ -2,7 +2,7 @@ export const title = "update";
 
 # update
 
-Utilisé pour mettre à jour des enregistrements filtrés.
+Utilisé pour mettre à jour les enregistrements filtrés.
 
 ---
 
@@ -10,20 +10,20 @@ Utilisé pour mettre à jour des enregistrements filtrés.
 
 - `.cond(...)`: définit les enregistrements à mettre à jour.
 - `.values(item)`: spécifie les nouvelles valeurs de l'enregistrement.
-- `.connect(...)`: crée des relations d'écriture prises en charge.
-- `.disconnect(...)`: supprime les relations d'écriture prises en charge.
+- `.connect(...)`: crée des liens de relation pris en charge pour l'écriture.
+- `.disconnect(...)`: supprime les liens de relation pris en charge pour l'écriture.
 - `.returning::<T>()`: renvoie les enregistrements mis à jour dans une projection typée.
 - `.execute(&client)`: exécute la mise à jour dans la base de données.
 
 ## Retour
 
-Sans `.returning::<T>()`, la valeur de retour est :
+Sans `.returning::<T>()`, le retour est :
 
 ```rust
 DinocoResult<()>
 ```
 
-Avec `.returning::<T>()`, la valeur de retour devient :
+Avec `.returning::<T>()`, le retour devient :
 
 ```rust
 DinocoResult<Vec<T>>
@@ -31,7 +31,7 @@ DinocoResult<Vec<T>>
 
 Remarque :
 
-- `update().returning()` ne prend pas en charge les écritures de relations avec `.connect(...)` ou `.disconnect()`.
+- `update().returning()` ne prend pas en charge les écritures de relation avec `.connect(...)` ou `.disconnect(...)`.
 
 ## Exemple de mise à jour de champs
 
@@ -40,16 +40,16 @@ dinoco::update::<User>()
     .cond(|w| w.id.eq(10))
     .values(User {
         id: 10,
-        email: "novo@acme.com".to_string(),
-        name: "Novo Nome".to_string(),
+        email: "nouveau@acme.com".to_string(),
+        name: "Nouveau Nom".to_string(),
     })
     .execute(&client)
     .await?;
 ```
 
-## Exemple avec `connect(...)`
+## Exemple avec connect(...)
 
-Utilisé pour connecter des relations d'écriture prises en charge, généralement Many to Many.
+Utilisé pour connecter des relations prises en charge pour l'écriture, généralement Many to Many.
 
 ```rust
 dinoco::update::<User>()
@@ -59,7 +59,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## Exemple avec `disconnect(...)`
+## Exemple avec disconnect(...)
 
 Utilisé pour déconnecter des relations.
 
@@ -89,5 +89,5 @@ dinoco::update::<User>()
 
 ## Prochaines étapes
 
-- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): Mise à jour par lots.
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): Mise à jour atomique avec retour.
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): mise à jour par lot.
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): mise à jour atomique avec retour.

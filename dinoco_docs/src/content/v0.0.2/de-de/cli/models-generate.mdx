@@ -1,10 +1,10 @@
 export const title = "Models generate";
 
-# Wie benutzt man es?
+# Wie benutzt man?
 
-Der Befehl `dinoco models generate` generiert die Rust-Modelle aus der letzten Migration, die in der Datenbank gespeichert ist.
+Der Befehl `dinoco models generate` generiert die Rust-Modelle aus der letzten in der Datenbank gespeicherten Migration.
 
-Er wird verwendet, um den generierten Code mit der bereits angewendeten Schemastruktur abzugleichen.
+Er wird verwendet, um den generierten Code an die bereits angewendete Schemastruktur anzupassen.
 
 ---
 
@@ -13,8 +13,8 @@ Er wird verwendet, um den generierten Code mit der bereits angewendeten Schemast
 Dieser Befehl:
 
 - Liest die letzte verfügbare Migration
-- Baut die generierten Rust-Modelle neu auf
-- Aktualisiert die Artefakte, die von der typisierten Dinoco API verwendet werden
+- Rekonstruiert die generierten Rust-Modelle
+- Aktualisiert die von der typisierten Dinoco-API verwendeten Artefakte
 
 ## Wann zu verwenden
 
@@ -26,5 +26,4 @@ Verwenden Sie diesen Befehl, wenn:
 
 ## Nächste Schritte
 
-Nach der Generierung können Sie nun die Modelle in Ihrem Rust-Code verwenden.
-
+Nach der Generierung können Sie die Modelle nun in Ihrem Rust-Code verwenden.

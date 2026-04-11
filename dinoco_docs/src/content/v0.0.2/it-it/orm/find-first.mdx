@@ -1,46 +1,34 @@
-export const title = "find_first";
+export const title = 'find_first';
 
 # find_first
 
-Viene utilizzato per recuperare al massimo un record.
+Usato per cercare al massimo un record.
 
 ---
 
 ## Cosa puoi fare
 
-Fornisce gli stessi metodi di `find_many`:
-
-- `select`
-- `cond`
-- `take`
-- `skip`
-- `order_by`
-- `includes`
-- `count`
-- `read_in_primary`
-- `execute`
-
-## Descrizione dei metodi
-
-- `.select::<T>()`: sostituisce la proiezione predefinita con una proiezione personalizzata.
-- `.cond(...)`: aggiunge filtri alla query.
-- `.take(...)`: limita il numero massimo di record considerati.
-- `.skip(...)`: salta i record prima che venga selezionato il primo risultato.
+- `.select::<T>()`: scambia la proiezione predefinita con una proiezione personalizzata.
+- `.cond(...)`: aggiunge filtri alla ricerca.
+- `.take(...)`: limita la quantità massima di record considerati.
+- `.skip(...)`: salta i record prima di selezionare il primo risultato.
 - `.order_by(...)`: definisce quale record deve essere considerato per primo.
-- `.includes(...)`: carica le relazioni insieme all'oggetto principale.
-- `.count(...)`: calcola i contatori per le relazioni nella proiezione.
-- `.read_in_primary()`: forza la lettura dal database primario.
+- `.includes(...)`: carica le relazioni insieme all'elemento principale.
+- `.count(...)`: calcola i contatori delle relazioni nella proiezione.
+- `.cache(...)`: tenta di cercare prima in Redis e consulta il database solo se la chiave non esiste. In caso di cache hit, il query logger registra `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: esegue lo stesso flusso, ma salva con TTL in secondi.
+- `.read_in_primary()`: forza la lettura sul database principale.
 - `.execute(&client)`: esegue la query e restituisce al massimo un elemento.
 
 ## Ritorno
 
-Senza `select::<T>()` il ritorno è:
+Senza `select::<T>()`, il ritorno è:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-Con `select::<T>()` il ritorno cambia in:
+Con `select::<T>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Option<T>>
@@ -100,7 +88,35 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## Passi successivi
+## Esempio con cache
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): cerca più record.
-- [**`count::<M>()`**](/v0.0.1/orm/count): conteggio dei record.
+Questo metodo esiste solo quando lo schema ha `redis` configurato.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con cache
+
+Questo metodo esiste solo quando lo schema ha `redis` configurato.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache_with_expiration("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## Prossimi passi
+
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): cerca più record.
+- [**`count::<M>()`**](/v0.0.2/orm/count): conteggio dei record.

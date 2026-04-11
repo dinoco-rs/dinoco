@@ -2,13 +2,13 @@ export const title = "find_first";
 
 # find_first
 
-Viene utilizzato per recuperare al massimo un record.
+Usato per cercare al massimo un record.
 
 ---
 
 ## Cosa puoi fare
 
-Fornisce gli stessi metodi di `find_many`:
+Espone gli stessi metodi di `find_many`:
 
 - `select`
 - `cond`
@@ -22,25 +22,25 @@ Fornisce gli stessi metodi di `find_many`:
 
 ## Descrizione dei metodi
 
-- `.select::<T>()`: sostituisce la proiezione predefinita con una proiezione personalizzata.
-- `.cond(...)`: aggiunge filtri alla query.
-- `.take(...)`: limita il numero massimo di record considerati.
-- `.skip(...)`: salta i record prima che venga selezionato il primo risultato.
+- `.select::<T>()`: scambia la proiezione predefinita con una proiezione personalizzata.
+- `.cond(...)`: aggiunge filtri alla ricerca.
+- `.take(...)`: limita la quantità massima di record considerati.
+- `.skip(...)`: salta i record prima di selezionare il primo risultato.
 - `.order_by(...)`: definisce quale record deve essere considerato per primo.
-- `.includes(...)`: carica le relazioni insieme all'oggetto principale.
-- `.count(...)`: calcola i contatori per le relazioni nella proiezione.
-- `.read_in_primary()`: forza la lettura dal database primario.
+- `.includes(...)`: carica le relazioni insieme all'elemento principale.
+- `.count(...)`: calcola i contatori delle relazioni nella proiezione.
+- `.read_in_primary()`: forza la lettura nel database principale.
 - `.execute(&client)`: esegue la query e restituisce al massimo un elemento.
 
 ## Ritorno
 
-Senza `select::<T>()` il ritorno è:
+Senza `select::<T>()`, il ritorno è:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-Con `select::<T>()` il ritorno cambia in:
+Con `select::<T>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Option<T>>
@@ -100,7 +100,7 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## Passi successivi
+## Prossimi passi
 
 - [**`find_many::<M>()`**](/v0.0.1/orm/find-many): cerca più record.
 - [**`count::<M>()`**](/v0.0.1/orm/count): conteggio dei record.

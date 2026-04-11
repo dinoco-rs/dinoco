@@ -27,7 +27,7 @@ It exposes the same methods as `find_many`:
 - `.take(...)`: limits the maximum number of records considered.
 - `.skip(...)`: skips records before selecting the first result.
 - `.order_by(...)`: defines which record should be considered first.
-- `.includes(...)`: loads relations together with the main item.
+- `.includes(...)`: loads relations along with the main item.
 - `.count(...)`: calculates relation counters in the projection.
 - `.read_in_primary()`: forces reading from the primary database.
 - `.execute(&client)`: executes the query and returns at most one item.
@@ -103,4 +103,4 @@ let latest_user = dinoco::find_first::<User>()
 ## Next steps
 
 - [**`find_many::<M>()`**](/v0.0.1/orm/find-many): fetches multiple records.
-- [**`count::<M>()`**](/v0.0.1/orm/count): counts records.
+- [**`count::<M>()`**](/v001/orm/count): record count.

@@ -2,7 +2,7 @@ export const title = "Models";
 
 # Models
 
-`model`s define the central entities of your application in the Dinoco schema. Each `model` typically represents a table in the database and serves as the basis for code generation, typed queries, and operations with the Dinoco API.
+The `model` defines the central entities of your application in the Dinoco schema. Each `model` typically represents a table in the database and serves as the basis for code generation, typed queries, and operations with the Dinoco API.
 
 ---
 
@@ -62,7 +62,7 @@ model Post {
 
 ## Field structure
 
-Each model field is composed of:
+Each field of a model is composed of:
 
 - Name
 - Type
@@ -83,11 +83,11 @@ In this line:
 
 ## Field types
 
-Fields can represent basic schema values, such as text, number, boolean, and dates.
+Fields can represent basic schema values, such as text, numbers, booleans, and dates.
 
 ### Scalar fields
 
-These are fields that store direct values, such as text, number, boolean, and dates.
+These are fields that store direct values, such as text, numbers, booleans, and dates.
 
 ```dinoco
 model Product {
@@ -105,9 +105,9 @@ model Product {
 Dinoco supports two main modifiers:
 
 | Modifier | Meaning         | Example         |
-| :---------- | :------------- | :-------------- |
+| :---------- | :-------------- | :-------------- |
 | `?`         | Optional field | `name String?`  |
-| `[]`        | List           | `tags String[]` |
+| `[]`        | List            | `tags String[]` |
 
 ### Optional field
 
@@ -135,11 +135,11 @@ This format represents a list of values when the database and workflow support t
 
 Attributes change the behavior of fields and models.
 
-| Attribute       | Usage                              |
-| :-------------- | :------------------------------- |
-| `@id`           | Defines the primary identifier |
-| `@default(...)` | Defines a default value           |
-| `@unique`       | Ensures uniqueness                |
+| Attribute       | Usage                                |
+| :-------------- | :----------------------------------- |
+| `@id`           | Defines the primary identifier       |
+| `@default(...)` | Defines a default value              |
+| `@unique`       | Ensures uniqueness                   |
 
 ### `@id`
 
@@ -163,16 +163,16 @@ id        Integer  @default(autoincrement())
 
 Common functions and values:
 
-| Example                     | Usage                 |
+| Example                     | Usage               |
 | :-------------------------- | :------------------ |
 | `@default(false)`           | Default boolean     |
-| `@default(now())`           | Current date          |
+| `@default(now())`           | Current date        |
 | `@default(autoincrement())` | Incremental integer |
-| `@default(uuid())`          | UUID identifier  |
+| `@default(uuid())`          | UUID identifier     |
 
 ### `@unique`
 
-Ensures that the field value is not repeated.
+Ensures that the field's value is not repeated.
 
 ```dinoco
 model User {
@@ -189,8 +189,8 @@ In addition to attributes on individual fields, Dinoco also supports decorators 
 
 | Decorator             | Usage                                   |
 | :-------------------- | :------------------------------------ |
-| `@@ids([...])`        | Defines a composite primary key        |
-| `@@table_name("...")` | Maps the real table name in the database |
+| `@@ids([...])`        | Defines composite primary key         |
+| `@@table_name("...")` | Maps the actual table name in the database |
 
 ### `@@ids([...])`
 
@@ -210,7 +210,7 @@ This format is useful in associative tables and scenarios where natural uniquene
 
 ### `@@table_name("...")`
 
-Use `@@table_name()` when you want to keep a more user-friendly model name in the schema, but map it to a different physical name in the database.
+Use `@@table_name()` when you want to keep a more friendly model name in the schema, but map it to a different physical name in the database.
 
 ```dinoco
 model User {
@@ -240,9 +240,9 @@ model User {
 
 After codegen, this model can be used directly with the Dinoco API.
 
-## Example of searching for users with the Dinoco API
+## Example of fetching users with the Dinoco API
 
-### Find a single record
+### Fetch a single record
 
 ```rust
 let user = dinoco::find_first::<User>()
@@ -251,7 +251,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-### Find multiple records
+### Fetch multiple records
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -293,7 +293,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-If you want atomic updates on a single field, the `find_and_update` flow is usually even more direct:
+If you want atomic updates on a single field, the `find_and_update` flow is often even more straightforward:
 
 ```rust
 let user = dinoco::find_and_update::<User>()
@@ -303,7 +303,7 @@ let user = dinoco::find_and_update::<User>()
     .await?;
 ```
 
-## Example of removing a user with the Dinoco API
+## Example of deleting a user with the Dinoco API
 
 ```rust
 dinoco::delete::<User>()
@@ -312,7 +312,7 @@ dinoco::delete::<User>()
     .await?;
 ```
 
-For batch removals:
+For batch deletions:
 
 ```rust
 dinoco::delete_many::<User>()
@@ -323,19 +323,19 @@ dinoco::delete_many::<User>()
 
 ## Quick summary
 
-| Concept        | Example                | Goal                      |
-| :------------- | :--------------------- | :------------------------ |
-| Model          | `model User { ... }`   | Represent an entity       |
-| Scalar field   | `email String`         | Store simple value        |
-| Optional field | `name String?`         | Allow value absence       |
-| List field     | `tags String[]`        | Store multiple values     |
-| ID             | `id Integer @id`       | Uniquely identify         |
-| Default        | `@default(now())`      | Automatically fill        |
-| Unique         | `email String @unique` | Prevent duplication       |
+| Concept        | Example                | Objective                   |
+| :------------- | :--------------------- | :-------------------------- |
+| Model          | `model User { ... }`   | Represent an entity         |
+| Scalar field   | `email String`         | Store simple value          |
+| Optional field | `name String?`         | Allow absence of value      |
+| List field     | `tags String[]`        | Store multiple values       |
+| ID             | `id Integer @id`       | Uniquely identify           |
+| Default        | `@default(now())`      | Automatically fill          |
+| Unique         | `email String @unique` | Prevent duplication         |
 
 ## When to create a new model
 
-You usually create a new `model` when an entity in your application needs to:
+You typically create a new `model` when an entity in your application needs to:
 
 - Be persisted in the database.
 - Have its own identity.

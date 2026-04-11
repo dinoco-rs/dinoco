@@ -6,25 +6,25 @@ export const title = "insert_many";
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
-- `.values(Vec<M>)`: 定义要批量插入的记录。
-- `.with_relation(Vec<R>)`: 为每个父元素插入一个新的关联实体。
-- `.with_relations(Vec<Vec<R>>)` : 为每个父元素插入多个新的关联实体。
-- `.with_connection(Vec<R>)`: 为每个插入的父元素连接一个已存在的关联。
-- `.with_connections(Vec<Vec<R>>)` : 为每个插入的父元素连接多个已存在的关联，通常用于多对多场景。
-- `.returning::<T>()`: 将返回值更改为插入元素的类型化列表。
+- `.values(Vec<M>)`: 定义将要批量插入的记录。
+- `.with_relation(Vec<R>)`: 为每个父级插入一个新关联。
+- `.with_relations(Vec<Vec<R>>)` : 为每个父级插入多个新关联。
+- `.with_connection(Vec<R>)`: 为每个插入的父级连接一个已存在的关联。
+- `.with_connections(Vec<Vec<R>>)` : 为每个插入的父级连接多个已存在的关联，通常用于多对多场景。
+- `.returning::<T>()`: 将返回类型更改为插入项的类型化列表。
 - `.execute(&client)`: 执行批量操作。
 
 ## 返回值
 
-如果不使用 `.returning::<T>()`，返回值是：
+如果没有 `.returning::<T>()`，返回值为：
 
 ```rust
 DinocoResult<()>
 ```
 
-如果使用 `.returning::<T>()`，返回值是：
+如果使用 `.returning::<T>()`，返回值为：
 
 ```rust
 DinocoResult<Vec<T>>
@@ -55,9 +55,9 @@ let created = dinoco::insert_many::<User>()
     .await?;
 ```
 
-## `with_relation(...)` 示例
+## with_relation(...) 示例
 
-当每个父元素都需要创建并关联时，请使用 `with_relation(...)`。
+当每个父级都需要被创建并连接时，使用 `with_relation(...)`。
 
 ```rust
 dinoco::insert_many::<Post>()
@@ -73,9 +73,9 @@ dinoco::insert_many::<Post>()
     .await?;
 ```
 
-## `with_relations(...)` 示例
+## with_relations(...) 示例
 
-当每个父记录有多个子记录时，请使用 `with_relations(...)`；这些记录将自动创建并关联。
+当每个父记录有多个子记录时，使用 with_relations(...)；记录将被自动创建和链接。
 
 ```rust
 dinoco::insert_many::<Post>()
@@ -95,9 +95,9 @@ dinoco::insert_many::<Post>()
     .await?;
 ```
 
-## `with_connection(...)` 示例
+## with_connection(...) 示例
 
-当每个父元素需要连接到一个已存在的记录时，请使用 `with_connection(...)`。
+当每个父级需要连接到一个已存在的记录时，使用 `with_connection(...)`。
 
 ```rust
 dinoco::insert_many::<Team>()
@@ -113,9 +113,9 @@ dinoco::insert_many::<Team>()
     .await?;
 ```
 
-## `with_connections(...)` 示例
+## with_connections(...) 示例
 
-当每个父元素需要连接到多个已存在的记录时，请使用 `with_connections(...)`。
+当每个父级需要连接到多个已存在的记录时，使用 `with_connections(...)`。
 这在多对多关系中很常见。
 
 ```rust
@@ -137,14 +137,14 @@ dinoco::insert_many::<Article>()
     .await?;
 ```
 
-## 说明
+## 注意事项
 
-- 当父元素在内存中已有已知 ID 时，`with_relation(...)` 和 `with_relations(...)` 效果最佳。
+- `with_relation(...)` 和 `with_relations(...)` 在父级在内存中已有已知 ID 时效果最佳。
 - `with_connection(...)` 和 `with_connections(...)` 用于连接已存在的关联。
-- `with_connection(...)` 需要与 `values(...)` 相同数量的元素。
-- `with_connections(...)` 需要与主向量相同数量的组。
+- `with_connection(...)` 要求与 `values(...)` 具有相同数量的项。
+- `with_connections(...)` 要求与主向量具有相同数量的组。
 
 ## 下一步
 
-- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): 单个插入。
+- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): 单次插入。
 - [**`update::<M>()`**](/v0.0.1/orm/update): 带过滤器的更新。

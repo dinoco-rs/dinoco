@@ -4,7 +4,7 @@ export const title = "Migrate generate";
 
 Il comando `dinoco migrate generate` genera una migrazione dallo schema attuale.
 
-Confronta lo stato attuale dello schema con la cronologia nota e crea gli artefatti necessari per evolvere il database.
+Confronta lo stato attuale dello schema con la cronologia conosciuta e crea gli artefatti necessari per evolvere il database.
 
 ---
 
@@ -14,7 +14,7 @@ Questo comando:
 
 - Legge lo schema attuale
 - Genera una nuova migrazione locale
-- Prepara gli artefatti utilizzati da Dinoco per l'evoluzione del database
+- Prepara gli artefatti usati da Dinoco per l'evoluzione del database
 
 Opzionalmente, può anche applicare immediatamente la migrazione e generare i modelli Rust.
 
@@ -30,33 +30,33 @@ Esempio:
 dinoco migrate generate --apply
 ```
 
-## Esempio d'uso senza applicazione immediata
+## Esempio di utilizzo senza applicazione
 
 ```bash
 dinoco migrate generate
 ```
 
-Questo flusso di lavoro è utile se si desidera:
+Questo flusso è utile quando si desidera:
 
-- Ispezionare la migrazione prima dell'applicazione
-- Verificare le modifiche nel controllo versione
-- Separare la generazione e l'esecuzione in passaggi diversi
+- Ispezionare la migrazione prima di applicarla
+- Rivedere le modifiche nel controllo di versione
+- Separare la generazione e l'esecuzione in fasi diverse
 
-## Esempio d'uso con applicazione immediata
+## Esempio di utilizzo con applicazione immediata
 
 ```bash
 dinoco migrate generate --apply
 ```
 
-Questo flusso di lavoro è utile se si desidera:
+Questo flusso è utile quando si desidera:
 
 - Aggiornare rapidamente il database locale
-- Generare i modelli direttamente dopo la migrazione
+- Generare i modelli subito dopo la migrazione
 - Iterare più velocemente durante lo sviluppo
 
-## Passi successivi
+## Prossimi passi
 
-Dopo la generazione, è possibile:
+Dopo la generazione, puoi:
 
 ```bash
 dinoco migrate run

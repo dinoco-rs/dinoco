@@ -23,7 +23,7 @@ pub use futures;
 pub use serde;
 pub use serde_json::Value as JsonValue;
 
-pub use cache::{CachePolicy, CachedFindFirst, CachedFindMany, DinocoCache, DinocoClientCacheExt};
+pub use cache::{CachePolicy, CachedFindFirst, CachedFindMany, DinocoCache};
 pub use data::{CountNode, IncludeNode, OrderBy, ReadMode};
 pub use execution::{
     execute_connection_updates, execute_count, execute_delete, execute_find_and_update, execute_first, execute_insert,
@@ -47,4 +47,4 @@ pub use model::{
     IntoIncludeNode, Model, Projection, RelationLinkPlan, RelationMutationModel, RelationMutationTarget,
     RelationWriteAction, RelationWritePlan, ScalarFieldValue, UpdateModel,
 };
-pub use queue::{QueueWorkerContext, QueueWorkers, workers};
+pub use queue::{QueueWorkerContext, QueueWorkers};

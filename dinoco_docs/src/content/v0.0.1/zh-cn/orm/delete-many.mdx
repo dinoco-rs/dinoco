@@ -2,14 +2,14 @@ export const title = "delete_many";
 
 # delete_many
 
-用于通过一个或多个条件删除多个记录。
+用于删除满足一个或多个条件的多个记录。
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
-- `.cond(...)`: 添加用于批量删除的过滤器。
-- `.execute(&client)`: 执行删除相应的记录。
+- `.cond(...)`: 添加批量删除的过滤器。
+- `.execute(&client)`: 执行删除匹配记录的操作。
 
 ## 返回值
 
@@ -19,9 +19,9 @@ export const title = "delete_many";
 DinocoResult<()>
 ```
 
-## 基础示例
+## 基本示例
 
-这只会删除满足条件的记录。
+这仅删除满足条件的记录。
 
 ```rust
 dinoco::delete_many::<Session>()
@@ -32,7 +32,7 @@ dinoco::delete_many::<Session>()
 
 ## 无过滤器示例
 
-这会删除表中所有数据。
+这将删除表中的所有数据。
 
 ```rust
 dinoco::delete_many::<TaskAssignees>()
@@ -42,5 +42,5 @@ dinoco::delete_many::<TaskAssignees>()
 
 ## 下一步
 
-- [**`delete::<M>()`**](/v0.0.1/orm/delete): 使用显式过滤器进行点删除。
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 在批量删除前列出。
+- [**`delete::<M>()`**](/v0.0.1/orm/delete): 带显式过滤器的精确删除。
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 批量删除前列出。

@@ -1,5 +1,5 @@
 {
-	"description": "Dinoco ドキュメントの最初の公開版です。",
+	"description": "Dinocoドキュメントの最初の公開バージョン。",
 	"groups": [
 		{
 			"icon": "database",
@@ -11,12 +11,12 @@
 					"items": [
 						{
 							"shortName": "introduction-dinoco",
-							"name": "Dinoco の紹介",
-							"mdxPath": "v0.0.1/ja-jp/orm/introduction-to-dinoco.mdx",
+							"name": "Dinocoの紹介",
+							"mdxPath": "v0.0.1/pt-br/orm/introduction-to-dinoco.mdx",
 							"inPage": [
-								"Dinoco の紹介",
+								"Dinocoの紹介",
 								{
-									"title": "Rust における Prisma の体験",
+									"title": "RustにおけるPrisma体験",
 									"items": []
 								},
 								{
@@ -24,7 +24,7 @@
 									"items": []
 								},
 								{
-									"title": "私たちはどこに位置するのか？",
+									"title": "私たちの立ち位置",
 									"items": []
 								}
 							]
@@ -32,15 +32,15 @@
 						{
 							"shortName": "first-steps",
 							"name": "最初のステップ",
-							"mdxPath": "v0.0.1/ja-jp/orm/first-steps.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/first-steps.mdx",
 							"inPage": [
 								"最初のステップ",
 								{
-									"title": "どのように動作しますか？",
+									"title": "仕組み",
 									"items": [
 										"1. スキーマと接続を定義する",
 										"2. マイグレーションを作成する",
-										"3. DinocoClient でクエリする"
+										"3. DinocoClientでのクエリ"
 									]
 								},
 								{
@@ -52,11 +52,11 @@
 						{
 							"shortName": "supported-databases",
 							"name": "概要",
-							"mdxPath": "v0.0.1/ja-jp/orm/supported-databases.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/supported-databases.mdx",
 							"inPage": [
 								"概要",
 								{
-									"title": "対応バージョン",
+									"title": "サポートされているバージョン",
 									"items": []
 								},
 								{
@@ -66,7 +66,7 @@
 									]
 								},
 								{
-									"title": "PostgreSQL または MySQL",
+									"title": "PostgreSQLまたはMySQL",
 									"items": []
 								},
 								{
@@ -78,12 +78,12 @@
 					]
 				},
 				{
-					"title": "Dinoco スキーマ",
+					"title": "Dinoco schema",
 					"items": [
 						{
 							"shortName": "models",
 							"name": "モデル",
-							"mdxPath": "v0.0.1/ja-jp/orm/models.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/models.mdx",
 							"inPage": [
 								"モデル",
 								{
@@ -95,11 +95,11 @@
 									"items": []
 								},
 								{
-									"title": "フィールド構造",
+									"title": "フィールドの構造",
 									"items": []
 								},
 								{
-									"title": "フィールド型",
+									"title": "フィールドの型",
 									"items": [
 										"スカラーフィールド"
 									]
@@ -112,7 +112,7 @@
 									]
 								},
 								{
-									"title": "よく使う属性",
+									"title": "最も一般的な属性",
 									"items": [
 										"`@id`",
 										"`@default(...)`",
@@ -131,26 +131,26 @@
 									"items": []
 								},
 								{
-									"title": "Dinoco API でユーザーを検索する例",
+									"title": "Dinoco APIを使用したユーザー検索の例",
 									"items": [
-										"1 件のレコードを検索",
-										"複数のレコードを検索"
+										"単一レコードの検索",
+										"複数レコードの検索"
 									]
 								},
 								{
-									"title": "Dinoco API でユーザーを作成する例",
+									"title": "Dinoco APIを使用したユーザー作成の例",
 									"items": []
 								},
 								{
-									"title": "Dinoco API でユーザーを更新する例",
+									"title": "Dinoco APIを使用したユーザー更新の例",
 									"items": []
 								},
 								{
-									"title": "Dinoco API でユーザーを削除する例",
+									"title": "Dinoco APIを使用したユーザー削除の例",
 									"items": []
 								},
 								{
-									"title": "クイックまとめ",
+									"title": "クイックサマリー",
 									"items": []
 								},
 								{
@@ -162,11 +162,11 @@
 						{
 							"shortName": "enums",
 							"name": "Enums",
-							"mdxPath": "v0.0.1/ja-jp/orm/enums.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/enums.mdx",
 							"inPage": [
 								"Enums",
 								{
-									"title": "Enum とは",
+									"title": "Enumとは",
 									"items": []
 								},
 								{
@@ -174,7 +174,7 @@
 									"items": []
 								},
 								{
-									"title": "Enum を使うタイミング",
+									"title": "Enumを使用するタイミング",
 									"items": []
 								},
 								{
@@ -190,7 +190,7 @@
 						{
 							"shortName": "relations",
 							"name": "リレーション",
-							"mdxPath": "v0.0.1/ja-jp/orm/relations.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/relations.mdx",
 							"inPage": [
 								"リレーション",
 								{
@@ -198,19 +198,19 @@
 									"items": []
 								},
 								{
-									"title": "onDelete と onUpdate",
+									"title": "onDeleteとonUpdate",
 									"items": []
 								},
 								{
-									"title": "1対多",
+									"title": "One to many",
 									"items": []
 								},
 								{
-									"title": "多対多",
+									"title": "Many to many",
 									"items": []
 								},
 								{
-									"title": "自己リレーション",
+									"title": "Self relation",
 									"items": []
 								},
 								{
@@ -218,23 +218,23 @@
 									"items": []
 								},
 								{
-									"title": "例用の参照スキーマ",
+									"title": "例のリファレンススキーマ",
 									"items": []
 								},
 								{
-									"title": "User からたどれるすべてのリレーションを取得する例",
+									"title": "Userからの可能なすべてのリレーションを含む検索の例",
 									"items": []
 								},
 								{
-									"title": "User と Profile を使ったリレーション付き insert の例",
+									"title": "UserとProfileを使用したリレーション付き挿入の例",
 									"items": []
 								},
 								{
-									"title": "`with_relations(...)` を使った `insert_many` の例",
+									"title": "`with_relations(...)`を使用した`insert_many`の例",
 									"items": []
 								},
 								{
-									"title": "`with_connections(...)` を使った `insert_many` の例",
+									"title": "`with_connections(...)`を使用した`insert_many`の例",
 									"items": []
 								},
 								{
@@ -246,12 +246,12 @@
 					]
 				},
 				{
-					"title": "Dinoco クライアント",
+					"title": "Dinoco client",
 					"items": [
 						{
 							"shortName": "find-many",
 							"name": "find_many",
-							"mdxPath": "v0.0.1/ja-jp/orm/find-many.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/find-many.mdx",
 							"inPage": [
 								"find_many",
 								{
@@ -267,7 +267,7 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "基本的な例",
 									"items": []
 								},
 								{
@@ -275,31 +275,31 @@
 									"items": []
 								},
 								{
-									"title": "ページネーションと並び替えの例",
+									"title": "ページネーションとソート付きの例",
 									"items": []
 								},
 								{
-									"title": "カスタム select の例",
+									"title": "カスタムセレクトの例",
 									"items": []
 								},
 								{
-									"title": "単純な include の例",
+									"title": "シンプルなインクルードの例",
 									"items": []
 								},
 								{
-									"title": "フィルター付き include の例",
+									"title": "フィルター付きインクルードの例",
 									"items": []
 								},
 								{
-									"title": "ネストした include の例",
+									"title": "ネストされたインクルードの例",
 									"items": []
 								},
 								{
-									"title": "リレーション数の例",
+									"title": "リレーションのカウントの例",
 									"items": []
 								},
 								{
-									"title": "プライマリデータベースから読み取る例",
+									"title": "メインデータベースからの読み取り例",
 									"items": []
 								},
 								{
@@ -311,7 +311,7 @@
 						{
 							"shortName": "find-first",
 							"name": "find_first",
-							"mdxPath": "v0.0.1/ja-jp/orm/find-first.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/find-first.mdx",
 							"inPage": [
 								"find_first",
 								{
@@ -327,11 +327,11 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "基本的な例",
 									"items": []
 								},
 								{
-									"title": "select の例",
+									"title": "セレクト付きの例",
 									"items": []
 								},
 								{
@@ -339,7 +339,7 @@
 									"items": []
 								},
 								{
-									"title": "並び替えの例",
+									"title": "ソート付きの例",
 									"items": []
 								},
 								{
@@ -351,7 +351,7 @@
 						{
 							"shortName": "find-and-update",
 							"name": "find_and_update",
-							"mdxPath": "v0.0.1/ja-jp/orm/find-and-update.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/find-and-update.mdx",
 							"inPage": [
 								"find_and_update",
 								{
@@ -367,15 +367,15 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "基本的な例",
 									"items": []
 								},
 								{
-									"title": "`ModelUpdate` で利用できる操作",
+									"title": "`ModelUpdate`で利用可能な操作",
 									"items": []
 								},
 								{
-									"title": "注意事項",
+									"title": "備考",
 									"items": []
 								},
 								{
@@ -387,7 +387,7 @@
 						{
 							"shortName": "insert-into",
 							"name": "insert_into",
-							"mdxPath": "v0.0.1/ja-jp/orm/insert-into.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/insert-into.mdx",
 							"inPage": [
 								"insert_into",
 								{
@@ -403,7 +403,7 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "シンプルな例",
 									"items": []
 								},
 								{
@@ -427,7 +427,7 @@
 						{
 							"shortName": "insert-many",
 							"name": "insert_many",
-							"mdxPath": "v0.0.1/ja-jp/orm/insert-many.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/insert-many.mdx",
 							"inPage": [
 								"insert_many",
 								{
@@ -439,7 +439,7 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "シンプルな例",
 									"items": []
 								},
 								{
@@ -447,23 +447,23 @@
 									"items": []
 								},
 								{
-									"title": "`with_relation(...)` の例",
+									"title": "`with_relation(...)`を使用した例",
 									"items": []
 								},
 								{
-									"title": "`with_relations(...)` の例",
+									"title": "`with_relations(...)`を使用した例",
 									"items": []
 								},
 								{
-									"title": "`with_connection(...)` の例",
+									"title": "`with_connection(...)`を使用した例",
 									"items": []
 								},
 								{
-									"title": "`with_connections(...)` の例",
+									"title": "`with_connections(...)`を使用した例",
 									"items": []
 								},
 								{
-									"title": "注意事項",
+									"title": "備考",
 									"items": []
 								},
 								{
@@ -475,7 +475,7 @@
 						{
 							"shortName": "update",
 							"name": "update",
-							"mdxPath": "v0.0.1/ja-jp/orm/update.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/update.mdx",
 							"inPage": [
 								"update",
 								{
@@ -491,15 +491,15 @@
 									"items": []
 								},
 								{
-									"title": "`connect(...)` の例",
+									"title": "`connect(...)`を使用した例",
 									"items": []
 								},
 								{
-									"title": "`disconnect(...)` の例",
+									"title": "`disconnect(...)`を使用した例",
 									"items": []
 								},
 								{
-									"title": "connect と disconnect で使えるフィルター",
+									"title": "`connect`と`disconnect`で利用可能なフィルター",
 									"items": []
 								},
 								{
@@ -511,7 +511,7 @@
 						{
 							"shortName": "update-many",
 							"name": "update_many",
-							"mdxPath": "v0.0.1/ja-jp/orm/update-many.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/update-many.mdx",
 							"inPage": [
 								"update_many",
 								{
@@ -523,7 +523,15 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "基本的な例",
+									"items": []
+								},
+								{
+									"title": "戻り値付きの例",
+									"items": []
+								},
+								{
+									"title": "フィルター付きの例",
 									"items": []
 								},
 								{
@@ -535,7 +543,7 @@
 						{
 							"shortName": "delete",
 							"name": "delete",
-							"mdxPath": "v0.0.1/ja-jp/orm/delete.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/delete.mdx",
 							"inPage": [
 								"delete",
 								{
@@ -547,11 +555,11 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "基本的な例",
 									"items": []
 								},
 								{
-									"title": "別のフィルターの例",
+									"title": "別のフィルターを使用した例",
 									"items": []
 								},
 								{
@@ -563,7 +571,7 @@
 						{
 							"shortName": "delete-many",
 							"name": "delete_many",
-							"mdxPath": "v0.0.1/ja-jp/orm/delete-many.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/delete-many.mdx",
 							"inPage": [
 								"delete_many",
 								{
@@ -575,7 +583,7 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "基本的な例",
 									"items": []
 								},
 								{
@@ -591,7 +599,7 @@
 						{
 							"shortName": "count",
 							"name": "count",
-							"mdxPath": "v0.0.1/ja-jp/orm/count.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/count.mdx",
 							"inPage": [
 								"count",
 								{
@@ -607,15 +615,15 @@
 									"items": []
 								},
 								{
-									"title": "基本例",
+									"title": "基本的な例",
 									"items": []
 								},
 								{
-									"title": "真偽値フィルターの例",
+									"title": "ブールフィルター付きの例",
 									"items": []
 								},
 								{
-									"title": "テキストフィルターの例",
+									"title": "テキストフィルター付きの例",
 									"items": []
 								},
 								{
@@ -639,7 +647,7 @@
 						{
 							"shortName": "install",
 							"name": "インストール",
-							"mdxPath": "v0.0.1/ja-jp/cli/install.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/install.mdx",
 							"inPage": [
 								"インストール",
 								{
@@ -660,15 +668,15 @@
 						{
 							"shortName": "init",
 							"name": "Init",
-							"mdxPath": "v0.0.1/ja-jp/cli/init.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/init.mdx",
 							"inPage": [
 								"使い方",
 								{
-									"title": "コマンドの動作",
+									"title": "コマンドの機能",
 									"items": []
 								},
 								{
-									"title": "使うタイミング",
+									"title": "使用するタイミング",
 									"items": []
 								},
 								{
@@ -680,15 +688,15 @@
 						{
 							"shortName": "database-reset",
 							"name": "Database reset",
-							"mdxPath": "v0.0.1/ja-jp/cli/database-reset.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/database-reset.mdx",
 							"inPage": [
 								"使い方",
 								{
-									"title": "コマンドの動作",
+									"title": "コマンドの機能",
 									"items": []
 								},
 								{
-									"title": "注意点",
+									"title": "注意事項",
 									"items": []
 								},
 								{
@@ -700,11 +708,11 @@
 						{
 							"shortName": "migrate-generate",
 							"name": "Migrate generate",
-							"mdxPath": "v0.0.1/ja-jp/cli/migrate-generate.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/migrate-generate.mdx",
 							"inPage": [
 								"使い方",
 								{
-									"title": "コマンドの動作",
+									"title": "コマンドの機能",
 									"items": []
 								},
 								{
@@ -714,11 +722,11 @@
 									]
 								},
 								{
-									"title": "適用せずに使う例",
+									"title": "適用しない使用例",
 									"items": []
 								},
 								{
-									"title": "すぐに適用する例",
+									"title": "即時適用する使用例",
 									"items": []
 								},
 								{
@@ -730,15 +738,15 @@
 						{
 							"shortName": "migrate-run",
 							"name": "Migrate run",
-							"mdxPath": "v0.0.1/ja-jp/cli/migrate-run.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/migrate-run.mdx",
 							"inPage": [
 								"使い方",
 								{
-									"title": "コマンドの動作",
+									"title": "コマンドの機能",
 									"items": []
 								},
 								{
-									"title": "使うタイミング",
+									"title": "使用するタイミング",
 									"items": []
 								},
 								{
@@ -750,11 +758,11 @@
 						{
 							"shortName": "migrate-rollback",
 							"name": "Migrate rollback",
-							"mdxPath": "v0.0.1/ja-jp/cli/migrate-rollback.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/migrate-rollback.mdx",
 							"inPage": [
 								"使い方",
 								{
-									"title": "コマンドの動作",
+									"title": "コマンドの機能",
 									"items": []
 								},
 								{
@@ -766,11 +774,11 @@
 									"items": []
 								},
 								{
-									"title": "使うタイミング",
+									"title": "使用するタイミング",
 									"items": []
 								},
 								{
-									"title": "注意点",
+									"title": "注意事項",
 									"items": []
 								},
 								{
@@ -782,15 +790,15 @@
 						{
 							"shortName": "models-generate",
 							"name": "Models generate",
-							"mdxPath": "v0.0.1/ja-jp/cli/models-generate.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/models-generate.mdx",
 							"inPage": [
 								"使い方",
 								{
-									"title": "コマンドの動作",
+									"title": "コマンドの機能",
 									"items": []
 								},
 								{
-									"title": "使うタイミング",
+									"title": "使用するタイミング",
 									"items": []
 								},
 								{
@@ -802,19 +810,19 @@
 						{
 							"shortName": "schema-restore",
 							"name": "Schema restore",
-							"mdxPath": "v0.0.1/ja-jp/cli/schema-restore.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/schema-restore.mdx",
 							"inPage": [
 								"使い方",
 								{
-									"title": "コマンドの動作",
+									"title": "コマンドの機能",
 									"items": []
 								},
 								{
-									"title": "特定のマイグレーションから復元する例",
+									"title": "特定のマイグレーションからの復元例",
 									"items": []
 								},
 								{
-									"title": "使うタイミング",
+									"title": "使用するタイミング",
 									"items": []
 								},
 								{
@@ -838,7 +846,7 @@
 						{
 							"shortName": "introduction",
 							"name": "はじめに",
-							"mdxPath": "v0.0.1/ja-jp/supersonic/introduction.mdx",
+							"mdxPath": "v0.0.1/pt-br/supersonic/introduction.mdx",
 							"inPage": [
 								"はじめに"
 							]
@@ -858,7 +866,7 @@
 						{
 							"shortName": "introduction",
 							"name": "はじめに",
-							"mdxPath": "v0.0.1/ja-jp/dinocodb/introduction.mdx",
+							"mdxPath": "v0.0.1/pt-br/dinocodb/introduction.mdx",
 							"inPage": [
 								"はじめに"
 							]

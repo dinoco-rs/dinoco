@@ -10,28 +10,28 @@ export const title = "update";
 
 - `.cond(...)`: 更新するレコードを定義します。
 - `.values(item)`: レコードの新しい値を指定します。
-- `.connect(...)`: 書き込み操作でサポートされているリレーションシップリンクを作成します。
-- `.disconnect(...)`: 書き込み操作でサポートされているリレーションシップリンクを削除します。
-- `.returning::<T>()`: 更新されたレコードを型付きプロジェクションで返します。
+- `.connect(...)`: 書き込みがサポートされている関連付けを作成します。
+- `.disconnect(...)`: 書き込みがサポートされている関連付けを削除します。
+- `.returning::<T>()`: 型付きプロジェクションで更新されたレコードを返します。
 - `.execute(&client)`: データベースで更新を実行します。
 
 ## 戻り値
 
-`.returning::<T>()` がない場合の戻り値は次のとおりです。
+`.returning::<T>()`がない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()` がある場合の戻り値は次のとおりです。
+`.returning::<T>()`がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-注:
+注記：
 
-- `update().returning()` は、`.connect(...)` または `.disconnect(...)` を使用したリレーショナルな書き込み操作をサポートしていません。
+- `update().returning()` は、`.connect(...)` または `.disconnect(...)` を使用したリレーション書き込みをサポートしていません。
 
 ## フィールド更新の例
 
@@ -47,9 +47,9 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## `connect(...)` の例
+## connect(...) の例
 
-書き込み操作でサポートされているリレーションシップ（通常は多対多）を接続するために使用されます。
+書き込みがサポートされているリレーション、通常は多対多を接続するために使用されます。
 
 ```rust
 dinoco::update::<User>()
@@ -59,9 +59,9 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## `disconnect(...)` の例
+## disconnect(...) の例
 
-リレーションシップを切断するために使用されます。
+リレーションを切断するために使用されます。
 
 ```rust
 dinoco::update::<User>()
@@ -71,7 +71,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## connect と disconnect で使えるフィルター
+## connect および disconnect で利用可能なフィルター
 
 - `eq`
 - `neq`

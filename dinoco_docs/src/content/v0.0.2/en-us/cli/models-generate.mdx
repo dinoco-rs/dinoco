@@ -2,7 +2,7 @@ export const title = "Models generate";
 
 # How to use?
 
-The command `dinoco models generate` generates the Rust models from the latest migration stored in the database.
+The `dinoco models generate` command generates Rust models from the latest migration stored in the database.
 
 It is used to keep the generated code aligned with the already applied schema structure.
 
@@ -13,8 +13,8 @@ It is used to keep the generated code aligned with the already applied schema st
 This command:
 
 - Reads the latest available migration
-- Reconstructs the generated Rust models
-- Updates the artifacts used by Dinoco's typed API
+- Rebuilds the generated Rust models
+- Updates the artifacts used by the Dinoco typed API
 
 ## When to use
 
@@ -22,7 +22,7 @@ Use this command when:
 
 - You have already applied migrations and want to regenerate the code
 - You need to update the models after structural changes
-- You want to ensure that the typed client reflects the latest state
+- You want to ensure the typed client reflects the latest state
 
 ## Next steps
 

@@ -2,7 +2,7 @@ export const title = "관계";
 
 # 관계
 
-관계는 Dinoco 스키마에서 모델을 서로 연결합니다.
+관계는 Dinoco 스키마에서 모델들을 서로 연결합니다.
 
 이 페이지에서는 `@relation(...)`, `onDelete`, `onUpdate` 및 가장 일반적인 관계 패턴을 다룹니다.
 
@@ -10,17 +10,17 @@ export const title = "관계";
 
 ## @relation(...)
 
-`@relation(...)` 속성은 두 모델이 서로 연결되는 방식을 정의합니다.
+`@relation(...)` 속성은 두 모델이 어떻게 연결되는지 정의합니다.
 
 지원되는 매개변수:
 
-| 매개변수     | 사용법                                                  |
-| :----------- | :------------------------------------------------------ |
-| `name`       | 관계의 명시적 이름                                      |
-| `fields`     | 키로 사용되는 로컬 필드                                 |
-| `references` | 대상 모델의 참조된 필드                                 |
-| `onDelete`   | 참조된 레코드가 삭제될 때의 동작                        |
-| `onUpdate`   | 참조된 값이 업데이트될 때의 동작                        |
+| 매개변수    | 용도                                              |
+| :----------- | :----------------------------------------------- |
+| `name`       | 관계의 명시적 이름                        |
+| `fields`     | 키로 사용되는 로컬 필드                  |
+| `references` | 대상 모델에서 참조되는 필드               |
+| `onDelete`   | 참조된 레코드 삭제 시 동작 |
+| `onUpdate`   | 참조된 값 업데이트 시 동작  |
 
 전체 예시:
 
@@ -35,15 +35,15 @@ model Post {
 
 ## onDelete 및 onUpdate
 
-Dinoco는 연결된 레코드가 변경되거나 제거될 때 발생하는 상황을 제어하기 위한 참조 작업을 제공합니다.
+Dinoco는 관련 레코드가 변경되거나 제거될 때 발생하는 일을 제어하기 위한 참조 작업을 노출합니다.
 
 지원되는 값:
 
-| 작업         | 의미                                            |
-| :----------- | :---------------------------------------------- |
-| `Cascade`    | 작업을 종속 레코드로 전파합니다                 |
-| `SetNull`    | 외래 키를 `null`로 설정합니다                   |
-| `SetDefault` | 필드에 대해 구성된 기본값을 설정합니다          |
+| 작업         | 의미                                      |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | 종속 레코드로 작업을 전파합니다 |
+| `SetNull`    | 외래 키를 `null`로 설정합니다           |
+| `SetDefault` | 필드에 구성된 기본값을 설정합니다   |
 
 예시:
 
@@ -76,10 +76,10 @@ model Post {
 }
 ```
 
-개념적 해석:
+개념적 이해:
 
-- 한 `User`는 여러 `Post`를 가질 수 있습니다.
-- 각 `Post`는 단일 `User`에 속합니다.
+- 하나의 `User`는 여러 `Post`를 가질 수 있습니다.
+- 각 `Post`는 하나의 `User`에 속합니다.
 
 ## 다대다
 
@@ -101,14 +101,14 @@ model Role {
 }
 ```
 
-개념적 해석:
+개념적 이해:
 
-- 한 `User`는 여러 `Role`을 가질 수 있습니다.
-- 한 `Role`은 여러 `User`에 속할 수 있습니다.
+- 하나의 `User`는 여러 `Role`을 가질 수 있습니다.
+- 하나의 `Role`은 여러 `User`에 속할 수 있습니다.
 
-## 자기 관계
+## 자기 참조 관계
 
-자기 관계는 모델이 자신을 참조할 때 발생합니다.
+자기 참조 관계는 모델이 자기 자신과 관계를 맺을 때 발생합니다.
 
 ```dinoco
 model User {
@@ -120,21 +120,21 @@ model User {
 }
 ```
 
-개념적 해석:
+개념적 이해:
 
-- 한 사용자는 관리자를 가질 수 있습니다.
-- 한 사용자는 여러 부하 직원을 가질 수 있습니다.
+- 사용자는 관리자를 가질 수 있습니다.
+- 사용자는 여러 부하 직원을 가질 수 있습니다.
 
 ## 실용적인 팁
 
-- 동일한 모델 간에 두 개 이상의 관계가 있는 경우 `name`을 사용하십시오.
-- 자식이 부모 없이 의미가 없는 경우 `onDelete: Cascade`를 사용하십시오.
-- 자식 레코드를 제거하지 않고 관계를 해제할 수 있는 경우 `onDelete: SetNull`을 사용하십시오.
-- 가독성과 코드 생성을 용이하게 하기 위해 명시적인 이름을 가진 자기 관계를 사용하십시오.
+- 동일한 모델 간에 여러 관계가 있을 때 `name`을 사용하십시오.
+- 자식이 부모 없이 의미가 없을 때 `onDelete: Cascade`를 사용하십시오.
+- 자식 레코드를 제거하지 않고 관계를 해제할 수 있을 때 `onDelete: SetNull`을 사용하십시오.
+- 읽기 및 코드 생성을 용이하게 하기 위해 명시적인 이름을 가진 자기 참조 관계를 사용하십시오.
 
-## 예제용 참조 스키마
+## 예시를 위한 참조 스키마
 
-다음 예제는 다음 스키마를 사용합니다:
+아래 예시는 다음 스키마를 사용합니다:
 
 ```dinoco
 config {
@@ -211,9 +211,9 @@ model Tag {
 }
 ```
 
-## `User`에서 가능한 모든 관계를 조회하는 예제
+## User에서 가능한 모든 관계를 포함하는 검색 예시
 
-`User` 모델에서 시작하여 단일 읽기 쿼리에서 모든 직접 관계를 로드하려면 `select::<T>()`를 여러 `includes(...)`와 결합할 수 있습니다.
+`User` 모델에서 시작하여 단일 읽기 쿼리에서 모든 직접 관계를 로드하려면 `select::<T>()`와 여러 `includes(...)`를 결합할 수 있습니다.
 
 ```rust
 use dinoco::{Extend, find_many};
@@ -319,25 +319,35 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-이 패턴은 단일 관계 지향 읽기 작업에서 포괄적인 사용자 보기를 생성하려는 경우에 유용합니다.
+이 패턴은 단일 관계 지향 읽기에서 풍부한 사용자 뷰를 구성하려는 경우에 유용합니다.
 
-## `User`와 `Profile`을 사용한 관계 포함 insert 예제
+## User 및 Profile을 사용한 관계 삽입 예시
 
-1:1 관계를 가진 레코드를 삽입하려면 `with_relation(...)`을 사용하십시오.
+새 API를 사용하여 1:1 관계를 가진 레코드를 삽입하려면, `#[insertable]`로 표시된 `Extend` 페이로드 내에 관계를 배치하십시오.
 
 ```rust
 use dinoco::insert_into;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+	id: String,
+	username: String,
+	role: Role,
+	profile: Option<Profile>,
+}
+
 let created_user = insert_into::<User>()
-	.values(User {
+	.values(UserWithProfile {
 		id: "user-1".to_string(),
 		username: "bia".to_string(),
 		role: Role::USER,
-	})
-	.with_relation(Profile {
-		id: "profile-1".to_string(),
-		bio: Some("Engenheira de software".to_string()),
-		userId: String::new(),
+		profile: Some(Profile {
+			id: "profile-1".to_string(),
+			bio: Some("Engenheira de software".to_string()),
+			userId: String::new(),
+		}),
 	})
 	.execute(&client)
 	.await?;
@@ -346,62 +356,69 @@ let created_user = insert_into::<User>()
 이 흐름에서:
 
 - `User`가 먼저 삽입됩니다.
-- 관련 `Profile`이 이어서 생성됩니다.
-- `userId` 키는 Dinoco의 관계 흐름을 통해 연결됩니다.
+- 관련된 `Profile`이 이어서 생성됩니다.
+- `userId` 키는 Dinoco의 관계 흐름에 의해 연결됩니다.
 
-## `with_relations(...)`를 사용한 `insert_many` 예제
+## 중첩 관계를 사용한 insert_many 예시
 
-여러 부모 레코드를 삽입하고 각 부모 레코드에 대해 여러 개의 새로운 관련 레코드를 삽입하려는 경우 `with_relations(...)`를 사용하십시오.
+여러 부모 레코드를 삽입하고 각 부모 레코드에 대해 여러 새 관련 레코드를 삽입하려는 경우 `#[insertable]`을 사용하십시오.
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	comments: Vec<Comment>,
+}
+
 let posts = vec![
-	Post {
+	PostWithComments {
 		id: "post-1".to_string(),
 		title: "Primeiro post".to_string(),
 		content: "Conteudo do primeiro post".to_string(),
 		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-1".to_string(),
+				text: "Muito bom".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+			Comment {
+				id: "comment-2".to_string(),
+				text: "Gostei do exemplo".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-3".to_string(),
+			},
+		],
 	},
-	Post {
+	PostWithComments {
 		id: "post-2".to_string(),
 		title: "Segundo post".to_string(),
 		content: "Conteudo do segundo post".to_string(),
 		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-3".to_string(),
+				text: "Quero mais detalhes".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+		],
 	},
-];
-
-let comments_per_post = vec![
-	vec![
-		Comment {
-			id: "comment-1".to_string(),
-			text: "Muito bom".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-		Comment {
-			id: "comment-2".to_string(),
-			text: "Gostei do exemplo".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-3".to_string(),
-		},
-	],
-	vec![
-		Comment {
-			id: "comment-3".to_string(),
-			text: "Quero mais detalhes".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-	],
 ];
 
 insert_many::<Post>()
 	.values(posts)
-	.with_relations(comments_per_post)
 	.execute(&client)
 	.await?;
 ```
@@ -409,40 +426,48 @@ insert_many::<Post>()
 이 흐름에서:
 
 - 각 `Post`가 삽입됩니다.
-- `comments_per_post`의 각 그룹은 동일한 위치의 `Post`에 해당합니다.
-- Dinoco는 쓰기 작업 중에 `Comment`를 올바른 게시물에 연결합니다.
+- Dinoco는 중첩된 `Comment`를 생성하고 쓰기 중에 각 그룹을 올바른 `Post`에 연결합니다.
 
-## `with_connections(...)`를 사용한 `insert_many` 예제
+## 중첩 연결을 사용한 insert_many 예시
 
-여러 부모 레코드를 삽입하고 각 부모 레코드를 여러 개의 이미 존재하는 레코드와 연결하려는 경우 `with_connections(...)`를 사용하십시오.
+여러 부모 레코드를 삽입하고 각 부모 레코드를 여러 기존 레코드에 연결하려는 경우 코드 생성기가 생성한 `PostConnection` enum을 사용하십시오.
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithTags {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	tags: Vec<PostConnection>,
+}
+
 insert_many::<Post>()
 	.values(vec![
-		Post {
+		PostWithTags {
 			id: "post-10".to_string(),
 			title: "Rust e Dinoco".to_string(),
 			content: "Post sobre produtividade".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-1".to_string()),
+				PostConnection::Tag("tag-2".to_string()),
+			],
 		},
-		Post {
+		PostWithTags {
 			id: "post-11".to_string(),
 			title: "Relações avançadas".to_string(),
 			content: "Post sobre includes e relacoes".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-2".to_string()),
+				PostConnection::Tag("tag-3".to_string()),
+			],
 		},
-	])
-	.with_connections(vec![
-		vec![
-			Tag { id: "tag-1".to_string(), name: "rust".to_string() },
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-		],
-		vec![
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-			Tag { id: "tag-3".to_string(), name: "sqlite".to_string() },
-		],
 	])
 	.execute(&client)
 	.await?;
@@ -451,10 +476,10 @@ insert_many::<Post>()
 이 흐름에서:
 
 - `Post`가 삽입됩니다.
-- 이미 존재하는 `Tag`가 해당 `Post`에 연결됩니다.
-- 외부 벡터의 각 그룹은 동일한 위치에 있는 게시물의 연결을 나타냅니다.
+- 기존 `Tag`는 해당 게시물에 연결됩니다.
+- 각 페이로드는 코드 생성기가 생성한 enum을 사용하여 연결을 정의합니다.
 
 ## 다음 단계
 
-- [**Enums**](/v0.0.1/orm/enums): 스키마에서 제어된 값을 나타내는 방법을 알아보십시오.
-- [**모델**](/v0.0.1/orm/models): Dinoco API를 사용한 필드 구조 및 쿼리, 삽입, 업데이트, 삭제 예제를 살펴보십시오.
+- [**Enum**](/v0.0.2/orm/enums): 스키마에서 제어되는 값을 나타내는 방법을 확인하십시오.
+- [**모델**](/v0.0.2/orm/models): Dinoco API를 사용한 필드 구조 및 검색, 삽입, 업데이트, 삭제 예시를 확인하십시오.

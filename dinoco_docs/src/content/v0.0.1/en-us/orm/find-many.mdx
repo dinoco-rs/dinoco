@@ -2,7 +2,7 @@ export const title = "find_many";
 
 # find_many
 
-Used to retrieve a list of records.
+Used to fetch a list of records.
 
 ---
 
@@ -18,17 +18,17 @@ Used to retrieve a list of records.
 - Force read from the primary database with `.read_in_primary()`
 - Execute with `.execute(&client)`
 
-## Methods Description
+## Method descriptions
 
-- `.select::<T>()`: changes the model's default projection to a customized one.
+- `.select::<T>()`: replaces the model's default projection with a custom projection.
 - `.cond(...)`: adds filter conditions to the query.
-- `.take(...)`: limits the number of records returned.
-- `.skip(...)`: skips a number of records before returning the result.
+- `.take(...)`: limits the quantity of records returned.
+- `.skip(...)`: skips a quantity of records before returning the result.
 - `.order_by(...)`: defines the query's ordering.
 - `.includes(...)`: loads relations along with the main records.
 - `.count(...)`: calculates relation counters and populates fields like `posts_count`.
 - `.read_in_primary()`: forces reading from the primary database, without using a replica.
-- `.execute(&client)`: executes the query in the database.
+- `.execute(&client)`: executes the query against the database.
 
 ## Return
 
@@ -106,7 +106,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Example with filtered include
+## Filtered include example
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -192,5 +192,5 @@ let users = dinoco::find_many::<User>()
 
 ## Next steps
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): version for retrieving at most one record.
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): version to fetch at most one record.
 - [**`count::<M>()`**](/v0.0.1/orm/count): record count with filter.

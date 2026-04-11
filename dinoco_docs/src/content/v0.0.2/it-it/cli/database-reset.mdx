@@ -1,20 +1,20 @@
-export const title = "Ripristino del database";
+export const title = "Database reset";
 
 # Come si usa?
 
 Il comando `dinoco database reset` ripristina il database configurato.
 
-Questo è utile in fase di sviluppo quando si desidera pulire completamente lo stato attuale del database.
+È utile nello sviluppo quando si desidera pulire completamente lo stato attuale del database.
 
 ---
 
 ## Cosa fa il comando
 
-Quando si esegue questo comando, la CLI tenta di rimuovere gli oggetti dal database corrente e di ricreare uno stato pulito per l'ambiente configurato.
+Eseguendo questo comando, la CLI tenta di rimuovere gli oggetti dal database attuale e ricreare uno stato pulito per l'ambiente configurato.
 
 Questo flusso è particolarmente utile per:
 
-- Ripristinare un ambiente locale da zero
+- Riavviare un ambiente locale da zero
 - Pulire i dati di test
 - Correggere ambienti inconsistenti durante lo sviluppo
 
@@ -22,11 +22,11 @@ Questo flusso è particolarmente utile per:
 
 - Questo comando è distruttivo per il database configurato.
 - Usare con cautela al di fuori di un ambiente locale.
-- Confermare sempre che l'URL di connessione punti al database corretto.
+- Verificare sempre che l'URL di connessione punti al database corretto.
 
 ## Passi successivi
 
-Dopo il ripristino, di solito si esegue quanto segue:
+Dopo il ripristino, di solito si esegue:
 
 ```bash
 dinoco migrate run

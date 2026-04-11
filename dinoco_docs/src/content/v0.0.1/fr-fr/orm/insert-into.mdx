@@ -15,11 +15,11 @@ Utilisé pour insérer un enregistrement.
 
 ## Description des méthodes
 
-- `.values(item)`: définit l'enregistrement à insérer.
-- `.with_relation(related)`: insère un nouvel enregistrement lié avec l'élément parent.
-- `.with_connection(connected)`: connecte l'enregistrement inséré à un élément déjà existant, généralement dans des flux de relations qui supportent la connexion.
-- `.returning::<T>()`: modifie le retour en une projection typée de l'élément inséré.
-- `.execute(&client)`: exécute l'opération d'écriture dans la base de données.
+- `.values(item)`: définit l'enregistrement qui sera inséré.
+- `.with_relation(related)`: insère un nouvel enregistrement lié avec le parent.
+- `.with_connection(connected)`: connecte l'enregistrement inséré à un élément existant, généralement dans des flux de relation pris en charge pour la connexion.
+- `.returning::<T>()`: modifie le retour pour une projection typée de l'élément inséré.
+- `.execute(&client)`: exécute l'écriture dans la base de données.
 
 ## Retour
 
@@ -50,7 +50,7 @@ dinoco::insert_into::<User>()
 
 ## Exemple avec relation
 
-Utilisez `.with_relation(...)` lorsque le modèle généré supporte l'insertion conjointe de l'élément parent et de l'élément lié.
+Utilisez `.with_relation(...)` lorsque le modèle généré prend en charge l'insertion du parent et de l'élément lié ensemble.
 
 ```rust
 dinoco::insert_into::<User>()
@@ -62,7 +62,7 @@ dinoco::insert_into::<User>()
 
 ## Exemple avec connexion
 
-Utilisez `.with_connection(...)` si vous souhaitez insérer un élément et connecter une relation déjà existante.
+Utilisez `.with_connection(...)` lorsque vous souhaitez insérer un élément et connecter une relation déjà existante.
 
 ```rust
 dinoco::insert_into::<User>()
@@ -91,5 +91,5 @@ let created = dinoco::insert_into::<User>()
 
 ## Prochaines étapes
 
-- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): Insertion par lot.
-- [**`update::<M>()`**](/v0.0.1/orm/update): Mise à jour d'enregistrements.
+- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): insertion par lot.
+- [**`update::<M>()`**](/v0.0.1/orm/update): mise à jour d'enregistrements.

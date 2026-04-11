@@ -10,19 +10,19 @@ We are working to expand this support to new databases soon!
 
 ---
 
-## Supported Versions
+## Supported versions
 
-| Database       | Minimum Version |
-| :------------- | :------------   |
+| Database       | Minimum version |
+| :------------- | :-------------- |
 | **SQLite**     | `>= 3.25`       |
 | **PostgreSQL** | `>= 10`         |
 | **MySQL**      | `>= 8.0`        |
 
 ---
 
-## Connection Configuration
+## Connection configuration
 
-The configuration is done within the `config` block in your schema file.
+Configuration is done within the `config` block in your schema file.
 
 ### SQLite
 
@@ -37,7 +37,7 @@ config {
 
 ## PostgreSQL or MySQL
 
-For external databases, insert the corresponding connection string:
+For external databases, enter the corresponding connection string:
 
 ```dinoco
 config {
@@ -46,7 +46,7 @@ config {
 }
 ```
 
-## Type Mapping
+## Type mapping
 
 | Dinoco       | Sqlite   | PostgreSQL       | MySQL            |
 | :----------- | :------- | :--------------- | :--------------- |
@@ -54,6 +54,6 @@ config {
 | **Boolean**  | BOOLEAN  | BOOLEAN          | TINYINT(1)       |
 | **Integer**  | INTEGER  | BIGINT           | BIGINT           |
 | **Float**    | REAL     | DOUBLE PRECISION | DOUBLE PRECISION |
-| **DateTime** | TIMESTAMP | TIMESTAMP        | TIMESTAMP        |
+| **DateTime** | DATETIME | TIMESTAMP        | TIMESTAMP        |
 | **Date**     | DATE     | DATE             | DATE             |
 | **Json**     | BLOB     | JSONB            | JSON             |

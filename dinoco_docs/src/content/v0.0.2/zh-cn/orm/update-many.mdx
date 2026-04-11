@@ -2,15 +2,15 @@ export const title = "update_many";
 
 # update_many
 
-用于同时更新多个记录。
+用于一次性更新多个记录。
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
-- `.cond(...)`: 限制可以更新的记录。
-- `.values(Vec<M>)`: 定义批量更新中使用的元素。
-- `.returning::<T>()`: 将更新后的记录作为类型化列表返回。
+- `.cond(...)`: 限制哪些记录可以被更新。
+- `.values(Vec<M>)`: 定义用于批量更新的项。
+- `.returning::<T>()`: 将更新的记录作为类型化列表返回。
 - `.execute(&client)`: 执行批量更新。
 
 ## 返回值
@@ -21,13 +21,13 @@ export const title = "update_many";
 DinocoResult<()>
 ```
 
-如果使用 `.returning::<T>()`，返回值为：
+如果有 `.returning::<T>()`，返回值变为：
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-## 基础示例
+## 基本示例
 
 ```rust
 dinoco::update_many::<User>()
@@ -68,4 +68,4 @@ dinoco::update_many::<User>()
 ## 下一步
 
 - [**`update::<M>()`**](/v0.0.1/orm/update): 带条件的传统更新。
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 单个记录的原子更新。
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 对单个记录进行原子更新。

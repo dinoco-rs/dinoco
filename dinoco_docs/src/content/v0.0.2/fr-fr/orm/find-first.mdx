@@ -1,4 +1,4 @@
-export const title = "find_first";
+export const title = 'find_first';
 
 # find_first
 
@@ -8,28 +8,16 @@ Utilisé pour récupérer au maximum un enregistrement.
 
 ## Ce que vous pouvez faire
 
-Il offre les mêmes méthodes que `find_many` :
-
-- `select`
-- `cond`
-- `take`
-- `skip`
-- `order_by`
-- `includes`
-- `count`
-- `read_in_primary`
-- `execute`
-
-## Description des méthodes
-
-- `.select::<T>()`: échange la projection par défaut contre une projection personnalisée.
+- `.select::<T>()`: remplace la projection par défaut par une projection personnalisée.
 - `.cond(...)`: ajoute des filtres à la recherche.
-- `.take(...)`: limite le nombre maximal d'enregistrements pris en compte.
-- `.skip(...)`: ignore des enregistrements avant de sélectionner le premier résultat.
-- `.order_by(...)`: définit quel enregistrement doit être pris en compte en premier.
+- `.take(...)`: limite la quantité maximale d'enregistrements considérés.
+- `.skip(...)`: saute des enregistrements avant de sélectionner le premier résultat.
+- `.order_by(...)`: définit quel enregistrement doit être considéré en premier.
 - `.includes(...)`: charge les relations avec l'élément principal.
-- `.count(...)`: calcule les compteurs des relations dans la projection.
-- `.read_in_primary()`: force la lecture depuis la base de données primaire.
+- `.count(...)`: calcule les compteurs de relations dans la projection.
+- `.cache(...)`: tente de récupérer d'abord dans Redis et ne consulte la base de données que si la clé n'existe pas. En cas de succès du cache, le journal de requête enregistre `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: effectue le même flux, mais enregistre avec un TTL en secondes.
+- `.read_in_primary()`: force la lecture sur la base de données principale.
 - `.execute(&client)`: exécute la requête et renvoie au maximum un élément.
 
 ## Retour
@@ -100,7 +88,35 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
+## Exemple avec cache
+
+Cette méthode n'existe que si le schéma a `redis` configuré.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec cache
+
+Cette méthode n'existe que si le schéma a `redis` configuré.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache_with_expiration("users:1")
+    .execute(&client)
+    .await?;
+```
+
 ## Prochaines étapes
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): recherche plusieurs enregistrements.
-- [**`count::<M>()`**](/v0.0.1/orm/count): comptage d'enregistrements.
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): recherche plusieurs enregistrements.
+- [**`count::<M>()`**](/v0.0.2/orm/count): comptage d'enregistrements.

@@ -2,18 +2,18 @@ export const title = "delete";
 
 # delete
 
-Utilizzato per eliminare con un filtro esplicito.
+Usato per eliminare con filtro esplicito.
 
 ---
 
 ## Cosa puoi fare
 
-- `.cond(...)`: definisce quale record deve essere rimosso.
+- `.cond(...)`: definisce quale record verrà rimosso.
 - `.execute(&client)`: esegue la rimozione nel database.
 
 ## Ritorno
 
-Il valore di ritorno di `delete` è:
+Il ritorno di `delete` è:
 
 ```rust
 DinocoResult<()>
@@ -37,7 +37,7 @@ dinoco::delete::<Session>()
     .await?;
 ```
 
-## Passi successivi
+## Prossimi passi
 
-- [**`delete_many::<M>()`**](/v0.0.1/orm/delete-many): Rimozione in batch.
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): Convalida i record prima della rimozione.
+- [**`delete_many::<M>()`**](/v0.0.1/orm/delete-many): rimozione in batch.
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): validare i record prima di rimuovere.

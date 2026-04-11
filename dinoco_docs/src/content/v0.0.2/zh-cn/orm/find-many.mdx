@@ -1,33 +1,23 @@
-export const title = "find_many";
+export const title = 'find_many';
 
 # find_many
 
-用于检索记录列表。
+用于获取记录列表。
 
 ---
 
-## 你可以做什么
-
-- 选择一个带有 `.select::<T>()` 的投影
-- 使用 `.cond(...)` 进行筛选
-- 使用 `.take(...)` 限制结果数量
-- 使用 `.skip(...)` 进行分页
-- 使用 `.order_by(...)` 进行排序
-- 使用 `.includes(...)` 加载关联
-- 使用 `.count(...)` 计算关联
-- 使用 `.read_in_primary()` 强制从主数据库读取
-- 使用 `.execute(&client)` 执行
-
-## 方法说明
+## 您可以做什么
 
 - `.select::<T>()`: 将模型的默认投影替换为自定义投影。
-- `.cond(...)`: 为查询添加筛选条件。
+- `.cond(...)`: 在查询中添加过滤条件。
 - `.take(...)`: 限制返回的记录数量。
 - `.skip(...)`: 在返回结果之前跳过一定数量的记录。
 - `.order_by(...)`: 定义查询的排序方式。
-- `.includes(...)`: 与主记录一起加载关联。
-- `.count(...)`: 计算关联的计数，并填充 `posts_count` 等字段。
-- `.read_in_primary()`: 强制从主数据库读取，而不使用副本。
+- `.includes(...)`: 随主记录一起加载关联关系。
+- `.count(...)`: 计算关联计数器并填充 `posts_count` 等字段。
+- `.cache(...)`: 首先使用提供的键在 Redis 中查询；如果缓存未命中，则执行查询、保存并返回结果。如果缓存命中，查询日志记录器将记录 `CACHE HIT key=...`。
+- `.cache_with_expiration(...)`: 与标准缓存行为相同，但以秒为单位写入 TTL。
+- `.read_in_primary()`: 强制在主数据库中读取，不使用副本。
 - `.execute(&client)`: 在数据库中执行查询。
 
 ## 返回值
@@ -38,13 +28,13 @@ export const title = "find_many";
 DinocoResult<Vec<M>>
 ```
 
-如果有 `select::<T>()`，返回值为：
+如果使用 `select::<T>()`，返回值为：
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-## 基础示例
+## 基本示例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -52,7 +42,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 带过滤器的示例
+## 带过滤的示例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -72,7 +62,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 自定义 select 示例
+## 自定义选择示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,7 +78,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 简单 include 示例
+## 简单包含示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -106,7 +96,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 带过滤 include 的示例
+## 带过滤的包含示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -124,7 +114,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 嵌套 include 示例
+## 嵌套包含示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +152,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 关系计数示例
+## 关联计数示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,7 +170,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 从主数据库读取的示例
+## 在主数据库中读取的示例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -190,7 +180,33 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## 缓存示例
+
+此方法仅在 schema 的 `config {}` 包含 `redis` 时生成。
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## 带过期时间的缓存示例
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
 ## 下一步
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 用于检索最多一条记录的版本。
-- [**`count::<M>()`**](/v0.0.1/orm/count): 带有筛选条件的记录计数。
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)：用于最多获取一条记录的版本。
+- [**`count::<M>()`**](/v0.0.2/orm/count)：带过滤条件的记录计数。

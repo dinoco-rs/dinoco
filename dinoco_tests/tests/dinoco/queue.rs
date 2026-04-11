@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use dinoco::{
     DinocoAdapter, DinocoCache, DinocoClient, DinocoClientConfig, DinocoError, DinocoRedisConfig, DinocoResult, Model,
-    MySqlAdapter, PostgresAdapter, Projection, Rowable, ScalarField, SqliteAdapter, UpdateModel, delete, insert_into,
-    update, workers,
+    Insert, InsertModel, InsertPayload, MySqlAdapter, PostgresAdapter, Projection, QueueWorkers, Rowable,
+    ScalarField, SqliteAdapter, Update, UpdateModel, delete, insert_into, update,
 };
 
 use tokio::sync::{Mutex, MutexGuard};
@@ -77,6 +77,47 @@ impl UpdateModel for User {
     fn update_identity_conditions(&self) -> Vec<dinoco::Expression> {
         vec![dinoco::Expression::Column("id".to_string()).eq(self.id)]
     }
+}
+
+trait InsertQueueExt<M, V>
+where
+    M: InsertModel,
+    V: InsertPayload<M>,
+{
+    fn enqueue(self, event: impl Into<String>) -> Insert<M, V>;
+}
+
+impl<M, V> InsertQueueExt<M, V> for Insert<M, V>
+where
+    M: InsertModel,
+    V: InsertPayload<M>,
+{
+    fn enqueue(self, event: impl Into<String>) -> Insert<M, V> {
+        self.__enqueue(event)
+    }
+}
+
+trait UpdateQueueExt<M>
+where
+    M: UpdateModel,
+{
+    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Update<M>;
+}
+
+impl<M> UpdateQueueExt<M> for Update<M>
+where
+    M: UpdateModel,
+{
+    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Update<M> {
+        self.__enqueue_in(event, delay_ms)
+    }
+}
+
+fn workers<A>() -> QueueWorkers<A>
+where
+    A: DinocoAdapter + Clone + Send + Sync + 'static,
+{
+    QueueWorkers::new()
 }
 
 #[tokio::test]

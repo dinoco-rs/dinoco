@@ -2,24 +2,24 @@ export const title = "delete";
 
 # delete
 
-明示的なフィルターを使用して削除するために使用されます。
+明示的なフィルターで削除するために使用されます。
 
 ---
 
 ## できること
 
-- `.cond(...)`: どのレコードを削除するかを定義します。
-- `.execute(&client)`: データベースで削除を実行します。
+- `.cond(...)`: どのレコードが削除されるかを定義します。
+- `.execute(&client)`: データベースから削除を実行します。
 
 ## 戻り値
 
-`delete` の戻り値は次のとおりです。
+`delete`の戻り値は次のとおりです。
 
 ```rust
 DinocoResult<()>
 ```
 
-## 基本例
+## 基本的な例
 
 ```rust
 dinoco::delete::<User>()
@@ -28,7 +28,7 @@ dinoco::delete::<User>()
     .await?;
 ```
 
-## 別のフィルターの例
+## 別のフィルターを使用した例
 
 ```rust
 dinoco::delete::<Session>()
@@ -39,5 +39,5 @@ dinoco::delete::<Session>()
 
 ## 次のステップ
 
-- [**`delete_many::<M>()`**](/v0.0.1/orm/delete-many): 一括削除。
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 削除前にレコードを検証します。
+- [**`delete_many::<M>()`**](/v0.0.1/orm/delete-many): バッチ削除。
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 削除する前にレコードを検証します。

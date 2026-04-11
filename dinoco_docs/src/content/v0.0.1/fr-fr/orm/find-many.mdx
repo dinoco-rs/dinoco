@@ -8,27 +8,27 @@ Utilisé pour récupérer une liste d'enregistrements.
 
 ## Ce que vous pouvez faire
 
-- Sélectionnez une projection avec `.select::<T>()`
-- Filtrez avec `.cond(...)`
-- Limitez avec `.take(...)`
+- Sélectionner une projection avec `.select::<T>()`
+- Filtrer avec `.cond(...)`
+- Limiter avec `.take(...)`
 - Paginer avec `.skip(...)`
-- Triez avec `.order_by(...)`
-- Chargez les relations avec `.includes(...)`
-- Comptez les relations avec `.count(...)`
-- Forcez la lecture depuis la base de données primaire avec `.read_in_primary()`
-- Exécutez avec `.execute(&client)`
+- Trier avec `.order_by(...)`
+- Charger des relations avec `.includes(...)`
+- Compter des relations avec `.count(...)`
+- Forcer la lecture sur la base de données principale avec `.read_in_primary()`
+- Exécuter avec `.execute(&client)`
 
 ## Description des méthodes
 
 - `.select::<T>()`: remplace la projection par défaut du modèle par une projection personnalisée.
 - `.cond(...)`: ajoute des conditions de filtre à la requête.
 - `.take(...)`: limite le nombre d'enregistrements retournés.
-- `.skip(...)`: ignore un nombre d'enregistrements avant de retourner le résultat.
-- `.order_by(...)`: définit l'ordre de tri de la requête.
+- `.skip(...)`: saute un nombre d'enregistrements avant de retourner le résultat.
+- `.order_by(...)`: définit l'ordre de la requête.
 - `.includes(...)`: charge les relations avec les enregistrements principaux.
 - `.count(...)`: calcule les compteurs de relations et remplit des champs comme `posts_count`.
-- `.read_in_primary()`: force la lecture depuis la base de données primaire, sans utiliser de répliques.
-- `.execute(&client)`: exécute la requête dans la base de données.
+- `.read_in_primary()`: force la lecture sur la base de données principale, sans utiliser de réplique.
+- `.execute(&client)`: exécute la requête sur la base de données.
 
 ## Retour
 
@@ -72,7 +72,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple de select personnalisé
+## Exemple de sélection personnalisée
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,7 +88,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec include simple
+## Exemple avec inclusion simple
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -106,7 +106,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec include filtré
+## Exemple avec inclusion filtrée
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -124,7 +124,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec include imbriqué
+## Exemple avec inclusion imbriquée
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +162,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec comptage des relations
+## Exemple avec comptage de relation
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,7 +180,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple de lecture depuis la base de données primaire
+## Exemple de lecture sur la base de données principale
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -192,5 +192,5 @@ let users = dinoco::find_many::<User>()
 
 ## Prochaines étapes
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): Version pour rechercher au maximum un enregistrement.
-- [**`count::<M>()`**](/v0.0.1/orm/count): Comptage d'enregistrements avec filtre.
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): version pour récupérer au maximum un enregistrement.
+- [**`count::<M>()`**](/v0.0.1/orm/count): comptage d'enregistrements avec filtre.

@@ -1,4 +1,4 @@
-export const title = "find_many";
+export const title = 'find_many';
 
 # find_many
 
@@ -8,27 +8,17 @@ Utilisé pour récupérer une liste d'enregistrements.
 
 ## Ce que vous pouvez faire
 
-- Sélectionnez une projection avec `.select::<T>()`
-- Filtrez avec `.cond(...)`
-- Limitez avec `.take(...)`
-- Paginer avec `.skip(...)`
-- Triez avec `.order_by(...)`
-- Chargez les relations avec `.includes(...)`
-- Comptez les relations avec `.count(...)`
-- Forcez la lecture depuis la base de données primaire avec `.read_in_primary()`
-- Exécutez avec `.execute(&client)`
-
-## Description des méthodes
-
 - `.select::<T>()`: remplace la projection par défaut du modèle par une projection personnalisée.
 - `.cond(...)`: ajoute des conditions de filtre à la requête.
 - `.take(...)`: limite le nombre d'enregistrements retournés.
-- `.skip(...)`: ignore un nombre d'enregistrements avant de retourner le résultat.
-- `.order_by(...)`: définit l'ordre de tri de la requête.
+- `.skip(...)`: saute un nombre d'enregistrements avant de retourner le résultat.
+- `.order_by(...)`: définit l'ordre de la requête.
 - `.includes(...)`: charge les relations avec les enregistrements principaux.
 - `.count(...)`: calcule les compteurs de relations et remplit des champs comme `posts_count`.
-- `.read_in_primary()`: force la lecture depuis la base de données primaire, sans utiliser de répliques.
-- `.execute(&client)`: exécute la requête dans la base de données.
+- `.cache(...)`: interroge d'abord Redis en utilisant la clé fournie ; en cas de cache miss, exécute la requête, sauvegarde et retourne le résultat. En cas de cache hit, le logger de requête enregistre `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: même comportement que le cache standard, mais enregistre avec un TTL en secondes.
+- `.read_in_primary()`: force la lecture sur la base de données principale, sans utiliser de réplique.
+- `.execute(&client)`: exécute la requête sur la base de données.
 
 ## Retour
 
@@ -72,7 +62,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple de select personnalisé
+## Exemple de sélection personnalisée
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,7 +78,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec include simple
+## Exemple avec inclusion simple
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -106,7 +96,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec include filtré
+## Exemple avec inclusion filtrée
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -124,7 +114,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec include imbriqué
+## Exemple avec inclusion imbriquée
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +152,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple avec comptage des relations
+## Exemple avec comptage de relation
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,7 +170,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemple de lecture depuis la base de données primaire
+## Exemple de lecture sur la base de données principale
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -190,7 +180,33 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## Exemple avec cache
+
+Cette méthode n'est générée que si le `config {}` du schéma contient `redis`.
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec cache et expiration
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
 ## Prochaines étapes
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): Version pour rechercher au maximum un enregistrement.
-- [**`count::<M>()`**](/v0.0.1/orm/count): Comptage d'enregistrements avec filtre.
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): version pour récupérer au maximum un enregistrement.
+- [**`count::<M>()`**](/v0.0.2/orm/count): comptage d'enregistrements avec filtre.

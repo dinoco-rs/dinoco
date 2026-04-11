@@ -1,44 +1,34 @@
-export const title = "find_many";
+export const title = 'find_many';
 
 # find_many
 
-レコードのリストを取得するために使用されます。
+レコードのリストをフェッチするために使用されます。
 
 ---
 
-## 可能な操作
+## できること
 
-- `.select::<T>()` を使用してプロジェクションを選択する
-- `.cond(...)` を使用してフィルタリングする
-- `.take(...)` を使用して制限する
-- `.skip(...)` を使用してページネーションする
-- `.order_by(...)` を使用してソートする
-- `.includes(...)` を使用してリレーションをロードする
-- `.count(...)` を使用してリレーションをカウントする
-- `.read_in_primary()` を使用してプライマリデータベースサーバーでの読み取り操作を強制する
-- `.execute(&client)` を使用して実行する
-
-## メソッドの説明
-
-- `.select::<T>()`: モデルのデフォルトのプロジェクションをカスタムプロジェクションに置き換えます。
+- `.select::<T>()`: モデルのデフォルトのプロジェクションをカスタムプロジェクションに切り替えます。
 - `.cond(...)`: クエリにフィルター条件を追加します。
 - `.take(...)`: 返されるレコードの数を制限します。
-- `.skip(...)`: 結果が返される前に、指定された数のレコードをスキップします。
-- `.order_by(...)`: クエリのソート順を定義します。
+- `.skip(...)`: 結果を返す前に、指定された数のレコードをスキップします。
+- `.order_by(...)`: クエリの順序を定義します。
 - `.includes(...)`: メインレコードと一緒にリレーションをロードします。
-- `.count(...)`: リレーションのカウントを計算し、`posts_count` のようなフィールドを埋めます。
-- `.read_in_primary()`: レプリカを使用せずに、プライマリデータベースサーバーでの読み取り操作を強制します。
+- `.count(...)`: リレーションのカウンターを計算し、`posts_count`のようなフィールドを埋めます。
+- `.cache(...)`: 指定されたキーを使用して最初にRedisをクエリします。キャッシュミスの場合、クエリを実行し、結果を保存して返します。キャッシュヒットの場合、クエリロガーは`CACHE HIT key=...`を記録します。
+- `.cache_with_expiration(...)`: 標準キャッシュと同じ動作ですが、TTLを秒単位で書き込みます。
+- `.read_in_primary()`: レプリカを使用せずに、プライマリデータベースからの読み取りを強制します。
 - `.execute(&client)`: データベースでクエリを実行します。
 
 ## 戻り値
 
-`select::<T>()` なしの場合、戻り値は次のとおりです。
+`select::<T>()`がない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-`select::<T>()` ありの場合、戻り値は次のようになります。
+`select::<T>()`がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
@@ -61,7 +51,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## ページネーションと並び替えの例
+## ページネーションと順序付けの例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -72,7 +62,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## カスタム select の例
+## カスタム選択の例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,7 +78,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 単純な include の例
+## シンプルなインクルードの例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -106,7 +96,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## フィルター付き include の例
+## フィルター付きインクルードの例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -124,7 +114,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## ネストした include の例
+## ネストされたインクルードの例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +152,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## リレーション数の例
+## リレーションのカウントの例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,7 +170,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## プライマリデータベースから読み取る例
+## プライマリデータベースからの読み取りの例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -190,7 +180,33 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## キャッシュの例
+
+このメソッドは、スキーマの`config {}`に`redis`がある場合にのみ生成されます。
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## キャッシュと有効期限の例
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
 ## 次のステップ
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 最大1つのレコードを取得するためのバージョン。
-- [**`count::<M>()`**](/v0.0.1/orm/count): フィルター付きのレコードのカウント。
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): 最大1つのレコードを検索するためのバージョン。
+- [**`count::<M>()`**](/v0.0.2/orm/count): フィルター付きのレコード数。

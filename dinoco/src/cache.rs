@@ -1,4 +1,4 @@
-use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoError, DinocoResult};
+use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoResult};
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -27,17 +27,6 @@ pub struct DinocoCache<'a, A: DinocoAdapter> {
     client: &'a DinocoClient<A>,
 }
 
-pub trait DinocoClientCacheExt<A>
-where
-    A: DinocoAdapter,
-{
-    fn cache(&self) -> DinocoCache<'_, A>;
-}
-
-fn missing_cache_error() -> DinocoError {
-    DinocoError::ConnectionError("Redis cache is not configured for this DinocoClient.".to_string())
-}
-
 impl CachePolicy {
     pub fn new(key: impl Into<String>) -> Self {
         Self { key: key.into(), ttl_seconds: None }
@@ -57,7 +46,7 @@ where
     }
 
     pub async fn delete(&self, key: &str) -> DinocoResult<()> {
-        let cache = self.client.cache_store().ok_or_else(missing_cache_error)?;
+        let cache = self.client.cache_store().expect("DinocoCache requires Redis-enabled generated API.");
 
         cache.delete(key).await
     }
@@ -66,7 +55,7 @@ where
     where
         T: DeserializeOwned,
     {
-        let cache = self.client.cache_store().ok_or_else(missing_cache_error)?;
+        let cache = self.client.cache_store().expect("DinocoCache requires Redis-enabled generated API.");
 
         cache.get(key).await
     }
@@ -75,7 +64,7 @@ where
     where
         T: Serialize,
     {
-        let cache = self.client.cache_store().ok_or_else(missing_cache_error)?;
+        let cache = self.client.cache_store().expect("DinocoCache requires Redis-enabled generated API.");
 
         cache.set(key, value).await
     }
@@ -84,18 +73,9 @@ where
     where
         T: Serialize,
     {
-        let cache = self.client.cache_store().ok_or_else(missing_cache_error)?;
+        let cache = self.client.cache_store().expect("DinocoCache requires Redis-enabled generated API.");
 
         cache.set_with_ttl(key, value, ttl_seconds).await
-    }
-}
-
-impl<A> DinocoClientCacheExt<A> for DinocoClient<A>
-where
-    A: DinocoAdapter,
-{
-    fn cache(&self) -> DinocoCache<'_, A> {
-        DinocoCache::new(self)
     }
 }
 

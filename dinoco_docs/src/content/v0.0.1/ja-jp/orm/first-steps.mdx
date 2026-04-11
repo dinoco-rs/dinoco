@@ -2,31 +2,31 @@ export const title = "最初のステップ";
 
 # 最初のステップ
 
-Dinocoの利用を開始するには、マイグレーションやその他のシステムを操作できるように、CLIをインストールする必要があります！
+Dinoco の使用を開始するには、マイグレーションやその他のシステムを操作できるように CLI をインストールする必要があります！
 
 ```bash
 cargo install dinoco-cli
 ```
 
-Dinoco環境をセットアップするには、以下のコマンドを実行します。
+Dinoco 環境を作成するには、次のコマンドを実行します。
 
 ```bash
 dinoco init
 ```
 
-データベースと必要なすべての設定を選択すると、プロジェクトのルートディレクトリに`dinoco`フォルダが作成されます。
+データベースと必要なすべての設定を選択すると、プロジェクトのルートに dinoco フォルダが作成されます。
 
 このフォルダには以下が含まれます。
 
-- **Migrations:** データベースの変更履歴。
-- **Schema:** データ構造の中心的な定義。
-- **Models:** Rustコードで使用するための型付き表現。
+-   **Migrations:** データベースの変更履歴。
+-   **Schema:** データ構造の中心的な定義。
+-   **Models:** Rust コードで使用するための型付き表現。
 
-## どのように動作しますか？
+## 仕組み
 
 ### 1. スキーマと接続を定義する
 
-Dinocoスキーマは、モデルとデータベース設定の内容を定義します。
+Dinoco スキーマは、モデルの内容とデータベース設定を定義します。
 
 ```dinoco
 config {
@@ -54,13 +54,13 @@ model Post {
 
 ### 2. マイグレーションを作成する
 
-`--apply`オプションでマイグレーションを生成すると、それがデータベースに適用され、モデルが自動的に生成されます！
+`--apply` を使用してマイグレーションを生成すると、データベースに適用され、モデルが自動的に生成されます！
 
 ```bash
 dinoco migrate generate --apply
 ```
 
-### 3. DinocoClientでクエリを実行する
+### 3. DinocoClient でクエリを実行する
 
 ```rust
 use dinoco::{DinocoClientConfig, DinocoQueryLogger, DinocoQueryLoggerOptions, Extend, find_many, insert_into};
@@ -98,7 +98,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // 関連する投稿を持つユーザーを挿入します。
     insert_into::<User>()
         .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
-        .with_relation(Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None })
+        .with_relation(Post { id: 0, title: "私の最初の投稿".to_string(), published: true, authorId: None })
         .execute(&client)
         .await?;
 
@@ -113,7 +113,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // 		email: "bia@dinoco.rs",
     // 		posts: [
     // 			Post {
-    // 				title: "Meu primeiro post",
+    // 				title: "私の最初の投稿",
     // 				published: true,
     // 			},
     // 		],
@@ -126,5 +126,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## 次のステップ
 
-- [**Dinocoスキーマ**](/v0.0.1/orm/introduction-dinoco): Dinocoの構造と目的をよりよく理解します。
-- [**Dinocoクライアント**](/v0.0.1/orm/first-steps): この完全なクライアントワークフローを確認します。
+-   [**Dinoco スキーマ**](/v0.0.1/orm/introduction-dinoco): Dinoco の構造と目的をよりよく理解します。
+-   [**Dinoco クライアント**](/v0.0.1/orm/first-steps): このクライアントの完全なフローを確認します。

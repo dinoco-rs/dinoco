@@ -1,10 +1,10 @@
-export const title = "Schema 恢复";
+export const title = "模式恢复";
 
 # 如何使用？
 
-`dinoco schema restore` 命令会从本地 migration 恢复 `schema.dinoco` 文件。
+`dinoco schema restore` 命令从本地迁移中恢复 `schema.dinoco` 文件。
 
-当您需要从保存的历史记录中重新创建 Schema 时，这会很有用。
+当您需要从保存的历史记录中重建模式时，这很有用。
 
 ---
 
@@ -13,7 +13,7 @@ export const title = "Schema 恢复";
 此命令会：
 
 - 读取本地迁移
-- 检索此迁移的已保存元数据
+- 恢复该迁移中保存的元数据
 - 重新创建 `schema.dinoco` 文件
 
 ## 从特定迁移恢复的示例
@@ -24,12 +24,12 @@ dinoco schema restore 20250410_create_users
 
 ## 何时使用
 
-当以下情况发生时使用这个命令：
+在以下情况下使用此命令：
 
-- `schema.dinoco` 文件丢失时
-- 您想从历史记录中重新创建本地 Schema 时
-- 您需要比较特定迁移中保存的 Schema 时
+- `schema.dinoco` 文件丢失
+- 您想从历史记录中重建本地模式
+- 您需要比较特定迁移中保存的模式
 
-## 下一步
+## 后续步骤
 
-恢复后，您可以检查 Schema，然后生成或应用新的迁移。
+恢复后，您可以审查模式，然后生成或应用新的迁移。

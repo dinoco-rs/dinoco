@@ -1,4 +1,4 @@
-export const title = "find_many";
+export const title = 'find_many';
 
 # find_many
 
@@ -8,27 +8,17 @@ Wird verwendet, um eine Liste von Datensätzen abzurufen.
 
 ## Was Sie tun können
 
-- Eine Projektion mit `.select::<T>()` auswählen
-- Mit `.cond(...)` filtern
-- Mit `.take(...)` begrenzen
-- Mit `.skip(...)` paginieren
-- Mit `.order_by(...)` sortieren
-- Beziehungen mit `.includes(...)` laden
-- Beziehungen mit `.count(...)` zählen
-- Das Lesen in der primären Datenbank mit `.read_in_primary()` erzwingen
-- Mit `.execute(&client)` ausführen
-
-## Beschreibung der Methoden
-
-- `.select::<T>()`: Ersetzt die Standardprojektion des Modells durch eine benutzerdefinierte Projektion.
-- `.cond(...)`: Fügt Filterbedingungen zur Abfrage hinzu.
-- `.take(...)`: Begrenzt die Anzahl der zurückgegebenen Datensätze.
-- `.skip(...)`: Überspringt eine Anzahl von Datensätzen, bevor das Ergebnis zurückgegeben wird.
-- `.order_by(...)`: Definiert die Sortierung der Abfrage.
-- `.includes(...)`: Lädt Beziehungen zusammen mit den Hauptdatensätzen.
-- `.count(...)`: Berechnet Beziehungszähler und füllt Felder wie `posts_count` aus.
-- `.read_in_primary()`: Erzwingt das Lesen in der primären Datenbank, ohne eine Replik zu verwenden.
-- `.execute(&client)`: Führt die Abfrage in der Datenbank aus.
+- `.select::<T>()`: ersetzt die Standardprojektion des Modells durch eine benutzerdefinierte Projektion.
+- `.cond(...)`: fügt Filterbedingungen zur Abfrage hinzu.
+- `.take(...)`: begrenzt die Anzahl der zurückgegebenen Datensätze.
+- `.skip(...)`: überspringt eine Anzahl von Datensätzen, bevor das Ergebnis zurückgegeben wird.
+- `.order_by(...)`: definiert die Sortierung der Abfrage.
+- `.includes(...)`: lädt Beziehungen zusammen mit den Hauptdatensätzen.
+- `.count(...)`: berechnet Beziehungszähler und füllt Felder wie `posts_count` aus.
+- `.cache(...)`: fragt zuerst in Redis mit dem angegebenen Schlüssel ab; bei einem Cache-Miss wird die Abfrage ausgeführt, das Ergebnis gespeichert und zurückgegeben. Bei einem Cache-Hit protokolliert der Query-Logger `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: gleiches Verhalten wie der Standard-Cache, speichert aber mit TTL in Sekunden.
+- `.read_in_primary()`: erzwingt das Lesen aus der primären Datenbank, ohne eine Replik zu verwenden.
+- `.execute(&client)`: führt die Abfrage in der Datenbank aus.
 
 ## Rückgabe
 
@@ -72,7 +62,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Beispiel für benutzerdefinierten Select
+## Beispiel für benutzerdefinierte Auswahl
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +152,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Beispiel mit Beziehungszähler
+## Beispiel mit Beziehungszählung
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -190,7 +180,33 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+## Beispiel mit Cache
+
+Diese Methode wird nur generiert, wenn das `config {}` des Schemas `redis` enthält.
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Cache und Ablaufzeit
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
 ## Nächste Schritte
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): Version zum Abrufen von maximal einem Datensatz.
-- [**`count::<M>()`**](/v0.0.1/orm/count): Zählung von Datensätzen mit Filter.
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): Version zum Abrufen von maximal einem Datensatz.
+- [**`count::<M>()`**](/v0.0.2/orm/count): Zählung von Datensätzen mit Filter.

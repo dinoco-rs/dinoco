@@ -2,25 +2,25 @@ export const title = "关系";
 
 # 关系
 
-关系将 Dinoco 模式中的模型相互连接。
+关系在 Dinoco schema 中连接模型。
 
-本页将介绍 `@relation(...)`、`onDelete`、`onUpdate` 以及最常见的关系模式。
+本页面涵盖 `@relation(...)`、`onDelete`、`onUpdate` 以及最常见的关系模式。
 
 ---
 
 ## @relation(...)
 
-`@relation(...)` 属性定义了两个模型如何相互连接。
+`@relation(...)` 属性定义了两个模型如何连接。
 
 支持的参数：
 
-| 参数       | 用途                                      |
-| :--------- | :---------------------------------------- |
-| `name`     | 关系的显式名称                            |
-| `fields`   | 用作键的本地字段                          |
-| `references` | 目标模型中引用的字段                      |
-| `onDelete` | 删除引用条目时的行为                      |
-| `onUpdate` | 更新引用值时的行为                        |
+| 参数         | 用途                                             |
+| :----------- | :----------------------------------------------- |
+| `name`       | 关系的显式名称                                   |
+| `fields`     | 用作键的本地字段                                 |
+| `references` | 目标模型中引用的字段                             |
+| `onDelete`   | 删除引用记录时的行为                             |
+| `onUpdate`   | 更新引用值时的行为                               |
 
 完整示例：
 
@@ -35,15 +35,15 @@ model Post {
 
 ## onDelete 和 onUpdate
 
-Dinoco 提供了引用操作来控制当关联条目被修改或删除时发生的情况。
+Dinoco 暴露引用操作来控制相关记录被更改或删除时发生的情况。
 
 支持的值：
 
-| 操作         | 含义                                      |
-| :----------- | :---------------------------------------- |
-| `Cascade`    | 将操作级联到依赖条目                      |
-| `SetNull`    | 将外键设置为 `null`                       |
-| `SetDefault` | 将字段设置为配置的默认值                  |
+| 操作         | 含义                                             |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | 将操作传播到依赖记录                             |
+| `SetNull`    | 将外键设置为 `null`                              |
+| `SetDefault` | 将字段设置为配置的默认值                         |
 
 示例：
 
@@ -55,11 +55,11 @@ model Comment {
 }
 ```
 
-仅当本地字段是可选的时才使用 `SetNull`。
+仅当本地字段是可选时才使用 `SetNull`。
 
 ## 一对多
 
-这是最常见的关系：一个父条目有多个子条目。
+这是最常见的关系：一个父记录拥有多个子记录。
 
 ```dinoco
 model User {
@@ -76,7 +76,7 @@ model Post {
 }
 ```
 
-思考：
+心智解读：
 
 - 一个 `User` 可以有多个 `Post`。
 - 每个 `Post` 属于一个 `User`。
@@ -101,14 +101,14 @@ model Role {
 }
 ```
 
-思考：
+心智解读：
 
 - 一个 `User` 可以有多个 `Role`。
 - 一个 `Role` 可以属于多个 `User`。
 
 ## 自引用关系
 
-当一个模型引用自身时，就存在自引用关系。
+自引用关系发生在模型与自身关联时。
 
 ```dinoco
 model User {
@@ -120,21 +120,21 @@ model User {
 }
 ```
 
-思考：
+心智解读：
 
 - 一个用户可以有一个经理。
 - 一个用户可以有多个下属。
 
 ## 实用技巧
 
-- 当同一模型之间存在多个关系时，使用 `name`。
-- 当子条目在没有父条目的情况下没有意义时，使用 `onDelete: Cascade`。
-- 当可以在不删除子条目的情况下解除关系时，使用 `onDelete: SetNull`。
-- 使用带有显式名称的自引用关系，以提高可读性和代码生成效率。
+- 当相同模型之间存在多个关系时，使用 `name`。
+- 当子记录在没有父记录的情况下没有意义时，使用 `onDelete: Cascade`。
+- 当可以在不删除子记录的情况下解除关系时，使用 `onDelete: SetNull`。
+- 使用带有显式名称的自引用关系，以方便阅读和代码生成。
 
-## 示例参考 schema
+## 示例的参考 Schema
 
-以下示例使用以下模式：
+以下示例使用以下 schema：
 
 ```dinoco
 config {
@@ -211,9 +211,9 @@ model Tag {
 }
 ```
 
-## 从 `User` 出发查询所有可能关系的示例
+## 从 User 查询所有可能关系的示例
 
-如果您想从 `User` 模型开始，并在单个读取查询中加载所有直接关系，可以将 `select::<T>()` 与多个 `includes(...)` 结合使用。
+当您想从 `User` 模型开始并在同一个读取查询中加载所有直接关系时，可以将 `select::<T>()` 与多个 `includes(...)` 结合使用。
 
 ```rust
 use dinoco::{Extend, find_many};
@@ -319,25 +319,35 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-当您希望在单个基于关系的读取操作中构建一个全面的用户视图时，此模式非常有用。
+当您想通过一次面向关系的读取来构建丰富的用户视图时，此模式非常有用。
 
-## 使用 `User` 和 `Profile` 进行带关系 insert 的示例
+## 使用 User 和 Profile 进行带关系插入的示例
 
-要插入具有一对一关系的条目，请使用 `with_relation(...)`。
+要使用新 API 插入具有 1:1 关系的记录，请将关系放在标记为 `#[insertable]` 的 `Extend` payload 中。
 
 ```rust
 use dinoco::insert_into;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+	id: String,
+	username: String,
+	role: Role,
+	profile: Option<Profile>,
+}
+
 let created_user = insert_into::<User>()
-	.values(User {
+	.values(UserWithProfile {
 		id: "user-1".to_string(),
 		username: "bia".to_string(),
 		role: Role::USER,
-	})
-	.with_relation(Profile {
-		id: "profile-1".to_string(),
-		bio: Some("Engenheira de software".to_string()),
-		userId: String::new(),
+		profile: Some(Profile {
+			id: "profile-1".to_string(),
+			bio: Some("Engenheira de software".to_string()),
+			userId: String::new(),
+		}),
 	})
 	.execute(&client)
 	.await?;
@@ -345,63 +355,70 @@ let created_user = insert_into::<User>()
 
 在此流程中：
 
-- `User` 首先被插入。
-- 相关的 `Profile` 随后被创建。
-- `userId` 键通过 Dinoco 的关系流进行关联。
+- 首先插入 `User`。
+- 接着创建相关的 `Profile`。
+- `userId` 键由 Dinoco 的关系流绑定。
 
-## 使用 `with_relations(...)` 的 `insert_many` 示例
+## 带有嵌套关系的 insert_many 示例
 
-当您想插入多个父条目，并为每个父条目插入多个新的相关条目时，请使用 `with_relations(...)`。
+当您想插入多个父记录，并且为每个父记录插入多个新的相关记录时，请使用 `#[insertable]`。
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	comments: Vec<Comment>,
+}
+
 let posts = vec![
-	Post {
+	PostWithComments {
 		id: "post-1".to_string(),
 		title: "Primeiro post".to_string(),
 		content: "Conteudo do primeiro post".to_string(),
 		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-1".to_string(),
+				text: "Muito bom".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+			Comment {
+				id: "comment-2".to_string(),
+				text: "Gostei do exemplo".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-3".to_string(),
+			},
+		],
 	},
-	Post {
+	PostWithComments {
 		id: "post-2".to_string(),
 		title: "Segundo post".to_string(),
 		content: "Conteudo do segundo post".to_string(),
 		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-3".to_string(),
+				text: "Quero mais detalhes".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+		],
 	},
-];
-
-let comments_per_post = vec![
-	vec![
-		Comment {
-			id: "comment-1".to_string(),
-			text: "Muito bom".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-		Comment {
-			id: "comment-2".to_string(),
-			text: "Gostei do exemplo".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-3".to_string(),
-		},
-	],
-	vec![
-		Comment {
-			id: "comment-3".to_string(),
-			text: "Quero mais detalhes".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-	],
 ];
 
 insert_many::<Post>()
 	.values(posts)
-	.with_relations(comments_per_post)
 	.execute(&client)
 	.await?;
 ```
@@ -409,40 +426,48 @@ insert_many::<Post>()
 在此流程中：
 
 - 每个 `Post` 都被插入。
-- `comments_per_post` 中的每个组都对应于相同位置的 `Post`。
-- Dinoco 在写入操作期间将 `Comment` 与正确的 `Post` 关联起来。
+- Dinoco 创建嵌套的 `Comment` 并在写入期间将每个组绑定到正确的 `Post`。
 
-## 使用 `with_connections(...)` 的 `insert_many` 示例
+## 带有嵌套连接的 insert_many 示例
 
-当您想插入多个父条目，并将每个父条目与多个已存在的条目连接时，请使用 `with_connections(...)`。
+当您想插入多个父记录并将每个父记录连接到多个已存在的记录时，请使用由代码生成器生成的 `PostConnection` 枚举。
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithTags {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	tags: Vec<PostConnection>,
+}
+
 insert_many::<Post>()
 	.values(vec![
-		Post {
+		PostWithTags {
 			id: "post-10".to_string(),
 			title: "Rust e Dinoco".to_string(),
 			content: "Post sobre produtividade".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-1".to_string()),
+				PostConnection::Tag("tag-2".to_string()),
+			],
 		},
-		Post {
+		PostWithTags {
 			id: "post-11".to_string(),
 			title: "Relações avançadas".to_string(),
 			content: "Post sobre includes e relacoes".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-2".to_string()),
+				PostConnection::Tag("tag-3".to_string()),
+			],
 		},
-	])
-	.with_connections(vec![
-		vec![
-			Tag { id: "tag-1".to_string(), name: "rust".to_string() },
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-		],
-		vec![
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-			Tag { id: "tag-3".to_string(), name: "sqlite".to_string() },
-		],
 	])
 	.execute(&client)
 	.await?;
@@ -450,11 +475,11 @@ insert_many::<Post>()
 
 在此流程中：
 
-- `Post` 被插入。
-- 已存在的 `Tag` 与相应的 `Post` 连接。
-- 外部向量中的每个组代表相同位置 `Post` 的连接。
+- 插入 `Post`。
+- 已存在的 `Tag` 被连接到相应的 `Post`。
+- 每个 payload 使用由代码生成器生成的枚举定义其连接。
 
 ## 下一步
 
-- [**Enums**](/v0.0.1/orm/enums): 了解如何在模式中表示受控值。
-- [**Models**](/v0.0.1/orm/models): 查看字段结构以及使用 Dinoco API 进行查询、插入、更新和删除的示例。
+- [**枚举**](/v0.0.2/orm/enums)：了解如何在 schema 中表示受控值。
+- [**模型**](/v0.0.2/orm/models)：了解字段结构以及使用 Dinoco API 进行查询、插入、更新和删除的示例。

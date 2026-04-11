@@ -1,4 +1,4 @@
-export const title = "insert_into";
+export const title = 'insert_into';
 
 # insert_into
 
@@ -8,22 +8,13 @@ Used to insert a record.
 
 ## What you can do
 
-- Pass values with `.values(item)`
-- Insert with relation via `.with_relation(related)`
-- Connect existing relation via `.with_connection(connected)`
-- Execute with `.execute(&client)`
-
-## Methods description
-
 - `.values(item)`: defines the record to be inserted.
-- `.with_relation(related)`: inserts a new related record along with the parent.
-- `.with_connection(connected)`: connects the inserted record to an existing item, typically in relation flows supported for connection.
 - `.returning::<T>()`: changes the return to a typed projection of the inserted item.
 - `.execute(&client)`: executes the write to the database.
 
-## Example with `#[insertable]` `Extend`
+## Example with Extend #[insertable]
 
-Use `#[insertable]` together with `#[derive(Extend)]` when you want `.values(...)` to accept a richer payload with nested relations. Dinoco will insert the parent first and then recursively insert and bind the nested relations.
+Use `#[insertable]` along with `#[derive(Extend)]` when you want `.values(...)` to accept a richer payload with new relationships and existing connections. Dinoco inserts the parent first and then processes everything recursively.
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -53,13 +44,96 @@ dinoco::insert_into::<User>()
         posts: vec![
             PostWithComments {
                 id: 10,
-                title: "Nested insert".to_string(),
+                title: "Recursive Insert".to_string(),
                 published: true,
                 authorId: 0,
                 comments: vec![Comment { id: 100, text: "first".to_string(), flagged: false, postId: 0 }],
             },
         ],
     })
+    .execute(&client)
+    .await?;
+```
+
+## Example with nested relationship
+
+Use an `Extend` payload with `#[insertable]` to create the parent and also create the related record in the same flow.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+    id: String,
+    username: String,
+    role: Role,
+    profile: Option<Profile>,
+}
+
+dinoco::insert_into::<User>()
+    .values(UserWithProfile {
+        id: "user-1".to_string(),
+        username: "bia".to_string(),
+        role: Role::USER,
+        profile: Some(Profile {
+            id: "profile-1".to_string(),
+            bio: Some("Software Engineer".to_string()),
+            userId: String::new(),
+        }),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Example with nested connection
+
+When the relationship points to existing records, the codegen generates an enum like `ArticleConnection` to be used within the payload.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-10".into(),
+        title: "Connect Existing".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Example with ArticleConnection
+
+This is the most common format for connecting existing records in many-to-many relationships.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+let value = ArticleWithLabels {
+    id: "article-20".into(),
+    title: "Connect Existing".into(),
+    labels: vec![
+        ArticleConnection::Label("label-10".into()),
+        ArticleConnection::Label("label-11".into()),
+    ],
+};
+
+dinoco::insert_into::<Article>()
+    .values(value)
     .execute(&client)
     .await?;
 ```
@@ -91,30 +165,6 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## Example with relation
-
-Use `.with_relation(...)` when the generated model supports inserting the parent and the related item together.
-
-```rust
-dinoco::insert_into::<User>()
-    .values(user)
-    .with_relation(profile)
-    .execute(&client)
-    .await?;
-```
-
-## Example with connection
-
-Use `.with_connection(...)` when you want to insert an item and connect an already existing relation.
-
-```rust
-dinoco::insert_into::<User>()
-    .values(new_user)
-    .with_connection(existing_team)
-    .execute(&client)
-    .await?;
-```
-
 ## Example with typed return
 
 ```rust
@@ -134,5 +184,6 @@ let created = dinoco::insert_into::<User>()
 
 ## Next steps
 
-- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): batch insertion.
-- [**`update::<M>()`**](/v0.0.1/orm/update): record update.
+- [**Derives**](/v0.0.2/core/derives): understand when to use `Rowable`, `Extend`, and `#[insertable]`.
+- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): batch insertion.
+- [**`update::<M>()`**](/v0.0.2/orm/update): updating records.

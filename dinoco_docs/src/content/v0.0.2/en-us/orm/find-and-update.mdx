@@ -1,4 +1,4 @@
-export const title = "find_and_update";
+export const title = 'find_and_update';
 
 # find_and_update
 
@@ -7,12 +7,6 @@ Used to locate a single record, apply atomic updates to the database, and return
 ---
 
 ## What you can do
-
-- `.cond(...)`
-- `.update(...)`
-- `.execute(&client)`
-
-## Method Description
 
 - `.cond(...)`: defines which record will be located.
 - `.update(...)`: applies an atomic operation to a model field.
@@ -26,7 +20,7 @@ The return of `find_and_update` is:
 DinocoResult<M>
 ```
 
-## Basic Example
+## Basic example
 
 ```rust
 let task = dinoco::find_and_update::<Task>()
@@ -36,7 +30,7 @@ let task = dinoco::find_and_update::<Task>()
     .await?;
 ```
 
-## Available Operations in `ModelUpdate`
+## Available operations in `ModelUpdate`
 
 - `set(value)`
 - `increment(value)`
@@ -47,9 +41,9 @@ let task = dinoco::find_and_update::<Task>()
 ## Notes
 
 - The update is executed in a single `UPDATE`.
-- If no rows match the condition, the return will be `DinocoError::RecordNotFound`.
+- If no row matches the condition, the return will be `DinocoError::RecordNotFound`.
 - The update DSL does not expose relationships.
-- Currently, the flow supports a simple primary key to locate and return the updated record.
+- Currently, the flow supports simple primary keys to locate and return the updated record.
 
 ## Next steps
 

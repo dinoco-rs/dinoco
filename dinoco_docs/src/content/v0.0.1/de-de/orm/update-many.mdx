@@ -9,7 +9,7 @@ Wird verwendet, um mehrere Datensätze gleichzeitig zu aktualisieren.
 ## Was Sie tun können
 
 - `.cond(...)`: schränkt ein, welche Datensätze aktualisiert werden können.
-- `.values(Vec<M>)`: definiert die Elemente, die in der Batch-Aktualisierung verwendet werden.
+- `.values(Vec<M>)`: definiert die Elemente, die bei der Batch-Aktualisierung verwendet werden.
 - `.returning::<T>()`: gibt die aktualisierten Datensätze als typisierte Liste zurück.
 - `.execute(&client)`: führt die Batch-Aktualisierung aus.
 
@@ -21,7 +21,7 @@ Ohne `.returning::<T>()` ist die Rückgabe:
 DinocoResult<()>
 ```
 
-Mit `.returning::<T>()` wird die Rückgabe zu:
+Mit `.returning::<T>()` wird die Rückgabe:
 
 ```rust
 DinocoResult<Vec<T>>

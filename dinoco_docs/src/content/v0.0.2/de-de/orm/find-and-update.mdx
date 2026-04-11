@@ -1,4 +1,4 @@
-export const title = "find_and_update";
+export const title = 'find_and_update';
 
 # find_and_update
 
@@ -7,12 +7,6 @@ Wird verwendet, um einen einzelnen Datensatz zu finden, atomare Updates in der D
 ---
 
 ## Was Sie tun können
-
-- `.cond(...)`
-- `.update(...)`
-- `.execute(&client)`
-
-## Beschreibung der Methoden
 
 - `.cond(...)`: definiert, welcher Datensatz gefunden werden soll.
 - `.update(...)`: wendet eine atomare Operation auf ein Feld des Modells an.
@@ -36,7 +30,7 @@ let task = dinoco::find_and_update::<Task>()
     .await?;
 ```
 
-## Verfügbare Operationen in `ModelUpdate`
+<h2>Verfügbare Operationen in <code>ModelUpdate</code></h2>
 
 - `set(value)`
 - `increment(value)`

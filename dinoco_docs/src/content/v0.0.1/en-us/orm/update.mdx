@@ -9,7 +9,7 @@ Used to update filtered records.
 ## What you can do
 
 - `.cond(...)`: defines which records will be updated.
-- `.values(item)`: informs the new record values.
+- `.values(item)`: specifies the new values for the record.
 - `.connect(...)`: creates writable relation links.
 - `.disconnect(...)`: removes writable relation links.
 - `.returning::<T>()`: returns the updated records in a typed projection.
@@ -71,7 +71,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## Available filters in connect and disconnect
+## Filters available in connect and disconnect
 
 - `eq`
 - `neq`

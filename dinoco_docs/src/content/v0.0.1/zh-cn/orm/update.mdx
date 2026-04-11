@@ -2,16 +2,16 @@ export const title = "update";
 
 # update
 
-用于更新筛选后的记录。
+用于更新过滤后的记录。
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
-- `.cond(...)`: 定义要更新的记录。
+- `.cond(...)`: 定义哪些记录将被更新。
 - `.values(item)`: 指定记录的新值。
-- `.connect(...)`: 创建支持的写入关系。
-- `.disconnect(...)`: 移除支持的写入关系。
+- `.connect(...)`: 创建支持写入的关系链接。
+- `.disconnect(...)`: 移除支持写入的关系链接。
 - `.returning::<T>()`: 以类型化投影返回更新后的记录。
 - `.execute(&client)`: 在数据库中执行更新。
 
@@ -23,7 +23,7 @@ export const title = "update";
 DinocoResult<()>
 ```
 
-如果使用 `.returning::<T>()`，返回值为：
+如果有 `.returning::<T>()`，返回值将是：
 
 ```rust
 DinocoResult<Vec<T>>
@@ -31,7 +31,7 @@ DinocoResult<Vec<T>>
 
 注意：
 
-- `update().returning()` 不支持使用 `.connect(...)` 或 `.disconnect(...)` 进行关系写入。
+- `update().returning()` 不支持与 `.connect(...)` 或 `.disconnect(...)` 进行关系写入。
 
 ## 字段更新示例
 
@@ -41,7 +41,7 @@ dinoco::update::<User>()
     .values(User {
         id: 10,
         email: "novo@acme.com".to_string(),
-        name: "Novo Nome".to_string(),
+        name: "新名称".to_string(),
     })
     .execute(&client)
     .await?;
@@ -49,7 +49,7 @@ dinoco::update::<User>()
 
 ## `connect(...)` 示例
 
-用于连接支持的写入关系，通常是多对多关系。
+用于连接支持写入的关系，通常是多对多关系。
 
 ```rust
 dinoco::update::<User>()
@@ -71,7 +71,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## connect 和 disconnect 中可用的过滤器
+## `connect` 和 `disconnect` 中可用的过滤器
 
 - `eq`
 - `neq`

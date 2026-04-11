@@ -1,4 +1,4 @@
-export const title = "find_first";
+export const title = 'find_first';
 
 # find_first
 
@@ -8,39 +8,27 @@ Wird verwendet, um maximal einen Datensatz abzurufen.
 
 ## Was Sie tun können
 
-Es stellt die gleichen Methoden wie `find_many` zur Verfügung:
-
-- `select`
-- `cond`
-- `take`
-- `skip`
-- `order_by`
-- `includes`
-- `count`
-- `read_in_primary`
-- `execute`
-
-## Beschreibung der Methoden
-
 - `.select::<T>()`: ersetzt die Standardprojektion durch eine benutzerdefinierte Projektion.
-- `.cond(...)`: fügt Filter zur Abfrage hinzu.
+- `.cond(...)`: fügt Filter zur Suche hinzu.
 - `.take(...)`: begrenzt die maximale Anzahl der berücksichtigten Datensätze.
 - `.skip(...)`: überspringt Datensätze, bevor das erste Ergebnis ausgewählt wird.
 - `.order_by(...)`: definiert, welcher Datensatz zuerst berücksichtigt werden soll.
-- `.includes(...)`: lädt Beziehungen zusammen mit dem Hauptitem.
+- `.includes(...)`: lädt Beziehungen zusammen mit dem Hauptelement.
 - `.count(...)`: berechnet Beziehungszähler in der Projektion.
+- `.cache(...)`: versucht zuerst, in Redis zu suchen, und fragt die Datenbank nur ab, wenn der Schlüssel nicht existiert. Bei einem Cache-Treffer protokolliert der Query-Logger `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: führt den gleichen Ablauf aus, speichert aber mit TTL in Sekunden.
 - `.read_in_primary()`: erzwingt das Lesen aus der primären Datenbank.
 - `.execute(&client)`: führt die Abfrage aus und gibt maximal ein Element zurück.
 
 ## Rückgabe
 
-Ohne `select::<T>()` ist der Rückgabewert:
+Ohne `select::<T>()` ist die Rückgabe:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-Mit `select::<T>()` wird der Rückgabewert zu:
+Mit `select::<T>()` wird die Rückgabe:
 
 ```rust
 DinocoResult<Option<T>>
@@ -55,7 +43,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## Beispiel mit select
+## Beispiel mit Select
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -100,7 +88,35 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
+## Beispiel mit Cache
+
+Diese Methode existiert nur, wenn das Schema `redis` konfiguriert hat.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Cache
+
+Diese Methode existiert nur, wenn das Schema `redis` konfiguriert hat.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache_with_expiration("users:1")
+    .execute(&client)
+    .await?;
+```
+
 ## Nächste Schritte
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): sucht mehrere Datensätze.
-- [**`count::<M>()`**](/v0.0.1/orm/count): Zählung von Datensätzen.
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): sucht nach mehreren Datensätzen.
+- [**`count::<M>()`**](/v0.0.2/orm/count): Zählung von Datensätzen.

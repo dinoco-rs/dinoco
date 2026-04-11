@@ -1,6 +1,6 @@
 export const title = "Migrate rollback";
 
-# Wie benutzt man?
+# Wie verwende ich es?
 
 Der Befehl `dinoco migrate rollback` macht die letzte angewendete Migration rückgängig.
 
@@ -18,7 +18,7 @@ Beim Ausführen dieses Befehls versucht die CLI:
 
 ## Parameter
 
-[NAME]: Name der Migration (um zu einer spezifischen zurückzukehren) (Optional)
+[NOME]: Name der Migration (um zu einer bestimmten zurückzukehren) (Optional)
 
 ## Anwendungsbeispiel
 
@@ -26,22 +26,22 @@ Beim Ausführen dieses Befehls versucht die CLI:
 dinoco migrate rollback
 ```
 
-## Wann verwenden
+## Wann zu verwenden
 
 Verwenden Sie diesen Befehl, wenn:
 
 - Die letzte Migration rückgängig gemacht werden muss
-- Sie ein aktuelles Problem im Schema festgestellt haben
-- Sie den Entwicklungsfluss der Datenbankentwicklung anpassen
+- Sie ein kürzliches Problem im Schema entdeckt haben
+- Sie den Datenbank-Evolutionsfluss in der Entwicklung anpassen
 
 ## Vorsichtsmaßnahmen
 
-- Nicht jede strukturelle Änderung ist trivial ohne Auswirkungen rückgängig zu machen.
-- Überprüfen Sie die Auswirkungen der Migration, bevor Sie ein Rollback in wichtigen Umgebungen durchführen.
+- Nicht jede strukturelle Änderung ist trivial und ohne Auswirkungen rückgängig zu machen.
+- Überprüfen Sie die Auswirkungen der Migration, bevor Sie einen Rollback in wichtigen Umgebungen durchführen.
 
 ## Nächste Schritte
 
-Nach der Anpassung des Schemas können Sie eine neue Migration generieren:
+Nachdem Sie das Schema angepasst haben, können Sie eine neue Migration generieren:
 
 ```bash
 dinoco migrate generate

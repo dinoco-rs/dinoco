@@ -58,19 +58,22 @@ where
         UpdateManyReturning { conditions: self.conditions, items: self.items, queue: self.queue, marker: PhantomData }
     }
 
-    pub fn enqueue(mut self, event: impl Into<String>) -> Self {
+    #[doc(hidden)]
+    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
         self.queue = Some(QueueDispatch::immediate(event));
 
         self
     }
 
-    pub fn enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
+    #[doc(hidden)]
+    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
         self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
 
         self
     }
 
-    pub fn enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
+    #[doc(hidden)]
+    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
         self.queue = Some(QueueDispatch::at(event, execute_at));
 
         self
@@ -107,19 +110,22 @@ where
     M: UpdateModel,
     S: Projection<M>,
 {
-    pub fn enqueue(mut self, event: impl Into<String>) -> Self {
+    #[doc(hidden)]
+    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
         self.queue = Some(QueueDispatch::immediate(event));
 
         self
     }
 
-    pub fn enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
+    #[doc(hidden)]
+    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
         self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
 
         self
     }
 
-    pub fn enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
+    #[doc(hidden)]
+    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
         self.queue = Some(QueueDispatch::at(event, execute_at));
 
         self

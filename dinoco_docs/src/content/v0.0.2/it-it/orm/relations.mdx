@@ -2,25 +2,25 @@ export const title = "Relazioni";
 
 # Relazioni
 
-Le relazioni connettono i Model tra loro nello schema Dinoco.
+Le relazioni connettono i modelli tra loro nello schema di Dinoco.
 
-Questa pagina tratta di `@relation(...)`, `onDelete`, `onUpdate` e dei pattern di relazione più comuni.
+Questa pagina copre `@relation(...)`, `onDelete`, `onUpdate` e i pattern di relazione più comuni.
 
 ---
 
 ## @relation(...)
 
-L'attributo `@relation(...)` definisce come due Model sono connessi.
+L'attributo `@relation(...)` definisce come due modelli si connettono.
 
 Parametri supportati:
 
-| Parametro    | Utilizzo                                                       |
-| :----------- | :------------------------------------------------------------- |
-| `name`       | Nome esplicito della relazione                                 |
-| `fields`     | Campi locali utilizzati come chiavi                            |
-| `references` | Campi referenziati nel Model di destinazione                   |
-| `onDelete`   | Comportamento alla cancellazione del record referenziato       |
-| `onUpdate`   | Comportamento all'aggiornamento del valore referenziato        |
+| Parametro    | Utilizzo                                              |
+| :----------- | :---------------------------------------------------- |
+| `name`       | Nome esplicito della relazione                        |
+| `fields`     | Campi locali usati come chiave                        |
+| `references` | Campi referenziati nel modello target                 |
+| `onDelete`   | Comportamento alla cancellazione del record referenziato |
+| `onUpdate`   | Comportamento all'aggiornamento del valore referenziato  |
 
 Esempio completo:
 
@@ -35,15 +35,15 @@ model Post {
 
 ## onDelete e onUpdate
 
-Dinoco fornisce azioni referenziali per controllare cosa succede quando il record collegato viene modificato o rimosso.
+Dinoco espone azioni referenziali per controllare cosa succede quando il record correlato viene modificato o rimosso.
 
 Valori supportati:
 
-| Azione         | Significato                                                    |
-| :----------- | :------------------------------------------------------------- |
-| `Cascade`    | Propaga l'operazione ai record dipendenti                      |
-| `SetNull`    | Imposta la chiave esterna su `null`                            |
-| `SetDefault` | Imposta il valore predefinito configurato per il campo         |
+| Azione         | Significato                                      |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | Propaga l'operazione ai record dipendenti        |
+| `SetNull`    | Imposta la chiave esterna a `null`               |
+| `SetDefault` | Imposta il valore predefinito configurato per il campo |
 
 Esempio:
 
@@ -55,11 +55,11 @@ model Comment {
 }
 ```
 
-Utilizzare `SetNull` solo se il campo locale è opzionale.
+Usa `SetNull` solo quando il campo locale è opzionale.
 
 ## Uno a molti
 
-Questa è la relazione più comune: un record padre ha più record figli.
+Questa è la relazione più comune: un record padre possiede più figli.
 
 ```dinoco
 model User {
@@ -76,14 +76,14 @@ model Post {
 }
 ```
 
-Lettura concettuale:
+Lettura mentale:
 
 - Un `User` può avere più `Post`.
 - Ogni `Post` appartiene a un singolo `User`.
 
 ## Molti a molti
 
-Nelle relazioni molti a molti, entrambi i lati hanno liste.
+Nelle relazioni molti-a-molti, entrambi i lati hanno liste.
 
 ```dinoco
 model User {
@@ -101,14 +101,14 @@ model Role {
 }
 ```
 
-Lettura concettuale:
+Lettura mentale:
 
 - Un `User` può avere più `Role`.
-- Una `Role` può appartenere a più `User`.
+- Un `Role` può appartenere a più `User`.
 
-## Autoriferimento
+## Relazione con se stesso
 
-Una relazione auto-referenziale si verifica quando un Model si riferisce a se stesso.
+La relazione con se stesso si verifica quando un modello si relaziona con se stesso.
 
 ```dinoco
 model User {
@@ -120,21 +120,21 @@ model User {
 }
 ```
 
-Lettura concettuale:
+Lettura mentale:
 
 - Un utente può avere un manager.
 - Un utente può avere più subordinati.
 
-## Suggerimenti pratici
+## Consigli pratici
 
-- Utilizzare `name` quando esiste più di una relazione tra gli stessi Model.
-- Utilizzare `onDelete: Cascade` se il figlio non ha senso senza il genitore.
-- Utilizzare `onDelete: SetNull` se la relazione può essere risolta senza rimuovere il record figlio.
-- Utilizzare le relazioni auto-referenziali con nomi espliciti per facilitare la leggibilità e la generazione del codice.
+- Usa `name` quando c'è più di una relazione tra gli stessi modelli.
+- Usa `onDelete: Cascade` quando il figlio non ha senso senza il padre.
+- Usa `onDelete: SetNull` quando la relazione può essere annullata senza rimuovere il record figlio.
+- Usa relazioni con se stesso con nomi espliciti per facilitare la lettura e la generazione di codice.
 
 ## Schema di riferimento per gli esempi
 
-Gli esempi seguenti utilizzano il seguente schema:
+Gli esempi seguenti usano il seguente schema:
 
 ```dinoco
 config {
@@ -211,9 +211,9 @@ model Tag {
 }
 ```
 
-## Esempio di query con tutte le relazioni possibili a partire da `User`
+## Esempio di ricerca con tutte le relazioni possibili a partire da User
 
-Se si desidera partire dal Model `User` e caricare tutte le relazioni dirette in una singola query di lettura, è possibile combinare `select::<T>()` con più `includes(...)`.
+Quando vuoi partire dal modello `User` e caricare tutte le relazioni dirette in una stessa query di lettura, puoi combinare `select::<T>()` con vari `includes(...)`.
 
 ```rust
 use dinoco::{Extend, find_many};
@@ -319,25 +319,35 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-Questo pattern è utile quando si desidera creare una vista utente completa in una singola operazione di lettura orientata alle relazioni.
+Questo pattern è è utile quando vuoi costruire una vista ricca dell'utente in una singola lettura orientata alle relazioni.
 
-## Esempio di insert con relazione usando `User` e `Profile`
+## Esempio di insert con relazione usando User e Profile
 
-Per inserire un record con una relazione 1:1, utilizzare `with_relation(...)`.
+Per inserire un record con una relazione 1:1 usando la nuova API, inserisci la relazione all'interno di un payload `Extend` marcato con `#[insertable]`.
 
 ```rust
 use dinoco::insert_into;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+	id: String,
+	username: String,
+	role: Role,
+	profile: Option<Profile>,
+}
+
 let created_user = insert_into::<User>()
-	.values(User {
+	.values(UserWithProfile {
 		id: "user-1".to_string(),
 		username: "bia".to_string(),
 		role: Role::USER,
-	})
-	.with_relation(Profile {
-		id: "profile-1".to_string(),
-		bio: Some("Engenheira de software".to_string()),
-		userId: String::new(),
+		profile: Some(Profile {
+			id: "profile-1".to_string(),
+			bio: Some("Engenheira de software".to_string()),
+			userId: String::new(),
+		}),
 	})
 	.execute(&client)
 	.await?;
@@ -346,62 +356,69 @@ let created_user = insert_into::<User>()
 In questo flusso:
 
 - Il `User` viene inserito per primo.
-- Il `Profile` associato viene creato successivamente.
-- La chiave `userId` viene collegata tramite il flusso di relazione Dinoco.
+- Il `Profile` correlato viene creato successivamente.
+- La chiave `userId` è collegata dal flusso di relazione di Dinoco.
 
-## Esempio di `insert_many` con `with_relations(...)`
+## Esempio di insert_many con relazioni annidate
 
-Utilizzare `with_relations(...)` quando si desidera inserire più record padre e, per ciascuno di essi, inserire anche più nuovi record correlati.
+Usa `#[insertable]` quando vuoi inserire più record padre e, per ognuno di essi, anche inserire più record correlati nuovi.
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	comments: Vec<Comment>,
+}
+
 let posts = vec![
-	Post {
+	PostWithComments {
 		id: "post-1".to_string(),
 		title: "Primeiro post".to_string(),
 		content: "Conteudo do primeiro post".to_string(),
 		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-1".to_string(),
+				text: "Muito bom".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+			Comment {
+				id: "comment-2".to_string(),
+				text: "Gostei do exemplo".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-3".to_string(),
+			},
+		],
 	},
-	Post {
+	PostWithComments {
 		id: "post-2".to_string(),
 		title: "Segundo post".to_string(),
 		content: "Conteudo do segundo post".to_string(),
 		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-3".to_string(),
+				text: "Quero mais detalhes".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+		],
 	},
-];
-
-let comments_per_post = vec![
-	vec![
-		Comment {
-			id: "comment-1".to_string(),
-			text: "Muito bom".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-		Comment {
-			id: "comment-2".to_string(),
-			text: "Gostei do exemplo".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-3".to_string(),
-		},
-	],
-	vec![
-		Comment {
-			id: "comment-3".to_string(),
-			text: "Quero mais detalhes".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-	],
 ];
 
 insert_many::<Post>()
 	.values(posts)
-	.with_relations(comments_per_post)
 	.execute(&client)
 	.await?;
 ```
@@ -409,40 +426,48 @@ insert_many::<Post>()
 In questo flusso:
 
 - Ogni `Post` viene inserito.
-- Ogni gruppo in `comments_per_post` corrisponde al `Post` nella stessa posizione.
-- Dinoco collega i `Comment` al Post corretto durante l'operazione di scrittura.
+- Dinoco crea i `Comment` annidati e collega ogni gruppo al `Post` corretto durante la scrittura.
 
-## Esempio di `insert_many` con `with_connections(...)`
+## Esempio di insert_many con connessioni annidate
 
-Utilizzare `with_connections(...)` quando si desidera inserire più record padre e collegare ciascuno di essi a più record già esistenti.
+Usa l'enum `PostConnection` generato dal codegen quando vuoi inserire più record padre e connettere ognuno di essi a più record già esistenti.
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithTags {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	tags: Vec<PostConnection>,
+}
+
 insert_many::<Post>()
 	.values(vec![
-		Post {
+		PostWithTags {
 			id: "post-10".to_string(),
 			title: "Rust e Dinoco".to_string(),
 			content: "Post sobre produtividade".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-1".to_string()),
+				PostConnection::Tag("tag-2".to_string()),
+			],
 		},
-		Post {
+		PostWithTags {
 			id: "post-11".to_string(),
 			title: "Relações avançadas".to_string(),
 			content: "Post sobre includes e relacoes".to_string(),
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-2".to_string()),
+				PostConnection::Tag("tag-3".to_string()),
+			],
 		},
-	])
-	.with_connections(vec![
-		vec![
-			Tag { id: "tag-1".to_string(), name: "rust".to_string() },
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-		],
-		vec![
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-			Tag { id: "tag-3".to_string(), name: "sqlite".to_string() },
-		],
 	])
 	.execute(&client)
 	.await?;
@@ -451,10 +476,10 @@ insert_many::<Post>()
 In questo flusso:
 
 - I `Post` vengono inseriti.
-- I `Tag` già esistenti vengono collegati ai Post corrispondenti.
-- Ogni gruppo del vettore esterno rappresenta le connessioni del Post nella stessa posizione.
+- Le `Tag` già esistenti sono connesse ai post corrispondenti.
+- Ogni payload definisce le sue connessioni usando l'enum generato dal codegen.
 
-## Passi successivi
+## Prossimi passi
 
-- [**Enums**](/v0.0.1/orm/enums): scopri come rappresentare valori controllati nello schema.
-- [**Models**](/v0.0.1/orm/models): visualizza la struttura dei campi ed esempi di ricerca, inserimento, aggiornamento ed eliminazione con l'API Dinoco.
+- [**Enums**](/v0.0.2/orm/enums): scopri come rappresentare valori controllati nello schema.
+- [**Models**](/v0.0.2/orm/models): scopri la struttura dei campi ed esempi di ricerca, inserimento, aggiornamento ed eliminazione con l'API di Dinoco.

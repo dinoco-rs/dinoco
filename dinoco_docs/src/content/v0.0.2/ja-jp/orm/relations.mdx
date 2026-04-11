@@ -2,25 +2,25 @@ export const title = "リレーション";
 
 # リレーション
 
-リレーションは、Dinocoスキーマ内のモデルを相互に接続します。
+リレーションは、Dinocoスキーマ内のモデル同士を接続します。
 
-このページでは、`@relation(...)`、`onDelete`、`onUpdate`、および最も一般的なリレーションパターンについて説明します。
+このページでは、`@relation(...)`、`onDelete`、`onUpdate`、および最も一般的なリレーションシップパターンについて説明します。
 
 ---
 
 ## @relation(...)
 
-`@relation(...)` 属性は、2つのモデルがどのように関連付けられているかを定義します。
+`@relation(...)`属性は、2つのモデルがどのように接続するかを定義します。
 
 サポートされているパラメータ:
 
-| パラメータ   | 用途                                              |
-| :----------- | :------------------------------------------------------ |
-| `name`       | リレーションの明示的な名前                           |
-| `fields`     | キーとして使用されるローカルフィールド       |
-| `references` | ターゲットモデル内の参照されるフィールド                      |
-| `onDelete`   | 参照されるレコードが削除されたときの動作   |
-| `onUpdate`   | 参照される値が更新されたときの動作 |
+| パラメータ    | 用途                                             |
+| :----------- | :----------------------------------------------- |
+| `name`       | リレーションの明示的な名前                       |
+| `fields`     | キーとして使用されるローカルフィールド           |
+| `references` | ターゲットモデルで参照されるフィールド           |
+| `onDelete`   | 参照されるレコードを削除する際の動作             |
+| `onUpdate`   | 参照される値を更新する際の動作                   |
 
 完全な例:
 
@@ -35,15 +35,15 @@ model Post {
 
 ## onDelete と onUpdate
 
-Dinocoは、関連するレコードが変更または削除された場合に何が起こるかを制御するための参照アクションを提供します。
+Dinocoは、関連するレコードが変更または削除されたときに何が起こるかを制御するための参照アクションを公開しています。
 
 サポートされている値:
 
-| アクション         | 意味                                                 |
-| :----------- | :-------------------------------------------------------- |
-| `Cascade`    | 操作を依存するレコードに伝播します         |
-| `SetNull`    | 外部キーを `null` に設定します                       |
-| `SetDefault` | フィールドの構成されたデフォルト値を設定します        |
+| アクション         | 意味                                             |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | 操作を依存するレコードに伝播します               |
+| `SetNull`    | 外部キーを`null`に設定します                     |
+| `SetDefault` | フィールドに設定されたデフォルト値を定義します   |
 
 例:
 
@@ -55,11 +55,11 @@ model Comment {
 }
 ```
 
-ローカルフィールドがオプションの場合にのみ、`SetNull`を使用してください。
+ローカルフィールドがオプションの場合にのみ`SetNull`を使用してください。
 
-## 1対多
+## One to many
 
-これは最も一般的なリレーションです。1つの親レコードが複数の子レコードを持ちます。
+これは最も一般的なリレーションシップです。1つの親レコードが複数の子レコードを持ちます。
 
 ```dinoco
 model User {
@@ -78,12 +78,12 @@ model Post {
 
 読み方:
 
-- 1つの `User` は複数の `Post` を持つことができます。
-- 各 `Post` は1つの `User` に属します。
+- 1つの`User`は複数の`Post`を持つことができます。
+- 各`Post`は1つの`User`に属します。
 
-## 多対多
+## Many to many
 
-多対多のリレーションでは、両方の側がリストを持ちます。
+多対多のリレーションシップでは、両側にリストがあります。
 
 ```dinoco
 model User {
@@ -103,12 +103,12 @@ model Role {
 
 読み方:
 
-- 1つの `User` は複数の `Role` を持つことができます。
-- 1つの `Role` は複数の `User` に属することができます。
+- 1つの`User`は複数の`Role`を持つことができます。
+- 1つの`Role`は複数の`User`に属することができます。
 
-## 自己リレーション
+## Self relation
 
-自己リレーションは、モデルがそれ自身と関連付けられている場合に発生します。
+自己リレーションは、モデルが自分自身とリレーションシップを持つ場合に発生します。
 
 ```dinoco
 model User {
@@ -127,14 +127,14 @@ model User {
 
 ## 実践的なヒント
 
-- 同じモデル間に複数のリレーションがある場合は、`name` を使用します。
-- 子が親なしでは意味をなさない場合は、`onDelete: Cascade` を使用します。
-- 子レコードを削除せずにリレーションを解除できる場合は、`onDelete: SetNull` を使用します。
-- 読みやすさとコード生成を容易にするために、明示的な名前を持つ自己リレーションを使用します。
+- 同じモデル間に複数のリレーションがある場合は、`name`を使用します。
+- 子が親なしでは意味をなさない場合は、`onDelete: Cascade`を使用します。
+- 子レコードを削除せずにリレーションシップを解除できる場合は、`onDelete: SetNull`を使用します。
+- 読みやすさとコード生成を容易にするために、明示的な名前で自己リレーションを使用します。
 
-## 例用の参照スキーマ
+## 例の参照スキーマ
 
-以下の例では、次のスキーマを使用します。
+以下の例では、次のスキーマを使用しています。
 
 ```dinoco
 config {
@@ -211,9 +211,9 @@ model Tag {
 }
 ```
 
-## User からたどれるすべてのリレーションを取得する例
+## Userからの可能なすべてのリレーションを含む検索例
 
-`User` モデルから開始し、単一の読み取りクエリですべての直接リレーションをロードしたい場合は、`select::<T>()` を複数の `includes(...)` と組み合わせることができます。
+Userモデルから開始し、すべての直接リレーションを同じ読み取りクエリでロードしたい場合は、`select::<T>()`と複数の`includes(...)`を組み合わせることができます。
 
 ```rust
 use dinoco::{Extend, find_many};
@@ -319,25 +319,35 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-このパターンは、単一のリレーション指向の読み取り操作で包括的なユーザービューを作成したい場合に役立ちます。
+このパターンは、リレーション指向の単一の読み取りでユーザーの豊富なビューを構築したい場合に役立ちます。
 
-## User と Profile を使ったリレーション付き insert の例
+## UserとProfileを使用したリレーション付き挿入の例
 
-1対1のリレーションを持つレコードを挿入するには、`with_relation(...)` を使用します。
+新しいAPIを使用して1対1のリレーションを持つレコードを挿入するには、`#[insertable]`でマークされた`Extend`ペイロード内にリレーションを配置します。
 
 ```rust
 use dinoco::insert_into;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+	id: String,
+	username: String,
+	role: Role,
+	profile: Option<Profile>,
+}
+
 let created_user = insert_into::<User>()
-	.values(User {
+	.values(UserWithProfile {
 		id: "user-1".to_string(),
 		username: "bia".to_string(),
 		role: Role::USER,
-	})
-	.with_relation(Profile {
-		id: "profile-1".to_string(),
-		bio: Some("Engenheira de software".to_string()),
-		userId: String::new(),
+		profile: Some(Profile {
+			id: "profile-1".to_string(),
+			bio: Some("Engenheira de software".to_string()), // ソフトウェアエンジニア
+			userId: String::new(),
+		}),
 	})
 	.execute(&client)
 	.await?;
@@ -345,104 +355,119 @@ let created_user = insert_into::<User>()
 
 このフローでは:
 
-- `User` が最初に挿入されます。
-- 関連する `Profile` がその後作成されます。
-- `userId` キーは、Dinocoのリレーションフローによってリンクされます。
+- まず`User`が挿入されます。
+- 次に、関連する`Profile`が作成されます。
+- Dinocoのリレーションフローによって`userId`キーがリンクされます。
 
-## `with_relations(...)` を使った `insert_many` の例
+## ネストされたリレーションを持つinsert_manyの例
 
-複数の親レコードを挿入し、それぞれに対して複数の新しい関連レコードも挿入したい場合は、`with_relations(...)` を使用します。
+複数の親レコードを挿入し、それぞれに対して複数の新しい関連レコードも挿入したい場合は、`#[insertable]`を使用します。
 
 ```rust
 use dinoco::insert_many;
 
-let posts = vec![
-	Post {
-		id: "post-1".to_string(),
-		title: "Primeiro post".to_string(),
-		content: "Conteudo do primeiro post".to_string(),
-		authorId: "user-1".to_string(),
-	},
-	Post {
-		id: "post-2".to_string(),
-		title: "Segundo post".to_string(),
-		content: "Conteudo do segundo post".to_string(),
-		authorId: "user-1".to_string(),
-	},
-];
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	comments: Vec<Comment>,
+}
 
-let comments_per_post = vec![
-	vec![
-		Comment {
-			id: "comment-1".to_string(),
-			text: "Muito bom".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-		Comment {
-			id: "comment-2".to_string(),
-			text: "Gostei do exemplo".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-3".to_string(),
-		},
-	],
-	vec![
-		Comment {
-			id: "comment-3".to_string(),
-			text: "Quero mais detalhes".to_string(),
-			parentId: None,
-			postId: String::new(),
-			authorId: "user-2".to_string(),
-		},
-	],
+let posts = vec![
+	PostWithComments {
+		id: "post-1".to_string(),
+		title: "Primeiro post".to_string(), // 最初の投稿
+		content: "Conteudo do primeiro post".to_string(), // 最初の投稿の内容
+		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-1".to_string(),
+				text: "Muito bom".to_string(), // とても良い
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+			Comment {
+				id: "comment-2".to_string(),
+				text: "Gostei do exemplo".to_string(), // 例が気に入った
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-3".to_string(),
+			},
+		],
+	},
+	PostWithComments {
+		id: "post-2".to_string(),
+		title: "Segundo post".to_string(), // 2番目の投稿
+		content: "Conteudo do segundo post".to_string(), // 2番目の投稿の内容
+		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-3".to_string(),
+				text: "Quero mais detalhes".to_string(), // もっと詳細が知りたい
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+		],
+	},
 ];
 
 insert_many::<Post>()
 	.values(posts)
-	.with_relations(comments_per_post)
 	.execute(&client)
 	.await?;
 ```
 
 このフローでは:
 
-- 各 `Post` が挿入されます。
-- `comments_per_post` 内の各グループは、同じ位置にある `Post` に対応します。
-- Dinocoは、書き込み中に `Comment` を正しい `Post` にリンクします。
+- 各`Post`が挿入されます。
+- Dinocoはネストされた`Comment`を作成し、書き込み中に各グループを正しい`Post`にリンクします。
 
-## `with_connections(...)` を使った `insert_many` の例
+## ネストされた接続を持つinsert_manyの例
 
-複数の親レコードを挿入し、それぞれを複数の既存のレコードに接続したい場合は、`with_connections(...)` を使用します。
+複数の親レコードを挿入し、それぞれを既存の複数のレコードに接続したい場合は、コード生成によって生成された`PostConnection` enumを使用します。
 
 ```rust
 use dinoco::insert_many;
 
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithTags {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	tags: Vec<PostConnection>,
+}
+
 insert_many::<Post>()
 	.values(vec![
-		Post {
+		PostWithTags {
 			id: "post-10".to_string(),
-			title: "Rust e Dinoco".to_string(),
-			content: "Post sobre produtividade".to_string(),
+			title: "Rust e Dinoco".to_string(), // RustとDinoco
+			content: "Post sobre produtividade".to_string(), // 生産性に関する投稿
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-1".to_string()),
+				PostConnection::Tag("tag-2".to_string()),
+			],
 		},
-		Post {
+		PostWithTags {
 			id: "post-11".to_string(),
-			title: "Relações avançadas".to_string(),
-			content: "Post sobre includes e relacoes".to_string(),
+			title: "Relações avançadas".to_string(), // 高度なリレーション
+			content: "Post sobre includes e relacoes".to_string(), // インクルードとリレーションに関する投稿
 			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-2".to_string()),
+				PostConnection::Tag("tag-3".to_string()),
+			],
 		},
-	])
-	.with_connections(vec![
-		vec![
-			Tag { id: "tag-1".to_string(), name: "rust".to_string() },
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-		],
-		vec![
-			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
-			Tag { id: "tag-3".to_string(), name: "sqlite".to_string() },
-		],
 	])
 	.execute(&client)
 	.await?;
@@ -450,11 +475,11 @@ insert_many::<Post>()
 
 このフローでは:
 
-- `Post` が挿入されます。
-- 既存の `Tag` が対応する `Post` に接続されます。
-- 外部ベクトルの各グループは、同じ位置にある `Post` の接続を表します。
+- Postが挿入されます。
+- 既存のTagは対応する投稿に接続されます。
+- 各ペイロードは、コード生成によって生成されたenumを使用して接続を定義します。
 
 ## 次のステップ
 
-- [**Enums**](/v0.0.1/orm/enums): スキーマで制御された値を表現する方法を学びます。
-- [**Models**](/v0.0.1/orm/models): Dinoco API を使用したフィールド構造と、検索、挿入、更新、削除の例をご覧ください。
+- [**Enums**](/v0.0.2/orm/enums): スキーマで制御された値を表現する方法を確認します。
+- [**Models**](/v0.0.2/orm/models): Dinoco APIを使用したフィールド構造と検索、挿入、更新、削除の例を確認します。

@@ -10,17 +10,17 @@ Diese Seite behandelt `@relation(...)`, `onDelete`, `onUpdate` und die gängigst
 
 ## @relation(...)
 
-Das Attribut `@relation(...)` definiert, wie zwei Models verbunden sind.
+Das Attribut `@relation(...)` definiert, wie zwei Models miteinander verbunden sind.
 
 Unterstützte Parameter:
 
-| Parâmetro    | Uso                                              |
-| :----------- | :----------------------------------------------- |
-| `name`       | Expliziter Name der Beziehung                    |
-| `fields`     | Lokale Felder, die als Schlüssel verwendet werden |
-| `references` | Referenzierte Felder im Ziel-Model               |
-| `onDelete`   | Verhalten beim Löschen des referenzierten Datensatzes |
-| `onUpdate`   | Verhalten beim Aktualisieren des referenzierten Wertes |
+| Parameter    | Verwendung                                              |
+| :----------- | :------------------------------------------------------ |
+| `name`       | Expliziter Name der Beziehung                           |
+| `fields`     | Lokale Felder, die als Schlüssel verwendet werden       |
+| `references` | Referenzierte Felder im Ziel-Model                      |
+| `onDelete`   | Verhalten beim Löschen des referenzierten Datensatzes   |
+| `onUpdate`   | Verhalten beim Aktualisieren des referenzierten Wertes  |
 
 Vollständiges Beispiel:
 
@@ -39,11 +39,11 @@ Dinoco bietet referenzielle Aktionen, um zu steuern, was passiert, wenn der verk
 
 Unterstützte Werte:
 
-| Ação         | Significado                                      |
-| :----------- | :----------------------------------------------- |
-| `Cascade`    | Propagiert die Operation auf abhängige Datensätze |
-| `SetNull`    | Setzt den Fremdschlüssel auf `null`              |
-| `SetDefault` | Setzt den für das Feld konfigurierten Standardwert |
+| Aktion         | Bedeutung                                                 |
+| :------------- | :-------------------------------------------------------- |
+| `Cascade`      | Propagiert die Operation auf abhängige Datensätze         |
+| `SetNull`      | Setzt den Fremdschlüssel auf `null`                       |
+| `SetDefault`   | Setzt den für das Feld konfigurierten Standardwert       |
 
 Beispiel:
 
@@ -57,9 +57,9 @@ model Comment {
 
 Verwenden Sie `SetNull` nur, wenn das lokale Feld optional ist.
 
-## One to many
+## Eins zu viele
 
-Dies ist die häufigste Beziehung: ein übergeordneter Datensatz hat mehrere untergeordnete Datensätze.
+Dies ist die häufigste Beziehung: Ein übergeordneter Datensatz hat mehrere untergeordnete Datensätze.
 
 ```dinoco
 model User {
@@ -78,12 +78,12 @@ model Post {
 
 Gedankliche Lesart:
 
-- Ein `User` kann mehrere `Post` haben.
+- Ein `User` kann mehrere `Post`s haben.
 - Jeder `Post` gehört zu einem einzigen `User`.
 
-## Many to many
+## Viele zu viele
 
-Bei Many-to-Many-Beziehungen haben beide Seiten Listen.
+Bei Viele-zu-viele-Beziehungen haben beide Seiten Listen.
 
 ```dinoco
 model User {
@@ -103,12 +103,12 @@ model Role {
 
 Gedankliche Lesart:
 
-- Ein `User` kann mehrere `Role` haben.
-- Eine `Role` kann zu mehreren `User` gehören.
+- Ein `User` kann mehrere `Role`s haben.
+- Eine `Role` kann mehreren `User`n gehören.
 
-## Self relation
+## Selbstbeziehung
 
-Eine Self Relation tritt auf, wenn ein Model sich selbst bezieht.
+Eine Selbstbeziehung tritt auf, wenn ein Model mit sich selbst in Beziehung steht.
 
 ```dinoco
 model User {
@@ -129,8 +129,8 @@ Gedankliche Lesart:
 
 - Verwenden Sie `name`, wenn es mehr als eine Beziehung zwischen denselben Models gibt.
 - Verwenden Sie `onDelete: Cascade`, wenn das Kind ohne den Elternteil keinen Sinn ergibt.
-- Verwenden Sie `onDelete: SetNull`, wenn die Beziehung aufgelöst werden kann, ohne den Kinddatensatz zu entfernen.
-- Verwenden Sie Self Relations mit expliziten Namen, um die Lesbarkeit und das Codegen zu erleichtern.
+- Verwenden Sie `onDelete: SetNull`, wenn die Beziehung aufgehoben werden kann, ohne den untergeordneten Datensatz zu entfernen.
+- Verwenden Sie Selbstbeziehungen mit expliziten Namen, um die Lesbarkeit und Codegenerierung zu erleichtern.
 
 ## Referenzschema für die Beispiele
 
@@ -211,9 +211,9 @@ model Tag {
 }
 ```
 
-## Beispiel für eine Abfrage mit allen möglichen Beziehungen von User
+## Beispiel für eine Abfrage mit allen möglichen Beziehungen ausgehend von User
 
-Wenn Sie vom Model `User` ausgehen und alle direkten Beziehungen in einer einzigen Leseabfrage laden möchten, können Sie `select::<T>()` mit mehreren `includes(...)` kombinieren.
+Wenn Sie vom `User`-Model ausgehen und alle direkten Beziehungen in einer einzigen Leseabfrage laden möchten, können Sie `select::<T>()` mit mehreren `includes(...)` kombinieren.
 
 ```rust
 use dinoco::{Extend, find_many};
@@ -319,9 +319,9 @@ let users = find_many::<User>()
 	.await?;
 ```
 
-Dieses Muster ist nützlich, wenn Sie eine reichhaltige Ansicht des Benutzers in einem einzigen relationsorientierten Lesevorgang erstellen möchten.
+Dieses Muster ist nützlich, wenn Sie eine umfassende Ansicht des Benutzers in einem einzigen beziehungsorientierten Lesevorgang erstellen möchten.
 
-## Beispiel für ein Insert mit Beziehung unter Verwendung von User und Profile
+## Beispiel für einen Insert mit Beziehung unter Verwendung von User und Profile
 
 Um einen Datensatz mit einer 1:1-Beziehung einzufügen, verwenden Sie `with_relation(...)`.
 
@@ -346,12 +346,12 @@ let created_user = insert_into::<User>()
 In diesem Ablauf:
 
 - Der `User` wird zuerst eingefügt.
-- Das zugehörige `Profile` wird danach erstellt.
+- Das zugehörige `Profile` wird anschließend erstellt.
 - Der `userId`-Schlüssel wird durch den Dinoco-Beziehungsfluss verknüpft.
 
 ## Beispiel für insert_many mit with_relations(...)
 
-Verwenden Sie `with_relations(...)`, wenn Sie mehrere übergeordnete Datensätze einfügen und für jeden von ihnen auch mehrere neue zugehörige Datensätze einfügen möchten.
+Verwenden Sie `with_relations(...)`, wenn Sie mehrere übergeordnete Datensätze einfügen und für jeden davon auch mehrere neue verwandte Datensätze einfügen möchten.
 
 ```rust
 use dinoco::insert_many;
@@ -410,11 +410,11 @@ In diesem Ablauf:
 
 - Jeder `Post` wird eingefügt.
 - Jede Gruppe in `comments_per_post` entspricht dem `Post` an derselben Position.
-- Dinoco verknüpft die `Comment` mit dem richtigen Post während des Schreibvorgangs.
+- Dinoco verknüpft die `Comment`s während des Schreibvorgangs mit dem richtigen Post.
 
 ## Beispiel für insert_many mit with_connections(...)
 
-Verwenden Sie `with_connections(...)`, wenn Sie mehrere übergeordnete Datensätze einfügen und jeden von ihnen mit mehreren bereits bestehenden Datensätzen verbinden möchten.
+Verwenden Sie `with_connections(...)`, wenn Sie mehrere übergeordnete Datensätze einfügen und jeden davon mit mehreren bereits vorhandenen Datensätzen verbinden möchten.
 
 ```rust
 use dinoco::insert_many;
@@ -450,11 +450,11 @@ insert_many::<Post>()
 
 In diesem Ablauf:
 
-- Die `Post` werden eingefügt.
-- Die bereits bestehenden `Tag` werden mit den entsprechenden Posts verbunden.
-- Jede Gruppe des äußeren Vektors stellt die Verbindungen des Posts an derselben Position dar.
+- Die `Post`s werden eingefügt.
+- Die bereits vorhandenen `Tag`s werden mit den entsprechenden Posts verbunden.
+- Jede Gruppe des äußeren Vektors repräsentiert die Verbindungen des Posts an derselben Position.
 
 ## Nächste Schritte
 
-- [**Enums**](/v0.0.1/orm/enums): Sehen Sie, wie kontrollierte Werte im Schema dargestellt werden.
-- [**Models**](/v0.0.1/orm/models): Sehen Sie die Struktur der Felder und Beispiele für Abfragen, Einfügungen, Aktualisierungen und Löschungen mit der Dinoco-API.
+- [**Enums**](/v0.0.1/orm/enums): Erfahren Sie, wie Sie kontrollierte Werte im Schema darstellen.
+- [**Models**](/v0.0.1/orm/models): Erfahren Sie mehr über die Feldstruktur und Beispiele für Suche, Einfügen, Aktualisieren und Löschen mit der Dinoco API.

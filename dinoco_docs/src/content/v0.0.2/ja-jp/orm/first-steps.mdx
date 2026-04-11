@@ -2,19 +2,19 @@ export const title = "最初のステップ";
 
 # 最初のステップ
 
-Dinocoの利用を開始するには、マイグレーションやその他のシステムを操作できるように、CLIをインストールする必要があります！
+Dinocoを使い始めるには、マイグレーションやその他のシステムを操作できるように、CLIをインストールする必要があります！
 
 ```bash
 cargo install dinoco-cli
 ```
 
-Dinoco環境をセットアップするには、以下のコマンドを実行します。
+Dinoco環境を作成するには、次のコマンドを実行します。
 
 ```bash
 dinoco init
 ```
 
-データベースと必要なすべての設定を選択すると、プロジェクトのルートディレクトリに`dinoco`フォルダが作成されます。
+データベースと必要なすべての設定を選択すると、プロジェクトのルートにdinocoフォルダが作成されます。
 
 このフォルダには以下が含まれます。
 
@@ -22,16 +22,19 @@ dinoco init
 - **Schema:** データ構造の中心的な定義。
 - **Models:** Rustコードで使用するための型付き表現。
 
-## どのように動作しますか？
+## 仕組み
 
 ### 1. スキーマと接続を定義する
 
-Dinocoスキーマは、モデルとデータベース設定の内容を定義します。
+Dinocoスキーマは、モデルの内容とデータベース設定を定義します。
 
 ```dinoco
 config {
 	database = "postgresql"
 	database_url = env("DATABASE_URL")
+	redis = {
+		url = env("REDIS_URL")
+	}
 }
 
 model User {
@@ -54,13 +57,13 @@ model Post {
 
 ### 2. マイグレーションを作成する
 
-`--apply`オプションでマイグレーションを生成すると、それがデータベースに適用され、モデルが自動的に生成されます！
+`--apply`オプションでマイグレーションを生成すると、データベースに適用され、モデルが自動的に生成されます！
 
 ```bash
 dinoco migrate generate --apply
 ```
 
-### 3. DinocoClientでクエリを実行する
+### 3. DinocoClientでのクエリ
 
 ```rust
 use dinoco::{DinocoClientConfig, DinocoQueryLogger, DinocoQueryLoggerOptions, Extend, find_many, insert_into};
@@ -68,6 +71,7 @@ use dinoco::{DinocoClientConfig, DinocoQueryLogger, DinocoQueryLoggerOptions, Ex
 #[path = "../dinoco/mod.rs"]
 mod database;
 
+use database::*;
 use database::models::*;
 
 #[derive(Debug, Clone, Extend)]
@@ -85,6 +89,16 @@ struct PostSimple {
     published: bool,
 }
 
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithPostInsert {
+    id: i64,
+    email: String,
+    name: Option<String>,
+    posts: Vec<Post>,
+}
+
 #[tokio::main]
 async fn main() -> dinoco::DinocoResult<()> {
     let _ = dotenvy::dotenv();
@@ -97,15 +111,30 @@ async fn main() -> dinoco::DinocoResult<()> {
 
     // 関連する投稿を持つユーザーを挿入します。
     insert_into::<User>()
-        .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
-        .with_relation(Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None })
+        .values(UserWithPostInsert {
+            id: 0,
+            email: "bia@dinoco.rs".to_string(),
+            name: Some("Bia".to_string()),
+            posts: vec![Post { id: 0, title: "最初の投稿".to_string(), published: true, authorId: None }],
+        })
         .execute(&client)
         .await?;
 
-    // すべてのユーザーとその投稿を検索します。
+    // すべてのユーザーとその投稿を取得します。
     let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
 
+    let cached_users = find_many::<User>()
+        .select::<UserWithRelation>()
+        .includes(|x| x.posts())
+        .cache_with_expiration("users:with-posts", 30)
+        .execute(&client)
+        .await?;
+
+    let cached_direct = client.cache().get::<Vec<UserWithRelation>>("users:with-posts").await?;
+
     println!("{users:#?}");
+    println!("{cached_users:#?}");
+    println!("{cached_direct:#?}");
 
     // 結果:
     // [
@@ -113,7 +142,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // 		email: "bia@dinoco.rs",
     // 		posts: [
     // 			Post {
-    // 				title: "Meu primeiro post",
+    // 				title: "最初の投稿",
     // 				published: true,
     // 			},
     // 		],
@@ -126,5 +155,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## 次のステップ
 
-- [**Dinocoスキーマ**](/v0.0.1/orm/introduction-dinoco): Dinocoの構造と目的をよりよく理解します。
-- [**Dinocoクライアント**](/v0.0.1/orm/first-steps): この完全なクライアントワークフローを確認します。
+- [**Dinocoスキーマ**](/v0.0.2/orm/introduction-dinoco): Dinocoの構造と目的をよりよく理解しましょう。
+- [**find_many**](/v0.0.2/orm/find-many): リストクエリでのフィルター、インクルード、キャッシュについて見てみましょう。

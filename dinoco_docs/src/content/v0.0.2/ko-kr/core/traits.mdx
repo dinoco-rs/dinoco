@@ -1,0 +1,155 @@
+export const title = '트레이트';
+
+# 트레이트
+
+Dinoco에서 모델과 페이로드가 사용하는 핵심 트레이트에 대한 개요입니다.
+
+---
+
+## Dinoco의 트레이트란 무엇인가요?
+
+트레이트는 ORM의 기본 동작을 정의합니다. 즉, 모델이 메타데이터를 노출하는 방법, 열을 투영하는 방법, 삽입하는 방법, 업데이트하는 방법, 그리고 중첩된 페이로드가 처리되는 방법을 정의합니다.
+
+코드 생성기로 생성된 모델의 경우, 대부분의 기능이 자동으로 구현됩니다.
+
+## Model 트레이트
+
+`Model`은 `Include`, `Where` 및 테이블 이름과 같은 모델의 기본 메타데이터를 정의합니다.
+
+```rust
+impl dinoco::Model for User {
+    type Include = UserInclude;
+    type Where = UserWhere;
+
+    fn table_name() -> &'static str {
+        "users"
+    }
+}
+```
+
+## Projection 트레이트
+
+`Projection`은 구조체가 모델에서 열을 읽는 방법과 어떤 열을 로드해야 하는지를 정의합니다.
+
+```rust
+impl dinoco::Projection<User> for UserSummary {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+```
+
+이 트레이트는 `select::<T>()`, `include` 및 `Extend`로 파생된 구조체와 함께 많이 사용됩니다.
+
+## InsertModel 트레이트
+
+`InsertModel`은 Dinoco가 모델에 대한 삽입 행을 어떻게 구성해야 하는지 설명합니다.
+
+```rust
+impl dinoco::InsertModel for User {
+    fn insert_columns() -> &'static [&'static str] {
+        &["id", "email", "name"]
+    }
+}
+```
+
+생성된 모델에는 이 트레이트가 이미 준비되어 있습니다.
+
+## UpdateModel 트레이트
+
+`UpdateModel`은 업데이트에 전송될 수 있는 필드와 변경할 레코드를 식별하는 방법을 설명합니다.
+
+```rust
+impl dinoco::UpdateModel for User {
+    fn update_columns() -> &'static [&'static str] {
+        &["email", "name"]
+    }
+}
+```
+
+## InsertPayload 트레이트
+
+`InsertPayload`는 `.values(...)`가 원시 모델과 다른 것을 허용하여 페이로드를 다음으로 분리합니다.
+
+- 삽입할 기본 모델
+- 나중에 처리될 중첩된 내용
+
+이 트레이트는 `#[insertable]`이 자동으로 구현하게 되는 트레이트입니다.
+
+## InsertConnectionPayload 트레이트
+
+`InsertConnectionPayload`는 중첩된 페이로드가 이미 존재하는 레코드와의 연결을 나타낼 때 사용됩니다.
+
+이 트레이트는 `ArticleConnection`과 같이 코드 생성기로 생성된 열거형에서 사용되는 연결점입니다.
+
+```rust
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
+```
+
+## 모델에 의해 구현되는 트레이트
+
+Dinoco에 의해 생성된 모델에서 가장 일반적인 것은 다음과 같은 구현을 이미 받는 것입니다.
+
+- `Model`
+- `Projection`
+- `InsertModel`
+- `UpdateModel`
+- `FindAndUpdateModel`
+- `RelationMutationModel`
+
+스키마의 관계에 따라 모델은 다음을 받을 수도 있습니다.
+
+- `InsertRelation<T>`
+- `InsertConnection<T>`
+
+## 트레이트와 파생을 함께 사용하는 예시
+
+실제로 가장 일반적인 흐름은 다음과 같습니다.
+
+- 행 읽기를 위한 `Rowable`
+- 프로젝션 또는 풍부한 페이로드를 위한 `Extend`
+- 중첩 삽입을 위한 `#[insertable]`
+- 코드 생성기에 의해 자동으로 생성되는 `Model`, `Projection`, `InsertModel`과 같은 트레이트
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-30".into(),
+        title: "Core Example".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## 각 트레이트를 사용하는 시점
+
+- 테이블, `Where`, `Include`를 식별하려면 `Model`을 사용하세요.
+- 구조체가 `select`에 의해 로드되어야 할 때 `Projection`을 사용하세요.
+- ORM의 쓰기 경로를 이해하려면 `InsertModel`과 `UpdateModel`을 사용하세요.
+- 중첩된 페이로드를 다룰 때 `InsertPayload`를 사용하세요.
+- 중첩된 페이로드가 기존 레코드를 연결할 때 `InsertConnectionPayload`를 사용하세요.
+
+## 다음 단계
+
+- [**파생(Derives)**](/v0.0.2/core/derives): 이 트레이트와 함께 사용되는 파생 및 속성을 확인하세요.
+- [**관계(Relations)**](/v0.0.2/orm/relations): 이것이 관계 시스템과 어떻게 연결되는지 확인하세요.

@@ -6,45 +6,45 @@ export const title = "find_many";
 
 ---
 
-## 可能な操作
+## できること
 
-- `.select::<T>()` を使用してプロジェクションを選択する
-- `.cond(...)` を使用してフィルタリングする
-- `.take(...)` を使用して制限する
-- `.skip(...)` を使用してページネーションする
-- `.order_by(...)` を使用してソートする
-- `.includes(...)` を使用してリレーションをロードする
-- `.count(...)` を使用してリレーションをカウントする
-- `.read_in_primary()` を使用してプライマリデータベースサーバーでの読み取り操作を強制する
-- `.execute(&client)` を使用して実行する
+- `.select::<T>() でプロジェクションを選択する`
+- `.cond(...) でフィルタリングする`
+- `.take(...) で制限する`
+- `.skip(...) でページネーションする`
+- `.order_by(...) で並べ替える`
+- `.includes(...) で関連をロードする`
+- `.count(...) で関連をカウントする`
+- `.read_in_primary() でプライマリデータベースからの読み取りを強制する`
+- `.execute(&client) で実行する`
 
 ## メソッドの説明
 
 - `.select::<T>()`: モデルのデフォルトのプロジェクションをカスタムプロジェクションに置き換えます。
-- `.cond(...)`: クエリにフィルター条件を追加します。
+- `.cond(...)`: クエリにフィルタ条件を追加します。
 - `.take(...)`: 返されるレコードの数を制限します。
-- `.skip(...)`: 結果が返される前に、指定された数のレコードをスキップします。
-- `.order_by(...)`: クエリのソート順を定義します。
+- `.skip(...)`: 結果を返す前に、指定された数のレコードをスキップします。
+- `.order_by(...)`: クエリの順序を定義します。
 - `.includes(...)`: メインレコードと一緒にリレーションをロードします。
-- `.count(...)`: リレーションのカウントを計算し、`posts_count` のようなフィールドを埋めます。
-- `.read_in_primary()`: レプリカを使用せずに、プライマリデータベースサーバーでの読み取り操作を強制します。
+- `.count(...)`: リレーションのカウンターを計算し、`posts_count` のようなフィールドを埋めます。
+- `.read_in_primary()`: レプリカを使用せずに、プライマリデータベースからの読み取りを強制します。
 - `.execute(&client)`: データベースでクエリを実行します。
 
 ## 戻り値
 
-`select::<T>()` なしの場合、戻り値は次のとおりです。
+`select::<T>()` がない場合、戻り値は次のとおりです。
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-`select::<T>()` ありの場合、戻り値は次のようになります。
+`select::<T>()` がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-## 基本例
+## 基本的な例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -52,7 +52,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## フィルター付きの例
+## フィルタリングの例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -61,7 +61,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## ページネーションと並び替えの例
+## ページネーションと並べ替えの例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -72,7 +72,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## カスタム select の例
+## カスタム選択の例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,7 +88,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 単純な include の例
+## シンプルなインクルードの例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -106,7 +106,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## フィルター付き include の例
+## フィルタリングされたインクルードの例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -124,7 +124,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## ネストした include の例
+## ネストされたインクルードの例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +162,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## リレーション数の例
+## リレーションカウントの例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,7 +180,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## プライマリデータベースから読み取る例
+## プライマリデータベースからの読み取りの例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -192,5 +192,5 @@ let users = dinoco::find_many::<User>()
 
 ## 次のステップ
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 最大1つのレコードを取得するためのバージョン。
-- [**`count::<M>()`**](/v0.0.1/orm/count): フィルター付きのレコードのカウント。
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 最大1つのレコードを検索するバージョン。
+- [**`count::<M>()`**](/v0.0.1/orm/count): フィルタリングされたレコードのカウント。

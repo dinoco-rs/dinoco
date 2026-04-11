@@ -6,24 +6,24 @@ export const title = "update";
 
 ---
 
-## 할 수 있는 것
+## 수행할 수 있는 작업
 
 - `.cond(...)`: 어떤 레코드를 업데이트할지 정의합니다.
 - `.values(item)`: 레코드의 새 값을 지정합니다.
-- `.connect(...)`: 쓰기 작업이 지원되는 관계 연결을 생성합니다.
-- `.disconnect(...)`: 쓰기 작업이 지원되는 관계 연결을 제거합니다.
+- `.connect(...)`: 쓰기 지원 관계 링크를 생성합니다.
+- `.disconnect(...)`: 쓰기 지원 관계 링크를 제거합니다.
 - `.returning::<T>()`: 업데이트된 레코드를 타입이 지정된 프로젝션으로 반환합니다.
 - `.execute(&client)`: 데이터베이스에서 업데이트를 실행합니다.
 
-## 반환값
+## 반환 값
 
-`.returning::<T>()` 없이 반환되는 값은 다음과 같습니다:
+`.returning::<T>()`가 없으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()`와 함께 사용하면 반환되는 값은 다음과 같습니다:
+`.returning::<T>()`가 있으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -33,7 +33,7 @@ DinocoResult<Vec<T>>
 
 - `update().returning()`은 `.connect(...)` 또는 `.disconnect(...)`를 사용한 관계 쓰기를 지원하지 않습니다.
 
-## 필드 업데이트 예제
+## 필드 업데이트 예시
 
 ```rust
 dinoco::update::<User>()
@@ -41,15 +41,15 @@ dinoco::update::<User>()
     .values(User {
         id: 10,
         email: "novo@acme.com".to_string(),
-        name: "Novo Nome".to_string(),
+        name: "새 이름".to_string(),
     })
     .execute(&client)
     .await?;
 ```
 
-## `connect(...)` 예제
+## connect(...) 예시
 
-쓰기 작업이 지원되는 관계(일반적으로 다대다 관계)를 연결하는 데 사용됩니다.
+쓰기 지원 관계를 연결하는 데 사용되며, 일반적으로 다대다(Many to Many) 관계입니다.
 
 ```rust
 dinoco::update::<User>()
@@ -59,9 +59,9 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## `disconnect(...)` 예제
+## disconnect(...) 예시
 
-관계를 끊는 데 사용됩니다.
+관계를 연결 해제하는 데 사용됩니다.
 
 ```rust
 dinoco::update::<User>()
@@ -71,7 +71,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## connect와 disconnect에서 사용할 수 있는 필터
+## connect 및 disconnect에서 사용 가능한 필터
 
 - `eq`
 - `neq`
@@ -89,5 +89,5 @@ dinoco::update::<User>()
 
 ## 다음 단계
 
-- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): 일괄 업데이트.
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 반환값을 포함하는 원자적 업데이트.
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): 배치 업데이트.
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 반환 값이 있는 원자적 업데이트.

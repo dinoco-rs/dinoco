@@ -2,13 +2,13 @@ export const title = "find_first";
 
 # find_first
 
-Utilisé pour récupérer au maximum un enregistrement.
+Utilisé pour rechercher au maximum un enregistrement.
 
 ---
 
 ## Ce que vous pouvez faire
 
-Il offre les mêmes méthodes que `find_many` :
+Il expose les mêmes méthodes que `find_many` :
 
 - `select`
 - `cond`
@@ -22,15 +22,15 @@ Il offre les mêmes méthodes que `find_many` :
 
 ## Description des méthodes
 
-- `.select::<T>()`: échange la projection par défaut contre une projection personnalisée.
-- `.cond(...)`: ajoute des filtres à la recherche.
-- `.take(...)`: limite le nombre maximal d'enregistrements pris en compte.
-- `.skip(...)`: ignore des enregistrements avant de sélectionner le premier résultat.
-- `.order_by(...)`: définit quel enregistrement doit être pris en compte en premier.
-- `.includes(...)`: charge les relations avec l'élément principal.
-- `.count(...)`: calcule les compteurs des relations dans la projection.
-- `.read_in_primary()`: force la lecture depuis la base de données primaire.
-- `.execute(&client)`: exécute la requête et renvoie au maximum un élément.
+- `.select::<T>()` : échange la projection par défaut contre une projection personnalisée.
+- `.cond(...)` : ajoute des filtres à la recherche.
+- `.take(...)` : limite le nombre maximal d'enregistrements considérés.
+- `.skip(...)` : saute des enregistrements avant de sélectionner le premier résultat.
+- `.order_by(...)` : définit quel enregistrement doit être considéré en premier.
+- `.includes(...)` : charge les relations avec l'élément principal.
+- `.count(...)` : calcule les compteurs de relations dans la projection.
+- `.read_in_primary()` : force la lecture sur la base de données principale.
+- `.execute(&client)` : exécute la requête et retourne au maximum un élément.
 
 ## Retour
 
@@ -46,7 +46,7 @@ Avec `select::<T>()`, le retour devient :
 DinocoResult<Option<T>>
 ```
 
-## Exemple de base
+## Exemple basique
 
 ```rust
 let user = dinoco::find_first::<User>()
@@ -102,5 +102,5 @@ let latest_user = dinoco::find_first::<User>()
 
 ## Prochaines étapes
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): recherche plusieurs enregistrements.
-- [**`count::<M>()`**](/v0.0.1/orm/count): comptage d'enregistrements.
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many) : recherche plusieurs enregistrements.
+- [**`count::<M>()`**](/v0.0.1/orm/count) : comptage d'enregistrements.

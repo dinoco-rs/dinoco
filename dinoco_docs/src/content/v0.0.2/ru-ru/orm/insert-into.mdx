@@ -1,4 +1,4 @@
-export const title = "insert_into";
+export const title = 'insert_into';
 
 # insert_into
 
@@ -6,30 +6,147 @@ export const title = "insert_into";
 
 ---
 
-## Что можно сделать
+## Что вы можете сделать
 
-- Передать значения с помощью `.values(item)`
-- Вставить с отношением через `.with_relation(related)`
-- Подключить существующее отношение через `.with_connection(connected)`
-- Выполнить с помощью `.execute(&client)`
-
-## Описание методов
-
-- `.values(item)`: определяет вставляемую запись.
-- `.with_relation(related)`: вставляет новую, связанную запись вместе с родительской записью.
-- `.with_connection(connected)`: связывает вставленную запись с уже существующим элементом, обычно в поддерживаемых потоках отношений для соединения.
+- `.values(item)`: определяет запись, которая будет вставлена.
 - `.returning::<T>()`: изменяет возвращаемое значение на типизированную проекцию вставленного элемента.
-- `.execute(&client)`: выполняет операцию записи в базу данных.
+- `.execute(&client)`: выполняет запись в базу данных.
+
+## Пример с Extend #[insertable]
+
+Используйте `#[insertable]` вместе с `#[derive(Extend)]`, когда вы хотите, чтобы `.values(...)` принимал более сложную полезную нагрузку с новыми отношениями и существующими связями. Dinoco сначала вставляет родителя, а затем рекурсивно обрабатывает все остальное.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    published: bool,
+    authorId: i64,
+    comments: Vec<Comment>,
+}
+
+dinoco::insert_into::<User>()
+    .values(UserWithPosts {
+        id: 1,
+        name: "Анна".to_string(),
+        posts: vec![
+            PostWithComments {
+                id: 10,
+                title: "Рекурсивная вставка".to_string(),
+                published: true,
+                authorId: 0,
+                comments: vec![Comment { id: 100, text: "первый".to_string(), flagged: false, postId: 0 }],
+            },
+        ],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Пример с вложенным отношением
+
+Используйте полезную нагрузку `Extend` с `#[insertable]` для создания родителя, а также для создания связанного элемента в одном потоке.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+    id: String,
+    username: String,
+    role: Role,
+    profile: Option<Profile>,
+}
+
+dinoco::insert_into::<User>()
+    .values(UserWithProfile {
+        id: "user-1".to_string(),
+        username: "bia".to_string(),
+        role: Role::USER,
+        profile: Some(Profile {
+            id: "profile-1".to_string(),
+            bio: Some("Инженер-программист".to_string()),
+            userId: String::new(),
+        }),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Пример с вложенным подключением
+
+Когда отношение указывает на уже существующие записи, кодогенератор создает перечисление, такое как `ArticleConnection`, для использования внутри полезной нагрузки.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-10".into(),
+        title: "Подключение существующего".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Пример с ArticleConnection
+
+Это наиболее распространенный формат для подключения существующих записей в отношениях "многие ко многим".
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+let value = ArticleWithLabels {
+    id: "article-20".into(),
+    title: "Подключение существующего".into(),
+    labels: vec![
+        ArticleConnection::Label("label-10".into()),
+        ArticleConnection::Label("label-11".into()),
+    ],
+};
+
+dinoco::insert_into::<Article>()
+    .values(value)
+    .execute(&client)
+    .await?;
+```
 
 ## Возвращаемое значение
 
-Без `.returning::<T>()`, возвращаемое значение:
+Без `.returning::<T>()` возвращаемое значение:
 
 ```rust
 DinocoResult<()>
 ```
 
-С `.returning::<T>()`, возвращаемое значение становится:
+С `.returning::<T>()` возвращаемое значение становится:
 
 ```rust
 DinocoResult<T>
@@ -42,37 +159,13 @@ dinoco::insert_into::<User>()
     .values(User {
         id: "usr_1".to_string(),
         email: "ana@acme.com".to_string(),
-        name: "Ana".to_string(),
+        name: "Анна".to_string(),
     })
     .execute(&client)
     .await?;
 ```
 
-## Пример со связью
-
-Используйте `.with_relation(...)`, если сгенерированная модель поддерживает вставку родительской и связанной записи вместе.
-
-```rust
-dinoco::insert_into::<User>()
-    .values(user)
-    .with_relation(profile)
-    .execute(&client)
-    .await?;
-```
-
-## Пример с подключением
-
-Используйте `.with_connection(...)`, если вы хотите вставить элемент и связать уже существующее отношение.
-
-```rust
-dinoco::insert_into::<User>()
-    .values(new_user)
-    .with_connection(existing_team)
-    .execute(&client)
-    .await?;
-```
-
-## Пример с типизированным результатом
+## Пример с типизированным возвращаемым значением
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -83,7 +176,7 @@ struct UserSummary {
 }
 
 let created = dinoco::insert_into::<User>()
-    .values(User { id: 1, name: "Matheus".to_string() })
+    .values(User { id: 1, name: "Матеус".to_string() })
     .returning::<UserSummary>()
     .execute(&client)
     .await?;
@@ -91,5 +184,6 @@ let created = dinoco::insert_into::<User>()
 
 ## Следующие шаги
 
-- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): Пакетная вставка.
-- [**`update::<M>()`**](/v0.0.1/orm/update): Обновление записей.
+- [**Derives**](/v0.0.2/core/derives): поймите, когда использовать `Rowable`, `Extend` и `#[insertable]`.
+- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): пакетная вставка.
+- [**`update::<M>()`**](/v0.0.2/orm/update): обновление записей.

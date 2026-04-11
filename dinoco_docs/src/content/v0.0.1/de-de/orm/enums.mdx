@@ -2,9 +2,9 @@ export const title = "Enums";
 
 # Enums
 
-Enums ermöglichen es, ein Feld auf einen festen Satz bekannter Werte im Dinoco-Schema zu beschränken.
+Enums ermöglichen es, ein Feld auf eine feste Menge bekannter Werte im Dinoco-Schema zu beschränken.
 
-Sie sind nützlich, wenn der Wert vorhersehbar, validiert und über Models hinweg wiederverwendet werden muss.
+Sie sind nützlich, wenn der Wert vorhersehbar, validiert und zwischen Models wiederverwendet werden muss.
 
 ---
 
@@ -23,7 +23,7 @@ In diesem Fall kann `Role` nur `USER` oder `ADMIN` annehmen.
 
 ## Verwendung in Models
 
-Einmal definiert, kann das Enum als Feldtyp in jedem Model verwendet werden.
+Nach der Definition kann das Enum als Feldtyp in jedem Model verwendet werden.
 
 ```dinoco
 enum Role {
@@ -42,7 +42,7 @@ Hier:
 - `role` verwendet das Enum `Role`.
 - `@default(USER)` definiert den Standardwert des Feldes.
 
-## Wann Enums verwendet werden sollten
+## Wann Enums verwenden
 
 Enums sind nützlich, um Werte wie die folgenden darzustellen:
 
@@ -77,4 +77,4 @@ model Post {
 ## Nächste Schritte
 
 - [**Beziehungen**](/v0.0.1/orm/relations): siehe `@relation`, `onDelete`, `onUpdate` und Beziehungstypen.
-- [**Models**](/v0.0.1/orm/models): sehen Sie, wo Enums in die Felddefinition und das Hauptschema eingehen.
+- [**Models**](/v0.0.1/orm/models): siehe, wo Enums in der Felddefinition und im Hauptschema verwendet werden.

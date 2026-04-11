@@ -1,8 +1,8 @@
-export const title = "Enum";
+export const title = "Enums";
 
-# Enum
+# Enums
 
-Gli enum permettono di limitare un campo a un insieme fisso di valori conosciuti nello schema Dinoco.
+Gli enum consentono di limitare un campo a un insieme fisso di valori noti nello schema di Dinoco.
 
 Sono utili quando il valore deve essere prevedibile, validato e riutilizzato tra i modelli.
 
@@ -23,7 +23,7 @@ In questo caso, `Role` può assumere solo `USER` o `ADMIN`.
 
 ## Uso nei modelli
 
-Dopo la definizione, l'enum può essere utilizzato come tipo di campo in qualsiasi modello.
+Una volta definito, l'enum può essere usato come tipo di campo in qualsiasi modello.
 
 ```dinoco
 enum Role {
@@ -39,12 +39,12 @@ model User {
 
 Qui:
 
-- `role` utilizza l'enum `Role`.
+- `role` usa l'enum `Role`.
 - `@default(USER)` definisce il valore predefinito del campo.
 
 ## Quando usare gli enum
 
-Gli enum sono utili per rappresentare valori come i seguenti:
+Gli enum sono utili per rappresentare valori come:
 
 - Ruoli utente
 - Stati di pubblicazione
@@ -70,11 +70,11 @@ model Post {
 
 ## Buone pratiche
 
-- Utilizzare gli enum quando i valori possibili sono noti e finiti.
-- Preferire nomi in PascalCase per l'enum e valori in UPPER_CASE.
-- Utilizzare `@default(...)` quando esiste uno stato iniziale naturale.
+- Usa gli enum quando i valori possibili sono noti e finiti.
+- Preferisci nomi in PascalCase per l'enum e valori in UPPER_CASE.
+- Usa `@default(...)` quando c'è uno stato iniziale naturale.
 
-## Passi successivi
+## Prossimi passi
 
-- [**Relazioni**](/v0.0.1/orm/relations): vedere `@relation`, `onDelete`, `onUpdate` e i tipi di relazione.
-- [**Modelli**](/v0.0.1/orm/models): vedere dove gli enum si inseriscono nelle definizioni dei campi e nello schema principale.
+- [**Relazioni**](/v0.0.1/orm/relations): vedi `@relation`, `onDelete`, `onUpdate` e tipi di relazione.
+- [**Modelli**](/v0.0.1/orm/models): vedi dove gli enum rientrano nella definizione dei campi e nello schema principale.

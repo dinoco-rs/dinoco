@@ -68,16 +68,19 @@ where
         Self { inner: self.inner.read_in_primary() }
     }
 
-    pub fn enqueue(self, event: impl Into<String>) -> Self {
-        Self { inner: self.inner.enqueue(event) }
+    #[doc(hidden)]
+    pub fn __enqueue(self, event: impl Into<String>) -> Self {
+        Self { inner: self.inner.__enqueue(event) }
     }
 
-    pub fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Self {
-        Self { inner: self.inner.enqueue_in(event, delay_ms) }
+    #[doc(hidden)]
+    pub fn __enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Self {
+        Self { inner: self.inner.__enqueue_in(event, delay_ms) }
     }
 
-    pub fn enqueue_at(self, event: impl Into<String>, execute_at: chrono::DateTime<chrono::Utc>) -> Self {
-        Self { inner: self.inner.enqueue_at(event, execute_at) }
+    #[doc(hidden)]
+    pub fn __enqueue_at(self, event: impl Into<String>, execute_at: chrono::DateTime<chrono::Utc>) -> Self {
+        Self { inner: self.inner.__enqueue_at(event, execute_at) }
     }
 
     pub fn execute<'a, A>(

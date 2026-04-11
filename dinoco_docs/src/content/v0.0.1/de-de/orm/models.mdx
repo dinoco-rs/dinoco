@@ -2,18 +2,18 @@ export const title = "Modelle";
 
 # Modelle
 
-Die `model` definieren die zentralen Entitäten Ihrer Anwendung im Dinoco-Schema. Jedes `model` repräsentiert normalerweise eine Tabelle in der Datenbank und dient als Grundlage für Code-Generierung, typisierte Abfragen und Operationen mit der Dinoco-API.
+Die `Modelle` definieren die zentralen Entitäten Ihrer Anwendung im Dinoco-Schema. Jedes `Modell` repräsentiert normalerweise eine Tabelle in der Datenbank und dient als Grundlage für Codegenerierung, typisierte Abfragen und Operationen mit der Dinoco-API.
 
 ---
 
 ## Was ein Modell repräsentiert
 
-Ein `model` beschreibt:
+Ein `Modell` beschreibt:
 
 - Den Namen der Entität.
 - Die in der Datenbank gespeicherten Felder.
 - Welche Felder obligatorisch oder optional sind.
-- Welche Felder einzigartig oder Identifikatoren sind.
+- Welche Felder eindeutig oder Identifikatoren sind.
 - Wie diese Daten vom Codegen und der API verwendet werden.
 
 Beispiel:
@@ -28,9 +28,9 @@ model User {
 
 In diesem Beispiel:
 
-- `User` ist das model.
+- `User` ist das Modell.
 - `id`, `email` und `name` sind skalare Felder.
-- `id` ist der Hauptidentifikator.
+- `id` ist der Primäridentifikator.
 - `email` hat eine Eindeutigkeitsbeschränkung.
 
 ## Vollständiges Beispiel
@@ -62,12 +62,12 @@ model Post {
 
 ## Struktur eines Feldes
 
-Jedes Feld eines Models besteht aus:
+Jedes Feld eines Modells besteht aus:
 
 - Name
 - Typ
-- Optionalem Modifikator
-- Optionalen Attributen
+- Optionaler Modifikator
+- Optionale Attribute
 
 Beispiel:
 
@@ -77,17 +77,17 @@ email String @unique
 
 In dieser Zeile:
 
-- `email` ist der Name des Feldes.
+- `email` ist der Feldname.
 - `String` ist der Typ.
 - `@unique` ist ein Attribut.
 
 ## Feldtypen
 
-Felder können grundlegende Schemawerte wie Text, Zahlen, Booleans und Datumsangaben darstellen.
+Felder können grundlegende Schemwerte wie Text, Zahlen, Booleans und Daten darstellen.
 
 ### Skalare Felder
 
-Dies sind Felder, die direkte Werte speichern, wie Text, Zahlen, Booleans und Datumsangaben.
+Dies sind Felder, die direkte Werte wie Text, Zahlen, Booleans und Daten speichern.
 
 ```dinoco
 model Product {
@@ -104,10 +104,10 @@ model Product {
 
 Dinoco unterstützt zwei Hauptmodifikatoren:
 
-| Modifikator | Bedeutung       | Beispiel          |
-| :---------- | :-------------- | :---------------- |
-| `?`         | Optionales Feld | `name String?`    |
-| `[]`        | Liste           | `tags String[]`   |
+| Modifikator | Bedeutung           | Beispiel        |
+| :---------- | :------------------ | :-------------- |
+| `?`         | Optionales Feld     | `name String?`  |
+| `[]`        | Liste               | `tags String[]` |
 
 ### Optionales Feld
 
@@ -118,7 +118,7 @@ model User {
 }
 ```
 
-`name` kann je nach Datenbank und generierter Schicht null oder fehlen.
+`name` kann null oder fehlend sein, abhängig von der Datenbank und der generierten Schicht.
 
 ### Listenfeld
 
@@ -129,17 +129,17 @@ model Article {
 }
 ```
 
-Dieses Format repräsentiert eine Liste von Werten, wenn die Datenbank und der Workflow diesen Strukturtyp unterstützen.
+Dieses Format repräsentiert eine Liste von Werten, wenn die Datenbank und der Workflow diese Art von Struktur unterstützen.
 
 ## Häufigste Attribute
 
 Attribute ändern das Verhalten von Feldern und Modellen.
 
-| Attribut        | Verwendung                         |
-| :-------------- | :--------------------------------- |
-| `@id`           | Definiert den primären Identifikator |
-| `@default(...)` | Definiert einen Standardwert       |
-| `@unique`       | Garantiert Eindeutigkeit           |
+| Attribut        | Verwendung                          |
+| :-------------- | :---------------------------------- |
+| `@id`           | Definiert den Primäridentifikator   |
+| `@default(...)` | Definiert einen Standardwert        |
+| `@unique`       | Garantiert Eindeutigkeit            |
 
 ### `@id`
 
@@ -149,7 +149,7 @@ Definiert das Feld, das einen Datensatz eindeutig identifiziert.
 id Integer @id @default(autoincrement())
 ```
 
-Jedes Modell muss einen eindeutigen Identifikator haben, damit die generierte API sicher arbeiten kann.
+Jedes Modell muss einen klaren Identifikator haben, damit die generierte API sicher arbeiten kann.
 
 ### `@default(...)`
 
@@ -163,16 +163,16 @@ id        Integer  @default(autoincrement())
 
 Häufige Funktionen und Werte:
 
-| Beispiel                     | Verwendung                  |
-| :-------------------------- | :-------------------------- |
-| `@default(false)`           | Standard-Boolean            |
-| `@default(now())`           | Aktuelles Datum             |
-| `@default(autoincrement())` | Inkrementelle Ganzzahl      |
-| `@default(uuid())`          | UUID-Identifikator          |
+| Beispiel                    | Verwendung              |
+| :-------------------------- | :---------------------- |
+| `@default(false)`           | Standard-Boolean        |
+| `@default(now())`           | Aktuelles Datum         |
+| `@default(autoincrement())` | Inkrementelle Ganzzahl  |
+| `@default(uuid())`          | UUID-Identifikator      |
 
 ### `@unique`
 
-Garantiert, dass der Wert des Feldes nicht wiederholt wird.
+Stellt sicher, dass der Wert des Feldes nicht wiederholt wird.
 
 ```dinoco
 model User {
@@ -183,9 +183,9 @@ model User {
 
 Dieses Attribut ist ideal für Felder wie E-Mail, Benutzername und externe Codes.
 
-## Model-Decorators
+## Modell-Decorators
 
-Neben den Attributen in einzelnen Feldern unterstützt Dinoco auch Decorators, die auf den gesamten Modellblock angewendet werden.
+Neben Attributen in einzelnen Feldern unterstützt Dinoco auch Decorators, die auf den gesamten Modellblock angewendet werden.
 
 | Decorator             | Verwendung                                  |
 | :-------------------- | :------------------------------------------ |
@@ -206,11 +206,11 @@ model Membership {
 }
 ```
 
-Dieses Format ist nützlich in assoziativen Tabellen und Szenarien, in denen die natürliche Eindeutigkeit bereits zusammengesetzt ist.
+Dieses Format ist nützlich in Assoziationstabellen und Szenarien, in denen die natürliche Eindeutigkeit bereits zusammengesetzt ist.
 
 ### `@@table_name("...")`
 
-Verwenden Sie `@@table_name()`, wenn Sie einen benutzerfreundlicheren Modellnamen im Schema beibehalten möchten, ihn aber einem anderen physischen Namen in der Datenbank zuordnen möchten.
+Verwenden Sie `@@table_name()`, wenn Sie einen benutzerfreundlicheren Modellnamen im Schema beibehalten, aber auf einen anderen physischen Namen in der Datenbank abbilden möchten.
 
 ```dinoco
 model User {
@@ -240,9 +240,9 @@ model User {
 
 Nach dem Codegen kann dieses Modell direkt mit der Dinoco-API verwendet werden.
 
-## Beispiel für die Suche nach Benutzern mit der Dinoco-API
+## Beispiel für die Benutzersuche mit der Dinoco-API
 
-### Einzelnen Datensatz suchen
+### Einen einzelnen Datensatz suchen
 
 ```rust
 let user = dinoco::find_first::<User>()
@@ -293,7 +293,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-Wenn Sie atomare Updates für ein einzelnes Feld wünschen, ist der `find_and_update`-Flow oft noch direkter:
+Wenn Sie atomare Updates in einem einzigen Feld wünschen, ist der `find_and_update`-Workflow oft noch direkter:
 
 ```rust
 let user = dinoco::find_and_update::<User>()
@@ -323,24 +323,24 @@ dinoco::delete_many::<User>()
 
 ## Kurze Zusammenfassung
 
-| Konzept         | Beispiel                 | Ziel                       |
-| :-------------- | :----------------------- | :------------------------- |
-| Model           | `model User { ... }`     | Eine Entität darstellen    |
-| Skalares Feld   | `email String`           | Einfachen Wert speichern   |
-| Optionales Feld | `name String?`           | Fehlen eines Wertes zulassen |
-| Listenfeld      | `tags String[]`          | Mehrere Werte speichern    |
-| ID              | `id Integer @id`         | Eindeutig identifizieren   |
-| Default         | `@default(now())`        | Automatisch ausfüllen      |
-| Unique          | `email String @unique`   | Duplizierung vermeiden     |
+| Konzept           | Beispiel               | Ziel                        |
+| :---------------- | :--------------------- | :-------------------------- |
+| Modell            | `model User { ... }`   | Eine Entität repräsentieren |
+| Skalares Feld     | `email String`         | Einfachen Wert speichern    |
+| Optionales Feld   | `name String?`         | Fehlen eines Wertes zulassen |
+| Listenfeld        | `tags String[]`        | Mehrere Werte speichern     |
+| ID                | `id Integer @id`       | Eindeutig identifizieren    |
+| Standard          | `@default(now())`      | Automatisch ausfüllen       |
+| Eindeutig         | `email String @unique` | Duplikate vermeiden         |
 
 ## Wann ein neues Modell erstellt werden sollte
 
-Sie erstellen normalerweise ein neues `model`, wenn eine Entität Ihrer Anwendung Folgendes benötigt:
+Sie erstellen normalerweise ein neues `Modell`, wenn eine Entität Ihrer Anwendung Folgendes benötigt:
 
-- In der Datenbank persistiert werden.
-- Eine eigene Identität haben.
-- Isoliert abgefragt werden.
-- Eigene Lese- und Schreibregeln haben.
+- In der Datenbank persistiert zu werden.
+- Eine eigene Identität zu haben.
+- Isoliert abgefragt zu werden.
+- Eigene Lese- und Schreibregeln zu haben.
 
 Häufige Beispiele:
 

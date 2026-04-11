@@ -8,8 +8,8 @@ export const title = "count";
 
 ## できること
 
-- `.cond(...)`でフィルタリング
-- `.execute(&client)`で実行
+- `.cond(...)` でフィルタリングする
+- `.execute(&client)` で実行する
 
 ## メソッドの説明
 
@@ -24,7 +24,7 @@ export const title = "count";
 DinocoResult<usize>
 ```
 
-## 基本例
+## 基本的な例
 
 ```rust
 let total = dinoco::count::<User>()
@@ -52,5 +52,5 @@ let total = dinoco::count::<User>()
 
 ## 次のステップ
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): リスト内のレコードを取得します。
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): レコードをリストで取得します。
 - [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 単一のレコードを取得します。

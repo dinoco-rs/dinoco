@@ -6,7 +6,7 @@ export const title = "count";
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
 - 使用 `.cond(...)` 进行筛选
 - 使用 `.execute(&client)` 执行
@@ -16,15 +16,15 @@ export const title = "count";
 - `.cond(...)`: 限制哪些记录包含在计数中。
 - `.execute(&client)`: 在数据库中执行计数。
 
-## 返回值
+## 返回
 
-`count` 的返回值是：
+`count` 的返回值为：
 
 ```rust
 DinocoResult<usize>
 ```
 
-## 基础示例
+## 基本示例
 
 ```rust
 let total = dinoco::count::<User>()
@@ -32,7 +32,7 @@ let total = dinoco::count::<User>()
     .await?;
 ```
 
-## 布尔过滤器示例
+## 带布尔过滤器的示例
 
 ```rust
 let total = dinoco::count::<User>()
@@ -41,7 +41,7 @@ let total = dinoco::count::<User>()
     .await?;
 ```
 
-## 文本过滤器示例
+## 带文本过滤器的示例
 
 ```rust
 let total = dinoco::count::<User>()
@@ -50,7 +50,7 @@ let total = dinoco::count::<User>()
     .await?;
 ```
 
-## 下一步
+## 后续步骤
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 获取列表中的记录。
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 获取单个记录。
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 检索列表中的记录。
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 检索单个记录。

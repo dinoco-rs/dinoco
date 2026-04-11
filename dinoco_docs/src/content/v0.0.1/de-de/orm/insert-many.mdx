@@ -8,23 +8,23 @@ Wird für die Batch-Einfügung verwendet.
 
 ## Was Sie tun können
 
-- `.values(Vec<M>)`: Definiert die Datensätze, die im Batch eingefügt werden sollen.
-- `.with_relation(Vec<R>)`: Fügt genau einen neuen verknüpften Datensatz für jedes Elternteil ein.
-- `.with_relations(Vec<Vec<R>>)`: Fügt mehrere neue verknüpfte Datensätze für jedes Elternteil ein.
-- `.with_connection(Vec<R>)`: Verbindet genau eine bereits bestehende Beziehung für jedes eingefügte Elternteil.
-- `.with_connections(Vec<Vec<R>>)`: Verbindet mehrere bereits bestehende Beziehungen für jedes eingefügte Elternteil, typischerweise in Many-to-Many-Szenarien.
-- `.returning::<T>()`: Ändert den Rückgabewert zu einer typisierten Liste der eingefügten Elemente.
-- `.execute(&client)`: Führt den Batch-Vorgang aus.
+- `.values(Vec<M>)`: definiert die Datensätze, die im Batch eingefügt werden sollen.
+- `.with_relation(Vec<R>)`: fügt genau ein neues verwandtes Element für jedes übergeordnete Element ein.
+- `.with_relations(Vec<Vec<R>>)` : fügt mehrere neue verwandte Elemente für jedes übergeordnete Element ein.
+- `.with_connection(Vec<R>)`: verbindet genau eine bereits bestehende Beziehung für jedes eingefügte übergeordnete Element.
+- `.with_connections(Vec<Vec<R>>)` : verbindet mehrere bereits bestehende Beziehungen für jedes eingefügte übergeordnete Element, typischerweise in Many-to-Many-Szenarien.
+- `.returning::<T>()`: ändert den Rückgabewert in eine typisierte Liste der eingefügten Elemente.
+- `.execute(&client)`: führt den Batch-Vorgang aus.
 
-## Rückgabewert
+## Rückgabe
 
-Ohne `.returning::<T>()` ist der Rückgabewert:
+Ohne `.returning::<T>()` ist die Rückgabe:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::<T>()` ändert sich der Rückgabewert zu:
+Mit `.returning::<T>()` wird die Rückgabe zu:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -42,7 +42,7 @@ dinoco::insert_many::<User>()
     .await?;
 ```
 
-## Beispiel mit Rückgabewert
+## Beispiel mit Rückgabe
 
 ```rust
 let created = dinoco::insert_many::<User>()
@@ -57,7 +57,7 @@ let created = dinoco::insert_many::<User>()
 
 ## Beispiel mit with_relation(...)
 
-Verwenden Sie `with_relation(...)`, wenn jedes Elternteil erstellt und verbunden werden muss.
+Verwenden Sie `with_relation(...)`, wenn jedes übergeordnete Element erstellt und verbunden werden muss.
 
 ```rust
 dinoco::insert_many::<Post>()
@@ -75,7 +75,7 @@ dinoco::insert_many::<Post>()
 
 ## Beispiel mit with_relations(...)
 
-Verwenden Sie `with_relations(...)`, wenn jeder übergeordnete Datensatz mehr als ein Kind hat; die Datensätze werden automatisch erstellt und verknüpft.
+Verwenden Sie with_relations(...), wenn jeder übergeordnete Datensatz mehr als ein untergeordnetes Element hat; die Datensätze werden automatisch erstellt und verknüpft.
 
 ```rust
 dinoco::insert_many::<Post>()
@@ -97,7 +97,7 @@ dinoco::insert_many::<Post>()
 
 ## Beispiel mit with_connection(...)
 
-Verwenden Sie `with_connection(...)`, wenn jedes Elternteil mit genau einem bereits bestehenden Datensatz verbunden werden muss.
+Verwenden Sie `with_connection(...)`, wenn jedes übergeordnete Element mit genau einem bereits bestehenden Datensatz verbunden werden muss.
 
 ```rust
 dinoco::insert_many::<Team>()
@@ -115,8 +115,8 @@ dinoco::insert_many::<Team>()
 
 ## Beispiel mit with_connections(...)
 
-Verwenden Sie `with_connections(...)`, wenn jedes Elternteil mit mehreren bereits bestehenden Datensätzen verbunden werden muss.
-Dies ist eine übliche Verwendung in Many-to-Many-Beziehungen.
+Verwenden Sie `with_connections(...)`, wenn jedes übergeordnete Element mit mehreren bereits bestehenden Datensätzen verbunden werden muss.
+Dies ist ein häufiger Anwendungsfall in Many-to-Many-Beziehungen.
 
 ```rust
 dinoco::insert_many::<Article>()
@@ -137,14 +137,14 @@ dinoco::insert_many::<Article>()
     .await?;
 ```
 
-## Anmerkungen
+## Hinweise
 
-- `with_relation(...)` und `with_relations(...)` funktionieren am besten, wenn das Elternteil bereits eine bekannte ID im Speicher hat.
+- `with_relation(...)` und `with_relations(...)` funktionieren am besten, wenn das übergeordnete Element bereits eine bekannte ID im Speicher hat.
 - `with_connection(...)` und `with_connections(...)` sind für die Verbindung bereits bestehender Beziehungen gedacht.
 - `with_connection(...)` erfordert die gleiche Anzahl von Elementen wie `values(...)`.
-- `with_connections(...)` erfordert die gleiche Anzahl von Gruppen in Bezug auf den Hauptvektor.
+- `with_connections(...)` erfordert die gleiche Anzahl von Gruppen im Verhältnis zum Hauptvektor.
 
 ## Nächste Schritte
 
-- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): Einzelne Einfügung.
+- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): einzelne Einfügung.
 - [**`update::<M>()`**](/v0.0.1/orm/update): Aktualisierung mit Filter.

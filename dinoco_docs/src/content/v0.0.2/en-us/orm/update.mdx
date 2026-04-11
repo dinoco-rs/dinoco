@@ -9,9 +9,9 @@ Used to update filtered records.
 ## What you can do
 
 - `.cond(...)`: defines which records will be updated.
-- `.values(item)`: informs the new record values.
-- `.connect(...)`: creates writable relation links.
-- `.disconnect(...)`: removes writable relation links.
+- `.values(item)`: informs the new values for the record.
+- `.connect(...)`: creates supported write relation links.
+- `.disconnect(...)`: removes supported write relation links.
 - `.returning::<T>()`: returns the updated records in a typed projection.
 - `.execute(&client)`: executes the update in the database.
 
@@ -40,8 +40,8 @@ dinoco::update::<User>()
     .cond(|w| w.id.eq(10))
     .values(User {
         id: 10,
-        email: "novo@acme.com".to_string(),
-        name: "Novo Nome".to_string(),
+        email: "new@acme.com".to_string(),
+        name: "New Name".to_string(),
     })
     .execute(&client)
     .await?;
@@ -49,7 +49,7 @@ dinoco::update::<User>()
 
 ## Example with connect(...)
 
-Used to connect writable relations, typically Many to Many.
+Used to connect relations supported for writing, typically Many to Many.
 
 ```rust
 dinoco::update::<User>()
@@ -71,7 +71,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## Available filters in connect and disconnect
+## Filters available in connect and disconnect
 
 - `eq`
 - `neq`

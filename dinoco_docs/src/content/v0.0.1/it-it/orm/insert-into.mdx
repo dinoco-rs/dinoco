@@ -2,34 +2,34 @@ export const title = "insert_into";
 
 # insert_into
 
-Viene utilizzato per inserire un record.
+Usato per inserire un record.
 
 ---
 
 ## Cosa puoi fare
 
-- Passare i valori con `.values(item)`
-- Inserire con una relazione tramite `.with_relation(related)`
+- Passare valori con `.values(item)`
+- Inserire con relazione tramite `.with_relation(related)`
 - Connettere una relazione esistente tramite `.with_connection(connected)`
 - Eseguire con `.execute(&client)`
 
 ## Descrizione dei metodi
 
-- `.values(item)`: Definisce il record da inserire.
-- `.with_relation(related)`: Inserisce un nuovo record correlato insieme all'elemento padre.
-- `.with_connection(connected)`: Connette il record inserito a un elemento già esistente, solitamente in flussi di relazione che supportano la connessione.
-- `.returning::<T>()`: Modifica il valore di ritorno a una proiezione tipizzata dell'elemento inserito.
-- `.execute(&client)`: Esegue l'operazione di scrittura nel database.
+- `.values(item)`: definisce il record che verrà inserito.
+- `.with_relation(related)`: inserisce un nuovo record correlato insieme al padre.
+- `.with_connection(connected)`: connette il record inserito a un elemento già esistente, normalmente in flussi di relazione supportati per la connessione.
+- `.returning::<T>()`: cambia il ritorno a una proiezione tipizzata dell'elemento inserito.
+- `.execute(&client)`: esegue la scrittura nel database.
 
-## Valore di ritorno
+## Ritorno
 
-Senza `.returning::<T>()` il valore di ritorno è:
+Senza `.returning::<T>()`, il ritorno è:
 
 ```rust
 DinocoResult<()>
 ```
 
-Con `.returning::<T>()` il valore di ritorno diventa:
+Con `.returning::<T>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<T>
@@ -50,7 +50,7 @@ dinoco::insert_into::<User>()
 
 ## Esempio con relazione
 
-Utilizzare `.with_relation(...)` quando il modello generato supporta l'inserimento simultaneo dell'elemento padre e dell'elemento correlato.
+Usa `.with_relation(...)` quando il modello generato supporta l'inserimento del padre e del correlato insieme.
 
 ```rust
 dinoco::insert_into::<User>()
@@ -62,7 +62,7 @@ dinoco::insert_into::<User>()
 
 ## Esempio con connessione
 
-Utilizzare `.with_connection(...)` quando si desidera inserire un elemento e connettere una relazione già esistente.
+Usa `.with_connection(...)` quando vuoi inserire un elemento e connettere una relazione già esistente.
 
 ```rust
 dinoco::insert_into::<User>()
@@ -89,7 +89,7 @@ let created = dinoco::insert_into::<User>()
     .await?;
 ```
 
-## Passi successivi
+## Prossimi passi
 
-- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): Inserimento in batch.
-- [**`update::<M>()`**](/v0.0.1/orm/update): Aggiornamento di record.
+- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): inserimento in batch.
+- [**`update::<M>()`**](/v0.0.1/orm/update): aggiornamento di record.

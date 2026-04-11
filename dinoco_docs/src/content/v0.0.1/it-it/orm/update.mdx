@@ -2,13 +2,13 @@ export const title = "update";
 
 # update
 
-Utilizzato per aggiornare i record filtrati.
+Usato per aggiornare i record filtrati.
 
 ---
 
 ## Cosa puoi fare
 
-- `.cond(...)`: definisce quali record devono essere aggiornati.
+- `.cond(...)`: definisce quali record verranno aggiornati.
 - `.values(item)`: specifica i nuovi valori del record.
 - `.connect(...)`: crea collegamenti di relazione supportati per la scrittura.
 - `.disconnect(...)`: rimuove collegamenti di relazione supportati per la scrittura.
@@ -31,9 +31,9 @@ DinocoResult<Vec<T>>
 
 Nota:
 
-- `update().returning()` non supporta scritture relazionali con `.connect(...)` o `.disconnect(...)`.
+- `update().returning()` non supporta scritture di relazione con `.connect(...)` o `.disconnect(...)`.
 
-## Esempio di aggiornamento dei campi
+## Esempio di aggiornamento di campi
 
 ```rust
 dinoco::update::<User>()
@@ -47,9 +47,9 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## Esempio con `connect(...)`
+## Esempio con connect(...)
 
-Utilizzato per connettere relazioni supportate per la scrittura, solitamente Many to Many.
+Usato per connettere relazioni supportate per la scrittura, tipicamente Many to Many.
 
 ```rust
 dinoco::update::<User>()
@@ -59,9 +59,9 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## Esempio con `disconnect(...)`
+## Esempio con disconnect(...)
 
-Utilizzato per disconnettere le relazioni.
+Usato per disconnettere relazioni.
 
 ```rust
 dinoco::update::<User>()
@@ -87,7 +87,7 @@ dinoco::update::<User>()
 - `starts_with`
 - `ends_with`
 
-## Passi successivi
+## Prossimi passi
 
-- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): Aggiornamento in batch.
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): aggiornamento in batch.
 - [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): aggiornamento atomico con ritorno.

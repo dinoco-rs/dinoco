@@ -1,4 +1,4 @@
-export const title = "find_first";
+export const title = 'find_first';
 
 # find_first
 
@@ -8,27 +8,15 @@ Used to fetch at most one record.
 
 ## What you can do
 
-It exposes the same methods as `find_many`:
-
-- `select`
-- `cond`
-- `take`
-- `skip`
-- `order_by`
-- `includes`
-- `count`
-- `read_in_primary`
-- `execute`
-
-## Method descriptions
-
-- `.select::<T>()`: swaps the default projection for a custom projection.
-- `.cond(...)`: adds filters to the query.
+- `.select::<T>()`: changes the default projection to a custom projection.
+- `.cond(...)`: adds filters to the search.
 - `.take(...)`: limits the maximum number of records considered.
 - `.skip(...)`: skips records before selecting the first result.
 - `.order_by(...)`: defines which record should be considered first.
-- `.includes(...)`: loads relations together with the main item.
-- `.count(...)`: calculates relation counters in the projection.
+- `.includes(...)`: loads relationships along with the main item.
+- `.count(...)`: calculates relationship counters in the projection.
+- `.cache(...)`: tries to fetch from Redis first and only queries the database if the key does not exist. On a cache hit, the query logger records `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: performs the same flow, but saves with TTL in seconds.
 - `.read_in_primary()`: forces reading from the primary database.
 - `.execute(&client)`: executes the query and returns at most one item.
 
@@ -72,7 +60,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## Example with relation
+## Example with relationship
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -100,7 +88,35 @@ let latest_user = dinoco::find_first::<User>()
     .await?;
 ```
 
+## Example with cache
+
+This method only exists when the schema has `redis` configured.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## Example with cache
+
+This method only exists when the schema has `redis` configured.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache_with_expiration("users:1")
+    .execute(&client)
+    .await?;
+```
+
 ## Next steps
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): fetches multiple records.
-- [**`count::<M>()`**](/v0.0.1/orm/count): counts records.
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): fetches multiple records.
+- [**`count::<M>()`**](/v0.0.2/orm/count): record count.

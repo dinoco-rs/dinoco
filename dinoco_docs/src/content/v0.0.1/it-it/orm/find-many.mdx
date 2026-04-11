@@ -15,36 +15,36 @@ Utilizzato per recuperare un elenco di record.
 - Ordinare con `.order_by(...)`
 - Caricare relazioni con `.includes(...)`
 - Contare relazioni con `.count(...)`
-- Forzare la lettura dal database primario con `.read_in_primary()`
+- Forzare la lettura sul database primario con `.read_in_primary()`
 - Eseguire con `.execute(&client)`
 
 ## Descrizione dei metodi
 
-- `.select::<T>()`: Sostituisce la proiezione predefinita del modello con una proiezione personalizzata.
-- `.cond(...)`: Aggiunge condizioni di filtro alla query.
-- `.take(...)`: Limita il numero di record restituiti.
-- `.skip(...)`: Salta un numero di record prima di restituire il risultato.
-- `.order_by(...)`: Definisce l'ordinamento della query.
-- `.includes(...)`: Carica le relazioni insieme ai record principali.
-- `.count(...)`: Calcola i contatori per le relazioni e popola campi come `posts_count`.
-- `.read_in_primary()`: Forza la lettura dal database primario, senza utilizzare una replica.
-- `.execute(&client)`: Esegue la query nel database.
+- `.select::<T>()`: sostituisce la proiezione predefinita del modello con una proiezione personalizzata.
+- `.cond(...)`: aggiunge condizioni di filtro alla query.
+- `.take(...)`: limita la quantità di record restituiti.
+- `.skip(...)`: salta una quantità di record prima di restituire il risultato.
+- `.order_by(...)`: definisce l'ordinamento della query.
+- `.includes(...)`: carica le relazioni insieme ai record principali.
+- `.count(...)`: calcola i contatori delle relazioni e popola campi come `posts_count`.
+- `.read_in_primary()`: forza la lettura sul database primario, senza usare repliche.
+- `.execute(&client)`: esegue la query sul database.
 
 ## Ritorno
 
-Senza `select::<T>()` il ritorno è:
+Senza `select::<T>()`, il ritorno è:
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-Con `select::<T>()` il ritorno diventa:
+Con `select::<T>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-## Esempio semplice
+## Esempio base
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -162,7 +162,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Esempio con conteggio delle relazioni
+## Esempio con conteggio di relazione
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,7 +180,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Esempio di lettura dal database primario
+## Esempio di lettura sul database primario
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -190,7 +190,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Passi successivi
+## Prossimi passi
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): Versione per la ricerca di al massimo un record.
-- [**`count::<M>()`**](/v0.0.1/orm/count): Conteggio dei record con filtro.
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): versione per cercare al massimo un record.
+- [**`count::<M>()`**](/v0.0.1/orm/count): conteggio di record con filtro.

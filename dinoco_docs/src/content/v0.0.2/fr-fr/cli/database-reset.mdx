@@ -1,28 +1,28 @@
 export const title = "Réinitialisation de la base de données";
 
-# Utilisation ?
+# Comment utiliser ?
 
 La commande `dinoco database reset` réinitialise la base de données configurée.
 
-Elle est utile en développement lorsque vous souhaitez effacer complètement l'état actuel de la base de données.
+Elle est utile en développement lorsque vous souhaitez nettoyer complètement l'état actuel de la base de données.
 
 ---
 
 ## Ce que fait la commande
 
-Lors de l'exécution de cette commande, la CLI tente de supprimer les objets de la base actuelle et de recréer un état propre pour l'environnement configuré.
+Lors de l'exécution de cette commande, la CLI tente de supprimer les objets de la base de données actuelle et de recréer un état propre pour l'environnement configuré.
 
-Ce processus est particulièrement utile pour :
+Ce flux est particulièrement utile pour :
 
-- La réinitialisation d'un environnement local à partir de zéro
-- Le nettoyage des données de test
-- La correction d'environnements incohérents pendant le développement
+- Redémarrer un environnement local à partir de zéro
+- Nettoyer les données de test
+- Corriger les environnements incohérents pendant le développement
 
 ## Précautions
 
 - Cette commande est destructive pour la base de données configurée.
 - Utilisez-la avec prudence en dehors d'un environnement local.
-- Vérifiez toujours que l'URL de connexion pointe vers la bonne base.
+- Confirmez toujours que l'URL de connexion pointe vers la bonne base de données.
 
 ## Prochaines étapes
 

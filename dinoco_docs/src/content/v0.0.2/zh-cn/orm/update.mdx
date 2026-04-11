@@ -2,20 +2,20 @@ export const title = "update";
 
 # update
 
-用于更新筛选后的记录。
+用于更新过滤后的记录。
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
-- `.cond(...)`: 定义要更新的记录。
+- `.cond(...)`: 定义将要更新的记录。
 - `.values(item)`: 指定记录的新值。
-- `.connect(...)`: 创建支持的写入关系。
-- `.disconnect(...)`: 移除支持的写入关系。
+- `.connect(...)`: 创建支持写入的关系链接。
+- `.disconnect(...)`: 移除支持写入的关系链接。
 - `.returning::<T>()`: 以类型化投影返回更新后的记录。
 - `.execute(&client)`: 在数据库中执行更新。
 
-## 返回值
+## 返回
 
 如果没有 `.returning::<T>()`，返回值为：
 
@@ -41,15 +41,15 @@ dinoco::update::<User>()
     .values(User {
         id: 10,
         email: "novo@acme.com".to_string(),
-        name: "Novo Nome".to_string(),
+        name: "新名称".to_string(),
     })
     .execute(&client)
     .await?;
 ```
 
-## `connect(...)` 示例
+## connect(...) 示例
 
-用于连接支持的写入关系，通常是多对多关系。
+用于连接支持写入的关系，通常是多对多关系。
 
 ```rust
 dinoco::update::<User>()
@@ -59,7 +59,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## `disconnect(...)` 示例
+## disconnect(...) 示例
 
 用于断开关系。
 

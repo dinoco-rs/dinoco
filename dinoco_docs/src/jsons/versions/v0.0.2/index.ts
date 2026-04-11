@@ -121,6 +121,7 @@ function mergeItems(baseItems: DocsItemData[], localizedItems?: DocsItemData[]):
 			...baseItem,
 			description: localizedItem.description ?? baseItem.description,
 			inPage: mergeInPage(baseItem.inPage, localizedItem.inPage),
+			mdxPath: localizedItem.mdxPath,
 			name: localizedItem.name,
 			subItems: mergeItems(baseItem.subItems ?? [], localizedItem.subItems),
 		};

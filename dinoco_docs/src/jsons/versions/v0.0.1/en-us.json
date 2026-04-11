@@ -1,5 +1,5 @@
 {
-	"description": "First public version of the Dinoco documentation.",
+	"description": "First public version of Dinoco documentation.",
 	"groups": [
 		{
 			"icon": "database",
@@ -7,7 +7,7 @@
 			"shortName": "orm",
 			"sections": [
 				{
-					"title": "Getting started",
+					"title": "Getting Started",
 					"items": [
 						{
 							"shortName": "introduction-dinoco",
@@ -24,19 +24,19 @@
 									"items": []
 								},
 								{
-									"title": "Where do we position ourselves?",
+									"title": "Where do we stand?",
 									"items": []
 								}
 							]
 						},
 						{
 							"shortName": "first-steps",
-							"name": "Getting started",
+							"name": "First steps",
 							"mdxPath": "v0.0.1/en-us/orm/first-steps.mdx",
 							"inPage": [
-								"Getting started",
+								"First steps",
 								{
-									"title": "How it works?",
+									"title": "How does it work?",
 									"items": [
 										"1. Define your schema and connection",
 										"2. Create the migration",
@@ -56,11 +56,11 @@
 							"inPage": [
 								"Overview",
 								{
-									"title": "Supported Versions",
+									"title": "Supported versions",
 									"items": []
 								},
 								{
-									"title": "Connection Configuration",
+									"title": "Connection configuration",
 									"items": [
 										"SQLite"
 									]
@@ -70,7 +70,7 @@
 									"items": []
 								},
 								{
-									"title": "Type Mapping",
+									"title": "Type mapping",
 									"items": []
 								}
 							]
@@ -131,22 +131,22 @@
 									"items": []
 								},
 								{
-									"title": "Example of searching for users with the Dinoco API",
+									"title": "Example of searching users with the Dinoco API",
 									"items": [
 										"Find a single record",
 										"Find multiple records"
 									]
 								},
 								{
-									"title": "Example of creating a user with the Dinoco API",
+									"title": "Example of user creation with the Dinoco API",
 									"items": []
 								},
 								{
-									"title": "Example of updating a user with the Dinoco API",
+									"title": "Example of user update with the Dinoco API",
 									"items": []
 								},
 								{
-									"title": "Example of removing a user with the Dinoco API",
+									"title": "Example of user deletion with the Dinoco API",
 									"items": []
 								},
 								{
@@ -222,11 +222,11 @@
 									"items": []
 								},
 								{
-									"title": "Example of a fetch with all possible relations starting from User",
+									"title": "Example of search with all possible relations from User",
 									"items": []
 								},
 								{
-									"title": "Example of an insert with relation using User and Profile",
+									"title": "Example of insert with relation using User and Profile",
 									"items": []
 								},
 								{
@@ -259,7 +259,7 @@
 									"items": []
 								},
 								{
-									"title": "Methods Description",
+									"title": "Methods description",
 									"items": []
 								},
 								{
@@ -279,11 +279,11 @@
 									"items": []
 								},
 								{
-									"title": "Custom select example",
+									"title": "Example of custom select",
 									"items": []
 								},
 								{
-									"title": "Simple include example",
+									"title": "Example with simple include",
 									"items": []
 								},
 								{
@@ -291,15 +291,15 @@
 									"items": []
 								},
 								{
-									"title": "Nested include example",
+									"title": "Example with nested include",
 									"items": []
 								},
 								{
-									"title": "Relation count example",
+									"title": "Example with relation count",
 									"items": []
 								},
 								{
-									"title": "Example reading from primary database",
+									"title": "Example reading from the main database",
 									"items": []
 								},
 								{
@@ -319,7 +319,7 @@
 									"items": []
 								},
 								{
-									"title": "Method descriptions",
+									"title": "Methods description",
 									"items": []
 								},
 								{
@@ -359,7 +359,7 @@
 									"items": []
 								},
 								{
-									"title": "Method Description",
+									"title": "Methods description",
 									"items": []
 								},
 								{
@@ -367,11 +367,11 @@
 									"items": []
 								},
 								{
-									"title": "Basic Example",
+									"title": "Basic example",
 									"items": []
 								},
 								{
-									"title": "Available Operations in `ModelUpdate`",
+									"title": "Available operations in `ModelUpdate`",
 									"items": []
 								},
 								{
@@ -463,7 +463,7 @@
 									"items": []
 								},
 								{
-									"title": "Observations",
+									"title": "Notes",
 									"items": []
 								},
 								{
@@ -499,7 +499,7 @@
 									"items": []
 								},
 								{
-									"title": "Available filters in connect and disconnect",
+									"title": "Filters available in connect and disconnect",
 									"items": []
 								},
 								{
@@ -722,11 +722,11 @@
 									]
 								},
 								{
-									"title": "Usage example without applying",
+									"title": "Example of use without applying",
 									"items": []
 								},
 								{
-									"title": "Usage example with immediate application",
+									"title": "Example of use with immediate application",
 									"items": []
 								},
 								{
@@ -770,7 +770,7 @@
 									"items": []
 								},
 								{
-									"title": "Usage example",
+									"title": "Example of use",
 									"items": []
 								},
 								{
@@ -778,7 +778,7 @@
 									"items": []
 								},
 								{
-									"title": "Cautions",
+									"title": "Precautions",
 									"items": []
 								},
 								{
@@ -818,7 +818,7 @@
 									"items": []
 								},
 								{
-									"title": "Example restoring from a specific migration",
+									"title": "Example of restoration from a specific migration",
 									"items": []
 								},
 								{

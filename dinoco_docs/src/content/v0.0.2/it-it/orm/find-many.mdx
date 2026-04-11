@@ -1,50 +1,40 @@
-export const title = "find_many";
+export const title = 'find_many';
 
 # find_many
 
-Utilizzato per recuperare un elenco di record.
+Usato per recuperare un elenco di record.
 
 ---
 
 ## Cosa puoi fare
 
-- Selezionare una proiezione con `.select::<T>()`
-- Filtrare con `.cond(...)`
-- Limitare con `.take(...)`
-- Paginare con `.skip(...)`
-- Ordinare con `.order_by(...)`
-- Caricare relazioni con `.includes(...)`
-- Contare relazioni con `.count(...)`
-- Forzare la lettura dal database primario con `.read_in_primary()`
-- Eseguire con `.execute(&client)`
-
-## Descrizione dei metodi
-
-- `.select::<T>()`: Sostituisce la proiezione predefinita del modello con una proiezione personalizzata.
-- `.cond(...)`: Aggiunge condizioni di filtro alla query.
-- `.take(...)`: Limita il numero di record restituiti.
-- `.skip(...)`: Salta un numero di record prima di restituire il risultato.
-- `.order_by(...)`: Definisce l'ordinamento della query.
-- `.includes(...)`: Carica le relazioni insieme ai record principali.
-- `.count(...)`: Calcola i contatori per le relazioni e popola campi come `posts_count`.
-- `.read_in_primary()`: Forza la lettura dal database primario, senza utilizzare una replica.
-- `.execute(&client)`: Esegue la query nel database.
+- `.select::<T>()`: scambia la proiezione predefinita del modello con una proiezione personalizzata.
+- `.cond(...)`: aggiunge condizioni di filtro alla query.
+- `.take(...)`: limita la quantità di record restituiti.
+- `.skip(...)`: salta una quantità di record prima di restituire il risultato.
+- `.order_by(...)`: definisce l'ordinamento della query.
+- `.includes(...)`: carica le relazioni insieme ai record principali.
+- `.count(...)`: calcola i contatori delle relazioni e popola campi come `posts_count`.
+- `.cache(...)`: interroga prima in Redis usando la chiave fornita; in caso di cache miss esegue la query, salva e restituisce il risultato. In caso di cache hit, il query logger registra `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: stesso comportamento della cache standard, ma salva con TTL in secondi.
+- `.read_in_primary()`: forza la lettura nel database principale, senza usare la replica.
+- `.execute(&client)`: esegue la query nel database.
 
 ## Ritorno
 
-Senza `select::<T>()` il ritorno è:
+Senza `select::<T>()`, il ritorno è:
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-Con `select::<T>()` il ritorno diventa:
+Con `select::<T>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-## Esempio semplice
+## Esempio base
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -72,7 +62,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Esempio di select personalizzata
+## Esempio di select personalizzato
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +152,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Esempio con conteggio delle relazioni
+## Esempio con conteggio di relazione
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,7 +170,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Esempio di lettura dal database primario
+## Esempio di lettura nel database principale
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -190,7 +180,33 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Passi successivi
+## Esempio con cache
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): Versione per la ricerca di al massimo un record.
-- [**`count::<M>()`**](/v0.0.1/orm/count): Conteggio dei record con filtro.
+Questo metodo viene generato solo quando il `config {}` dello schema ha `redis`.
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## Esempio con cache e scadenza
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
+## Prossimi passi
+
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): versione per cercare al massimo un record.
+- [**`count::<M>()`**](/v0.0.2/orm/count): conteggio di record con filtro.

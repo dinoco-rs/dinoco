@@ -2,49 +2,49 @@ export const title = "find_many";
 
 # find_many
 
-레코드 목록을 검색하는 데 사용됩니다.
+레코드 목록을 가져오는 데 사용됩니다.
 
 ---
 
-## 할 수 있는 것
+## 수행할 수 있는 작업
 
-- `.select::<T>()`를 사용하여 프로젝션 선택
-- `.cond(...)`를 사용하여 필터링
-- `.take(...)`를 사용하여 제한
-- `.skip(...)`를 사용하여 페이지 매김
-- `.order_by(...)`를 사용하여 정렬
-- `.includes(...)`를 사용하여 관계 로드
-- `.count(...)`를 사용하여 관계 개수 세기
-- `.read_in_primary()`를 사용하여 기본 데이터베이스에서 읽기 강제
-- `.execute(&client)`를 사용하여 실행
+- 다음으로 프로젝션 선택: `.select::<T>()`
+- 다음으로 필터링: `.cond(...)`
+- 다음으로 제한: `.take(...)`
+- 다음으로 페이지 매김: `.skip(...)`
+- 다음으로 정렬: `.order_by(...)`
+- 다음으로 관계 로드: `.includes(...)`
+- 다음으로 관계 계산: `.count(...)`
+- 다음으로 주 데이터베이스에서 읽기 강제: `.read_in_primary()`
+- 다음으로 실행: `.execute(&client)`
 
 ## 메서드 설명
 
-- `.select::<T>()`: 모델의 기본 프로젝션을 사용자 정의 프로젝션으로 대체합니다.
+- `.select::<T>()`: 모델의 기본 프로젝션을 사용자 지정 프로젝션으로 바꿉니다.
 - `.cond(...)`: 쿼리에 필터 조건을 추가합니다.
 - `.take(...)`: 반환되는 레코드 수를 제한합니다.
-- `.skip(...)`: 결과가 반환되기 전에 지정된 수의 레코드를 건너뜠니다.
+- `.skip(...)`: 결과를 반환하기 전에 지정된 수의 레코드를 건너뜁니다.
 - `.order_by(...)`: 쿼리의 정렬 순서를 정의합니다.
-- `.includes(...)`: 주 레코드와 함께 관계를 로드합니다.
-- `.count(...)`: 관계 개수를 계산하고 `posts_count`와 같은 필드를 채웁니다.
-- `.read_in_primary()`: 복제본을 사용하지 않고 기본 데이터베이스에서 읽기를 강제합니다.
+- `.includes(...)`: 주요 레코드와 함께 관계를 로드합니다.
+- `.count(...)`: 관계 카운터를 계산하고 `posts_count`와 같은 필드를 채웁니다.
+- `.read_in_primary()`: 복제본을 사용하지 않고 주 데이터베이스에서 읽기를 강제합니다.
 - `.execute(&client)`: 데이터베이스에서 쿼리를 실행합니다.
 
-## 반환값
+## 반환
 
-`select::<T>()`가 없으면 반환값은 다음과 같습니다:
+`select::<T>()`가 없으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-`select::<T>()`를 사용하면 반환값은 다음과 같이 변경됩니다:
+`select::<T>()`가 있으면 반환 값은 다음과 같이 변경됩니다:
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-## 기본 예제
+## 기본 예시
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -52,7 +52,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 필터 예제
+## 필터 예시
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -61,7 +61,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 페이지네이션과 정렬 예제
+## 페이지 매김 및 정렬 예시
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -72,7 +72,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 사용자 정의 select 예제
+## 사용자 지정 선택 예시
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,7 +88,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 단순 include 예제
+## 간단한 포함 예시
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -106,7 +106,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 필터링된 include 예제
+## 필터링된 포함 예시
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -124,7 +124,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 중첩 include 예제
+## 중첩된 포함 예시
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +162,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 관계 수 예제
+## 관계 카운트 예시
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -180,7 +180,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 기본 데이터베이스에서 읽는 예제
+## 주 데이터베이스에서 읽기 예시
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -192,5 +192,5 @@ let users = dinoco::find_many::<User>()
 
 ## 다음 단계
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 최대 하나의 레코드를 검색하는 버전입니다.
-- [**`count::<M>()`**](/v0.0.1/orm/count): 필터를 사용하여 레코드 수를 계산합니다.
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 최대 하나의 레코드를 가져오는 버전입니다.
+- [**`count::<M>()`**](/v0.0.1/orm/count): 필터가 적용된 레코드 수입니다.

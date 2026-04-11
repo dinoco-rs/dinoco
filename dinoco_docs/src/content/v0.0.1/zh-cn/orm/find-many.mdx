@@ -2,32 +2,32 @@ export const title = "find_many";
 
 # find_many
 
-用于检索记录列表。
+用于获取记录列表。
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
-- 选择一个带有 `.select::<T>()` 的投影
-- 使用 `.cond(...)` 进行筛选
-- 使用 `.take(...)` 限制结果数量
-- 使用 `.skip(...)` 进行分页
-- 使用 `.order_by(...)` 进行排序
+- 使用 `.select::<T>()` 选择投影
+- 使用 `.cond(...)` 过滤
+- 使用 `.take(...)` 限制
+- 使用 `.skip(...)` 分页
+- 使用 `.order_by(...)` 排序
 - 使用 `.includes(...)` 加载关联
-- 使用 `.count(...)` 计算关联
+- 使用 `.count(...)` 计数关联
 - 使用 `.read_in_primary()` 强制从主数据库读取
 - 使用 `.execute(&client)` 执行
 
 ## 方法说明
 
 - `.select::<T>()`: 将模型的默认投影替换为自定义投影。
-- `.cond(...)`: 为查询添加筛选条件。
+- `.cond(...)`: 向查询添加过滤条件。
 - `.take(...)`: 限制返回的记录数量。
 - `.skip(...)`: 在返回结果之前跳过一定数量的记录。
 - `.order_by(...)`: 定义查询的排序方式。
 - `.includes(...)`: 与主记录一起加载关联。
-- `.count(...)`: 计算关联的计数，并填充 `posts_count` 等字段。
-- `.read_in_primary()`: 强制从主数据库读取，而不使用副本。
+- `.count(...)`: 计算关联计数器并填充 `posts_count` 等字段。
+- `.read_in_primary()`: 强制从主数据库读取，不使用副本。
 - `.execute(&client)`: 在数据库中执行查询。
 
 ## 返回值
@@ -44,7 +44,7 @@ DinocoResult<Vec<M>>
 DinocoResult<Vec<T>>
 ```
 
-## 基础示例
+## 基本示例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -52,7 +52,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 带过滤器的示例
+## 带过滤的示例
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -72,7 +72,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 自定义 select 示例
+## 自定义选择示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,7 +88,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 简单 include 示例
+## 简单关联示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -106,7 +106,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 带过滤 include 的示例
+## 带过滤的关联示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -124,7 +124,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 嵌套 include 示例
+## 嵌套关联示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +162,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## 关系计数示例
+## 关联计数示例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -192,5 +192,5 @@ let users = dinoco::find_many::<User>()
 
 ## 下一步
 
-- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 用于检索最多一条记录的版本。
-- [**`count::<M>()`**](/v0.0.1/orm/count): 带有筛选条件的记录计数。
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first): 用于最多获取一条记录的版本。
+- [**`count::<M>()`**](/v0.0.1/orm/count): 带过滤的记录计数。

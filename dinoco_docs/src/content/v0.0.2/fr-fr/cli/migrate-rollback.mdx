@@ -1,24 +1,24 @@
 export const title = "Migrate rollback";
 
-# Utilisation ?
+# Comment utiliser ?
 
 La commande `dinoco migrate rollback` annule la dernière migration appliquée.
 
-Elle est utile lorsque vous devez annuler la dernière modification de la base de données.
+C'est utile lorsque vous avez besoin d'annuler la modification la plus récente dans la base de données.
 
 ---
 
-## Ce que fait la commande
+## Ce que la commande fait
 
 Lors de l'exécution de cette commande, la CLI tente de :
 
 - Identifier la dernière migration appliquée
 - Annuler cette migration
-- Mettre à jour l'historique des migrations de la base
+- Mettre à jour l'historique des migrations de la base de données
 
 ## Paramètres
 
-[NAME]: Nom de la migration (pour revenir à une migration spécifique) (Optionnel)
+[NOME] : Nom de la migration (pour annuler une migration spécifique) (Facultatif)
 
 ## Exemple d'utilisation
 
@@ -31,13 +31,13 @@ dinoco migrate rollback
 Utilisez cette commande lorsque :
 
 - La dernière migration doit être annulée
-- Vous avez identifié un problème actuel dans le schéma
-- Ajuster le flux d'évolution de la base pendant le développement
+- Vous avez détecté un problème récent dans le schéma
+- Vous ajustez le flux d'évolution de la base de données en développement
 
 ## Précautions
 
-- Toute modification structurelle n'est pas triviale et ne peut être annulée sans impact.
-- Vérifiez les impacts de la migration avant d'effectuer un rollback dans des environnements importants.
+- Toutes les modifications structurelles ne sont pas triviales à annuler sans impact.
+- Révisez l'effet de la migration avant d'effectuer un rollback dans des environnements importants.
 
 ## Prochaines étapes
 

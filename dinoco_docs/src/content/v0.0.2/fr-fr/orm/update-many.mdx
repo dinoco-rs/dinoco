@@ -2,7 +2,7 @@ export const title = "update_many";
 
 # update_many
 
-Utilisé pour mettre à jour plusieurs enregistrements simultanément.
+Utilisé pour mettre à jour plusieurs enregistrements à la fois.
 
 ---
 
@@ -10,7 +10,7 @@ Utilisé pour mettre à jour plusieurs enregistrements simultanément.
 
 - `.cond(...)`: restreint les enregistrements qui peuvent être mis à jour.
 - `.values(Vec<M>)`: définit les éléments utilisés dans la mise à jour par lot.
-- `.returning::<T>()`: renvoie les enregistrements mis à jour sous forme de liste typée.
+- `.returning::<T>()`: retourne les enregistrements mis à jour sous forme de liste typée.
 - `.execute(&client)`: exécute la mise à jour par lot.
 
 ## Retour
@@ -21,7 +21,7 @@ Sans `.returning::<T>()`, le retour est :
 DinocoResult<()>
 ```
 
-Avec `.returning::<T>()`, le retour est :
+Avec `.returning::<T>()`, le retour devient :
 
 ```rust
 DinocoResult<Vec<T>>
@@ -39,7 +39,7 @@ dinoco::update_many::<User>()
     .await?;
 ```
 
-<h2>Exemple avec retour</h2>
+## Exemple avec retour
 
 ```rust
 let updated = dinoco::update_many::<User>()
@@ -52,7 +52,7 @@ let updated = dinoco::update_many::<User>()
     .await?;
 ```
 
-<h2>Exemple avec filtre</h2>
+## Exemple avec filtre
 
 ```rust
 dinoco::update_many::<User>()

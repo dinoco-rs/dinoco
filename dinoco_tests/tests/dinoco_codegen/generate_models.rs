@@ -103,11 +103,15 @@ model User {
     let dinoco_module =
         fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
 
-    assert!(dinoco_module.contains("pub use dinoco::DinocoClientCacheExt;"));
+    assert!(dinoco_module.contains("pub trait DinocoClientCacheExt<A>"));
     assert!(dinoco_module.contains("pub trait FindFirstCacheExt"));
     assert!(dinoco_module.contains("pub trait FindManyCacheExt"));
     assert!(dinoco_module.contains("fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S>"));
     assert!(dinoco_module.contains("cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64)"));
+    assert!(dinoco_module.contains("pub trait FindManyQueueExt"));
+    assert!(dinoco_module.contains("pub trait InsertQueueExt"));
+    assert!(dinoco_module.contains("pub trait FindAndUpdateQueueExt"));
+    assert!(dinoco_module.contains("pub fn workers() -> QueueWorkers<SqliteAdapter>"));
     assert!(dinoco_module.contains("config.with_redis(dinoco::DinocoRedisConfig::from_url("));
 }
 
@@ -118,6 +122,10 @@ fn generate_models_adds_workers_helper() {
 config {
     database = "sqlite"
     database_url = env("DATABASE_URL")
+
+    redis = {
+        url = env("REDIS_URL")
+    }
 }
 
 model User {
@@ -135,7 +143,7 @@ model User {
         fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
 
     assert!(dinoco_module.contains("pub fn workers() -> QueueWorkers<SqliteAdapter>"));
-    assert!(dinoco_module.contains("dinoco::workers::<SqliteAdapter>()"));
+    assert!(dinoco_module.contains("QueueWorkers::<SqliteAdapter>::new()"));
 }
 
 #[test]
@@ -164,6 +172,9 @@ model User {
     assert!(!dinoco_module.contains("pub trait DinocoClientCacheExt"));
     assert!(!dinoco_module.contains("pub trait FindFirstCacheExt"));
     assert!(!dinoco_module.contains("pub trait FindManyCacheExt"));
+    assert!(!dinoco_module.contains("pub trait FindManyQueueExt"));
+    assert!(!dinoco_module.contains("pub trait InsertQueueExt"));
+    assert!(!dinoco_module.contains("pub fn workers() -> QueueWorkers<"));
     assert!(!dinoco_module.contains("config.with_redis("));
 }
 

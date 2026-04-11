@@ -9,17 +9,17 @@ export const title = "delete_many";
 ## できること
 
 - `.cond(...)`: バッチ削除のフィルターを追加します。
-- `.execute(&client)`: 該当するレコードの削除を実行します。
+- `.execute(&client)`: 一致するレコードの削除を実行します。
 
 ## 戻り値
 
-`delete_many` の戻り値は次のとおりです。
+`delete_many`の戻り値は次のとおりです。
 
 ```rust
 DinocoResult<()>
 ```
 
-## 基本例
+## 基本的な例
 
 これは、条件を満たすレコードのみを削除します。
 
@@ -32,7 +32,7 @@ dinoco::delete_many::<Session>()
 
 ## フィルターなしの例
 
-これは、テーブルからすべてのデータを削除します。
+これは、テーブル内のすべてのデータを削除します。
 
 ```rust
 dinoco::delete_many::<TaskAssignees>()
@@ -42,5 +42,5 @@ dinoco::delete_many::<TaskAssignees>()
 
 ## 次のステップ
 
-- [**`delete::<M>()`**](/v0.0.1/orm/delete): 明示的なフィルターによる個別削除。
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): バッチ削除前のリスト表示。
+- [**`delete::<M>()`**](/v0.0.1/orm/delete): 明示的なフィルターによるピンポイント削除。
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): バッチ削除の前にリストアップします。

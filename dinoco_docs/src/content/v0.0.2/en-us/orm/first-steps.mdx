@@ -1,6 +1,6 @@
-export const title = "Getting started";
+export const title = "First steps";
 
-# Getting started
+# First steps
 
 To start using Dinoco, you must install our CLI so you can manage migrations and other systems!
 
@@ -8,21 +8,21 @@ To start using Dinoco, you must install our CLI so you can manage migrations and
 cargo install dinoco-cli
 ```
 
-To create the Dinoco environment, run the following command:
+To create the Dinoco environment, we run the following command:
 
 ```bash
 dinoco init
 ```
 
-After choosing the database and all necessary configurations, the dinoco folder will be created in the root of your project.
+After choosing the database and all necessary configurations, the `dinoco` folder will be created at the root of your project.
 
 This folder will contain:
 
-- **Migrations:** The history of changes to your database.
-- **Schema:** The central definition of your data structure.
-- **Models:** The typed representations for use in your Rust code.
+-   **Migrations:** The history of changes to your database.
+-   **Schema:** The central definition of your data structure.
+-   **Models:** The typed representations for use in your Rust code.
 
-## How it works?
+## How does it work?
 
 ### 1. Define your schema and connection
 
@@ -32,6 +32,9 @@ The Dinoco Schema defines the content of your models and database configurations
 config {
 	database = "postgresql"
 	database_url = env("DATABASE_URL")
+	redis = {
+		url = env("REDIS_URL")
+	}
 }
 
 model User {
@@ -54,7 +57,7 @@ model Post {
 
 ### 2. Create the migration
 
-When generating the migration with --apply, it will be applied to the database and the models will be generated automatically!
+When generating the migration with `--apply`, it will be applied to the database and the models will be generated automatically!
 
 ```bash
 dinoco migrate generate --apply
@@ -68,6 +71,7 @@ use dinoco::{DinocoClientConfig, DinocoQueryLogger, DinocoQueryLoggerOptions, Ex
 #[path = "../dinoco/mod.rs"]
 mod database;
 
+use database::*;
 use database::models::*;
 
 #[derive(Debug, Clone, Extend)]
@@ -85,6 +89,16 @@ struct PostSimple {
     published: bool,
 }
 
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithPostInsert {
+    id: i64,
+    email: String,
+    name: Option<String>,
+    posts: Vec<Post>,
+}
+
 #[tokio::main]
 async fn main() -> dinoco::DinocoResult<()> {
     let _ = dotenvy::dotenv();
@@ -97,15 +111,30 @@ async fn main() -> dinoco::DinocoResult<()> {
 
     // Insert a user with a related post.
     insert_into::<User>()
-        .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
-        .with_relation(Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None })
+        .values(UserWithPostInsert {
+            id: 0,
+            email: "bia@dinoco.rs".to_string(),
+            name: Some("Bia".to_string()),
+            posts: vec![Post { id: 0, title: "My first post".to_string(), published: true, authorId: None }],
+        })
         .execute(&client)
         .await?;
 
-    // Find all users with their posts.
+    // Fetch all users with their posts.
     let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
 
+    let cached_users = find_many::<User>()
+        .select::<UserWithRelation>()
+        .includes(|x| x.posts())
+        .cache_with_expiration("users:with-posts", 30)
+        .execute(&client)
+        .await?;
+
+    let cached_direct = client.cache().get::<Vec<UserWithRelation>>("users:with-posts").await?;
+
     println!("{users:#?}");
+    println!("{cached_users:#?}");
+    println!("{cached_direct:#?}");
 
     // result:
     // [
@@ -113,7 +142,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // 		email: "bia@dinoco.rs",
     // 		posts: [
     // 			Post {
-    // 				title: "Meu primeiro post",
+    // 				title: "My first post",
     // 				published: true,
     // 			},
     // 		],
@@ -126,5 +155,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## Next steps
 
-- [**Dinoco schema**](/v0.0.1/orm/introduction-dinoco): Better understand Dinoco's structure and proposal.
-- [**Dinoco client**](/v0.0.1/orm/first-steps): Review this complete client flow.
+-   [**Dinoco schema**](/v0.0.2/orm/introduction-dinoco): Understand the structure and purpose of Dinoco better.
+-   [**find_many**](/v0.0.2/orm/find-many): See filters, includes, and caching in list queries.

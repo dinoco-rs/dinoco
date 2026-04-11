@@ -9,7 +9,7 @@ use async_trait::async_trait;
 
 use chrono::{DateTime, Utc};
 
-use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoError, DinocoResult, Expression, SelectStatement};
+use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoResult, Expression, SelectStatement};
 
 use futures::FutureExt;
 
@@ -104,13 +104,6 @@ where
     fn clone(&self) -> Self {
         Self { handler: self.handler.clone(), marker: PhantomData }
     }
-}
-
-pub fn workers<A>() -> QueueWorkers<A>
-where
-    A: DinocoAdapter + Clone + Send + Sync + 'static,
-{
-    QueueWorkers::new()
 }
 
 impl QueueDispatch {
@@ -371,7 +364,7 @@ async fn enqueue_job<A>(client: &DinocoClient<A>, dispatch: &QueueDispatch, look
 where
     A: DinocoAdapter,
 {
-    let cache = client.cache_store().ok_or_else(missing_queue_error)?;
+    let cache = client.cache_store().expect("Dinoco queues require Redis-enabled generated API.");
     let job = QueueJob {
         id: crate::Uuid::now_v7().to_string(),
         event: dispatch.event.clone(),
@@ -387,7 +380,7 @@ async fn pop_due_job<A>(client: &DinocoClient<A>) -> DinocoResult<Option<QueueJo
 where
     A: DinocoAdapter,
 {
-    let cache = client.cache_store().ok_or_else(missing_queue_error)?;
+    let cache = client.cache_store().expect("Dinoco queues require Redis-enabled generated API.");
     let now = Utc::now().timestamp_millis();
 
     loop {
@@ -435,7 +428,7 @@ async fn schedule_job<A>(client: &DinocoClient<A>, job: QueueJob, execute_at: Da
 where
     A: DinocoAdapter,
 {
-    let cache = client.cache_store().ok_or_else(missing_queue_error)?;
+    let cache = client.cache_store().expect("Dinoco queues require Redis-enabled generated API.");
 
     cache.hash_set(QUEUE_PAYLOADS_KEY, &job.id, &job).await?;
     cache.sorted_set_add(QUEUE_JOBS_KEY, &job.id, execute_at.timestamp_millis()).await
@@ -492,8 +485,4 @@ fn default_retry_at(delay_ms: u64) -> DateTime<Utc> {
     let delay_ms = i64::try_from(delay_ms).unwrap_or(i64::MAX);
 
     Utc::now() + chrono::Duration::milliseconds(delay_ms)
-}
-
-fn missing_queue_error() -> DinocoError {
-    DinocoError::ConnectionError("Redis is not configured for Dinoco queues.".to_string())
 }

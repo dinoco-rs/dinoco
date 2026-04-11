@@ -4,7 +4,7 @@ export const title = "Migrate generate";
 
 Der Befehl `dinoco migrate generate` generiert eine Migration aus dem aktuellen Schema.
 
-Er vergleicht den aktuellen Zustand des Schemas mit der bekannten Historie und erstellt die notwendigen Artefakte, um die Datenbank zu entwickeln.
+Er vergleicht den aktuellen Zustand des Schemas mit dem bekannten Verlauf und erstellt die notwendigen Artefakte zur Weiterentwicklung der Datenbank.
 
 ---
 
@@ -36,11 +36,11 @@ dinoco migrate generate --apply
 dinoco migrate generate
 ```
 
-Dieser Ablauf ist nützlich, wenn Sie möchten:
+Dieser Workflow ist nützlich, wenn Sie:
 
-- Die Migration vor der Anwendung überprüfen
-- Die Änderungen in der Versionskontrolle überprüfen
-- Die Generierung und Ausführung in verschiedenen Schritten trennen
+- Die Migration vor der Anwendung überprüfen möchten
+- Die Änderungen in der Versionskontrolle überprüfen möchten
+- Die Generierung und Ausführung in verschiedene Schritte aufteilen möchten
 
 ## Anwendungsbeispiel mit sofortiger Anwendung
 
@@ -48,11 +48,11 @@ Dieser Ablauf ist nützlich, wenn Sie möchten:
 dinoco migrate generate --apply
 ```
 
-Dieser Ablauf ist nützlich, wenn Sie möchten:
+Dieser Workflow ist nützlich, wenn Sie:
 
-- Die lokale Datenbank schnell aktualisieren
-- Die Modelle direkt nach der Migration generieren
-- Während der Entwicklung schneller iterieren
+- Die lokale Datenbank schnell aktualisieren möchten
+- Die Modelle direkt nach der Migration generieren möchten
+- Während der Entwicklung schneller iterieren möchten
 
 ## Nächste Schritte
 

@@ -3,9 +3,11 @@ import path from 'path';
 
 const API_KEY = process.env.GEMINI_API_KEY;
 const DEFAULT_MODEL = 'gemini-2.5-flash';
-const DEFAULT_VERSION = 'v0.0.2';
+const DEFAULT_VERSION = 'v0.0.1';
+const DEFAULT_RETRY_ATTEMPTS = 4;
 const PROJECT_ROOT = 'dinoco_docs';
 const SOURCE_LOCALE = 'pt-br';
+const MIN_START_INTERVAL_MS = 250;
 
 const TARGETS = {
 	'de-de': 'German (Germany)',
@@ -19,14 +21,27 @@ const TARGETS = {
 	'zh-cn': 'Simplified Chinese (China)',
 };
 
+const FREE_TIER_LIMITS = {
+	'gemini-2.0-flash': { concurrency: 2, rpm: 15 },
+	'gemini-2.0-flash-lite': { concurrency: 4, rpm: 30 },
+	'gemini-2.5-flash': { concurrency: 5, rpm: 40 },
+	'gemini-2.5-flash-lite': { concurrency: 2, rpm: 15 },
+	'gemini-2.5-flash-lite-preview': { concurrency: 2, rpm: 15 },
+	'gemini-2.5-flash-preview': { concurrency: 2, rpm: 10 },
+	'gemini-2.5-pro': { concurrency: 1, rpm: 5 },
+};
+
 if (!API_KEY) {
 	throw new Error('GEMINI_API_KEY is required.');
 }
 
 function parseArgs(argv) {
 	const options = {
+		concurrency: undefined,
 		locales: undefined,
 		model: DEFAULT_MODEL,
+		retryAttempts: DEFAULT_RETRY_ATTEMPTS,
+		rpm: undefined,
 		version: DEFAULT_VERSION,
 	};
 
@@ -46,13 +61,47 @@ function parseArgs(argv) {
 			continue;
 		}
 
+		if (arg === '--concurrency' && next) {
+			options.concurrency = Number.parseInt(next, 10);
+			index += 1;
+			continue;
+		}
+
 		if (arg === '--locales' && next) {
 			options.locales = next
 				.split(',')
 				.map(locale => locale.trim())
 				.filter(Boolean);
 			index += 1;
+			continue;
 		}
+
+		if (arg === '--rpm' && next) {
+			options.rpm = Number.parseInt(next, 10);
+			index += 1;
+			continue;
+		}
+
+		if (arg === '--retry-attempts' && next) {
+			options.retryAttempts = Number.parseInt(next, 10);
+			index += 1;
+		}
+	}
+
+	if (options.concurrency !== undefined && (!Number.isInteger(options.concurrency) || options.concurrency < 1)) {
+		throw new Error('--concurrency must be an integer greater than 0.');
+	}
+
+	if (options.rpm !== undefined && (!Number.isInteger(options.rpm) || options.rpm < 1)) {
+		throw new Error('--rpm must be an integer greater than 0.');
+	}
+
+	if (!Number.isInteger(options.retryAttempts) || options.retryAttempts < 0) {
+		throw new Error('--retry-attempts must be an integer greater than or equal to 0.');
+	}
+
+	if (!options.locales) {
+		options.locales = Object.keys(TARGETS).filter(c => c != 'pt-br');
 	}
 
 	return options;
@@ -145,41 +194,162 @@ function buildPrompt(filePath, sourcePath, locale, content) {
 	].join('\n');
 }
 
-async function translateFile({ filePath, sourcePath, locale, model }) {
-	const original = await fs.readFile(sourcePath, 'utf8');
-	const prompt = buildPrompt(filePath, sourcePath, locale, original);
+function stripMarkdownFence(content) {
+	const fencedBlock = content.match(/^```[^\n]*\n([\s\S]*?)\n```$/);
 
-	const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`, {
-		body: JSON.stringify({
-			contents: [
-				{
-					parts: [{ text: prompt }],
-					role: 'user',
-				},
-			],
-			generationConfig: {
-				temperature: 0.2,
-			},
-		}),
-		headers: {
-			'Content-Type': 'application/json',
-		},
-		method: 'POST',
+	if (!fencedBlock) {
+		return content;
+	}
+
+	return fencedBlock[1].trim();
+}
+
+function normalizeModelName(model) {
+	return model.trim().toLowerCase();
+}
+
+function resolveRateLimitConfig(options) {
+	const normalizedModel = normalizeModelName(options.model);
+	const defaultConfig = FREE_TIER_LIMITS[normalizedModel] ?? {
+		concurrency: 5,
+		rpm: 20,
+	};
+
+	return {
+		concurrency: options.concurrency ?? defaultConfig.concurrency,
+		rpm: options.rpm ?? defaultConfig.rpm,
+	};
+}
+
+function delay(ms) {
+	return new Promise(resolve => {
+		setTimeout(resolve, ms);
 	});
+}
 
-	if (!response.ok) {
+function parseRetryAfterMs(response) {
+	const retryAfter = response.headers.get('retry-after');
+
+	if (!retryAfter) {
+		return undefined;
+	}
+
+	const seconds = Number.parseFloat(retryAfter);
+
+	if (!Number.isNaN(seconds)) {
+		return Math.max(0, Math.ceil(seconds * 1000));
+	}
+
+	const timestamp = Date.parse(retryAfter);
+
+	if (Number.isNaN(timestamp)) {
+		return undefined;
+	}
+
+	return Math.max(0, timestamp - Date.now());
+}
+
+function buildRateLimiter({ rpm }) {
+	const intervalMs = Math.max(MIN_START_INTERVAL_MS, Math.ceil(60_000 / rpm));
+	let nextStartAt = 0;
+
+	return {
+		async waitTurn() {
+			const now = Date.now();
+			const scheduledAt = Math.max(now, nextStartAt);
+
+			nextStartAt = scheduledAt + intervalMs;
+
+			const waitMs = scheduledAt - now;
+
+			if (waitMs > 0) {
+				await delay(waitMs);
+			}
+		},
+		intervalMs,
+	};
+}
+
+async function requestTranslation({ filePath, model, prompt, retryAttempts }) {
+	for (let attempt = 0; attempt <= retryAttempts; attempt += 1) {
+		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`, {
+			body: JSON.stringify({
+				contents: [
+					{
+						parts: [{ text: prompt }],
+						role: 'user',
+					},
+				],
+				generationConfig: {
+					temperature: 0.2,
+				},
+			}),
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			method: 'POST',
+		});
+
+		if (response.ok) {
+			const data = await response.json();
+			const translated = data.candidates?.[0]?.content?.parts
+				?.map(part => part.text ?? '')
+				.join('')
+				?.trim();
+
+			if (!translated) {
+				throw new Error(`Gemini returned empty content for ${filePath}`);
+			}
+
+			return translated;
+		}
+
+		if (response.status === 429 && attempt < retryAttempts) {
+			const retryAfterMs = parseRetryAfterMs(response);
+			const backoffMs = 5_000 * (attempt + 1);
+			const waitMs = Math.max(retryAfterMs ?? 0, backoffMs);
+
+			console.warn(`Rate limit hit for ${filePath}. Retrying in ${waitMs}ms (${attempt + 1}/${retryAttempts}).`);
+			await delay(waitMs);
+			continue;
+		}
+
 		throw new Error(`Gemini request failed for ${filePath}: ${response.status} ${await response.text()}`);
 	}
 
-	const data = await response.json();
-	const translated = data.candidates?.[0]?.content?.parts?.map(part => part.text ?? '').join('')?.trim();
+	throw new Error(`Gemini request failed for ${filePath}: retry attempts exhausted.`);
+}
 
-	if (!translated) {
-		throw new Error(`Gemini returned empty content for ${filePath}`);
-	}
+async function translateFile({ filePath, sourcePath, locale, model, retryAttempts }) {
+	const original = await fs.readFile(sourcePath, 'utf8');
+	const prompt = buildPrompt(filePath, sourcePath, locale, original);
+	const translated = await requestTranslation({
+		filePath,
+		model,
+		prompt,
+		retryAttempts,
+	});
+	const sanitized = stripMarkdownFence(translated);
 
 	await fs.mkdir(path.dirname(filePath), { recursive: true });
-	await fs.writeFile(filePath, `${translated}\n`);
+	await fs.writeFile(filePath, `${sanitized}\n`);
+}
+
+async function runWithConcurrency(items, concurrency, worker) {
+	const queue = [...items];
+	const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+		while (queue.length > 0) {
+			const item = queue.shift();
+
+			if (item === undefined) {
+				return;
+			}
+
+			await worker(item);
+		}
+	});
+
+	await Promise.all(workers);
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -187,8 +357,12 @@ const locales = resolveLocales(options.locales);
 const jsonFiles = await collectJsonFiles(options.version, locales);
 const contentFiles = await collectContentFiles(options.version, locales);
 const files = [...jsonFiles, ...contentFiles];
+const rateLimitConfig = resolveRateLimitConfig(options);
+const rateLimiter = buildRateLimiter(rateLimitConfig);
 
-for (const file of files) {
+console.log(`Using Gemini rate limits for ${options.model}: ${rateLimitConfig.rpm} RPM, concurrency ${rateLimitConfig.concurrency}, start interval ${rateLimiter.intervalMs}ms.`);
+
+await runWithConcurrency(files, rateLimitConfig.concurrency, async file => {
 	const locale = localeFromFile(file.filePath);
 
 	if (!locale) {
@@ -196,12 +370,16 @@ for (const file of files) {
 	}
 
 	console.log(`Translating ${file.filePath} from ${file.sourcePath}`);
+
+	await rateLimiter.waitTurn();
+
 	await translateFile({
 		filePath: file.filePath,
 		locale,
 		model: options.model,
+		retryAttempts: options.retryAttempts,
 		sourcePath: file.sourcePath,
 	});
-}
+});
 
 console.log(`Done. Version: ${options.version}. Locales: ${locales.join(', ')}`);

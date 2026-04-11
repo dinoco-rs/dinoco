@@ -2,7 +2,7 @@ export const title = "Migrate generate";
 
 # How to use?
 
-The `dinoco migrate generate` command generates a migration from the current schema.
+The command `dinoco migrate generate` generates a migration from the current schema.
 
 It compares the current schema state with the known history and creates the necessary artifacts to evolve the database.
 
@@ -30,7 +30,7 @@ Example:
 dinoco migrate generate --apply
 ```
 
-## Usage example without applying
+## Example of use without applying
 
 ```bash
 dinoco migrate generate
@@ -42,7 +42,7 @@ This flow is useful when you want to:
 - Review changes in version control
 - Separate generation and execution into different steps
 
-## Usage example with immediate application
+## Example of use with immediate application
 
 ```bash
 dinoco migrate generate --apply
@@ -51,7 +51,7 @@ dinoco migrate generate --apply
 This flow is useful when you want to:
 
 - Update the local database quickly
-- Generate the models right after the migration
+- Generate models right after migration
 - Iterate faster during development
 
 ## Next steps

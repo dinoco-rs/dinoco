@@ -1,0 +1,67 @@
+export const title = "Konfiguration";
+
+# Konfiguration
+
+Der `config {}`-Block definiert, wie Dinoco sich mit der Datenbank verbindet und welche zusätzlichen Funktionen im Projekt verfügbar sind.
+
+## Was in `config {}` enthalten ist
+
+- `database`: definiert den Hauptadapter, wie `sqlite`, `postgresql` oder `mysql`.
+- `database_url`: gibt die Hauptverbindungs-URL an.
+- `read_replicas`: optional, fügt Lese-Replikate hinzu.
+- `redis`: optional, aktiviert Redis-basierten Cache und Warteschlangen.
+
+## Grundlegendes Beispiel
+
+```dinoco
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+```
+
+## Beispiel mit Redis
+
+```dinoco
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+
+    redis = {
+        url = env("REDIS_URL")
+    }
+}
+```
+
+## Beispiel mit Replikaten
+
+```dinoco
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+
+    read_replicas = [
+        env("DATABASE_READ_URL_1"),
+        env("DATABASE_READ_URL_2")
+    ]
+}
+```
+
+## Was sich in der generierten API ändert
+
+- Mit `redis` stellt das Projekt Helfer wie `client.cache()`, `.cache(...)` und Warteschlangen mit `workers()` bereit.
+- Mit `read_replicas` können Lesevorgänge Replikate verwenden, während Schreibvorgänge in der Hauptdatenbank verbleiben.
+- Ohne `redis` sind Cache- und Warteschlangenfunktionen nicht vollständig verfügbar.
+
+## Wann dieser Block bearbeitet werden sollte
+
+- Beim Wechsel der Hauptdatenbank des Projekts.
+- Beim Hinzufügen von Redis für Cache oder Warteschlangen.
+- Beim Konfigurieren von Lese-Replikaten.
+- Beim Anpassen von Verbindungsumgebungsvariablen.
+
+## Nächste Schritte
+
+- [**Übersicht**](/v0.0.2/orm/supported-databases)
+- [**Modelle**](/v0.0.2/orm/models)
+- [**Beziehungen**](/v0.0.2/orm/relations)
