@@ -39,7 +39,7 @@ impl dinoco::Projection<User> for UserSummary {
 }
 ```
 
-它常与 `select::<T>()`、`include` 以及使用 `Extend` 派生的结构体一起使用。
+它常与 `select::\<T\>()`、`include` 以及使用 `Extend` 派生的结构体一起使用。
 
 ## InsertModel 特性
 
@@ -109,8 +109,8 @@ impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
 
 根据 schema 的关系，模型还可以接收：
 
-- `InsertRelation<T>`
-- `InsertConnection<T>`
+- `InsertRelation\<T\>`
+- `InsertConnection\<T\>`
 
 ## 特性和派生一起使用的示例
 

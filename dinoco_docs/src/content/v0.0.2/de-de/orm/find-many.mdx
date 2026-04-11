@@ -8,7 +8,7 @@ Wird verwendet, um eine Liste von Datensätzen abzurufen.
 
 ## Was Sie tun können
 
-- `.select::<T>()`: ersetzt die Standardprojektion des Modells durch eine benutzerdefinierte Projektion.
+- `.select::\<T\>()`: ersetzt die Standardprojektion des Modells durch eine benutzerdefinierte Projektion.
 - `.cond(...)`: fügt Filterbedingungen zur Abfrage hinzu.
 - `.take(...)`: begrenzt die Anzahl der zurückgegebenen Datensätze.
 - `.skip(...)`: überspringt eine Anzahl von Datensätzen, bevor das Ergebnis zurückgegeben wird.
@@ -22,13 +22,13 @@ Wird verwendet, um eine Liste von Datensätzen abzurufen.
 
 ## Rückgabe
 
-Ohne `select::<T>()` ist die Rückgabe:
+Ohne `select::\<T\>()` ist die Rückgabe:
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-Mit `select::<T>()` wird die Rückgabe:
+Mit `select::\<T\>()` wird die Rückgabe:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -231,5 +231,5 @@ let users = dinoco::find_many::<User>()
 
 ## Nächste Schritte
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first): Version zum Abrufen von maximal einem Datensatz.
-- [**`count::<M>()`**](/v0.0.2/orm/count): Zählung von Datensätzen mit Filter.
+- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first): Version zum Abrufen von maximal einem Datensatz.
+- [**`count::\<M\>()`**](/v0.0.2/orm/count): Zählung von Datensätzen mit Filter.

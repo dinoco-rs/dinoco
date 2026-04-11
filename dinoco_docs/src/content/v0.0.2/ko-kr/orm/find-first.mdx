@@ -8,7 +8,7 @@ export const title = 'find_first';
 
 ## 수행할 수 있는 작업
 
-- `.select::<T>()`: 기본 프로젝션을 사용자 정의 프로젝션으로 변경합니다.
+- `.select::\<T\>()`: 기본 프로젝션을 사용자 정의 프로젝션으로 변경합니다.
 - `.cond(...)`: 검색에 필터를 추가합니다.
 - `.take(...)`: 고려되는 최대 레코드 수를 제한합니다.
 - `.skip(...)`: 첫 번째 결과를 선택하기 전에 레코드를 건너뜠니다.
@@ -22,13 +22,13 @@ export const title = 'find_first';
 
 ## 반환
 
-`select::<T>()`가 없으면 반환은 다음과 같습니다:
+`select::\<T\>()`가 없으면 반환은 다음과 같습니다:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-`select::<T>()`가 있으면 반환은 다음과 같이 변경됩니다:
+`select::\<T\>()`가 있으면 반환은 다음과 같이 변경됩니다:
 
 ```rust
 DinocoResult<Option<T>>
@@ -140,5 +140,5 @@ let user = dinoco::find_first::<User>()
 
 ## 다음 단계
 
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): 여러 레코드를 검색합니다.
-- [**`count::<M>()`**](/v0.0.2/orm/count): 레코드 수.
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many): 여러 레코드를 검색합니다.
+- [**`count::\<M\>()`**](/v0.0.2/orm/count): 레코드 수.

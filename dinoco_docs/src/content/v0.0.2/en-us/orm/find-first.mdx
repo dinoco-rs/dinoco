@@ -8,7 +8,7 @@ Used to fetch at most one record.
 
 ## What you can do
 
-- `.select::<T>()`: swaps the default projection for a custom projection.
+- `.select::\<T\>()`: swaps the default projection for a custom projection.
 - `.cond(...)`: adds filters to the search.
 - `.take(...)`: limits the maximum number of records considered.
 - `.skip(...)`: skips records before selecting the first result.
@@ -22,13 +22,13 @@ Used to fetch at most one record.
 
 ## Return
 
-Without `select::<T>()`, the return is:
+Without `select::\<T\>()`, the return is:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-With `select::<T>()`, the return becomes:
+With `select::\<T\>()`, the return becomes:
 
 ```rust
 DinocoResult<Option<T>>
@@ -141,5 +141,5 @@ let user = dinoco::find_first::<User>()
 
 ## Next steps
 
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): fetches multiple records.
-- [**`count::<M>()`**](/v0.0.2/orm/count): record count.
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many): fetches multiple records.
+- [**`count::\<M\>()`**](/v0.0.2/orm/count): record count.

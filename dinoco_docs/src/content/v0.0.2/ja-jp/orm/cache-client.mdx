@@ -6,7 +6,7 @@ export const title = 'cache()';
 
 ## できること
 
-- `.get::<T>(...)` でキーを読み取る
+- `.get::\<T\>(...)` でキーを読み取る
 - `.set(...)` でキーを保存する
 - `.set_with_ttl(...)` を使用して有効期限付きで保存する
 - `.delete(...)` でキーを削除する
@@ -28,7 +28,7 @@ export const title = 'cache()';
 
 ## 利用可能なメソッド
 
-- `.get::<T>(key)`: 値を `T` として取得し、逆シリアル化します
+- `.get::\<T\>(key)`: 値を `T` として取得し、逆シリアル化します
 - `.set(key, &value)`: シリアル化して TTL なしで保存します
 - `.set_with_ttl(key, &value, ttl_seconds)`: シリアル化して秒単位の有効期限付きで保存します
 - `.delete(key)`: キーを削除します
@@ -91,8 +91,8 @@ client.cache().delete("users:list").await?;
 
 一般的な例：
 
-- `Vec<User>`
-- `Option<User>`
+- `Vec\<User\>`
+- `Option\<User\>`
 - `String`
 - `bool`
 - `i64`
@@ -106,6 +106,6 @@ client.cache().delete("users:list").await?;
 
 ## 次のステップ
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first)
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
 - [**`queues`**](/v0.0.2/orm/queues)

@@ -12,18 +12,18 @@ Used to update filtered records.
 - `.values(item)`: informs the new values of the record.
 - `.connect(...)`: creates supported write relation links.
 - `.disconnect(...)`: removes supported write relation links.
-- `.returning::<T>()`: returns the updated records in a typed projection.
+- `.returning::\<T\>()`: returns the updated records in a typed projection.
 - `.execute(&client)`: executes the update in the database.
 
 ## Return
 
-Without `.returning::<T>()`, the return is:
+Without `.returning::\<T\>()`, the return is:
 
 ```rust
 DinocoResult<()>
 ```
 
-With `.returning::<T>()`, the return becomes:
+With `.returning::\<T\>()`, the return becomes:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -116,5 +116,5 @@ See more about workers in [**`queues`**](/v0.0.2/orm/queues).
 
 ## Next steps
 
-- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): batch update.
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): atomic update with return.
+- [**`update_many::\<M\>()`**](/v0.0.1/orm/update-many): batch update.
+- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): atomic update with return.

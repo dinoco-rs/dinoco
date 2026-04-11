@@ -7,8 +7,8 @@ O sistema de filas do Dinoco permite publicar eventos assíncronos a partir de `
 ## O que você pode fazer
 
 - Permitir o encadeamento de .enqueue(...), .enqueue_in(...) e .enqueue_at(...) em todos os métodos do cliente, exceto nas operações de exclusão.
-- Processar jobs com `workers().on::<Model>(... )`.
-- Carregar projeções com relações no worker usando `workers().on_with_relation::<Model, Projection>(... )`.
+- Processar jobs com `workers().on::\<Model\>(... )`.
+- Carregar projeções com relações no worker usando `workers().on_with_relation::\<Model, Projection\>(... )`.
 - Recarregar o dado mais recente antes do handler rodar.
 - Ignora automaticamente jobs cujo registro não existe mais.
 
@@ -27,7 +27,7 @@ Se o registro não existir mais no momento da busca, o handler não roda e o job
 
 - `.enqueue(evento)`: agenda para execução imediata.
 - `.enqueue_in(evento, delay_ms)`: agenda com atraso em milissegundos.
-- `.enqueue_at(evento, data_utc)`: agenda para uma data específica em `chrono::DateTime<Utc>`.
+- `.enqueue_at(evento, data_utc)`: agenda para uma data específica em `chrono::DateTime\<Utc\>`.
 
 ```rust
 use database::*;
@@ -144,10 +144,10 @@ no-appendfsync-on-rewrite yes
 - `delete` e `delete_many` não possuem suporte a `enqueue`.
 - O worker é totalmente assíncrono e usa `tokio` por baixo dos panos
 - `run()` não trava o restante da aplicação: ele sobe o loop em background.
-- `Option<User>` é aceito no registro do worker, mas o handler só roda quando houver registro para re-hidratar.
+- `Option\<User\>` é aceito no registro do worker, mas o handler só roda quando houver registro para re-hidratar.
 
 ## Próximos passos
 
-- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into)
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
-- [**`update::<M>()`**](/v0.0.2/orm/update)
+- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into)
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
+- [**`update::\<M\>()`**](/v0.0.2/orm/update)

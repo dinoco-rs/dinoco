@@ -9,7 +9,7 @@ export const title = 'insert_into';
 ## できること
 
 - `.values(item)`: 挿入するレコードを定義します。
-- `.returning::<T>()`: 戻り値を、挿入されたアイテムの型付きプロジェクションに変更します。
+- `.returning::\<T\>()`: 戻り値を、挿入されたアイテムの型付きプロジェクションに変更します。
 - `.execute(&client)`: データベースへの書き込みを実行します。
 
 ## Extend #[insertable] の例
@@ -207,5 +207,5 @@ dinoco::insert_into::<User>()
 ## 次のステップ
 
 - [**Derives**](/v0.0.2/core/derives): `Rowable`、`Extend`、`#[insertable]` をいつ使用するかを理解します。
-- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): バッチ挿入。
-- [**`update::<M>()`**](/v0.0.2/orm/update): レコードの更新。
+- [**`insert_many::\<M\>()`**](/v0.0.2/orm/insert-many): バッチ挿入。
+- [**`update::\<M\>()`**](/v0.0.2/orm/update): レコードの更新。

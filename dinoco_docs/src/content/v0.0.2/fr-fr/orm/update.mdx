@@ -12,18 +12,18 @@ Utilisé pour mettre à jour des enregistrements filtrés.
 - `.values(item)`: spécifie les nouvelles valeurs de l'enregistrement.
 - `.connect(...)`: crée des liens de relation pris en charge pour l'écriture.
 - `.disconnect(...)`: supprime les liens de relation pris en charge pour l'écriture.
-- `.returning::<T>()`: renvoie les enregistrements mis à jour dans une projection typée.
+- `.returning::\<T\>()`: renvoie les enregistrements mis à jour dans une projection typée.
 - `.execute(&client)`: exécute la mise à jour dans la base de données.
 
 ## Retour
 
-Sans `.returning::<T>()`, le retour est :
+Sans `.returning::\<T\>()`, le retour est :
 
 ```rust
 DinocoResult<()>
 ```
 
-Avec `.returning::<T>()`, le retour devient :
+Avec `.returning::\<T\>()`, le retour devient :
 
 ```rust
 DinocoResult<Vec<T>>
@@ -116,5 +116,5 @@ Voir plus sur les workers dans [**`queues`**](/v0.0.2/orm/queues).
 
 ## Prochaines étapes
 
-- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): mise à jour par lots.
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): mise à jour atomique avec retour.
+- [**`update_many::\<M\>()`**](/v0.0.1/orm/update-many): mise à jour par lots.
+- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): mise à jour atomique avec retour.

@@ -8,23 +8,23 @@ export const title = "insert_many";
 
 ## 수행할 수 있는 작업
 
-- `.values(Vec<M>)`: 일괄 삽입될 레코드를 정의합니다.
-- `.with_relation(Vec<R>)`: 각 부모에 대해 정확히 하나의 새 관련 항목을 삽입합니다.
-- `.with_relations(Vec<Vec<R>>)` : 각 부모에 대해 여러 개의 새 관련 항목을 삽입합니다.
-- `.with_connection(Vec<R>)`: 삽입된 각 부모에 대해 정확히 하나의 기존 관계를 연결합니다.
-- `.with_connections(Vec<Vec<R>>)` : 삽입된 각 부모에 대해 여러 기존 관계를 연결합니다. 일반적으로 다대다 시나리오에서 사용됩니다.
-- `.returning::<T>()`: 반환 값을 삽입된 항목의 유형화된 목록으로 변경합니다.
+- `.values(Vec\<M\>)`: 일괄 삽입될 레코드를 정의합니다.
+- `.with_relation(Vec\<R\>)`: 각 부모에 대해 정확히 하나의 새 관련 항목을 삽입합니다.
+- `.with_relations(Vec\<Vec\<R\>\>)` : 각 부모에 대해 여러 개의 새 관련 항목을 삽입합니다.
+- `.with_connection(Vec\<R\>)`: 삽입된 각 부모에 대해 정확히 하나의 기존 관계를 연결합니다.
+- `.with_connections(Vec\<Vec\<R\>\>)` : 삽입된 각 부모에 대해 여러 기존 관계를 연결합니다. 일반적으로 다대다 시나리오에서 사용됩니다.
+- `.returning::\<T\>()`: 반환 값을 삽입된 항목의 유형화된 목록으로 변경합니다.
 - `.execute(&client)`: 일괄 작업을 실행합니다.
 
 ## 반환 값
 
-`.returning::<T>()`가 없으면 반환 값은 다음과 같습니다.
+`.returning::\<T\>()`가 없으면 반환 값은 다음과 같습니다.
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()`가 있으면 반환 값은 다음과 같습니다.
+`.returning::\<T\>()`가 있으면 반환 값은 다음과 같습니다.
 
 ```rust
 DinocoResult<Vec<T>>
@@ -146,5 +146,5 @@ dinoco::insert_many::<Article>()
 
 ## 다음 단계
 
-- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): 단일 삽입
-- [**`update::<M>()`**](/v0.0.1/orm/update): 필터링된 업데이트
+- [**`insert_into::\<M\>()`**](/v0.0.1/orm/insert-into): 단일 삽입
+- [**`update::\<M\>()`**](/v0.0.1/orm/update): 필터링된 업데이트

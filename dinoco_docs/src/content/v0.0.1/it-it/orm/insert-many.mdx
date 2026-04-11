@@ -8,23 +8,23 @@ Usato per l'inserimento in batch.
 
 ## Cosa puoi fare
 
-- `.values(Vec<M>)`: definisce i record che verranno inseriti in batch.
-- `.with_relation(Vec<R>)`: inserisce esattamente un nuovo correlato per ogni padre.
-- `.with_relations(Vec<Vec<R>>)` : inserisce più nuovi correlati per ogni padre.
-- `.with_connection(Vec<R>)`: connette esattamente una relazione già esistente per ogni padre inserito.
-- `.with_connections(Vec<Vec<R>>)` : connette più relazioni già esistenti per ogni padre inserito, tipicamente in scenari many-to-many.
-- `.returning::<T>()`: cambia il ritorno a una lista tipizzata degli elementi inseriti.
+- `.values(Vec\<M\>)`: definisce i record che verranno inseriti in batch.
+- `.with_relation(Vec\<R\>)`: inserisce esattamente un nuovo correlato per ogni padre.
+- `.with_relations(Vec\<Vec\<R\>\>)` : inserisce più nuovi correlati per ogni padre.
+- `.with_connection(Vec\<R\>)`: connette esattamente una relazione già esistente per ogni padre inserito.
+- `.with_connections(Vec\<Vec\<R\>\>)` : connette più relazioni già esistenti per ogni padre inserito, tipicamente in scenari many-to-many.
+- `.returning::\<T\>()`: cambia il ritorno a una lista tipizzata degli elementi inseriti.
 - `.execute(&client)`: esegue l'operazione in batch.
 
 ## Ritorno
 
-Senza `.returning::<T>()`, il ritorno è:
+Senza `.returning::\<T\>()`, il ritorno è:
 
 ```rust
 DinocoResult<()>
 ```
 
-Con `.returning::<T>()`, il ritorno diventa:
+Con `.returning::\<T\>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -146,5 +146,5 @@ dinoco::insert_many::<Article>()
 
 ## Prossimi passi
 
-- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): inserimento singolo.
-- [**`update::<M>()`**](/v0.0.1/orm/update): aggiornamento con filtro.
+- [**`insert_into::\<M\>()`**](/v0.0.1/orm/insert-into): inserimento singolo.
+- [**`update::\<M\>()`**](/v0.0.1/orm/update): aggiornamento con filtro.

@@ -6,7 +6,7 @@ export const title = 'cache()';
 
 ## Что вы можете сделать
 
-- Читать ключ с помощью `.get::<T>(...)`
+- Читать ключ с помощью `.get::\<T\>(...)`
 - Сохранять ключ с помощью `.set(...)`
 - Сохранять с истечением срока действия, используя `.set_with_ttl(...)`
 - Удалять ключ с помощью `.delete(...)`
@@ -28,7 +28,7 @@ export const title = 'cache()';
 
 ## Доступные методы
 
-- `.get::<T>(key)`: извлекает и десериализует значение как `T`
+- `.get::\<T\>(key)`: извлекает и десериализует значение как `T`
 - `.set(key, &value)`: сериализует и сохраняет без TTL
 - `.set_with_ttl(key, &value, ttl_seconds)`: сериализует и сохраняет с истечением срока действия в секундах
 - `.delete(key)`: удаляет ключ
@@ -91,8 +91,8 @@ client.cache().delete("users:list").await?;
 
 Общие примеры:
 
-- `Vec<User>`
-- `Option<User>`
+- `Vec\<User\>`
+- `Option\<User\>`
 - `String`
 - `bool`
 - `i64`
@@ -106,6 +106,6 @@ client.cache().delete("users:list").await?;
 
 ## Следующие шаги
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first)
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
 - [**`queues`**](/v0.0.2/orm/queues)

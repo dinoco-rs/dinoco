@@ -213,7 +213,7 @@ model Tag {
 
 ## Beispiel für eine Abfrage mit allen möglichen Beziehungen ausgehend von User
 
-Wenn Sie vom `User`-Model ausgehen und alle direkten Beziehungen in einer einzigen Leseabfrage laden möchten, können Sie `select::<T>()` mit mehreren `includes(...)` kombinieren.
+Wenn Sie vom `User`-Model ausgehen und alle direkten Beziehungen in einer einzigen Leseabfrage laden möchten, können Sie `select::\<T\>()` mit mehreren `includes(...)` kombinieren.
 
 ```rust
 use dinoco::{Extend, find_many};

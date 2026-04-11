@@ -9,7 +9,7 @@ export const title = 'insert_into';
 ## 수행 가능한 작업
 
 - `.values(item)`: 삽입할 레코드를 정의합니다.
-- `.returning::<T>()`: 반환 값을 삽입된 항목의 타입이 지정된 프로젝션으로 변경합니다.
+- `.returning::\<T\>()`: 반환 값을 삽입된 항목의 타입이 지정된 프로젝션으로 변경합니다.
 - `.execute(&client)`: 데이터베이스에 쓰기 작업을 실행합니다.
 
 ## Extend #[insertable] 예시
@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## 반환
 
-`.returning::<T>()`가 없으면 반환 값은 다음과 같습니다.
+`.returning::\<T\>()`가 없으면 반환 값은 다음과 같습니다.
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()`가 있으면 반환 값은 다음과 같습니다.
+`.returning::\<T\>()`가 있으면 반환 값은 다음과 같습니다.
 
 ```rust
 DinocoResult<T>
@@ -207,5 +207,5 @@ dinoco::insert_into::<User>()
 ## 다음 단계
 
 - [**Derives**](/v0.0.2/core/derives): Rowable, Extend 및 #[insertable]을 언제 사용해야 하는지 이해합니다.
-- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): 배치 삽입.
-- [**`update::<M>()`**](/v0.0.2/orm/update): 레코드 업데이트.
+- [**`insert_many::\<M\>()`**](/v0.0.2/orm/insert-many): 배치 삽입.
+- [**`update::\<M\>()`**](/v0.0.2/orm/update): 레코드 업데이트.

@@ -7,8 +7,8 @@ Dinoco's queue system allows publishing asynchronous events from `insert`, `find
 ## What you can do
 
 - Allow chaining of .enqueue(...), .enqueue_in(...) and .enqueue_at(...) on all client methods, except delete operations.
-- Process jobs with `workers().on::<Model>(... )`.
-- Load projections with relations in the worker using `workers().on_with_relation::<Model, Projection>(... )`.
+- Process jobs with `workers().on::\<Model\>(... )`.
+- Load projections with relations in the worker using `workers().on_with_relation::\<Model, Projection\>(... )`.
 - Reload the latest data before the handler runs.
 - Automatically ignores jobs whose record no longer exists.
 
@@ -27,7 +27,7 @@ If the record no longer exists at the time of the fetch, the handler does not ru
 
 - `.enqueue(event)`: schedules for immediate execution.
 - `.enqueue_in(event, delay_ms)`: schedules with a delay in milliseconds.
-- `.enqueue_at(event, datetime_utc)`: schedules for a specific date in `chrono::DateTime<Utc>`.
+- `.enqueue_at(event, datetime_utc)`: schedules for a specific date in `chrono::DateTime\<Utc\>`.
 
 ```rust
 use database::*;
@@ -144,10 +144,10 @@ no-appendfsync-on-rewrite yes
 - `delete` and `delete_many` do not support `enqueue`.
 - The worker is fully asynchronous and uses `tokio` under the hood.
 - `run()` does not block the rest of the application: it starts the loop in the background.
-- `Option<User>` is accepted in the worker registration, but the handler only runs when there is a record to re-hydrate.
+- `Option\<User\>` is accepted in the worker registration, but the handler only runs when there is a record to re-hydrate.
 
 ## Next steps
 
-- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into)
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
-- [**`update::<M>()`**](/v0.0.2/orm/update)
+- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into)
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
+- [**`update::\<M\>()`**](/v0.0.2/orm/update)

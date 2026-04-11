@@ -9,19 +9,19 @@ Usado para atualizar vários registros de uma vez.
 ## O que você pode fazer
 
 - `.cond(...)`: restringe quais registros podem ser atualizados.
-- `.values(Vec<M>)`: define os itens usados na atualização em lote.
-- `.returning::<T>()`: retorna os registros atualizados como uma lista tipada.
+- `.values(Vec\<M\>)`: define os itens usados na atualização em lote.
+- `.returning::\<T\>()`: retorna os registros atualizados como uma lista tipada.
 - `.execute(&client)`: executa o update em lote.
 
 ## Retorno
 
-Sem `.returning::<T>()`, o retorno é:
+Sem `.returning::\<T\>()`, o retorno é:
 
 ```rust
 DinocoResult<()>
 ```
 
-Com `.returning::<T>()`, o retorno passa a ser:
+Com `.returning::\<T\>()`, o retorno passa a ser:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -92,5 +92,5 @@ Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
 
 ## Próximos passos
 
-- [**`update::<M>()`**](/v0.0.1/orm/update): update tradicional com condição.
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): update atômico em um único registro.
+- [**`update::\<M\>()`**](/v0.0.1/orm/update): update tradicional com condição.
+- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): update atômico em um único registro.

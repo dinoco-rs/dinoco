@@ -213,7 +213,7 @@ model Tag {
 
 ## Exemple de recherche avec toutes les relations possibles à partir de User
 
-Lorsque vous souhaitez partir du modèle `User` et charger toutes les relations directes dans une même requête de lecture, vous pouvez combiner `select::<T>()` avec plusieurs `includes(...)`.
+Lorsque vous souhaitez partir du modèle `User` et charger toutes les relations directes dans une même requête de lecture, vous pouvez combiner `select::\<T\>()` avec plusieurs `includes(...)`.
 
 ```rust
 use dinoco::{Extend, find_many};

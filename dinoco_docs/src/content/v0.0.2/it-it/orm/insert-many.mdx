@@ -8,19 +8,19 @@ Utilizzato per l'inserimento in batch.
 
 ## Cosa puoi fare
 
-- `.values(Vec<M>)`: definisce i record che verranno inseriti in batch.
-- `.returning::<T>()`: cambia il ritorno in una lista tipizzata degli elementi inseriti.
+- `.values(Vec\<M\>)`: definisce i record che verranno inseriti in batch.
+- `.returning::\<T\>()`: cambia il ritorno in una lista tipizzata degli elementi inseriti.
 - `.execute(&client)`: esegue l'operazione in batch.
 
 ## Ritorno
 
-Senza `.returning::<T>()`, il ritorno è:
+Senza `.returning::\<T\>()`, il ritorno è:
 
 ```rust
 DinocoResult<()>
 ```
 
-Con `.returning::<T>()`, il ritorno diventa:
+Con `.returning::\<T\>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -220,11 +220,11 @@ dinoco::insert_many::<Article>()
 
 - `#[insertable]` in una struct `Extend` permette a `.values(...)` di inserire nuove relazioni in modo ricorsivo.
 - Per le connessioni con record già esistenti, usa l'enum `ModelConnection` generato dal codegen.
-- Nuove relazioni possono usare `Vec<ModelRelacionado>` o altri payload `Extend` marcati con `#[insertable]`.
+- Nuove relazioni possono usare `Vec\<ModelRelacionado\>` o altri payload `Extend` marcati con `#[insertable]`.
 - Le connessioni esistenti funzionano bene in scenari many-to-many e anche in flussi supportati dal modello generato.
 
 ## Prossimi passi
 
 - [**Derives**](/v0.0.2/core/derives): capisci come costruire payload con `Extend` e `#[insertable]`.
-- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into): inserimento singolo.
-- [**`update::<M>()`**](/v0.0.2/orm/update): aggiornamento con filtro.
+- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into): inserimento singolo.
+- [**`update::\<M\>()`**](/v0.0.2/orm/update): aggiornamento con filtro.

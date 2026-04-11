@@ -6,7 +6,7 @@ export const title = '캐시()';
 
 ## 무엇을 할 수 있나요
 
-- `.get::<T>(...)`로 키 읽기
+- `.get::\<T\>(...)`로 키 읽기
 - `.set(...)`로 키 저장
 - `.set_with_ttl(...)`을 사용하여 만료와 함께 저장
 - `.delete(...)`로 키 제거
@@ -28,7 +28,7 @@ export const title = '캐시()';
 
 ## 사용 가능한 메서드
 
-- `.get::<T>(key)`: 값을 `T`로 가져와 역직렬화합니다.
+- `.get::\<T\>(key)`: 값을 `T`로 가져와 역직렬화합니다.
 - `.set(key, &value)`: TTL 없이 직렬화하고 저장합니다.
 - `.set_with_ttl(key, &value, ttl_seconds)`: 초 단위 만료와 함께 직렬화하고 저장합니다.
 - `.delete(key)`: 키를 제거합니다.
@@ -91,8 +91,8 @@ client.cache().delete("users:list").await?;
 
 일반적인 예시:
 
-- `Vec<User>`
-- `Option<User>`
+- `Vec\<User\>`
+- `Option\<User\>`
 - `String`
 - `bool`
 - `i64`
@@ -106,6 +106,6 @@ client.cache().delete("users:list").await?;
 
 ## 다음 단계
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first)
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
 - [**`queues`**](/v0.0.2/orm/queues)

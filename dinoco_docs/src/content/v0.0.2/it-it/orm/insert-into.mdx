@@ -9,7 +9,7 @@ Usato per inserire un record.
 ## Cosa puoi fare
 
 - `.values(item)`: definisce il record che verrà inserito.
-- `.returning::<T>()`: cambia il ritorno a una proiezione tipizzata dell'elemento inserito.
+- `.returning::\<T\>()`: cambia il ritorno a una proiezione tipizzata dell'elemento inserito.
 - `.execute(&client)`: esegue la scrittura nel database.
 
 ## Esempio con Extend #[insertable]
@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## Ritorno
 
-Senza `.returning::<T>()`, il ritorno è:
+Senza `.returning::\<T\>()`, il ritorno è:
 
 ```rust
 DinocoResult<()>
 ```
 
-Con `.returning::<T>()`, il ritorno diventa:
+Con `.returning::\<T\>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<T>
@@ -207,5 +207,5 @@ Vedi di più sui worker in [**`queues`**](/v0.0.2/orm/queues).
 ## Prossimi passi
 
 - [**Derives**](/v0.0.2/core/derives): capisci quando usare `Rowable`, `Extend` e `#[insertable]`.
-- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): inserimento in batch.
-- [**`update::<M>()`**](/v0.0.2/orm/update): aggiornamento di record.
+- [**`insert_many::\<M\>()`**](/v0.0.2/orm/insert-many): inserimento in batch.
+- [**`update::\<M\>()`**](/v0.0.2/orm/update): aggiornamento di record.

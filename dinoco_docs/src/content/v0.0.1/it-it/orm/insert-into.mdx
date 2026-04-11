@@ -18,18 +18,18 @@ Usato per inserire un record.
 - `.values(item)`: definisce il record che verrà inserito.
 - `.with_relation(related)`: inserisce un nuovo record correlato insieme al padre.
 - `.with_connection(connected)`: connette il record inserito a un elemento già esistente, normalmente in flussi di relazione supportati per la connessione.
-- `.returning::<T>()`: cambia il ritorno a una proiezione tipizzata dell'elemento inserito.
+- `.returning::\<T\>()`: cambia il ritorno a una proiezione tipizzata dell'elemento inserito.
 - `.execute(&client)`: esegue la scrittura nel database.
 
 ## Ritorno
 
-Senza `.returning::<T>()`, il ritorno è:
+Senza `.returning::\<T\>()`, il ritorno è:
 
 ```rust
 DinocoResult<()>
 ```
 
-Con `.returning::<T>()`, il ritorno diventa:
+Con `.returning::\<T\>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<T>
@@ -91,5 +91,5 @@ let created = dinoco::insert_into::<User>()
 
 ## Prossimi passi
 
-- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): inserimento in batch.
-- [**`update::<M>()`**](/v0.0.1/orm/update): aggiornamento di record.
+- [**`insert_many::\<M\>()`**](/v0.0.1/orm/insert-many): inserimento in batch.
+- [**`update::\<M\>()`**](/v0.0.1/orm/update): aggiornamento di record.

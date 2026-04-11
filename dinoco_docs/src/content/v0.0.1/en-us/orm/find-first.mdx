@@ -22,7 +22,7 @@ It exposes the same methods as `find_many`:
 
 ## Method descriptions
 
-- `.select::<T>()`: swaps the default projection for a custom projection.
+- `.select::\<T\>()`: swaps the default projection for a custom projection.
 - `.cond(...)`: adds filters to the query.
 - `.take(...)`: limits the maximum number of records considered.
 - `.skip(...)`: skips records before selecting the first result.
@@ -34,13 +34,13 @@ It exposes the same methods as `find_many`:
 
 ## Return
 
-Without `select::<T>()`, the return is:
+Without `select::\<T\>()`, the return is:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-With `select::<T>()`, the return becomes:
+With `select::\<T\>()`, the return becomes:
 
 ```rust
 DinocoResult<Option<T>>
@@ -102,5 +102,5 @@ let latest_user = dinoco::find_first::<User>()
 
 ## Next steps
 
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): fetches multiple records.
-- [**`count::<M>()`**](/v001/orm/count): record count.
+- [**`find_many::\<M\>()`**](/v0.0.1/orm/find-many): fetches multiple records.
+- [**`count::\<M\>()`**](/v001/orm/count): record count.

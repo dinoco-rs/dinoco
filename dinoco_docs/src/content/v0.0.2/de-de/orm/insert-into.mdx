@@ -9,7 +9,7 @@ Wird zum Einfügen eines Datensatzes verwendet.
 ## Was Sie tun können
 
 - `.values(item)`: definiert den einzufügenden Datensatz.
-- `.returning::<T>()`: ändert den Rückgabewert in eine typisierte Projektion des eingefügten Elements.
+- `.returning::\<T\>()`: ändert den Rückgabewert in eine typisierte Projektion des eingefügten Elements.
 - `.execute(&client)`: führt den Schreibvorgang in der Datenbank aus.
 
 ## Beispiel mit Extend #[insertable]
@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## Rückgabe
 
-Ohne `.returning::<T>()` ist der Rückgabewert:
+Ohne `.returning::\<T\>()` ist der Rückgabewert:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::<T>()` wird der Rückgabewert zu:
+Mit `.returning::\<T\>()` wird der Rückgabewert zu:
 
 ```rust
 DinocoResult<T>
@@ -207,5 +207,5 @@ Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
 ## Nächste Schritte
 
 - [**Derives**](/v0.0.2/core/derives): Verstehen Sie, wann `Rowable`, `Extend` und `#[insertable]` verwendet werden.
-- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): Batch-Einfügung.
-- [**`update::<M>()`**](/v0.0.2/orm/update): Aktualisierung von Datensätzen.
+- [**`insert_many::\<M\>()`**](/v0.0.2/orm/insert-many): Batch-Einfügung.
+- [**`update::\<M\>()`**](/v0.0.2/orm/update): Aktualisierung von Datensätzen.

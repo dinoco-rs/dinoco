@@ -8,19 +8,19 @@ Usado para inserção em lote.
 
 ## O que você pode fazer
 
-- `.values(Vec<M>)`: define os registros que serão inseridos em lote.
-- `.returning::<T>()`: muda o retorno para uma lista tipada dos itens inseridos.
+- `.values(Vec\<M\>)`: define os registros que serão inseridos em lote.
+- `.returning::\<T\>()`: muda o retorno para uma lista tipada dos itens inseridos.
 - `.execute(&client)`: executa a operação em lote.
 
 ## Retorno
 
-Sem `.returning::<T>()`, o retorno é:
+Sem `.returning::\<T\>()`, o retorno é:
 
 ```rust
 DinocoResult<()>
 ```
 
-Com `.returning::<T>()`, o retorno passa a ser:
+Com `.returning::\<T\>()`, o retorno passa a ser:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -220,11 +220,11 @@ dinoco::insert_many::<Article>()
 
 - `#[insertable]` em uma struct `Extend` permite que `.values(...)` insira relações novas de forma recursiva.
 - Para conexões com registros já existentes, use o enum `ModelConnection` gerado pelo codegen.
-- Relações novas podem usar `Vec<ModelRelacionado>` ou outros payloads `Extend` marcados com `#[insertable]`.
+- Relações novas podem usar `Vec\<ModelRelacionado\>` ou outros payloads `Extend` marcados com `#[insertable]`.
 - Conexões existentes funcionam bem em cenários many-to-many e também em fluxos suportados pelo model gerado.
 
 ## Próximos passos
 
 - [**Derives**](/v0.0.2/core/derives): entenda como montar payloads com `Extend` e `#[insertable]`.
-- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into): inserção única.
-- [**`update::<M>()`**](/v0.0.2/orm/update): atualização com filtro.
+- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into): inserção única.
+- [**`update::\<M\>()`**](/v0.0.2/orm/update): atualização com filtro.

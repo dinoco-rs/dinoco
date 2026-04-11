@@ -18,18 +18,18 @@ export const title = "insert_into";
 - `.values(item)`: 定义要插入的记录。
 - `.with_relation(related)`: 与父记录一起插入新的关联记录。
 - `.with_connection(connected)`: 将插入的记录连接到现有项，通常在支持连接的关系流中。
-- `.returning::<T>()`: 将返回值更改为插入项的类型化投影。
+- `.returning::\<T\>()`: 将返回值更改为插入项的类型化投影。
 - `.execute(&client)`: 执行数据库写入操作。
 
 ## 返回值
 
-如果没有 `.returning::<T>()`，返回值为：
+如果没有 `.returning::\<T\>()`，返回值为：
 
 ```rust
 DinocoResult<()>
 ```
 
-使用 `.returning::<T>()`，返回值变为：
+使用 `.returning::\<T\>()`，返回值变为：
 
 ```rust
 DinocoResult<T>
@@ -91,5 +91,5 @@ let created = dinoco::insert_into::<User>()
 
 ## 下一步
 
-- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): 批量插入。
-- [**`update::<M>()`**](/v0.0.1/orm/update): 记录更新。
+- [**`insert_many::\<M\>()`**](/v0.0.1/orm/insert-many): 批量插入。
+- [**`update::\<M\>()`**](/v0.0.1/orm/update): 记录更新。

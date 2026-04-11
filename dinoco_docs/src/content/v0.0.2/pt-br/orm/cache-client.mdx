@@ -6,7 +6,7 @@ export const title = 'cache()';
 
 ## O que você pode fazer
 
-- Ler uma chave com `.get::<T>(...)`
+- Ler uma chave com `.get::\<T\>(...)`
 - Salvar uma chave com `.set(...)`
 - Salvar com expiração usando `.set_with_ttl(...)`
 - Remover uma chave com `.delete(...)`
@@ -28,7 +28,7 @@ Se o client não tiver Redis configurado, a operação retorna erro.
 
 ## Métodos disponíveis
 
-- `.get::<T>(key)`: busca e desserializa o valor como `T`
+- `.get::\<T\>(key)`: busca e desserializa o valor como `T`
 - `.set(key, &value)`: serializa e salva sem TTL
 - `.set_with_ttl(key, &value, ttl_seconds)`: serializa e salva com expiração em segundos
 - `.delete(key)`: remove a chave
@@ -91,8 +91,8 @@ Os valores são serializados em JSON, então o tipo precisa ser compatível com 
 
 Exemplos comuns:
 
-- `Vec<User>`
-- `Option<User>`
+- `Vec\<User\>`
+- `Option\<User\>`
 - `String`
 - `bool`
 - `i64`
@@ -106,6 +106,6 @@ Exemplos comuns:
 
 ## Próximos passos
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first)
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
 - [**`queues`**](/v0.0.2/orm/queues)

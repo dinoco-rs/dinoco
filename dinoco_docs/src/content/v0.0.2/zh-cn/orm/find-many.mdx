@@ -8,7 +8,7 @@ export const title = 'find_many';
 
 ## 您可以做什么
 
-- `.select::<T>()`: 将模型的默认投影替换为自定义投影。
+- `.select::\<T\>()`: 将模型的默认投影替换为自定义投影。
 - `.cond(...)`: 向查询添加过滤条件。
 - `.take(...)`: 限制返回的记录数量。
 - `.skip(...)`: 在返回结果之前跳过一定数量的记录。
@@ -22,13 +22,13 @@ export const title = 'find_many';
 
 ## 返回值
 
-如果没有 `select::<T>()`，返回值为：
+如果没有 `select::\<T\>()`，返回值为：
 
 ```rust
 DinocoResult<Vec<M>>
 ```
 
-如果使用 `select::<T>()`，返回值为：
+如果使用 `select::\<T\>()`，返回值为：
 
 ```rust
 DinocoResult<Vec<T>>
@@ -231,5 +231,5 @@ let users = dinoco::find_many::<User>()
 
 ## 下一步
 
-- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)：最多获取一条记录的版本。
-- [**`count::<M>()`**](/v0.0.2/orm/count)：带过滤条件的记录计数。
+- [**`find_first::\<M\>()`**](/v0.0.2/orm/find-first)：最多获取一条记录的版本。
+- [**`count::\<M\>()`**](/v0.0.2/orm/count)：带过滤条件的记录计数。

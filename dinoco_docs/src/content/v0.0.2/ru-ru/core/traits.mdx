@@ -39,7 +39,7 @@ impl dinoco::Projection<User> for UserSummary {
 }
 ```
 
-Он широко используется с `select::<T>()`, `include` и производными структурами с `Extend`.
+Он широко используется с `select::\<T\>()`, `include` и производными структурами с `Extend`.
 
 ## Трейт InsertModel
 
@@ -109,8 +109,8 @@ impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
 
 В зависимости от отношений схемы, модель также может получить:
 
-- `InsertRelation<T>`
-- `InsertConnection<T>`
+- `InsertRelation\<T\>`
+- `InsertConnection\<T\>`
 
 ## Пример использования трейтов и derive вместе
 

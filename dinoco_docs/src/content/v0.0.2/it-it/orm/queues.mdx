@@ -7,8 +7,8 @@ Il sistema di code di Dinoco permette di pubblicare eventi asincroni da `insert`
 ## Cosa puoi fare
 
 - Consentire l'incatenamento di .enqueue(...), .enqueue_in(...) e .enqueue_at(...) in tutti i metodi del client, eccetto nelle operazioni di eliminazione.
-- Elaborare i job con `workers().on::<Model>(... )`.
-- Caricare proiezioni con relazioni nel worker usando `workers().on_with_relation::<Model, Projection>(... )`.
+- Elaborare i job con `workers().on::\<Model\>(... )`.
+- Caricare proiezioni con relazioni nel worker usando `workers().on_with_relation::\<Model, Projection\>(... )`.
 - Ricaricare i dati più recenti prima che l'handler venga eseguito.
 - Ignora automaticamente i job il cui record non esiste più.
 
@@ -27,7 +27,7 @@ Se il record non esiste più al momento della ricerca, l'handler non viene esegu
 
 - `.enqueue(evento)`: pianifica per l'esecuzione immediata.
 - `.enqueue_in(evento, delay_ms)`: pianifica con un ritardo in millisecondi.
-- `.enqueue_at(evento, data_utc)`: pianifica per una data specifica in `chrono::DateTime<Utc>`.
+- `.enqueue_at(evento, data_utc)`: pianifica per una data specifica in `chrono::DateTime\<Utc\>`.
 
 ```rust
 use database::*;
@@ -144,10 +144,10 @@ no-appendfsync-on-rewrite yes
 - `delete` e `delete_many` non supportano `enqueue`.
 - Il worker è totalmente asincrono e usa `tokio` sotto il cofano.
 - `run()` non blocca il resto dell'applicazione: avvia il loop in background.
-- `Option<User>` è accettato nella registrazione del worker, ma l'handler viene eseguito solo quando c'è un record da re-idratare.
+- `Option\<User\>` è accettato nella registrazione del worker, ma l'handler viene eseguito solo quando c'è un record da re-idratare.
 
 ## Prossimi passi
 
-- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into)
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
-- [**`update::<M>()`**](/v0.0.2/orm/update)
+- [**`insert_into::\<M\>()`**](/v0.0.2/orm/insert-into)
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many)
+- [**`update::\<M\>()`**](/v0.0.2/orm/update)

@@ -9,19 +9,19 @@ export const title = "update_many";
 ## できること
 
 - `.cond(...)`: 更新できるレコードを制限します。
-- `.values(Vec<M>)`: バッチ更新で使用するアイテムを定義します。
-- `.returning::<T>()`: 更新されたレコードを型付きリストとして返します。
+- `.values(Vec\<M\>)`: バッチ更新で使用するアイテムを定義します。
+- `.returning::\<T\>()`: 更新されたレコードを型付きリストとして返します。
 - `.execute(&client)`: バッチ更新を実行します。
 
 ## 戻り値
 
-`.returning::<T>()`がない場合、戻り値は次のようになります。
+`.returning::\<T\>()`がない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()`がある場合、戻り値は次のようになります。
+`.returning::\<T\>()`がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
@@ -67,5 +67,5 @@ dinoco::update_many::<User>()
 
 ## 次のステップ
 
-- [**`update::<M>()`**](/v0.0.1/orm/update): 条件付きの従来の更新。
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 単一レコードのアトミック更新。
+- [**`update::\<M\>()`**](/v0.0.1/orm/update): 条件付きの従来の更新。
+- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): 単一レコードのアトミック更新。

@@ -8,7 +8,7 @@ Utilizzato per recuperare al massimo un record.
 
 ## Cosa puoi fare
 
-- `.select::<T>()`: scambia la proiezione predefinita con una proiezione personalizzata.
+- `.select::\<T\>()`: scambia la proiezione predefinita con una proiezione personalizzata.
 - `.cond(...)`: aggiunge filtri alla ricerca.
 - `.take(...)`: limita la quantità massima di record considerati.
 - `.skip(...)`: salta i record prima di selezionare il primo risultato.
@@ -22,13 +22,13 @@ Utilizzato per recuperare al massimo un record.
 
 ## Ritorno
 
-Senza `select::<T>()`, il ritorno è:
+Senza `select::\<T\>()`, il ritorno è:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-Con `select::<T>()`, il ritorno diventa:
+Con `select::\<T\>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Option<T>>
@@ -140,5 +140,5 @@ let user = dinoco::find_first::<User>()
 
 ## Prossimi passi
 
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): cerca più record.
-- [**`count::<M>()`**](/v0.0.2/orm/count): conteggio dei record.
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many): cerca più record.
+- [**`count::\<M\>()`**](/v0.0.2/orm/count): conteggio dei record.

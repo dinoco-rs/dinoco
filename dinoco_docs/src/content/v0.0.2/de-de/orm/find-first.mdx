@@ -8,7 +8,7 @@ Wird verwendet, um maximal einen Datensatz abzurufen.
 
 ## Was Sie tun können
 
-- `.select::<T>()`: tauscht die Standardprojektion gegen eine benutzerdefinierte Projektion aus.
+- `.select::\<T\>()`: tauscht die Standardprojektion gegen eine benutzerdefinierte Projektion aus.
 - `.cond(...)`: fügt Filter zur Suche hinzu.
 - `.take(...)`: begrenzt die maximale Anzahl der berücksichtigten Datensätze.
 - `.skip(...)`: überspringt Datensätze, bevor das erste Ergebnis ausgewählt wird.
@@ -22,13 +22,13 @@ Wird verwendet, um maximal einen Datensatz abzurufen.
 
 ## Rückgabewert
 
-Ohne `select::<T>()` ist der Rückgabewert:
+Ohne `select::\<T\>()` ist der Rückgabewert:
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-Mit `select::<T>()` wird der Rückgabewert:
+Mit `select::\<T\>()` wird der Rückgabewert:
 
 ```rust
 DinocoResult<Option<T>>
@@ -140,5 +140,5 @@ let user = dinoco::find_first::<User>()
 
 ## Nächste Schritte
 
-- [**`find_many::<M>()`**](/v0.0.2/orm/find-many): sucht mehrere Datensätze.
-- [**`count::<M>()`**](/v0.0.2/orm/count): Zählung von Datensätzen.
+- [**`find_many::\<M\>()`**](/v0.0.2/orm/find-many): sucht mehrere Datensätze.
+- [**`count::\<M\>()`**](/v0.0.2/orm/count): Zählung von Datensätzen.

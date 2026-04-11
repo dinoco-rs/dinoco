@@ -9,7 +9,7 @@ Utilisé pour insérer un enregistrement.
 ## Ce que vous pouvez faire
 
 - `.values(item)`: définit l'enregistrement qui sera inséré.
-- `.returning::<T>()`: modifie le retour pour une projection typée de l'élément inséré.
+- `.returning::\<T\>()`: modifie le retour pour une projection typée de l'élément inséré.
 - `.execute(&client)`: exécute l'écriture dans la base de données.
 
 ## Exemple avec Extend #[insertable]
@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## Retour
 
-Sans `.returning::<T>()`, le retour est :
+Sans `.returning::\<T\>()`, le retour est :
 
 ```rust
 DinocoResult<()>
 ```
 
-Avec `.returning::<T>()`, le retour devient :
+Avec `.returning::\<T\>()`, le retour devient :
 
 ```rust
 DinocoResult<T>
@@ -207,5 +207,5 @@ Voir plus sur les workers dans [**`queues`**](/v0.0.2/orm/queues).
 ## Prochaines étapes
 
 - [**Derives**](/v0.0.2/core/derives): comprenez quand utiliser `Rowable`, `Extend` et `#[insertable]`.
-- [**`insert_many::<M>()`**](/v0.0.2/orm/insert-many): insertion par lot.
-- [**`update::<M>()`**](/v0.0.2/orm/update): mise à jour d'enregistrements.
+- [**`insert_many::\<M\>()`**](/v0.0.2/orm/insert-many): insertion par lot.
+- [**`update::\<M\>()`**](/v0.0.2/orm/update): mise à jour d'enregistrements.

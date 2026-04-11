@@ -18,18 +18,18 @@ Usado para inserir um registro.
 - `.values(item)`: define o registro que será inserido.
 - `.with_relation(related)`: insere um registro relacionado novo junto com o pai.
 - `.with_connection(connected)`: conecta o registro inserido a um item já existente, normalmente em fluxos de relação suportados para conexão.
-- `.returning::<T>()`: muda o retorno para uma projeção tipada do item inserido.
+- `.returning::\<T\>()`: muda o retorno para uma projeção tipada do item inserido.
 - `.execute(&client)`: executa a escrita no banco.
 
 ## Retorno
 
-Sem `.returning::<T>()`, o retorno é:
+Sem `.returning::\<T\>()`, o retorno é:
 
 ```rust
 DinocoResult<()>
 ```
 
-Com `.returning::<T>()`, o retorno passa a ser:
+Com `.returning::\<T\>()`, o retorno passa a ser:
 
 ```rust
 DinocoResult<T>
@@ -91,5 +91,5 @@ let created = dinoco::insert_into::<User>()
 
 ## Próximos passos
 
-- [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): inserção em lote.
-- [**`update::<M>()`**](/v0.0.1/orm/update): atualização de registros.
+- [**`insert_many::\<M\>()`**](/v0.0.1/orm/insert-many): inserção em lote.
+- [**`update::\<M\>()`**](/v0.0.1/orm/update): atualização de registros.

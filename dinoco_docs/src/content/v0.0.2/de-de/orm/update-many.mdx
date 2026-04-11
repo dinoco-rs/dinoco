@@ -9,19 +9,19 @@ Wird verwendet, um mehrere Datensätze gleichzeitig zu aktualisieren.
 ## Was Sie tun können
 
 - `.cond(...)`: schränkt ein, welche Datensätze aktualisiert werden können.
-- `.values(Vec<M>)`: definiert die Elemente, die bei der Batch-Aktualisierung verwendet werden.
-- `.returning::<T>()`: gibt die aktualisierten Datensätze als typisierte Liste zurück.
+- `.values(Vec\<M\>)`: definiert die Elemente, die bei der Batch-Aktualisierung verwendet werden.
+- `.returning::\<T\>()`: gibt die aktualisierten Datensätze als typisierte Liste zurück.
 - `.execute(&client)`: führt die Batch-Aktualisierung aus.
 
 ## Rückgabe
 
-Ohne `.returning::<T>()` ist die Rückgabe:
+Ohne `.returning::\<T\>()` ist die Rückgabe:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::<T>()` wird die Rückgabe:
+Mit `.returning::\<T\>()` wird die Rückgabe:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -92,5 +92,5 @@ Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
 
 ## Nächste Schritte
 
-- [**`update::<M>()`**](/v0.0.1/orm/update): traditionelles Update mit Bedingung.
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): atomares Update eines einzelnen Datensatzes.
+- [**`update::\<M\>()`**](/v0.0.1/orm/update): traditionelles Update mit Bedingung.
+- [**`find_and_update::\<M\>()`**](/v0.0.1/orm/find-and-update): atomares Update eines einzelnen Datensatzes.
