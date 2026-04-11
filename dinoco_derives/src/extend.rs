@@ -308,7 +308,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 includes: &'a [#crate_path::IncludeNode],
                 client: &'a #crate_path::DinocoClient<A>,
                 read_mode: #crate_path::ReadMode,
-            ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = #crate_path::DinocoResult<()>> + 'a>>
+            ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = #crate_path::DinocoResult<()>> + ::std::marker::Send + 'a>>
             where
                 A: #crate_path::DinocoAdapter,
             {
@@ -337,7 +337,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 counts: &'a [#crate_path::CountNode],
                 client: &'a #crate_path::DinocoClient<A>,
                 read_mode: #crate_path::ReadMode,
-            ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = #crate_path::DinocoResult<()>> + 'a>>
+            ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = #crate_path::DinocoResult<()>> + ::std::marker::Send + 'a>>
             where
                 A: #crate_path::DinocoAdapter,
             {

@@ -10,6 +10,7 @@ readme = "../crates.md"
 keywords = ["orm", "database", "sql", "migrations", "rust"]
 
 [dependencies]
+async-trait = "0.1.89"
 chrono = "0.4.44"
 dinoco_derives = { path = "../dinoco_derives", version = "0.0.1" }
 dinoco_engine = { path = "../dinoco_engine", version = "0.0.1" }

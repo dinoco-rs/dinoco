@@ -1,4 +1,4 @@
-export const title = "find_many";
+export const title = 'find_many';
 
 # find_many
 
@@ -7,20 +7,6 @@ Usado para buscar uma lista de registros.
 ---
 
 ## O que você pode fazer
-
-- Selecionar uma projeção com `.select::<T>()`
-- Filtrar com `.cond(...)`
-- Limitar com `.take(...)`
-- Paginar com `.skip(...)`
-- Ordenar com `.order_by(...)`
-- Carregar relações com `.includes(...)`
-- Contar relações com `.count(...)`
-- Cachear o resultado com `.cache(...)`
-- Cachear com TTL usando `.cache_with_expiration(...)`
-- Forçar leitura no banco principal com `.read_in_primary()`
-- Executar com `.execute(&client)`
-
-## Descrição dos métodos
 
 - `.select::<T>()`: troca a projeção padrão do model por uma projeção customizada.
 - `.cond(...)`: adiciona condições de filtro na query.
@@ -218,21 +204,6 @@ let users = dinoco::find_many::<User>()
     .cache_with_expiration("users:top-20", 60)
     .execute(&client)
     .await?;
-```
-
-## Cache direto pelo client
-
-Quando o schema tiver `redis`, o módulo gerado também exporta `client.cache()` com acesso direto ao Redis configurado.
-
-```rust
-use database::*;
-
-let users_cache = client.cache();
-
-let cached = users_cache.get::<Vec<User>>("users:list").await?;
-users_cache.set("users:list", &vec![]).await?;
-users_cache.set_with_ttl("users:list", &vec![], 60).await?;
-users_cache.delete("users:list").await?;
 ```
 
 ## Próximos passos

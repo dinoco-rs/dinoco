@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use dinoco::{
     CachePolicy, CachedFindFirst, CachedFindMany, DinocoAdapter, DinocoCache, DinocoClient, DinocoClientConfig,
-    DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions, DinocoRedisConfig, DinocoResult, DinocoValue,
-    InsertModel, Model, Projection, Rowable, ScalarField, find_first, find_many, insert_many,
+    DinocoError, DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions, DinocoRedisConfig, DinocoResult,
+    DinocoValue, InsertModel, Model, Projection, Rowable, ScalarField, find_first, find_many, insert_many,
 };
 use dinoco_engine::{MySqlAdapter, PostgresAdapter, SqliteAdapter};
 use uuid::Uuid;
@@ -103,20 +104,35 @@ impl Default for CacheRecordWhere {
 #[tokio::test]
 async fn sqlite_cache_queries_and_client_cache_methods_work_end_to_end() -> DinocoResult<()> {
     let (writer, logger) = new_logger();
-    let client = DinocoClient::<SqliteAdapter>::new(
-        common::sqlite_url("cache"),
-        vec![],
-        DinocoClientConfig::default()
-            .with_query_logger(logger)
-            .with_redis(DinocoRedisConfig::from_url(common::redis_url())),
+    let client = connect_cache_client(
+        DinocoClient::<SqliteAdapter>::new(
+            common::sqlite_url("cache"),
+            vec![],
+            DinocoClientConfig::default()
+                .with_query_logger(logger)
+                .with_redis(DinocoRedisConfig::from_url(common::redis_url())),
+        ),
+        "sqlite cache test dependencies",
     )
     .await?;
 
-    client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
-    create_sqlite_table(&client).await?;
-    exercise_cache_flow(&client, &writer, &format!(r#"UPDATE "{TABLE_NAME}" SET "name" = 'Ana Maria' WHERE "id" = 1"#))
-        .await?;
-    client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
+    run_cache_step(
+        async {
+            client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
+            create_sqlite_table(&client).await?;
+            exercise_cache_flow(
+                &client,
+                &writer,
+                &format!(r#"UPDATE "{TABLE_NAME}" SET "name" = 'Ana Maria' WHERE "id" = 1"#),
+            )
+            .await?;
+            client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
+
+            Ok(())
+        },
+        "sqlite cache flow",
+    )
+    .await?;
 
     Ok(())
 }
@@ -126,24 +142,35 @@ async fn postgres_cache_queries_and_client_cache_methods_work_end_to_end() -> Di
     if let Err(err) = async {
         let _lock = common::lock_postgres().await;
         let (writer, logger) = new_logger();
-        let client = DinocoClient::<PostgresAdapter>::new(
-            common::postgres_url(),
-            vec![],
-            DinocoClientConfig::default()
-                .with_query_logger(logger)
-                .with_redis(DinocoRedisConfig::from_url(common::redis_url())),
+        let client = connect_cache_client(
+            DinocoClient::<PostgresAdapter>::new(
+                common::postgres_url(),
+                vec![],
+                DinocoClientConfig::default()
+                    .with_query_logger(logger)
+                    .with_redis(DinocoRedisConfig::from_url(common::redis_url())),
+            ),
+            "postgres cache test dependencies",
         )
         .await?;
 
-        client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
-        create_postgres_table(&client).await?;
-        exercise_cache_flow(
-            &client,
-            &writer,
-            &format!(r#"UPDATE "{TABLE_NAME}" SET "name" = 'Ana Maria' WHERE "id" = 1"#),
+        run_cache_step(
+            async {
+                client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
+                create_postgres_table(&client).await?;
+                exercise_cache_flow(
+                    &client,
+                    &writer,
+                    &format!(r#"UPDATE "{TABLE_NAME}" SET "name" = 'Ana Maria' WHERE "id" = 1"#),
+                )
+                .await?;
+                client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
+
+                Ok(())
+            },
+            "postgres cache flow",
         )
         .await?;
-        client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
 
         Ok(())
     }
@@ -165,24 +192,35 @@ async fn mysql_cache_queries_and_client_cache_methods_work_end_to_end() -> Dinoc
     if let Err(err) = async {
         let _lock = common::lock_mysql().await;
         let (writer, logger) = new_logger();
-        let client = DinocoClient::<MySqlAdapter>::new(
-            common::mysql_url(),
-            vec![],
-            DinocoClientConfig::default()
-                .with_query_logger(logger)
-                .with_redis(DinocoRedisConfig::from_url(common::redis_url())),
+        let client = connect_cache_client(
+            DinocoClient::<MySqlAdapter>::new(
+                common::mysql_url(),
+                vec![],
+                DinocoClientConfig::default()
+                    .with_query_logger(logger)
+                    .with_redis(DinocoRedisConfig::from_url(common::redis_url())),
+            ),
+            "mysql cache test dependencies",
         )
         .await?;
 
-        client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
-        create_mysql_table(&client).await?;
-        exercise_cache_flow(
-            &client,
-            &writer,
-            &format!("UPDATE `{TABLE_NAME}` SET `name` = 'Ana Maria' WHERE `id` = 1"),
+        run_cache_step(
+            async {
+                client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
+                create_mysql_table(&client).await?;
+                exercise_cache_flow(
+                    &client,
+                    &writer,
+                    &format!("UPDATE `{TABLE_NAME}` SET `name` = 'Ana Maria' WHERE `id` = 1"),
+                )
+                .await?;
+                client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
+
+                Ok(())
+            },
+            "mysql cache flow",
         )
         .await?;
-        client.primary().execute(&format!("DROP TABLE IF EXISTS `{TABLE_NAME}`"), &[]).await?;
 
         Ok(())
     }
@@ -350,4 +388,23 @@ where
     assert_eq!(refreshed_first, Some(CacheRecord { id: 1, name: "Ana Maria".to_string() }));
 
     Ok(())
+}
+
+async fn connect_cache_client<A, F>(future: F, label: &str) -> DinocoResult<DinocoClient<A>>
+where
+    A: DinocoAdapter,
+    F: std::future::Future<Output = DinocoResult<DinocoClient<A>>>,
+{
+    tokio::time::timeout(Duration::from_secs(5), future)
+        .await
+        .map_err(|_| DinocoError::ConnectionError(format!("Timed out while connecting {label}.")))?
+}
+
+async fn run_cache_step<F>(future: F, label: &str) -> DinocoResult<()>
+where
+    F: std::future::Future<Output = DinocoResult<()>>,
+{
+    tokio::time::timeout(Duration::from_secs(10), future)
+        .await
+        .map_err(|_| DinocoError::ConnectionError(format!("Timed out while running {label}.")))?
 }

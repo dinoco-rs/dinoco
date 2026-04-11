@@ -1,4 +1,4 @@
-export const title = "find_and_update";
+export const title = 'find_and_update';
 
 # find_and_update
 
@@ -7,12 +7,6 @@ Usado para localizar um único registro, aplicar updates atômicos no banco e re
 ---
 
 ## O que você pode fazer
-
-- `.cond(...)`
-- `.update(...)`
-- `.execute(&client)`
-
-## Descrição dos métodos
 
 - `.cond(...)`: define qual registro será localizado.
 - `.update(...)`: aplica uma operação atômica em um campo do model.
@@ -55,4 +49,3 @@ let task = dinoco::find_and_update::<Task>()
 
 - [**`update::<M>()`**](/v0.0.1/orm/update): update tradicional.
 - [**`update_many::<M>()`**](/v0.0.1/orm/update-many): update em lote.
-

@@ -1,14 +1,15 @@
 use crate::DinocoValue;
+use serde::{Deserialize, Serialize};
 
 pub type Query = (String, Vec<DinocoValue>);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrderDirection {
     Asc,
     Desc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BinaryOperator {
     Eq,
     Neq,
@@ -19,7 +20,7 @@ pub enum BinaryOperator {
     Like,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expression {
     Column(String),
     Value(DinocoValue),
@@ -95,7 +96,7 @@ impl Expression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateBatchItem {
     pub conditions: Vec<Expression>,
     pub values: Vec<(String, DinocoValue)>,

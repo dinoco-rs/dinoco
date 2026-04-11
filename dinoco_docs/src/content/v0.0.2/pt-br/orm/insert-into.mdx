@@ -1,4 +1,4 @@
-export const title = "insert_into";
+export const title = 'insert_into';
 
 # insert_into
 
@@ -8,17 +8,7 @@ Usado para inserir um registro.
 
 ## O que você pode fazer
 
-- Passar valores com `.values(item)`
-- Inserir um registro simples
-- Inserir um registro com relações novas aninhadas
-- Inserir um registro com conexões para itens já existentes
-- Executar com `.execute(&client)`
-
-## Descrição dos métodos
-
 - `.values(item)`: define o registro que será inserido.
-- `#[derive(Extend)]`: permite criar payloads maiores que o model base.
-- `#[insertable]`: faz o Dinoco inserir o pai e processar relações e conexões aninhadas dentro de `.values(...)`.
 - `.returning::<T>()`: muda o retorno para uma projeção tipada do item inserido.
 - `.execute(&client)`: executa a escrita no banco.
 

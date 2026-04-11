@@ -2,9 +2,9 @@ use dinoco_engine::{DinocoRow, DinocoValue, Expression};
 
 use crate::{CountNode, IncludeNode};
 
-pub type IncludeApplier<'a, T> = Box<dyn FnOnce(&mut [T]) + 'a>;
+pub type IncludeApplier<'a, T> = Box<dyn FnOnce(&mut [T]) + Send + 'a>;
 pub type IncludeLoaderFuture<'a, T> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<IncludeApplier<'a, T>>> + 'a>>;
+    std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<IncludeApplier<'a, T>>> + Send + 'a>>;
 
 pub trait Model: Sized {
     type Include: Default;
@@ -21,7 +21,7 @@ pub trait Projection<M: Model>: DinocoRow {
         _includes: &'a [IncludeNode],
         _client: &'a dinoco_engine::DinocoClient<A>,
         _read_mode: crate::ReadMode,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a>>
     where
         Self: Sized,
         A: dinoco_engine::DinocoAdapter,
@@ -34,7 +34,7 @@ pub trait Projection<M: Model>: DinocoRow {
         _counts: &'a [CountNode],
         _client: &'a dinoco_engine::DinocoClient<A>,
         _read_mode: crate::ReadMode,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a>>
     where
         Self: Sized,
         A: dinoco_engine::DinocoAdapter,

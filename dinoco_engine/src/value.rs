@@ -1,9 +1,10 @@
 use chrono::{DateTime, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 use crate::DinocoError;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DinocoValue {
     Null,
     Integer(i64),

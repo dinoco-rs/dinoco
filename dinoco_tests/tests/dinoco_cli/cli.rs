@@ -44,10 +44,7 @@ fn init_command_creates_schema_from_automated_answers() {
     let schema_path = project.path().join("dinoco/schema.dinoco");
     let schema = fs::read_to_string(&schema_path).expect("schema should be created");
 
-    assert!(
-        output.contains("Dinoco environment was successfully created"),
-        "unexpected init output:\n{output}"
-    );
+    assert!(output.contains("Dinoco environment was successfully created"), "unexpected init output:\n{output}");
     assert!(schema.contains("database = \"postgresql\""), "unexpected schema:\n{schema}");
     assert!(schema.contains("database_url = env(\"DATABASE_URL\")"), "unexpected schema:\n{schema}");
     assert!(schema.contains("env(\"DATABASE_URL_REPLICA_1\")"), "unexpected schema:\n{schema}");
@@ -72,10 +69,7 @@ fn init_command_supports_sqlite_from_automated_answers() {
     let schema_path = project.path().join("dinoco/schema.dinoco");
     let schema = fs::read_to_string(&schema_path).expect("schema should be created");
 
-    assert!(
-        output.contains("Dinoco environment was successfully created"),
-        "unexpected init output:\n{output}"
-    );
+    assert!(output.contains("Dinoco environment was successfully created"), "unexpected init output:\n{output}");
     assert!(schema.contains("database = \"sqlite\""), "unexpected schema:\n{schema}");
     assert!(schema.contains("database_url = \"file:./dinoco/database.sqlite\""), "unexpected schema:\n{schema}");
     assert!(!schema.contains("read_replicas"), "unexpected schema:\n{schema}");

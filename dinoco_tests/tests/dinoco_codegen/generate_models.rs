@@ -103,13 +103,39 @@ model User {
     let dinoco_module =
         fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
 
-    assert!(dinoco_module.contains("pub trait DinocoClientCacheExt"));
+    assert!(dinoco_module.contains("pub use dinoco::DinocoClientCacheExt;"));
     assert!(dinoco_module.contains("pub trait FindFirstCacheExt"));
     assert!(dinoco_module.contains("pub trait FindManyCacheExt"));
-    assert!(dinoco_module.contains("fn cache(&self) -> dinoco::DinocoCache<'_, A>"));
     assert!(dinoco_module.contains("fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S>"));
     assert!(dinoco_module.contains("cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64)"));
     assert!(dinoco_module.contains("config.with_redis(dinoco::DinocoRedisConfig::from_url("));
+}
+
+#[test]
+fn generate_models_adds_workers_helper() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model User {
+    id String @id @default(uuid())
+    name String
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let dinoco_module =
+        fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
+
+    assert!(dinoco_module.contains("pub fn workers() -> QueueWorkers<SqliteAdapter>"));
+    assert!(dinoco_module.contains("dinoco::workers::<SqliteAdapter>()"));
 }
 
 #[test]

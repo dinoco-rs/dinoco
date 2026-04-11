@@ -22,9 +22,9 @@ mysql_async = "0.36.1"
 async-trait = "0.1.89"
 async-stream = "0.3.6"
 futures = "0.3.32"
-chrono = "0.4.44"
+chrono = { version = "0.4.44", features = ["serde"] }
 redis = { version = "0.32.7", features = ["tokio-comp", "connection-manager"] }
-serde = "1.0.228"
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
 dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }

@@ -220,11 +220,11 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 	}
 
 	return (
-		<header className="block md:sticky top-0 z-40 w-full border-b border-light-300 bg-light-50/95 backdrop-blur-md transition-colors duration-300 dark:border-[#242424] dark:bg-[#050505]/95">
+		<header className="block md:sticky top-0 z-[120] w-full border-b border-light-300 bg-light-50/95 backdrop-blur-sm transition-colors duration-300 dark:border-[#242424] dark:bg-[#050505]/95">
 			<div className="flex flex-col w-full px-4 sm:px-6 md:px-8" ref={controlsRef}>
 				<div className="flex md:h-10 mt-4 mb-2 sm:mb-0 items-center justify-between">
 					<div className="flex items-center gap-2 md:gap-4 mb-2 md:mb-0">
-							<button type="button" onClick={onMenuToggle} className="cursor-pointer rounded-md p-2 text-slate-500 hover:bg-light-200 dark:text-slate-400 dark:hover:bg-[#161616] lg:hidden">
+						<button type="button" onClick={onMenuToggle} className="cursor-pointer rounded-md p-2 text-slate-500 hover:bg-light-200 dark:text-slate-400 dark:hover:bg-[#161616] lg:hidden">
 							<FiMenu size={20} />
 						</button>
 

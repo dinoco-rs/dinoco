@@ -75,6 +75,42 @@
 					"title": "Dinoco schema",
 					"items": [
 						{
+							"shortName": "configuration",
+							"name": "Configuração",
+							"mdxPath": "v0.0.2/pt-br/orm/configuration.mdx",
+							"inPage": [
+								"Configuração",
+								{
+									"title": "O que entra no `config {}`",
+									"items": []
+								},
+								{
+									"title": "Exemplo básico",
+									"items": []
+								},
+								{
+									"title": "Exemplo com Redis",
+									"items": []
+								},
+								{
+									"title": "Exemplo com réplicas",
+									"items": []
+								},
+								{
+									"title": "O que muda na API gerada",
+									"items": []
+								},
+								{
+									"title": "Quando editar esse bloco",
+									"items": []
+								},
+								{
+									"title": "Próximos passos",
+									"items": []
+								}
+							]
+						},
+						{
 							"shortName": "models",
 							"name": "Modelos",
 							"mdxPath": "v0.0.2/pt-br/orm/models.mdx",
@@ -338,10 +374,7 @@
 									"title": "O que você pode fazer",
 									"items": []
 								},
-								{
-									"title": "Descrição dos métodos",
-									"items": []
-								},
+
 								{
 									"title": "Retorno",
 									"items": []
@@ -392,10 +425,6 @@
 									"items": []
 								},
 								{
-									"title": "Cache direto pelo client",
-									"items": []
-								},
-								{
 									"title": "Próximos passos",
 									"items": []
 								}
@@ -411,10 +440,7 @@
 									"title": "O que você pode fazer",
 									"items": []
 								},
-								{
-									"title": "Descrição dos métodos",
-									"items": []
-								},
+
 								{
 									"title": "Retorno",
 									"items": []
@@ -440,10 +466,6 @@
 									"items": []
 								},
 								{
-									"title": "Cache direto pelo client",
-									"items": []
-								},
-								{
 									"title": "Próximos passos",
 									"items": []
 								}
@@ -459,10 +481,7 @@
 									"title": "O que você pode fazer",
 									"items": []
 								},
-								{
-									"title": "Descrição dos métodos",
-									"items": []
-								},
+
 								{
 									"title": "Retorno",
 									"items": []
@@ -495,10 +514,7 @@
 									"title": "O que você pode fazer",
 									"items": []
 								},
-								{
-									"title": "Descrição dos métodos",
-									"items": []
-								},
+
 								{
 									"title": "Exemplo com Extend #[insertable]",
 									"items": []
@@ -650,6 +666,42 @@
 							]
 						},
 						{
+							"shortName": "count",
+							"name": "count",
+							"mdxPath": "v0.0.2/pt-br/orm/count.mdx",
+							"inPage": [
+								"count",
+								{
+									"title": "O que você pode fazer",
+									"items": []
+								},
+								{
+									"title": "Descrição dos métodos",
+									"items": []
+								},
+								{
+									"title": "Retorno",
+									"items": []
+								},
+								{
+									"title": "Exemplo básico",
+									"items": []
+								},
+								{
+									"title": "Exemplo com filtro booleano",
+									"items": []
+								},
+								{
+									"title": "Exemplo com filtro de texto",
+									"items": []
+								},
+								{
+									"title": "Próximos passos",
+									"items": []
+								}
+							]
+						},
+						{
 							"shortName": "delete",
 							"name": "delete",
 							"mdxPath": "v0.0.2/pt-br/orm/delete.mdx",
@@ -706,21 +758,25 @@
 							]
 						},
 						{
-							"shortName": "count",
-							"name": "count",
-							"mdxPath": "v0.0.2/pt-br/orm/count.mdx",
+							"shortName": "cache-client",
+							"name": "cache",
+							"mdxPath": "v0.0.2/pt-br/orm/cache-client.mdx",
 							"inPage": [
-								"count",
+								"cache",
 								{
 									"title": "O que você pode fazer",
 									"items": []
 								},
 								{
-									"title": "Descrição dos métodos",
+									"title": "Quando usar",
 									"items": []
 								},
 								{
-									"title": "Retorno",
+									"title": "Como funciona",
+									"items": []
+								},
+								{
+									"title": "Métodos disponíveis",
 									"items": []
 								},
 								{
@@ -728,11 +784,59 @@
 									"items": []
 								},
 								{
-									"title": "Exemplo com filtro booleano",
+									"title": "Exemplo com lista tipada",
 									"items": []
 								},
 								{
-									"title": "Exemplo com filtro de texto",
+									"title": "Exemplo com TTL",
+									"items": []
+								},
+								{
+									"title": "Exemplo de invalidação",
+									"items": []
+								},
+								{
+									"title": "Tipos suportados",
+									"items": []
+								},
+								{
+									"title": "Observações",
+									"items": []
+								},
+								{
+									"title": "Próximos passos",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "queues",
+							"name": "queues",
+							"mdxPath": "v0.0.2/pt-br/orm/queues.mdx",
+							"inPage": [
+								"queues",
+								{
+									"title": "O que você pode fazer",
+									"items": []
+								},
+								{
+									"title": "Como funciona",
+									"items": []
+								},
+								{
+									"title": "Métodos de enfileiramento",
+									"items": []
+								},
+								{
+									"title": "Worker",
+									"items": []
+								},
+								{
+									"title": "Configuração do Redis",
+									"items": []
+								},
+								{
+									"title": "Observações",
 									"items": []
 								},
 								{

@@ -27,6 +27,36 @@
 	}
 }
 
+.docs-sidebar-scroll {
+	scrollbar-width: thin;
+	scrollbar-color: #94a3b8 transparent;
+}
+
+.docs-sidebar-scroll::-webkit-scrollbar {
+	width: 10px;
+}
+
+.docs-sidebar-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.docs-sidebar-scroll::-webkit-scrollbar-thumb {
+	background: linear-gradient(180deg, rgba(0, 162, 232, 0.5), rgba(15, 23, 42, 0.28));
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background-clip: padding-box;
+}
+
+.dark .docs-sidebar-scroll {
+	scrollbar-color: #475569 transparent;
+}
+
+.dark .docs-sidebar-scroll::-webkit-scrollbar-thumb {
+	background: linear-gradient(180deg, rgba(0, 255, 255, 0.32), rgba(71, 85, 105, 0.85));
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+
 html.dark .shiki,
 html.dark .shiki span {
 	color: var(--shiki-dark) !important;

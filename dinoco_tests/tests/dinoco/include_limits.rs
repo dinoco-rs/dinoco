@@ -151,7 +151,7 @@ impl User {
         include: &'a dinoco::IncludeNode,
         client: &'a DinocoClient<A>,
         read_mode: dinoco::ReadMode,
-        relation_field: impl Fn(&mut P) -> &mut Vec<C> + Copy + 'a,
+        relation_field: impl Fn(&mut P) -> &mut Vec<C> + Copy + Send + 'a,
     ) -> IncludeLoaderFuture<'a, P>
     where
         A: DinocoAdapter,

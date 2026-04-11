@@ -12,9 +12,7 @@ const GENERATED_FILE_BANNER: &str = "// ========================================
 const GENERATED_FILE_LINTS: &str = "#![allow(dead_code)]\n#![allow(non_camel_case_types)]\n#![allow(non_snake_case)]\n#![allow(non_upper_case_globals)]\n#![allow(unused_imports)]\n#![allow(unused_variables)]\n\n";
 
 fn render_cache_client_extension() -> String {
-    String::from(
-        "pub trait DinocoClientCacheExt<A>\nwhere\n    A: dinoco::DinocoAdapter,\n{\n    fn cache(&self) -> dinoco::DinocoCache<'_, A>;\n}\n\nimpl<A> DinocoClientCacheExt<A> for DinocoClient<A>\nwhere\n    A: dinoco::DinocoAdapter,\n{\n    fn cache(&self) -> dinoco::DinocoCache<'_, A> {\n        dinoco::DinocoCache::new(self)\n    }\n}\n",
-    )
+    String::from("pub use dinoco::DinocoClientCacheExt;\n")
 }
 
 fn render_cache_find_first_extension() -> String {
@@ -45,7 +43,7 @@ pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
     };
     let redis_config = schema.config.redis.as_ref().map(render_redis_config);
     let mut output = format!(
-        "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoClientConfig, DinocoResult, {adapter}}};\n\npub mod models;\npub use models::*;\n\n"
+        "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoClientConfig, DinocoResult, QueueWorkers, {adapter}}};\n\npub mod models;\npub use models::*;\n\n"
     );
 
     if redis_config.is_some() {
@@ -74,6 +72,13 @@ pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
     output.push_str(", ");
     output.push_str(&read_replicas);
     output.push_str(", config).await\n}\n");
+    output.push_str("\n");
+    output.push_str("pub fn workers() -> QueueWorkers<");
+    output.push_str(adapter);
+    output.push_str("> {\n");
+    output.push_str("    dinoco::workers::<");
+    output.push_str(adapter);
+    output.push_str(">()\n}\n");
 
     output
 }

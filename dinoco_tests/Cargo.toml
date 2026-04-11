@@ -61,6 +61,10 @@ name = "dinoco_relation_counts"
 path = "tests/dinoco/relation_counts.rs"
 
 [[test]]
+name = "dinoco_queue"
+path = "tests/dinoco/queue.rs"
+
+[[test]]
 name = "dinoco_sqlite_flow"
 path = "tests/dinoco/sqlite_flow.rs"
 

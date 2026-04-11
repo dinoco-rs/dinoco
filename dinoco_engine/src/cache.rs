@@ -1,4 +1,5 @@
 use redis::AsyncCommands;
+use redis::ToRedisArgs;
 use redis::aio::ConnectionManager;
 
 use serde::Serialize;
@@ -124,5 +125,102 @@ impl DinocoCacheClient {
         connection.set_ex::<_, _, ()>(key, value, ttl_seconds).await?;
 
         Ok(())
+    }
+
+    pub async fn hash_delete(&self, key: &str, field: &str) -> DinocoResult<()> {
+        let mut connection = self.connection.clone();
+
+        connection.hdel::<_, _, ()>(key, field).await?;
+
+        Ok(())
+    }
+
+    pub async fn hash_get<T>(&self, key: &str, field: &str) -> DinocoResult<Option<T>>
+    where
+        T: DeserializeOwned,
+    {
+        let mut connection = self.connection.clone();
+        let value: Option<String> = connection.hget(key, field).await?;
+
+        value
+            .map(|value| serde_json::from_str::<T>(&value).map_err(|error| DinocoError::ParseError(error.to_string())))
+            .transpose()
+    }
+
+    pub async fn hash_set<T>(&self, key: &str, field: &str, value: &T) -> DinocoResult<()>
+    where
+        T: Serialize,
+    {
+        let mut connection = self.connection.clone();
+        let value = serde_json::to_string(value).map_err(|error| DinocoError::ParseError(error.to_string()))?;
+
+        connection.hset::<_, _, _, ()>(key, field, value).await?;
+
+        Ok(())
+    }
+
+    pub async fn sorted_set_add<V>(&self, key: &str, value: V, score: i64) -> DinocoResult<()>
+    where
+        V: ToRedisArgs + Send + Sync,
+    {
+        let mut connection = self.connection.clone();
+
+        connection.zadd::<_, _, _, ()>(key, value, score).await?;
+
+        Ok(())
+    }
+
+    pub async fn sorted_set_range_by_score(
+        &self,
+        key: &str,
+        max_score: i64,
+        limit: isize,
+    ) -> DinocoResult<Vec<String>> {
+        let mut connection = self.connection.clone();
+
+        redis::cmd("ZRANGEBYSCORE")
+            .arg(key)
+            .arg("-inf")
+            .arg(max_score)
+            .arg("LIMIT")
+            .arg(0)
+            .arg(limit)
+            .query_async::<Vec<String>>(&mut connection)
+            .await
+            .map_err(DinocoError::from)
+    }
+
+    pub async fn sorted_set_remove<V>(&self, key: &str, value: V) -> DinocoResult<usize>
+    where
+        V: ToRedisArgs + Send + Sync,
+    {
+        let mut connection = self.connection.clone();
+
+        connection.zrem(key, value).await.map_err(DinocoError::from)
+    }
+
+    pub async fn sorted_set_pop_min_by_score(&self, key: &str, max_score: i64) -> DinocoResult<Option<String>> {
+        let mut connection = self.connection.clone();
+
+        redis::Script::new(
+            r#"
+            local items = redis.call("ZRANGEBYSCORE", KEYS[1], "-inf", ARGV[1], "LIMIT", 0, 1)
+
+            if #items == 0 then
+                return nil
+            end
+
+            if redis.call("ZREM", KEYS[1], items[1]) == 1 then
+                return items[1]
+            end
+
+            return nil
+            "#,
+        )
+        .key(key)
+        .arg(max_score)
+        .invoke_async(&mut connection)
+        .await
+        .map_err(DinocoError::from)
     }
 }

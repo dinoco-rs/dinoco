@@ -23,6 +23,7 @@ pub use dialect::PostgresDialect;
 
 static POSTGRES_DIALECT: PostgresDialect = PostgresDialect;
 
+#[derive(Clone)]
 pub struct PostgresAdapter {
     pub url: String,
     pub client: Arc<Pool>,

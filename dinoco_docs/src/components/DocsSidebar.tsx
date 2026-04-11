@@ -124,7 +124,7 @@ const DocsSidebar: React.FC<DocsSidebarProps> = ({ currentGroup, currentItem, cu
 
 			<aside
 				className={clsx(
-					'fixed inset-y-0 left-0 z-[70] w-[18rem] overflow-x-hidden transform overflow-y-auto border-r border-light-200 bg-light-50 px-4 pb-10 pt-3.5 transition-transform duration-300 dark:border-[#242424] dark:bg-[#0c0c0c] lg:sticky lg:top-32 lg:block lg:w-64 lg:translate-x-0 lg:border-none lg:bg-transparent lg:px-0 lg:pt-0 lg:dark:bg-transparent',
+					'docs-sidebar-scroll fixed inset-y-0 left-0 z-[100] w-[18rem] overflow-x-hidden overflow-y-auto border-r border-light-200 bg-light-50 px-4 pb-10 pt-3.5 transform transition-transform duration-300 dark:border-[#242424] dark:bg-[#0c0c0c] lg:sticky lg:top-20 lg:z-[40] lg:block lg:h-[calc(100vh-5rem)] lg:w-64 lg:translate-x-0 lg:border-none lg:bg-transparent lg:px-0 lg:pt-0 lg:dark:bg-transparent',
 					isOpen ? 'translate-x-0' : '-translate-x-full',
 				)}
 			>

@@ -1,4 +1,4 @@
-export const title = "find_first";
+export const title = 'find_first';
 
 # find_first
 
@@ -7,22 +7,6 @@ Usado para buscar no máximo um registro.
 ---
 
 ## O que você pode fazer
-
-Ele expõe os mesmos métodos de `find_many`:
-
-- `select`
-- `cond`
-- `take`
-- `skip`
-- `order_by`
-- `includes`
-- `count`
-- `cache`
-- `cache_with_expiration`
-- `read_in_primary`
-- `execute`
-
-## Descrição dos métodos
 
 - `.select::<T>()`: troca a projeção padrão por uma projeção customizada.
 - `.cond(...)`: adiciona filtros na busca.
@@ -118,12 +102,18 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## Cache direto pelo client
+## Exemplo com cache
+
+Esse método só existe quando o schema tiver `redis` configurado.
 
 ```rust
 use database::*;
 
-let cached_user = client.cache().get::<Option<User>>("users:1").await?;
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache_with_expiration("users:1")
+    .execute(&client)
+    .await?;
 ```
 
 ## Próximos passos
