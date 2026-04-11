@@ -140,13 +140,13 @@ dinoco::insert_into::<Article>()
 
 ## 戻り値
 
-.returning::<T>() なしの場合、戻り値は次のようになります。
+`.returning::&lt;T&gt;()` なしの場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<()>
 ```
 
-.returning::<T>() ありの場合、戻り値は次のようになります。
+`.returning::&lt;T&gt;()` ありの場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<T>
