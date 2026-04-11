@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_engine"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 license = "Apache-2.0"
 description = "Database adapters, query execution, and migration engine components for Dinoco."
@@ -11,7 +11,10 @@ keywords = ["orm", "database", "sql", "adapters", "migrations"]
 
 [dependencies]
 tokio = { version = "1.50.0", features = ["full", "rt-multi-thread"] }
-tokio-postgres = { version = "0.7.16", features = ["with-serde_json-1", "with-chrono-0_4"] }
+tokio-postgres = { version = "0.7.16", features = [
+	"with-serde_json-1",
+	"with-chrono-0_4",
+] }
 
 deadpool-sqlite = "0.13"
 deadpool-postgres = "0.14.1"
@@ -27,5 +30,5 @@ redis = { version = "0.32.7", features = ["tokio-comp", "connection-manager"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
-dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
-dinoco_derives = { path = "../dinoco_derives", version = "0.0.1" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.2" }
+dinoco_derives = { path = "../dinoco_derives", version = "0.0.2" }
