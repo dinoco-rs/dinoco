@@ -1,0 +1,153 @@
+export const title = 'code';
+
+# code
+
+Il sistema di code di Dinoco permette di pubblicare eventi asincroni da `insert`, `find` e `update`, salvando in `Redis` solo i dati necessari per re-idratare il record quando il worker deve eseguire.
+
+## Cosa puoi fare
+
+- Consentire l'incatenamento di .enqueue(...), .enqueue_in(...) e .enqueue_at(...) in tutti i metodi del client, eccetto nelle operazioni di eliminazione.
+- Elaborare i job con `workers().on::<Model>(... )`.
+- Caricare proiezioni con relazioni nel worker usando `workers().on_with_relation::<Model, Projection>(... )`.
+- Ricaricare i dati più recenti prima che l'handler venga eseguito.
+- Ignora automaticamente i job il cui record non esiste più.
+
+## Come funziona
+
+Quando usi `enqueue`, Dinoco:
+
+1. Esegue l'operazione principale normalmente.
+2. Salva nella coda solo i criteri di ricerca del record.
+3. Nel worker, recupera i dati più recenti dal database.
+4. Solo allora esegue l'handler.
+
+Se il record non esiste più al momento della ricerca, l'handler non viene eseguito e il job viene rimosso dalla coda.
+
+## Metodi di accodamento
+
+- `.enqueue(evento)`: pianifica per l'esecuzione immediata.
+- `.enqueue_in(evento, delay_ms)`: pianifica con un ritardo in millisecondi.
+- `.enqueue_at(evento, data_utc)`: pianifica per una data specifica in `chrono::DateTime<Utc>`.
+
+```rust
+use database::*;
+
+insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+
+insert_into::<User>()
+    .values(User { id: 2, name: "Ana".to_string() })
+    .enqueue_in("user.reminder", 30_000)
+    .execute(&client)
+    .await?;
+
+insert_into::<User>()
+    .values(User { id: 3, name: "Lia".to_string() })
+    .enqueue_at("user.scheduled", dinoco::Utc::now() + chrono::Duration::hours(1))
+    .execute(&client)
+    .await?;
+```
+
+## Worker
+
+Usa `workers()` per registrare handler asincroni. Il contesto del worker espone:
+
+- `data`: il record re-idratato.
+- `client`: una copia di `DinocoClient`.
+- `success()` o `remove()`: rimuove il job dalla coda.
+- `fail()`: riprogramma con il retry predefinito.
+- `retry_in()` e `retry_at()`: stessa idea di `enqueue_in` e `enqueue_at`.
+- `.run().await?`: avvia il worker in background e ritorna immediatamente con un `JoinHandle`.
+
+Chiamando `run`, Dinoco crea un nuovo `DinocoClient` esclusivo per i worker, con un proprio pool di connessioni. In questo modo il loop della coda non riutilizza lo stesso pool dell'applicazione principale.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("Elaborazione {}", job.data.name); // Elaborazione di
+        job.success()
+    })
+    .run()
+    .await?;
+```
+
+Se hai bisogno di una proiezione con relazioni, usa `on_with_relation`. Dinoco ricarica il record e applica l'albero degli include prima che l'handler venga eseguito.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{} ha {} post", job.data.name, job.data.posts.len()); // ha post
+            job.success()
+        },
+    )
+    .run()
+    .await?;
+```
+
+Puoi anche lavorare con le liste:
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        for user in job.data {
+            println!("{}", user.name);
+        }
+
+        job.success()
+    })
+    .run()
+    .await?;
+```
+
+## Configurazione di Redis
+
+Le code usano il `Redis` configurato in `DinocoClientConfig::with_redis(...)`. Per `enqueue_in` e `enqueue_at`, è consigliabile abilitare la persistenza, perché i job pianificati vivono in Redis fino all'orario di esecuzione.
+
+Raccomandazione: usa **AOF + RDB insieme**.
+
+```conf
+# Attiva AOF
+appendonly yes
+
+# Frequenza di fsync
+appendfsync everysec
+
+# File AOF
+appendfilename "appendonly.aof"
+
+# --- SNAPSHOT (RDB) ---
+save 900 1
+save 300 10
+save 60 10000
+
+# --- SICUREZZA ---
+dir /data
+
+# --- PRESTAZIONI ---
+no-appendfsync-on-rewrite yes
+```
+
+## Osservazioni
+
+- `delete` e `delete_many` non supportano `enqueue`.
+- Il worker è totalmente asincrono e usa `tokio` sotto il cofano.
+- `run()` non blocca il resto dell'applicazione: avvia il loop in background.
+- `Option<User>` è accettato nella registrazione del worker, ma l'handler viene eseguito solo quando c'è un record da re-idratare.
+
+## Prossimi passi
+
+- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into)
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`update::<M>()`**](/v0.0.2/orm/update)

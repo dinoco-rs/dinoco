@@ -1,20 +1,21 @@
-error[E0308]: mismatched types
+error[E0277]: the trait bound `Team: InsertPayload<User>` is not satisfied
  --> tests/dinoco/ui/fail/type_safe_insert_wrong_model.rs:9:42
   |
 9 |     let _ = insert_into::<User>().values(Team { id: "team-1".to_string(), name: "Platform".to_string() });
-  |                                   ------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `User`, found `Team`
+  |                                   ------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
   |                                   |
-  |                                   arguments to this method are incorrect
+  |                                   required by a bound introduced by this call
   |
-help: the return type of this call is `Team` due to the type of the argument passed
- --> tests/dinoco/ui/fail/type_safe_insert_wrong_model.rs:9:13
+help: the trait `InsertPayload<User>` is not implemented for `Team`
+ --> tests/dinoco/ui/fail/../common.rs
   |
-9 |     let _ = insert_into::<User>().values(Team { id: "team-1".to_string(), name: "Platform".to_string() });
-  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------------------------------------------------------------^
-  |                                          |
-  |                                          this argument influences the return type of `values`
-note: method defined here
+  | pub struct Team {
+  | ^^^^^^^^^^^^^^^
+note: required by a bound in `Insert::<M, V>::values`
  --> $WORKSPACE/dinoco/src/methods/insert_into.rs
   |
-  |     pub fn values(mut self, item: M) -> Self {
-  |            ^^^^^^
+  |     pub fn values<N>(self, item: N) -> Insert<M, N>
+  |            ------ required by a bound in this associated function
+  |     where
+  |         N: InsertPayload<M>,
+  |            ^^^^^^^^^^^^^^^^ required by this bound in `Insert::<M, V>::values`

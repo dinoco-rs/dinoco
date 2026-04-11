@@ -2,19 +2,19 @@ export const title = "Modelli";
 
 # Modelli
 
-I `modelli` definiscono le entità centrali della tua applicazione nello schema Dinoco. Ogni `modello` rappresenta tipicamente una tabella nel database e serve come base per la generazione di codice, query tipizzate e operazioni con l'API Dinoco.
+I `model` definiscono le entità centrali della tua applicazione nello schema Dinoco. Ogni `model` rappresenta tipicamente una tabella nel database e serve come base per la generazione di codice, query tipizzate e operazioni con l'API Dinoco.
 
 ---
 
 ## Cosa rappresenta un modello
 
-Un `modello` descrive:
+Un `model` descrive:
 
 - Il nome dell'entità.
 - I campi memorizzati nel database.
 - Quali campi sono obbligatori o opzionali.
 - Quali campi sono unici o identificatori.
-- Come questi dati vengono utilizzati dalla generazione di codice e dall'API.
+- Come questi dati verranno utilizzati dal codegen e dall'API.
 
 Esempio:
 
@@ -28,14 +28,14 @@ model User {
 
 In questo esempio:
 
-- `User` è il modello.
+- `User` è il model.
 - `id`, `email` e `name` sono campi scalari.
 - `id` è l'identificatore principale.
-- `email` ha un vincolo di unicità.
+- `email` ha una restrizione di unicità.
 
 ## Esempio completo
 
-Uno schema semplice con un modello di solito si presenta così:
+Uno schema semplice con un modello di solito assomiglia a questo:
 
 ```dinoco
 config {
@@ -62,7 +62,7 @@ model Post {
 
 ## Struttura di un campo
 
-Ogni campo di un modello è composto da:
+Ogni campo di un model è composto da:
 
 - Nome
 - Tipo
@@ -83,11 +83,11 @@ In questa riga:
 
 ## Tipi di campo
 
-I campi possono rappresentare valori di schema fondamentali, come testo, numeri, valori booleani e date.
+I campi possono rappresentare valori di schema di base, come testo, numeri, booleani e date.
 
 ### Campi scalari
 
-Questi sono campi che memorizzano valori diretti, come testo, numeri, valori booleani e date.
+Sono campi che memorizzano valori diretti, come testo, numeri, booleani e date.
 
 ```dinoco
 model Product {
@@ -104,10 +104,10 @@ model Product {
 
 Dinoco supporta due modificatori principali:
 
-| Modificatore | Significato       | Esempio          |
-| :---------- | :-------------- | :---------------- |
-| `?`         | Campo opzionale | `name String?`    |
-| `[]`        | Lista           | `tags String[]`   |
+| Modificatore | Significato      | Esempio         |
+| :---------- | :--------------- | :-------------- |
+| `?`         | Campo opzionale  | `name String?`  |
+| `[]`        | Lista            | `tags String[]` |
 
 ### Campo opzionale
 
@@ -118,9 +118,9 @@ model User {
 }
 ```
 
-`name` può essere nullo o mancante, a seconda del database e dello strato generato.
+`name` può essere nullo o assente, a seconda del database e dello strato generato.
 
-### Campo lista
+### Campo in lista
 
 ```dinoco
 model Article {
@@ -129,27 +129,27 @@ model Article {
 }
 ```
 
-Questo formato rappresenta una lista di valori, se il database e il flusso supportano questo tipo di struttura.
+Questo formato rappresenta una lista di valori quando il database e il flusso supportano questo tipo di struttura.
 
 ## Attributi più comuni
 
-Gli attributi modificano il comportamento dei campi e dei modelli.
+Gli attributi modificano il comportamento dei campi e del modello.
 
-| Attributo        | Utilizzo                         |
+| Attributo        | Utilizzo                           |
 | :-------------- | :--------------------------------- |
-| `@id`           | Definisce l'identificatore primario     |
-| `@default(...)` | Definisce un valore predefinito       |
-| `@unique`       | Garantisce l'unicità           |
+| `@id`           | Definisce l'identificatore principale |
+| `@default(...)` | Definisce un valore predefinito    |
+| `@unique`       | Garantisce l'unicità               |
 
 ### `@id`
 
-Definisce il campo che identifica in modo univoco un record.
+Definisce il campo che identifica univocamente un record.
 
 ```dinoco
 id Integer @id @default(autoincrement())
 ```
 
-Ogni modello deve avere un identificatore univoco affinché l'API generata possa funzionare in modo sicuro.
+Ogni model deve avere un identificatore chiaro affinché l'API generata possa operare in sicurezza.
 
 ### `@default(...)`
 
@@ -163,16 +163,16 @@ id        Integer  @default(autoincrement())
 
 Funzioni e valori comuni:
 
-| Esempio                    | Utilizzo          |
-| :-------------------------- | :------------------ |
-| `@default(false)`          | Booleano predefinito |
-| `@default(now())`          | Data corrente     |
-| `@default(autoincrement())` | Numero intero incrementale |
-| `@default(uuid())`         | Identificatore UUID     |
+| Esempio                     | Utilizzo               |
+| :-------------------------- | :--------------------- |
+| `@default(false)`           | Booleano predefinito   |
+| `@default(now())`           | Data attuale           |
+| `@default(autoincrement())` | Intero incrementale    |
+| `@default(uuid())`          | Identificatore UUID    |
 
 ### `@unique`
 
-Garantisce che il valore del campo non venga ripetuto.
+Garantisce che il valore del campo non si ripeta.
 
 ```dinoco
 model User {
@@ -181,16 +181,16 @@ model User {
 }
 ```
 
-Questo attributo è ideale per campi come email, nome utente e codici esterni.
+Questo attributo è ideale per campi come email, username e codici esterni.
 
 ## Decoratori di modello
 
-Oltre agli attributi nei singoli campi, Dinoco supporta anche i decoratori che vengono applicati all'intero blocco del modello.
+Oltre agli attributi sui singoli campi, Dinoco supporta anche i decoratori applicati all'intero blocco del modello.
 
-| Decorator             | Utilizzo                                  |
-| :-------------------- | :------------------------------------------ |
-| `@@ids([...])`        | Definisce una chiave primaria composta |
-| `@@table_name("...")` | Mappa il nome effettivo della tabella nel database |
+| Decoratore            | Utilizzo                                  |
+| :-------------------- | :---------------------------------------- |
+| `@@ids([...])`        | Definisce una chiave primaria composta    |
+| `@@table_name("...")` | Mappa il nome reale della tabella nel database |
 
 ### `@@ids([...])`
 
@@ -206,11 +206,11 @@ model Membership {
 }
 ```
 
-Questo formato è utile nelle tabelle di associazione e negli scenari in cui l'unicità naturale è già composta.
+Questo formato è utile nelle tabelle associative e in scenari in cui l'unicità naturale è già composta.
 
 ### `@@table_name("...")`
 
-Usa `@@table_name()` quando vuoi mantenere un nome di modello più amichevole nello schema, ma vuoi mapparlo a un nome fisico diverso nel database.
+Usa `@@table_name()` quando vuoi mantenere un nome di modello più amichevole nello schema, ma mapparlo a un altro nome fisico nel database.
 
 ```dinoco
 model User {
@@ -223,7 +223,7 @@ model User {
 
 In questo caso:
 
-- Il modello continua a chiamarsi `User` nello schema e nell'API generata.
+- Il model continua a chiamarsi `User` nello schema e nell'API generata.
 - La tabella fisica nel database diventa `users`.
 
 ## Esempio di modello utente
@@ -238,11 +238,11 @@ model User {
 }
 ```
 
-Dopo la generazione del codice, questo modello può essere utilizzato direttamente con l'API Dinoco.
+Dopo il codegen, questo modello può essere utilizzato direttamente con l'API Dinoco.
 
 ## Esempio di ricerca utenti con l'API Dinoco
 
-### Cercare un singolo record
+### Cerca un singolo record
 
 ```rust
 let user = dinoco::find_first::<User>()
@@ -251,7 +251,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-### Cercare più record
+### Cerca più record
 
 ```rust
 let users = dinoco::find_many::<User>()
@@ -293,7 +293,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-Se desideri aggiornamenti atomici in un singolo campo, il flusso `find_and_update` è spesso ancora più diretto:
+Se desideri aggiornamenti atomici su un singolo campo, il flusso `find_and_update` è solitamente ancora più diretto:
 
 ```rust
 let user = dinoco::find_and_update::<User>()
@@ -323,23 +323,23 @@ dinoco::delete_many::<User>()
 
 ## Riepilogo rapido
 
-| Concetto         | Esempio                 | Obiettivo                       |
-| :-------------- | :----------------------- | :------------------------- |
-| Modello          | `model User { ... }`     | Rappresentare un'entità    |
-| Campo scalare   | `email String`           | Memorizzare un valore semplice   |
-| Campo opzionale | `name String?`           | Consentire l'assenza di valore   |
-| Campo lista      | `tags String[]`          | Memorizzare più valori    |
-| ID              | `id Integer @id`         | Identificare in modo univoco   |
-| Predefinito        | `@default(now())`        | Compilare automaticamente      |
-| Unico       | `email String @unique`   | Evitare duplicati        |
+| Concetto       | Esempio                | Obiettivo                       |
+| :------------- | :--------------------- | :------------------------------ |
+| Modello        | `model User { ... }`   | Rappresentare un'entità         |
+| Campo scalare  | `email String`         | Memorizzare un valore semplice  |
+| Campo opzionale | `name String?`         | Consentire l'assenza di valore  |
+| Campo in lista | `tags String[]`        | Memorizzare più valori          |
+| ID             | `id Integer @id`       | Identificare univocamente       |
+| Default        | `@default(now())`      | Compilare automaticamente       |
+| Unique         | `email String @unique` | Evitare duplicati               |
 
 ## Quando creare un nuovo modello
 
-Di solito crei un nuovo `modello` quando un'entità della tua applicazione richiede quanto segue:
+Normalmente crei un nuovo `model` quando un'entità della tua applicazione necessita di:
 
 - Essere persistita nel database.
 - Avere una propria identità.
-- Essere interrogata in modo isolato.
+- Essere interrogata isolatamente.
 - Avere proprie regole di lettura e scrittura.
 
 Esempi comuni:

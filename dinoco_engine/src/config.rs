@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
-use crate::DinocoValue;
+use crate::{DinocoRedisConfig, DinocoValue};
 
 const UNCONFIGURED_SNOWFLAKE_NODE_ID: i64 = -1;
 const MAX_SNOWFLAKE_NODE_ID: i64 = 0x3ff;
@@ -11,12 +11,18 @@ const MAX_SNOWFLAKE_NODE_ID: i64 = 0x3ff;
 #[derive(Clone, Debug)]
 pub struct DinocoClientConfig {
     pub query_logger: DinocoQueryLogger,
+    pub redis: Option<DinocoRedisConfig>,
     pub snowflake_node_id: Option<i64>,
 }
 
 impl DinocoClientConfig {
     pub fn with_query_logger(mut self, query_logger: DinocoQueryLogger) -> Self {
         self.query_logger = query_logger;
+        self
+    }
+
+    pub fn with_redis(mut self, redis: DinocoRedisConfig) -> Self {
+        self.redis = Some(redis);
         self
     }
 
@@ -34,7 +40,7 @@ impl DinocoClientConfig {
 
 impl Default for DinocoClientConfig {
     fn default() -> Self {
-        Self { query_logger: DinocoQueryLogger::disabled(), snowflake_node_id: None }
+        Self { query_logger: DinocoQueryLogger::disabled(), redis: None, snowflake_node_id: None }
     }
 }
 

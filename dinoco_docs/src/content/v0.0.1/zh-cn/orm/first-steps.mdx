@@ -1,6 +1,6 @@
-export const title = "第一步";
+export const title = "入门";
 
-# 第一步
+# 入门
 
 要开始使用 Dinoco，您需要安装我们的 CLI，以便管理迁移和其他系统！
 
@@ -14,19 +14,19 @@ cargo install dinoco-cli
 dinoco init
 ```
 
-选择数据库和所有必要的配置后，`dinoco` 文件夹将在您的项目根目录中创建。
+选择数据库和所有必要的配置后，将在项目根目录中创建 Dinoco 文件夹。
 
-此文件夹包含：
+此文件夹将包含：
 
-- **迁移 (Migrations)**：您的数据库的更改历史记录。
-- **模式 (Schema)**：您数据结构的中心定义。
-- **模型 (Models)**：用于 Rust 代码中的类型化表示。
+- **Migrations:** 数据库更改的历史记录。
+- **Schema:** 数据结构的核心定义。
+- **Models:** 用于 Rust 代码的类型化表示。
 
-## 它是如何工作的？
+## 工作原理？
 
-### 1. 定义您的模式和连接
+### 1. 定义您的 Schema 和连接
 
-Dinoco 模式定义了您的模型和数据库配置的内容。
+Dinoco Schema 定义了您的模型内容和数据库配置。
 
 ```dinoco
 config {
@@ -54,7 +54,7 @@ model Post {
 
 ### 2. 创建迁移
 
-当您使用 `--apply` 生成迁移时，它将应用于数据库，并且模型将自动生成！
+使用 --apply 生成迁移时，它将应用于数据库并自动生成模型！
 
 ```bash
 dinoco migrate generate --apply
@@ -95,25 +95,25 @@ async fn main() -> dinoco::DinocoResult<()> {
 
     let client = database::create_connection(config).await?;
 
-    // Insira um usuário com um post relacionado.
+    // 插入一个带有相关帖子的用户。
     insert_into::<User>()
         .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
-        .with_relation(Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None })
+        .with_relation(Post { id: 0, title: "我的第一篇文章".to_string(), published: true, authorId: None })
         .execute(&client)
         .await?;
 
-    // Busque todos os usuários com suas postagens.
+    // 查找所有用户及其帖子。
     let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
 
     println!("{users:#?}");
 
-    // resultado:
+    // 结果：
     // [
     // 	UserWithRelation {
     // 		email: "bia@dinoco.rs",
     // 		posts: [
     // 			Post {
-    // 				title: "Meu primeiro post",
+    // 				title: "我的第一篇文章",
     // 				published: true,
     // 			},
     // 		],
@@ -126,5 +126,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## 下一步
 
-- [**Dinoco 模式 (Dinoco Schema)**](/v0.0.1/orm/introduction-dinoco)：更好地理解 Dinoco 的结构和概念。
-- [**Dinoco 客户端 (Dinoco Client)**](/v0.0.1/orm/first-steps)：查看此完整的客户端工作流程。
+- [**Dinoco schema**](/v0.0.1/orm/introduction-dinoco): 更好地理解 Dinoco 的结构和目的。
+- [**Dinoco client**](/v0.0.1/orm/first-steps): 回顾客户端的完整流程。

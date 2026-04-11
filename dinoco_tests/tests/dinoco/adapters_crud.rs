@@ -72,12 +72,9 @@ async fn sqlite_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
 async fn postgres_crud_methods_work_with_multiple_types() -> DinocoResult<()> {
     if let Err(err) = async {
         let _lock = common::lock_postgres().await;
-        let client = DinocoClient::<PostgresAdapter>::new(
-            common::postgres_url(),
-            vec![],
-            dinoco::DinocoClientConfig::default(),
-        )
-        .await?;
+        let client =
+            DinocoClient::<PostgresAdapter>::new(common::postgres_url(), vec![], dinoco::DinocoClientConfig::default())
+                .await?;
 
         client.primary().execute(&format!(r#"DROP TABLE IF EXISTS "{TABLE_NAME}""#), &[]).await?;
         create_postgres_table(&client).await?;

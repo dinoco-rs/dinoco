@@ -6,36 +6,36 @@ export const title = "insert_into";
 
 ---
 
-## 할 수 있는 것
+## 수행할 수 있는 작업
 
-- `.values(item)`을 사용하여 값 전달
-- `.with_relation(related)`을 통해 관계와 함께 삽입
-- `.with_connection(connected)`을 통해 기존 관계 연결
+- `.values(item)`으로 값 전달
+- `.with_relation(related)`를 통해 관계와 함께 삽입
+- `.with_connection(connected)`를 통해 기존 관계 연결
 - `.execute(&client)`로 실행
 
 ## 메서드 설명
 
 - `.values(item)`: 삽입할 레코드를 정의합니다.
-- `.with_relation(related)`: 부모 요소와 함께 새로운 관련 레코드를 삽입합니다.
-- `.with_connection(connected)`: 삽입된 레코드를 이미 존재하는 요소에 연결합니다. 일반적으로 연결이 지원되는 관계 유형에서 사용됩니다.
-- `.returning::<T>()`: 반환값을 삽입된 요소의 타입화된 프로젝션으로 변경합니다.
+- `.with_relation(related)`: 부모와 함께 새로운 관련 레코드를 삽입합니다.
+- `.with_connection(connected)`: 삽입된 레코드를 기존 항목에 연결합니다. 일반적으로 연결을 지원하는 관계 흐름에서 사용됩니다.
+- `.returning::<T>()`: 반환 값을 삽입된 항목의 타입화된 프로젝션으로 변경합니다.
 - `.execute(&client)`: 데이터베이스에 쓰기 작업을 실행합니다.
 
-## 반환값
+## 반환
 
-`.returning::<T>()`가 없으면 반환값은 다음과 같습니다:
+`.returning::<T>()`가 없으면 반환 값은 다음과 같습니다:
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()`가 있으면 반환값은 다음과 같습니다:
+`.returning::<T>()`가 있으면 반환 값은 다음과 같이 변경됩니다:
 
 ```rust
 DinocoResult<T>
 ```
 
-## 기본 예제
+## 간단한 예시
 
 ```rust
 dinoco::insert_into::<User>()
@@ -48,9 +48,9 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## 관계 예제
+## 관계 예시
 
-생성된 모델이 부모 요소와 관련 요소의 동시 삽입을 지원하는 경우 `.with_relation(...)`을 사용하세요.
+생성된 모델이 부모와 관련 항목을 함께 삽입하는 것을 지원할 때 `.with_relation(...)`을 사용하세요.
 
 ```rust
 dinoco::insert_into::<User>()
@@ -60,9 +60,9 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## 연결 예제
+## 연결 예시
 
-요소를 삽입하고 이미 존재하는 관계를 연결하려는 경우 `.with_connection(...)`을 사용하세요.
+항목을 삽입하고 기존 관계를 연결하려는 경우 `.with_connection(...)`을 사용하세요.
 
 ```rust
 dinoco::insert_into::<User>()
@@ -72,7 +72,7 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## 타입이 지정된 반환값 예제
+## 타입화된 반환 예시
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]

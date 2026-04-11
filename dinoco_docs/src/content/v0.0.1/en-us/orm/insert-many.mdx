@@ -116,7 +116,7 @@ dinoco::insert_many::<Team>()
 ## Example with with_connections(...)
 
 Use `with_connections(...)` when each parent needs to be connected to multiple existing records.
-This is a common use in many-to-many relationships.
+This is a common use case in many-to-many relationships.
 
 ```rust
 dinoco::insert_many::<Article>()
@@ -137,10 +137,10 @@ dinoco::insert_many::<Article>()
     .await?;
 ```
 
-## Observations
+## Notes
 
 - `with_relation(...)` and `with_relations(...)` work best when the parent already has a known ID in memory.
-- `with_connection(...)` and `with_connections(...)` are focused on connecting existing relations.
+- `with_connection(...)` and `with_connections(...)` are geared towards connecting existing relations.
 - `with_connection(...)` requires the same number of items as `values(...)`.
 - `with_connections(...)` requires the same number of groups relative to the main vector.
 

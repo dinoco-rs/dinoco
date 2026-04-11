@@ -57,7 +57,7 @@ model Comment {
 
 Use `SetNull` apenas quando o campo local for opcional.
 
-## One to many
+## Um para muitos
 
 Esse é o relacionamento mais comum: um registro pai possui vários filhos.
 
@@ -81,7 +81,7 @@ Leitura mental:
 - Um `User` pode ter vários `Post`.
 - Cada `Post` pertence a um único `User`.
 
-## Many to many
+## Muitos para muitos
 
 Em muitos-para-muitos, os dois lados têm listas.
 
@@ -106,9 +106,9 @@ Leitura mental:
 - Um `User` pode ter várias `Role`.
 - Uma `Role` pode pertencer a vários `User`.
 
-## Self relation
+## Auto-relação
 
-Self relation acontece quando um model se relaciona com ele mesmo.
+Auto-relação acontece quando um model se relaciona com ele mesmo.
 
 ```dinoco
 model User {
@@ -130,7 +130,7 @@ Leitura mental:
 - Use `name` quando houver mais de uma relação entre os mesmos models.
 - Use `onDelete: Cascade` quando o filho não faz sentido sem o pai.
 - Use `onDelete: SetNull` quando o relacionamento puder ser desfeito sem remover o registro filho.
-- Use self relations com nomes explícitos para facilitar a leitura e o codegen.
+- Use auto-relações com nomes explícitos para facilitar a leitura e o codegen.
 
 ## Schema de referência para os exemplos
 
@@ -458,4 +458,3 @@ Nesse fluxo:
 
 - [**Enums**](/v0.0.1/orm/enums): veja como representar valores controlados no schema.
 - [**Models**](/v0.0.1/orm/models): veja estrutura de campos e exemplos de busca, insert, update e delete com a API do Dinoco.
-

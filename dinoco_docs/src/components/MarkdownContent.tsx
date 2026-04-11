@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import type { MarkdownContentProps, MdxComponentProps, MdxCodeProps } from '../types';
 
@@ -212,7 +212,18 @@ const MarkdownContent: React.FC<MarkdownContentProps> = ({ component: Content })
 
 	return (
 		<div className="w-full">
-			<Content components={mdxComponents} />
+			<Suspense
+				fallback={
+					<div className="space-y-4 py-8">
+						<div className="h-10 w-2/3 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
+						<div className="h-5 w-full animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
+						<div className="h-5 w-5/6 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
+						<div className="h-5 w-4/6 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
+					</div>
+				}
+			>
+				<Content components={mdxComponents} />
+			</Suspense>
 		</div>
 	);
 };

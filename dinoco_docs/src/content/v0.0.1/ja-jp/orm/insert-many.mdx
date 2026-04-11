@@ -8,29 +8,29 @@ export const title = "insert_many";
 
 ## できること
 
-- `.values(Vec<M>)`: バッチで挿入するレコードを定義します。
-- `.with_relation(Vec<R>)`: 各親要素に対して正確に1つの新しいリレーションを挿入します。
-- `.with_relations(Vec<Vec<R>>)`: 各親要素に対して複数の新しいリレーションを挿入します。
-- `.with_connection(Vec<R>)`: 挿入された各親要素に対して、正確に1つの既存のリレーションを接続します。
-- `.with_connections(Vec<Vec<R>>)`: 挿入された各親要素に対して複数の既存のリレーションを接続します。通常、多対多のシナリオで使用されます。
-- `.returning::<T>()`: 挿入された要素の型付きリストに返り値を変更します。
+- `.values(Vec<M>)`: バッチで挿入されるレコードを定義します。
+- `.with_relation(Vec<R>)`: 各親に対して、正確に1つの新しい関連レコードを挿入します。
+- `.with_relations(Vec<Vec<R>>)` : 各親に対して、複数の新しい関連レコードを挿入します。
+- `.with_connection(Vec<R>)`: 挿入された各親に対して、正確に1つの既存の関連を接続します。
+- `.with_connections(Vec<Vec<R>>)` : 挿入された各親に対して、複数の既存の関連を接続します。これは通常、多対多のシナリオで使用されます。
+- `.returning::<T>()`: 戻り値を、挿入されたアイテムの型付きリストに変更します。
 - `.execute(&client)`: バッチ操作を実行します。
 
 ## 戻り値
 
-`.returning::<T>()` を使用しない場合、戻り値は次のようになります。
+`.returning::<T>()`がない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()` を使用する場合、戻り値は次のようになります。
+`.returning::<T>()`がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-## 基本例
+## シンプルな例
 
 ```rust
 dinoco::insert_many::<User>()
@@ -42,7 +42,7 @@ dinoco::insert_many::<User>()
     .await?;
 ```
 
-## 戻り値付きの例
+## 戻り値を含む例
 
 ```rust
 let created = dinoco::insert_many::<User>()
@@ -55,9 +55,9 @@ let created = dinoco::insert_many::<User>()
     .await?;
 ```
 
-## `with_relation(...)` の例
+## with_relation(...) の例
 
-各親要素が作成され、接続される必要がある場合は、`with_relation(...)` を使用します。
+各親が作成され、接続される必要がある場合に `with_relation(...)` を使用します。
 
 ```rust
 dinoco::insert_many::<Post>()
@@ -73,9 +73,9 @@ dinoco::insert_many::<Post>()
     .await?;
 ```
 
-## `with_relations(...)` の例
+## with_relations(...) の例
 
-各親レコードが複数の子要素を持つ場合、`with_relations(...)` を使用します。レコードは自動的に作成され、リンクされます。
+各親レコードが複数の子を持つ場合に `with_relations(...)` を使用します。レコードは自動的に作成され、リンクされます。
 
 ```rust
 dinoco::insert_many::<Post>()
@@ -95,9 +95,9 @@ dinoco::insert_many::<Post>()
     .await?;
 ```
 
-## `with_connection(...)` の例
+## with_connection(...) の例
 
-各親要素が正確に1つの既存のレコードに接続される必要がある場合は、`with_connection(...)` を使用します。
+各親が正確に1つの既存のレコードに接続される必要がある場合に `with_connection(...)` を使用します。
 
 ```rust
 dinoco::insert_many::<Team>()
@@ -113,10 +113,10 @@ dinoco::insert_many::<Team>()
     .await?;
 ```
 
-## `with_connections(...)` の例
+## with_connections(...) の例
 
-各親要素が複数の既存のレコードに接続される必要がある場合は、`with_connections(...)` を使用します。
-これは、多対多のリレーションシップでよくあるユースケースです。
+各親が複数の既存のレコードに接続される必要がある場合に `with_connections(...)` を使用します。
+これは多対多のリレーションシップで一般的な使用法です。
 
 ```rust
 dinoco::insert_many::<Article>()
@@ -137,14 +137,14 @@ dinoco::insert_many::<Article>()
     .await?;
 ```
 
-## 注意事項
+## 備考
 
-- `with_relation(...)` と `with_relations(...)` は、親要素がすでにメモリ内に既知のIDを持っている場合に最適に機能します。
-- `with_connection(...)` と `with_connections(...)` は、既存のリレーションを接続するためのものです。
-- `with_connection(...)` は `values(...)` と同じ数の要素を必要とします。
-- `with_connections(...)` は、メインベクターに関して同じ数のグループを必要とします。
+- `with_relation(...)` と `with_relations(...)` は、親がメモリ内で既知のIDを持っている場合に最も効果的です。
+- `with_connection(...)` と `with_connections(...)` は、既存のリレーションシップを接続することを目的としています。
+- `with_connection(...)` は `values(...)` と同じ数のアイテムを必要とします。
+- `with_connections(...)` は、メインベクターに対して同じ数のグループを必要とします。
 
 ## 次のステップ
 
-- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): 単一の挿入。
-- [**`update::<M>()`**](/v0.0.1/orm/update): フィルター付きの更新。
+- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): 単一挿入。
+- [**`update::<M>()`**](/v0.0.1/orm/update): フィルター付き更新。

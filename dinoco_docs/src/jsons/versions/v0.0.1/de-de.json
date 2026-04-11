@@ -7,7 +7,7 @@
 			"shortName": "orm",
 			"sections": [
 				{
-					"title": "Erste Schritte",
+					"title": "Einstieg",
 					"items": [
 						{
 							"shortName": "introduction-dinoco",
@@ -78,7 +78,7 @@
 					]
 				},
 				{
-					"title": "Dinoco Schema",
+					"title": "Dinoco-Schema",
 					"items": [
 						{
 							"shortName": "models",
@@ -87,7 +87,7 @@
 							"inPage": [
 								"Modelle",
 								{
-									"title": "Was ein Modell repräsentiert",
+									"title": "Was ein Modell darstellt",
 									"items": []
 								},
 								{
@@ -120,7 +120,7 @@
 									]
 								},
 								{
-									"title": "Model-Decorators",
+									"title": "Model-Dekoratoren",
 									"items": [
 										"`@@ids([...])`",
 										"`@@table_name(\"...\")`"
@@ -131,9 +131,9 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel für die Suche nach Benutzern mit der Dinoco-API",
+									"title": "Beispiel für die Benutzersuche mit der Dinoco-API",
 									"items": [
-										"Einzelnen Datensatz suchen",
+										"Einen einzelnen Datensatz suchen",
 										"Mehrere Datensätze suchen"
 									]
 								},
@@ -146,7 +146,7 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel für die Benutzerlöschung mit der Dinoco-API",
+									"title": "Beispiel für die Benutzerentfernung mit der Dinoco-API",
 									"items": []
 								},
 								{
@@ -170,7 +170,7 @@
 									"items": []
 								},
 								{
-									"title": "Verwendung in Models",
+									"title": "Verwendung in Modellen",
 									"items": []
 								},
 								{
@@ -202,15 +202,15 @@
 									"items": []
 								},
 								{
-									"title": "One to many",
+									"title": "Eins zu viele",
 									"items": []
 								},
 								{
-									"title": "Many to many",
+									"title": "Viele zu viele",
 									"items": []
 								},
 								{
-									"title": "Self relation",
+									"title": "Selbstbeziehung",
 									"items": []
 								},
 								{
@@ -222,11 +222,11 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel für eine Abfrage mit allen möglichen Beziehungen von User",
+									"title": "Beispiel für die Suche mit allen möglichen Beziehungen ausgehend von User",
 									"items": []
 								},
 								{
-									"title": "Beispiel für ein Insert mit Beziehung unter Verwendung von User und Profile",
+									"title": "Beispiel für eine Einfügung mit Beziehung unter Verwendung von User und Profile",
 									"items": []
 								},
 								{
@@ -246,7 +246,7 @@
 					]
 				},
 				{
-					"title": "Dinoco Client",
+					"title": "Dinoco-Client",
 					"items": [
 						{
 							"shortName": "find-many",
@@ -279,27 +279,27 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel für benutzerdefinierten Select",
+									"title": "Beispiel für eine benutzerdefinierte Auswahl",
 									"items": []
 								},
 								{
-									"title": "Beispiel mit einfachem Include",
+									"title": "Beispiel mit einfachem Einschluss",
 									"items": []
 								},
 								{
-									"title": "Beispiel mit gefiltertem Include",
+									"title": "Beispiel mit gefiltertem Einschluss",
 									"items": []
 								},
 								{
-									"title": "Beispiel mit verschachteltem Include",
+									"title": "Beispiel mit verschachteltem Einschluss",
 									"items": []
 								},
 								{
-									"title": "Beispiel mit Beziehungszähler",
+									"title": "Beispiel mit Beziehungsanzahl",
 									"items": []
 								},
 								{
-									"title": "Beispiel für das Lesen aus der primären Datenbank",
+									"title": "Beispiel für das Lesen aus der Hauptdatenbank",
 									"items": []
 								},
 								{
@@ -331,7 +331,7 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel mit select",
+									"title": "Beispiel mit Auswahl",
 									"items": []
 								},
 								{
@@ -415,7 +415,7 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel mit typisierter Rückgabe",
+									"title": "Beispiel mit typisiertem Rückgabewert",
 									"items": []
 								},
 								{
@@ -435,7 +435,7 @@
 									"items": []
 								},
 								{
-									"title": "Rückgabewert",
+									"title": "Rückgabe",
 									"items": []
 								},
 								{
@@ -443,7 +443,7 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel mit Rückgabewert",
+									"title": "Beispiel mit Rückgabe",
 									"items": []
 								},
 								{
@@ -487,7 +487,7 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel für das Aktualisieren von Feldern",
+									"title": "Beispiel für Feldaktualisierung",
 									"items": []
 								},
 								{
@@ -559,7 +559,7 @@
 									"items": []
 								},
 								{
-									"title": "Beispiel mit einem anderen Filter",
+									"title": "Beispiel mit anderem Filter",
 									"items": []
 								},
 								{
@@ -670,7 +670,7 @@
 							"name": "Init",
 							"mdxPath": "v0.0.1/de-de/cli/init.mdx",
 							"inPage": [
-								"Wie wird es verwendet?",
+								"Wie benutzt man es?",
 								{
 									"title": "Was der Befehl tut",
 									"items": []
@@ -687,10 +687,10 @@
 						},
 						{
 							"shortName": "database-reset",
-							"name": "Database reset",
+							"name": "Datenbank zurücksetzen",
 							"mdxPath": "v0.0.1/de-de/cli/database-reset.mdx",
 							"inPage": [
-								"Wie verwende ich es?",
+								"Wie benutzt man es?",
 								{
 									"title": "Was der Befehl tut",
 									"items": []
@@ -707,7 +707,7 @@
 						},
 						{
 							"shortName": "migrate-generate",
-							"name": "Migrate generate",
+							"name": "Migration generieren",
 							"mdxPath": "v0.0.1/de-de/cli/migrate-generate.mdx",
 							"inPage": [
 								"Wie benutzt man es?",
@@ -737,10 +737,10 @@
 						},
 						{
 							"shortName": "migrate-run",
-							"name": "Migrate run",
+							"name": "Migration ausführen",
 							"mdxPath": "v0.0.1/de-de/cli/migrate-run.mdx",
 							"inPage": [
-								"Wie wird es verwendet?",
+								"Wie benutzt man es?",
 								{
 									"title": "Was der Befehl tut",
 									"items": []
@@ -757,10 +757,10 @@
 						},
 						{
 							"shortName": "migrate-rollback",
-							"name": "Migrate rollback",
+							"name": "Migration rückgängig machen",
 							"mdxPath": "v0.0.1/de-de/cli/migrate-rollback.mdx",
 							"inPage": [
-								"Wie benutzt man?",
+								"Wie benutzt man es?",
 								{
 									"title": "Was der Befehl tut",
 									"items": []
@@ -774,7 +774,7 @@
 									"items": []
 								},
 								{
-									"title": "Wann verwenden",
+									"title": "Wann zu verwenden",
 									"items": []
 								},
 								{
@@ -789,7 +789,7 @@
 						},
 						{
 							"shortName": "models-generate",
-							"name": "Models generate",
+							"name": "Modelle generieren",
 							"mdxPath": "v0.0.1/de-de/cli/models-generate.mdx",
 							"inPage": [
 								"Wie benutzt man es?",
@@ -809,12 +809,12 @@
 						},
 						{
 							"shortName": "schema-restore",
-							"name": "Schema restore",
+							"name": "Schema wiederherstellen",
 							"mdxPath": "v0.0.1/de-de/cli/schema-restore.mdx",
 							"inPage": [
-								"Wie verwenden?",
+								"Wie benutzt man es?",
 								{
-									"title": "Was der Befehl macht",
+									"title": "Was der Befehl tut",
 									"items": []
 								},
 								{
@@ -822,7 +822,7 @@
 									"items": []
 								},
 								{
-									"title": "Wann verwenden",
+									"title": "Wann zu verwenden",
 									"items": []
 								},
 								{

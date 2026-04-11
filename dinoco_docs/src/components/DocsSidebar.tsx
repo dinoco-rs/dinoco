@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { Link } from 'tuono-router';
 import { FiBox, FiDatabase, FiLayers, FiTerminal, FiX, FiChevronDown } from 'react-icons/fi';
 
-import { buildDocsPath } from '../jsons/versions';
+import { buildDocsPath, getGroupByShortName, getLocalizedSections } from '../jsons/versions';
 import type { DocsSidebarProps } from '../types';
 import type { DocsItem, DocsGroup } from '../jsons/versions';
 
@@ -47,9 +47,7 @@ const NavItem = ({
 					<div
 						className={clsx(
 							'flex items-center border-l -ml-[1px] text-sm transition-colors',
-							isItemActive || isChildActive
-								? 'border-dinoco-brand dark:border-dinoco-cyan'
-								: 'border-transparent hover:border-slate-300 dark:hover:border-slate-600',
+							isItemActive || isChildActive ? 'border-dinoco-brand dark:border-dinoco-cyan' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600',
 						)}
 					>
 						<Link
@@ -117,14 +115,24 @@ const NavItem = ({
 	);
 };
 
-const DocsSidebar: React.FC<DocsSidebarProps> = ({ currentGroup, currentItem, currentVersionName, sections, isOpen, onClose }) => {
+const DocsSidebar: React.FC<DocsSidebarProps> = ({ currentGroup, currentItem, currentVersionName, locale, sections, isOpen, onClose }) => {
+	const localizedSections = useMemo(() => {
+		const localizedGroup = getGroupByShortName(currentVersionName, locale, currentGroup.shortName);
+
+		if (localizedGroup === undefined) {
+			return sections;
+		}
+
+		return getLocalizedSections(localizedGroup, locale);
+	}, [currentGroup.shortName, currentVersionName, locale, sections]);
+
 	return (
 		<>
-			{isOpen && <div className="fixed inset-0 z-[60] cursor-pointer bg-dark-950/60 backdrop-blur-sm lg:hidden" onClick={onClose} />}
+			{isOpen && <div className="fixed inset-0 z-[250] cursor-pointer bg-dark-950/60 backdrop-blur-sm lg:hidden" onClick={onClose} />}
 
 			<aside
 				className={clsx(
-					'fixed inset-y-0 left-0 z-[70] w-[18rem] overflow-x-hidden transform overflow-y-auto border-r border-light-200 bg-light-50 px-4 pb-10 pt-3.5 transition-transform duration-300 dark:border-[#242424] dark:bg-[#0c0c0c] lg:sticky lg:top-32 lg:block lg:w-64 lg:translate-x-0 lg:border-none lg:bg-transparent lg:px-0 lg:pt-0 lg:dark:bg-transparent',
+					'docs-sidebar-scroll fixed inset-y-0 left-0 z-[250] lg:z-[100] w-[18rem] overflow-x-hidden overflow-y-auto border-r border-light-200 bg-light-50 px-4 pb-10 pt-3.5 transform transition-transform duration-300 dark:border-[#242424] dark:bg-[#0c0c0c] lg:sticky lg:top-20 lg:block lg:h-[calc(100vh-5rem)] lg:w-64 lg:translate-x-0 lg:border-none lg:bg-transparent lg:px-0 lg:pt-0 lg:dark:bg-transparent',
 					isOpen ? 'translate-x-0' : '-translate-x-full',
 				)}
 			>
@@ -143,14 +151,21 @@ const DocsSidebar: React.FC<DocsSidebarProps> = ({ currentGroup, currentItem, cu
 					</div>
 				</div>
 
-				<nav className="space-y-8">
-					{sections.map(section => (
+				<nav className="space-y-8 pt-6">
+					{localizedSections.map(section => (
 						<div key={section.title}>
 							<h4 className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-900 dark:text-white">{section.title}</h4>
 
 							<ul className="space-y-1 border-l border-light-300 dark:border-[#505050]">
 								{section.items.map(item => (
-									<NavItem key={item.shortName} item={item} currentGroup={currentGroup} currentItem={currentItem} currentVersionName={currentVersionName} onClose={onClose} />
+									<NavItem
+										key={`${currentVersionName}:${currentGroup.shortName}:${currentItem.shortName}:${item.shortName}`}
+										item={item}
+										currentGroup={currentGroup}
+										currentItem={currentItem}
+										currentVersionName={currentVersionName}
+										onClose={onClose}
+									/>
 								))}
 							</ul>
 						</div>

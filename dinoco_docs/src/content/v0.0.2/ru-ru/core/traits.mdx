@@ -1,0 +1,155 @@
+export const title = 'Трейты';
+
+# Трейты
+
+Обзор основных трейтов, которые модели и полезные данные используют в Dinoco.
+
+---
+
+## Что такое трейты в Dinoco
+
+Трейты определяют базовое поведение ORM: как модель предоставляет метаданные, как она проецирует столбцы, как вставляет, как обновляет и как обрабатываются вложенные полезные данные.
+
+В моделях, сгенерированных кодогенерацией, большая часть этого уже реализована автоматически.
+
+## Трейт Model
+
+`Model` определяет базовые метаданные модели, такие как `Include`, `Where` и имя таблицы.
+
+```rust
+impl dinoco::Model for User {
+    type Include = UserInclude;
+    type Where = UserWhere;
+
+    fn table_name() -> &'static str {
+        "users"
+    }
+}
+```
+
+## Трейт Projection
+
+`Projection` определяет, как структура читает столбцы из модели и какие столбцы ей нужно загрузить.
+
+```rust
+impl dinoco::Projection<User> for UserSummary {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+```
+
+Он широко используется с `select::<T>()`, `include` и производными структурами с `Extend`.
+
+## Трейт InsertModel
+
+`InsertModel` описывает, как Dinoco должен собрать строку для вставки в модель.
+
+```rust
+impl dinoco::InsertModel for User {
+    fn insert_columns() -> &'static [&'static str] {
+        &["id", "email", "name"]
+    }
+}
+```
+
+В сгенерированных моделях этот трейт уже готов.
+
+## Трейт UpdateModel
+
+`UpdateModel` описывает поля, которые могут быть отправлены при обновлении, и как идентифицировать запись для изменения.
+
+```rust
+impl dinoco::UpdateModel for User {
+    fn update_columns() -> &'static [&'static str] {
+        &["email", "name"]
+    }
+}
+```
+
+## Трейт InsertPayload
+
+`InsertPayload` позволяет `.values(...)` принимать что-то отличное от "сырой" модели, разделяя полезные данные на:
+
+- базовую модель для вставки
+- вложенное содержимое, которое будет обработано позже
+
+Именно этот трейт `#[insertable]` начинает реализовывать автоматически.
+
+## Трейт InsertConnectionPayload
+
+`InsertConnectionPayload` используется, когда вложенные полезные данные представляют собой связи с уже существующими записями.
+
+Это "стык", используемый перечислениями, сгенерированными кодогенерацией, такими как `ArticleConnection`.
+
+```rust
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
+```
+
+## Трейты, реализованные моделью
+
+В модели, сгенерированной Dinoco, чаще всего вы уже получите реализации:
+
+- `Model`
+- `Projection`
+- `InsertModel`
+- `UpdateModel`
+- `FindAndUpdateModel`
+- `RelationMutationModel`
+
+В зависимости от отношений схемы, модель также может получить:
+
+- `InsertRelation<T>`
+- `InsertConnection<T>`
+
+## Пример использования трейтов и derive вместе
+
+На практике наиболее распространенный поток:
+
+- `Rowable` для чтения строки
+- `Extend` для проекций или обогащенных полезных данных
+- `#[insertable]` для вложенных вставок
+- трейты, такие как `Model`, `Projection` и `InsertModel`, автоматически генерируемые кодогенерацией
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-30".into(),
+        title: "Core Example".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Когда использовать каждый трейт
+
+- Используйте `Model` для идентификации таблицы, `Where` и `Include`.
+- Используйте `Projection`, когда структура должна быть загружена с помощью `select`.
+- Используйте `InsertModel` и `UpdateModel`, чтобы понять путь записи ORM.
+- Используйте `InsertPayload` при работе с вложенными полезными данными.
+- Используйте `InsertConnectionPayload`, когда вложенные полезные данные связывают существующие записи.
+
+## Следующие шаги
+
+- [**Derives**](/v0.0.2/core/derives): см. derives и атрибуты, используемые вместе с этими трейтами.
+- [**Отношения**](/v0.0.2/orm/relations): см., как это связано с системой отношений.

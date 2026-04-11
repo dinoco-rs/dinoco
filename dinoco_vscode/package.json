@@ -1,7 +1,7 @@
 {
 	"name": "dinoco-vscode",
 	"displayName": "Dinoco",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"description": "Support for Dinoco schemas with syntax highlighting, diagnostics, formatting, and language server features.",
 	"icon": "images/icon.png",
 	"publisher": "dinoco-rs",

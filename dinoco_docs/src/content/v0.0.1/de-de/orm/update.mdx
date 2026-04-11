@@ -2,7 +2,7 @@ export const title = "update";
 
 # update
 
-Verwendet, um gefilterte Datensätze zu aktualisieren.
+Wird verwendet, um gefilterte Datensätze zu aktualisieren.
 
 ---
 
@@ -10,20 +10,20 @@ Verwendet, um gefilterte Datensätze zu aktualisieren.
 
 - `.cond(...)`: definiert, welche Datensätze aktualisiert werden sollen.
 - `.values(item)`: gibt die neuen Werte des Datensatzes an.
-- `.connect(...)`: erstellt unterstützte Beziehungsknüpfungen zum Schreiben.
-- `.disconnect(...)`: entfernt unterstützte Beziehungsknüpfungen zum Schreiben.
+- `.connect(...)`: erstellt unterstützte Beziehungsverknüpfungen zum Schreiben.
+- `.disconnect(...)`: entfernt unterstützte Beziehungsverknüpfungen zum Schreiben.
 - `.returning::<T>()`: gibt die aktualisierten Datensätze in einer typisierten Projektion zurück.
 - `.execute(&client)`: führt die Aktualisierung in der Datenbank aus.
 
 ## Rückgabe
 
-Ohne `.returning::<T>()`, ist die Rückgabe:
+Ohne `.returning::<T>()` ist die Rückgabe:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::<T>()`, wird die Rückgabe zu:
+Mit `.returning::<T>()` wird die Rückgabe zu:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -31,9 +31,9 @@ DinocoResult<Vec<T>>
 
 Hinweis:
 
-- `update().returning()` unterstützt keine relation writes mit `.connect(...)` oder `.disconnect(...)`.
+- `update().returning()` unterstützt keine Beziehungs-Schreibvorgänge mit `.connect(...)` oder `.disconnect(...)`.
 
-## Beispiel für das Aktualisieren von Feldern
+## Beispiel für die Aktualisierung von Feldern
 
 ```rust
 dinoco::update::<User>()
@@ -49,7 +49,7 @@ dinoco::update::<User>()
 
 ## Beispiel mit connect(...)
 
-Wird verwendet, um unterstützte Beziehungen zum Schreiben zu verbinden, typischerweise Many-to-Many.
+Wird verwendet, um unterstützte Beziehungen zum Schreiben zu verbinden, normalerweise Many-to-Many.
 
 ```rust
 dinoco::update::<User>()
@@ -89,6 +89,5 @@ dinoco::update::<User>()
 
 ## Nächste Schritte
 
-- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): Stapelaktualisierung.
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): atomares update mit Rückgabe.
-
+- [**`update_many::<M>()`**](/v0.0.1/orm/update-many): Batch-Aktualisierung.
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): Atomares Update mit Rückgabe.

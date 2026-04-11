@@ -1,9 +1,12 @@
 use std::marker::PhantomData;
 
+use chrono::{DateTime, Utc};
+
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression, SelectStatement};
 
 use crate::{
     CountNode, IncludeNode, IntoCountNode, IntoIncludeNode, Model, OrderBy, Projection, ReadMode, execute_many,
+    queue::{QueueDispatch, enqueue_find_statement},
 };
 
 #[derive(Debug, Clone)]
@@ -12,6 +15,7 @@ pub struct FindMany<M, S = M> {
     pub includes: Vec<IncludeNode>,
     pub counts: Vec<CountNode>,
     pub read_mode: ReadMode,
+    pub(crate) queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> (M, S)>,
 }
 
@@ -24,6 +28,7 @@ where
         includes: Vec::new(),
         counts: Vec::new(),
         read_mode: ReadMode::ReplicaPreferred,
+        queue: None,
         marker: PhantomData,
     }
 }
@@ -44,6 +49,7 @@ where
             includes: self.includes,
             counts: self.counts,
             read_mode: self.read_mode,
+            queue: self.queue,
             marker: PhantomData,
         }
     }
@@ -106,6 +112,27 @@ where
         self
     }
 
+    #[doc(hidden)]
+    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
+        self.queue = Some(QueueDispatch::immediate(event));
+
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
+        self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
+
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
+        self.queue = Some(QueueDispatch::at(event, execute_at));
+
+        self
+    }
+
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -113,6 +140,17 @@ where
     where
         A: DinocoAdapter,
     {
-        async move { execute_many::<M, S, A>(self.statement, &self.includes, &self.counts, self.read_mode, client).await }
+        async move {
+            let statement = self.statement;
+            let result =
+                execute_many::<M, S, A>(statement.clone(), &self.includes, &self.counts, self.read_mode, client)
+                    .await?;
+
+            if let Some(queue) = &self.queue {
+                enqueue_find_statement(client, queue, statement, false).await?;
+            }
+
+            Ok(result)
+        }
     }
 }

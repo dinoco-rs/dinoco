@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_cli"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 license = "Apache-2.0"
 description = "Command-line tools for Dinoco schema setup, code generation, and migrations."
@@ -22,8 +22,8 @@ indicatif = "0.18.4"
 inquire = "0.9.4"
 colored = "3.1.1"
 
-dinoco_codegen = { path = "../dinoco_codegen", version = "0.0.1" }
+dinoco_codegen = { path = "../dinoco_codegen", version = "0.0.2" }
 dinoco_formatter = { path = "../dinoco_formatter", version = "0.0.1" }
-dinoco_engine = { path = "../dinoco_engine", version = "0.0.1" }
-dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
-dinoco_derives = { path = "../dinoco_derives", version = "0.0.1" }
+dinoco_engine = { path = "../dinoco_engine", version = "0.0.2" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.2" }
+dinoco_derives = { path = "../dinoco_derives", version = "0.0.2" }

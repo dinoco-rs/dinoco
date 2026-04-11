@@ -1,0 +1,33 @@
+export const title = "Executar Migrações";
+
+# Como usar?
+
+O comando `dinoco migrate run` executa todas as migrações pendentes.
+
+É usado para alinhar o banco de dados configurado com o histórico de migrações já gerado.
+
+---
+
+## O que o comando faz
+
+Ao executar este comando, o CLI:
+
+- Lê o histórico de migrações
+- Verifica quais ainda não foram aplicadas
+- Executa as migrações pendentes em ordem
+
+## Quando usar
+
+Use este comando quando:
+
+- Você já tem migrações geradas
+- Você quer aplicar as mudanças pendentes no banco de dados
+- Você está preparando um ambiente local ou de deploy
+
+## Próximos passos
+
+Se necessário, gere os modelos com:
+
+```bash
+dinoco models generate
+```

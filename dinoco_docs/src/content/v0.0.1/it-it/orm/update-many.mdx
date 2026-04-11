@@ -2,26 +2,26 @@ export const title = "update_many";
 
 # update_many
 
-Utilizzato per aggiornare più voci contemporaneamente.
+Utilizzato per aggiornare più record contemporaneamente.
 
 ---
 
 ## Cosa puoi fare
 
-- `.cond(...)`: limita quali voci possono essere aggiornate.
+- `.cond(...)`: limita quali record possono essere aggiornati.
 - `.values(Vec<M>)`: definisce gli elementi utilizzati nell'aggiornamento in batch.
-- `.returning::<T>()`: restituisce le voci aggiornate come una lista tipizzata.
+- `.returning::<T>()`: restituisce i record aggiornati come una lista tipizzata.
 - `.execute(&client)`: esegue l'aggiornamento in batch.
 
 ## Ritorno
 
-Senza `.returning::<T>()` il ritorno è:
+Senza `.returning::<T>()`, il ritorno è:
 
 ```rust
 DinocoResult<()>
 ```
 
-Con `.returning::<T>()` il ritorno diventa:
+Con `.returning::<T>()`, il ritorno diventa:
 
 ```rust
 DinocoResult<Vec<T>>
@@ -65,7 +65,7 @@ dinoco::update_many::<User>()
     .await?;
 ```
 
-## Passi successivi
+## Prossimi passi
 
-- [**`update::<M>()`**](/v0.0.1/orm/update): Aggiornamento tradizionale con condizione.
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): Aggiornamento atomico di una singola voce.
+- [**`update::<M>()`**](/v0.0.1/orm/update): aggiornamento tradizionale con condizione.
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): aggiornamento atomico su un singolo record.

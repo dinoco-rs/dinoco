@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_derives"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 license = "Apache-2.0"
 description = "Procedural macros for Dinoco models, projections, and type-safe ORM helpers."

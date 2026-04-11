@@ -2,12 +2,12 @@ use std::future::Future;
 
 use dinoco_engine::{
     AdapterDialect, DeleteStatement, DinocoAdapter, DinocoClient, DinocoError, DinocoGenericRow, DinocoResult,
-    DinocoRow, InsertStatement, QueryBuilder, SelectStatement, UpdateStatement,
+    DinocoRow, Expression, InsertStatement, QueryBuilder, SelectStatement, UpdateStatement,
 };
 
 use crate::{
-    ConnectionUpdatePlan, FieldUpdate, InsertModel, Model, Projection, ReadMode, RelationLinkPlan, RelationWriteAction,
-    RelationWritePlan, UpdateModel,
+    ConnectionUpdatePlan, FieldUpdate, InsertConnectionPayload, InsertModel, InsertNested, InsertPayload,
+    InsertRelation, Model, Projection, ReadMode, RelationLinkPlan, RelationWriteAction, RelationWritePlan, UpdateModel,
 };
 
 struct DinocoCountRow {
@@ -21,6 +21,16 @@ struct DinocoValueRow {
 struct DinocoPairRow {
     left: dinoco_engine::DinocoValue,
     right: dinoco_engine::DinocoValue,
+}
+
+fn should_qualify_query_column(value: &str) -> bool {
+    !value.is_empty()
+        && value != "*"
+        && !value.contains('.')
+        && !value.contains(' ')
+        && !value.contains('(')
+        && !value.contains(')')
+        && !value.contains(',')
 }
 
 impl DinocoRow for DinocoCountRow {
@@ -39,6 +49,83 @@ impl DinocoRow for DinocoPairRow {
     fn from_row<R: DinocoGenericRow>(row: &R) -> DinocoResult<Self> {
         Ok(Self { left: row.get_value(0)?, right: row.get_value(1)? })
     }
+}
+
+pub fn qualify_query_column(value: &str, table_name: &str) -> String {
+    if should_qualify_query_column(value) { format!("{table_name}.{value}") } else { value.to_string() }
+}
+
+pub fn qualify_expression(expression: Expression, table_name: &str) -> Expression {
+    match expression {
+        Expression::Column(name) => Expression::Column(qualify_query_column(&name, table_name)),
+        Expression::Value(value) => Expression::Value(value),
+        Expression::Raw(value) => Expression::Raw(value),
+        Expression::IsNull(inner) => Expression::IsNull(Box::new(qualify_expression(*inner, table_name))),
+        Expression::IsNotNull(inner) => Expression::IsNotNull(Box::new(qualify_expression(*inner, table_name))),
+        Expression::In { expr, values } => {
+            Expression::In { expr: Box::new(qualify_expression(*expr, table_name)), values }
+        }
+        Expression::NotIn { expr, values } => {
+            Expression::NotIn { expr: Box::new(qualify_expression(*expr, table_name)), values }
+        }
+        Expression::And(expressions) => {
+            Expression::And(expressions.into_iter().map(|item| qualify_expression(item, table_name)).collect())
+        }
+        Expression::Or(expressions) => {
+            Expression::Or(expressions.into_iter().map(|item| qualify_expression(item, table_name)).collect())
+        }
+        Expression::BinaryOp { left, op, right } => Expression::BinaryOp {
+            left: Box::new(qualify_expression(*left, table_name)),
+            op,
+            right: Box::new(qualify_expression(*right, table_name)),
+        },
+    }
+}
+
+fn qualify_expression_in_place(expression: &mut Expression, table_name: &str) {
+    match expression {
+        Expression::Column(name) => {
+            if should_qualify_query_column(name) {
+                *name = format!("{table_name}.{name}");
+            }
+        }
+        Expression::Value(_) | Expression::Raw(_) => {}
+        Expression::IsNull(inner) | Expression::IsNotNull(inner) => {
+            qualify_expression_in_place(inner, table_name);
+        }
+        Expression::In { expr, .. } | Expression::NotIn { expr, .. } => {
+            qualify_expression_in_place(expr, table_name);
+        }
+        Expression::And(expressions) | Expression::Or(expressions) => {
+            for expression in expressions {
+                qualify_expression_in_place(expression, table_name);
+            }
+        }
+        Expression::BinaryOp { left, right, .. } => {
+            qualify_expression_in_place(left, table_name);
+            qualify_expression_in_place(right, table_name);
+        }
+    }
+}
+
+pub fn qualify_select_statement(mut statement: SelectStatement, table_name: &str) -> SelectStatement {
+    for column in &mut statement.select {
+        if should_qualify_query_column(column) {
+            *column = format!("{table_name}.{column}");
+        }
+    }
+
+    for expression in &mut statement.conditions {
+        qualify_expression_in_place(expression, table_name);
+    }
+
+    for (column, _) in &mut statement.order_by {
+        if should_qualify_query_column(column) {
+            *column = format!("{table_name}.{column}");
+        }
+    }
+
+    statement
 }
 
 pub fn execute_many<'a, M, S, A>(
@@ -76,11 +163,11 @@ where
     A: DinocoAdapter,
 {
     async move {
-        // statement.limit = Some(1);
+        let statement = statement.limit(1);
 
-        let mut rows = execute_many::<M, S, A>(statement, &[], &[], read_mode, client).await?;
+        let rows = execute_many::<M, S, A>(statement, &[], &[], read_mode, client).await?;
 
-        Ok(rows.drain(..).next())
+        Ok(rows.into_iter().next())
     }
 }
 
@@ -95,8 +182,8 @@ where
     async move {
         let adapter = client.read_adapter(matches!(read_mode, ReadMode::Primary));
         let (sql, params) = adapter.dialect().build_count(&statement);
-        let mut rows = adapter.query_as::<DinocoCountRow>(&sql, &params).await?;
-        let count = rows.drain(..).next().map(|row| row.count).unwrap_or_default();
+        let rows = adapter.query_as::<DinocoCountRow>(&sql, &params).await?;
+        let count = rows.into_iter().next().map(|row| row.count).unwrap_or_default();
 
         usize::try_from(count).map_err(|_| DinocoError::ParseError(format!("Expected non-negative count, got {count}")))
     }
@@ -166,6 +253,148 @@ where
     }
 }
 
+pub fn execute_insert_payload<'a, M, V, A>(
+    items: Vec<V>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    M: InsertModel + Projection<M> + 'a,
+    V: InsertPayload<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        execute_insert_payload_models::<M, V, A>(items, client).await?;
+
+        Ok(())
+    }
+}
+
+pub fn execute_insert_payload_returning<'a, M, V, S, A>(
+    items: Vec<V>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<Vec<S>>> + 'a
+where
+    M: InsertModel + Projection<M> + 'a,
+    V: InsertPayload<M> + 'a,
+    S: Projection<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        let inserted_items = execute_insert_payload_models::<M, V, A>(items, client).await?;
+
+        execute_reload_many_by_identity::<M, S, A>(&inserted_items, client).await
+    }
+}
+
+pub fn execute_insert_related_payload<'a, M, R, V, A>(
+    parent: &'a M,
+    related: V,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    M: InsertModel + InsertRelation<R> + 'a,
+    R: InsertModel + Projection<R> + 'a,
+    V: InsertPayload<R> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        let (mut related_item, nested) = related.split_insert_payload();
+
+        parent.bind_relation(&mut related_item);
+
+        let mut inserted_related = execute_insert_returning::<R, R, A>(vec![related_item], client).await?;
+        let inserted_related = inserted_related.pop().ok_or_else(|| {
+            DinocoError::RecordNotFound(format!(
+                "Record from table '{}' could not be loaded after insert.",
+                R::table_name()
+            ))
+        })?;
+
+        execute_insert_relation_links(parent.relation_links(&inserted_related), client).await?;
+        nested.execute(&inserted_related, client).await
+    }
+}
+
+pub fn execute_insert_related_payloads<'a, M, R, V, A>(
+    parent: &'a M,
+    related_items: Vec<V>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    M: InsertModel + InsertRelation<R> + 'a,
+    R: InsertModel + Projection<R> + 'a,
+    V: InsertPayload<R> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        let mut related_models = Vec::with_capacity(related_items.len());
+        let mut nested_items = Vec::with_capacity(related_items.len());
+
+        for related in related_items {
+            let (mut related_item, nested) = related.split_insert_payload();
+
+            parent.bind_relation(&mut related_item);
+            related_models.push(related_item);
+            nested_items.push(nested);
+        }
+
+        let inserted_related = execute_insert_returning::<R, R, A>(related_models, client).await?;
+        let mut relation_links = Vec::new();
+
+        for related_item in &inserted_related {
+            relation_links.extend(parent.relation_links(related_item));
+        }
+
+        execute_insert_relation_links(relation_links, client).await?;
+
+        for (related_item, nested) in inserted_related.iter().zip(nested_items.into_iter()) {
+            nested.execute(related_item, client).await?;
+        }
+
+        Ok(())
+    }
+}
+
+pub fn execute_insert_connected_payload<'a, M, V, A>(
+    parent: &'a M,
+    connected: V,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    M: InsertModel + 'a,
+    V: InsertConnectionPayload<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        execute_connection_updates(connected.connection_updates(parent), client).await?;
+        execute_insert_relation_links(connected.relation_links(parent), client).await
+    }
+}
+
+pub fn execute_insert_connected_payloads<'a, M, V, A>(
+    parent: &'a M,
+    connected_items: Vec<V>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    M: InsertModel + 'a,
+    V: InsertConnectionPayload<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        let mut connection_updates = Vec::new();
+        let mut relation_links = Vec::new();
+
+        for connected in connected_items {
+            connection_updates.extend(connected.connection_updates(parent));
+            relation_links.extend(connected.relation_links(parent));
+        }
+
+        execute_connection_updates(connection_updates, client).await?;
+        execute_insert_relation_links(relation_links, client).await
+    }
+}
+
 async fn execute_insert_result<M, A>(
     items: Vec<M>,
     client: &DinocoClient<A>,
@@ -191,6 +420,31 @@ where
     let (sql, params) = adapter.dialect().build_insert(&statement);
 
     adapter.execute_result(&sql, &params).await
+}
+
+async fn execute_insert_payload_models<M, V, A>(items: Vec<V>, client: &DinocoClient<A>) -> DinocoResult<Vec<M>>
+where
+    M: InsertModel + Projection<M>,
+    V: InsertPayload<M>,
+    A: DinocoAdapter,
+{
+    let mut base_items = Vec::with_capacity(items.len());
+    let mut nested_items = Vec::with_capacity(items.len());
+
+    for item in items {
+        let (base_item, nested) = item.split_insert_payload();
+
+        base_items.push(base_item);
+        nested_items.push(nested);
+    }
+
+    let inserted_items = execute_insert_returning::<M, M, A>(base_items, client).await?;
+
+    for (item, nested) in inserted_items.iter().zip(nested_items.into_iter()) {
+        nested.execute(item, client).await?;
+    }
+
+    Ok(inserted_items)
 }
 
 pub(crate) fn execute_reload_by_identity<'a, M, S, A>(

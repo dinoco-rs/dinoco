@@ -16,20 +16,20 @@ Wird verwendet, um einen Datensatz einzufügen.
 ## Beschreibung der Methoden
 
 - `.values(item)`: Definiert den Datensatz, der eingefügt werden soll.
-- `.with_relation(related)`: Fügt einen neuen verbundenen Datensatz zusammen mit dem Elternteil ein.
-- `.with_connection(connected)`: Verbindet den eingefügten Datensatz mit einem bereits bestehenden Element, normalerweise in Beziehungsflüssen, die für die Verbindung unterstützt werden.
-- `.returning::<T>()`: Ändert die Rückgabe in eine typisierte Projektion des eingefügten Elements.
-- `.execute(&client)`: Führt das Schreiben in die Datenbank aus.
+- `.with_relation(related)`: Fügt einen neuen verwandten Datensatz zusammen mit dem Elternteil ein.
+- `.with_connection(connected)`: Verbindet den eingefügten Datensatz mit einem bereits vorhandenen Element, normalerweise in Beziehungsflüssen, die für die Verbindung unterstützt werden.
+- `.returning::<T>()`: Ändert den Rückgabewert zu einer typisierten Projektion des eingefügten Elements.
+- `.execute(&client)`: Führt den Schreibvorgang in die Datenbank aus.
 
 ## Rückgabe
 
-Ohne `.returning::<T>()` ist die Rückgabe:
+Ohne `.returning::<T>()` ist der Rückgabewert:
 
 ```rust
 DinocoResult<()>
 ```
 
-Mit `.returning::<T>()` wird die Rückgabe zu:
+Mit `.returning::<T>()` wird der Rückgabewert:
 
 ```rust
 DinocoResult<T>
@@ -50,7 +50,7 @@ dinoco::insert_into::<User>()
 
 ## Beispiel mit Beziehung
 
-Verwenden Sie `.with_relation(...)`, wenn das generierte Modell das gemeinsame Einfügen des Elternteils und des Verwandten unterstützt.
+Verwenden Sie `.with_relation(...)`, wenn das generierte Modell das Einfügen des Elternteils und des Verwandten zusammen unterstützt.
 
 ```rust
 dinoco::insert_into::<User>()
@@ -72,7 +72,7 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## Beispiel mit typisierter Rückgabe
+## Beispiel mit typisiertem Rückgabewert
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]

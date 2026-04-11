@@ -1,0 +1,111 @@
+export const title = '缓存()';
+
+# 缓存
+
+`client.cache()` 提供了对 `DinocoClient` 中配置的 Redis 的直接访问，不依赖于 `find_first` 和 `find_many` 中内置的缓存助手。
+
+## 您可以做什么
+
+- 使用 `.get::<T>(...)` 读取键
+- 使用 `.set(...)` 保存键
+- 使用 `.set_with_ttl(...)` 保存带过期时间的键
+- 使用 `.delete(...)` 删除键
+
+## 何时使用
+
+当您需要时，请使用 `client.cache()`:
+
+- 设置手动缓存
+- 在写入操作后使键失效
+- 在多个查询之间共享有效负载
+- 存储准备好快速读取的结构
+
+## 工作原理
+
+该方法使用在 `DinocoClientConfig::with_redis(...)` 中配置的 Redis。
+
+如果客户端未配置 Redis，则操作将返回错误。
+
+## 可用方法
+
+- `.get::<T>(key)`: 查找并将值反序列化为 `T`
+- `.set(key, &value)`: 序列化并保存，无 TTL
+- `.set_with_ttl(key, &value, ttl_seconds)`: 序列化并保存，过期时间以秒为单位
+- `.delete(key)`: 删除键
+
+## 基本示例
+
+```rust
+use database::*;
+
+let cache = client.cache();
+
+cache.set("users:count", &42_i64).await?;
+
+let count = cache.get::<i64>("users:count").await?;
+
+println!("{count:?}");
+```
+
+## 带类型列表的示例
+
+```rust
+use database::*;
+
+let users = vec![
+    User { id: 1, name: "Matheus".to_string() },
+    User { id: 2, name: "Ana".to_string() },
+];
+
+client.cache().set("users:list", &users).await?;
+
+let cached = client.cache().get::<Vec<User>>("users:list").await?;
+```
+
+## 带 TTL 的示例
+
+```rust
+use database::*;
+
+client.cache().set_with_ttl("users:top-10", &vec![1, 2, 3], 60).await?;
+```
+
+## 缓存失效示例
+
+```rust
+use database::*;
+
+dinoco::update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .values(User { id: 1, name: "Novo nome".to_string() })
+    .execute(&client)
+    .await?;
+
+client.cache().delete("users:1").await?;
+client.cache().delete("users:list").await?;
+```
+
+## 支持的类型
+
+值以 JSON 格式序列化，因此类型需要与 `serde` 兼容。
+
+常见示例：
+
+- `Vec<User>`
+- `Option<User>`
+- `String`
+- `bool`
+- `i64`
+- 可序列化结构体
+
+## 注意事项
+
+- `client.cache()` 是手动缓存；它不执行数据库查询。
+- 对于查询中的集成缓存，请使用 `find_first().cache(...)` 和 `find_many().cache(...)`。
+- 您可以根据需要多次调用 `client.cache()`；它只创建一个轻量级包装器。
+
+## 下一步
+
+- [**`查找第一个::<M>()`**](/v0.0.2/orm/find-first)
+- [**`查找多个::<M>()`**](/v0.0.2/orm/find-many)
+- [**`队列`**](/v0.0.2/orm/queues)

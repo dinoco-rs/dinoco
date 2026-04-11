@@ -1,0 +1,235 @@
+export const title = 'find_many';
+
+# find_many
+
+用于获取记录列表。
+
+---
+
+## 您可以做什么
+
+- `.select::<T>()`: 将模型的默认投影替换为自定义投影。
+- `.cond(...)`: 向查询添加过滤条件。
+- `.take(...)`: 限制返回的记录数量。
+- `.skip(...)`: 在返回结果之前跳过一定数量的记录。
+- `.order_by(...)`: 定义查询的排序方式。
+- `.includes(...)`: 与主记录一起加载关联关系。
+- `.count(...)`: 计算关联计数器并填充诸如 `posts_count` 等字段。
+- `.cache(...)`: 首先使用提供的键在 Redis 中查询；如果缓存未命中，则执行查询、保存并返回结果。如果缓存命中，查询日志会记录 `CACHE HIT key=...`。
+- `.cache_with_expiration(...)`: 与标准缓存行为相同，但以秒为单位设置 TTL。
+- `.read_in_primary()`: 强制从主数据库读取，不使用副本。
+- `.execute(&client)`: 在数据库中执行查询。
+
+## 返回值
+
+如果没有 `select::<T>()`，返回值为：
+
+```rust
+DinocoResult<Vec<M>>
+```
+
+如果使用 `select::<T>()`，返回值为：
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## 基本示例
+
+```rust
+let users = dinoco::find_many::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## 带过滤条件的示例
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|w| w.email.eq("ana@acme.com"))
+    .execute(&client)
+    .await?;
+```
+
+## 带分页和排序的示例
+
+```rust
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .skip(20)
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## 自定义选择示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserListItem {
+    id: i64,
+    name: String,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserListItem>()
+    .execute(&client)
+    .await?;
+```
+
+## 简单关联示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## 带过滤条件的关联示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPublishedPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPublishedPosts>()
+    .includes(|i| i.posts().cond(|w| w.published.eq(true)))
+    .execute(&client)
+    .await?;
+```
+
+## 嵌套关联示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Comment)]
+struct CommentListItem {
+    id: i64,
+    text: String,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    comments: Vec<CommentListItem>,
+    comments_count: usize,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| {
+        i.posts()
+            .includes(|post| post.comments().take(3))
+            .count(|post| post.comments())
+    })
+    .execute(&client)
+    .await?;
+```
+
+## 关联计数示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## 从主数据库读取示例
+
+```rust
+let users = dinoco::find_many::<User>()
+    .read_in_primary()
+    .take(5)
+    .execute(&client)
+    .await?;
+```
+
+## Worker 示例
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("已读取包含 {} 个用户的批次", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+在 [**`queues`**](/v0.0.2/orm/queues) 中了解更多关于 worker 的信息。
+
+## 缓存示例
+
+此方法仅在 schema 的 `config {}` 包含 `redis` 时生成。
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## 带过期时间的缓存示例
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
+## 下一步
+
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)：最多获取一条记录的版本。
+- [**`count::<M>()`**](/v0.0.2/orm/count)：带过滤条件的记录计数。

@@ -1,28 +1,28 @@
-export const title = "Migrate run";
+export const title = "Esegui migrazione";
 
 # Come si usa?
 
 Il comando `dinoco migrate run` esegue tutte le migrazioni in sospeso.
 
-Viene utilizzato per allineare il database configurato con la cronologia delle migrazioni già generata.
+Viene utilizzato per allineare il database configurato con la cronologia delle migrazioni già generate.
 
 ---
 
 ## Cosa fa il comando
 
-Quando si esegue questo comando, la CLI:
+Quando esegui questo comando, la CLI:
 
 - Legge la cronologia delle migrazioni
-- Controlla quali non sono ancora state applicate
-- Esegue le migrazioni in sospeso nell'ordine corretto
+- Verifica quali non sono ancora state applicate
+- Esegue le migrazioni in sospeso in ordine
 
 ## Quando usarlo
 
-Utilizzare questo comando quando:
+Usa questo comando quando:
 
-- Hai già generato delle migrazioni
-- Vuoi applicare modifiche in sospeso al database
-- Stai preparando un ambiente locale o di deployment
+- Hai già delle migrazioni generate
+- Vuoi applicare le modifiche in sospeso al database
+- Stai preparando un ambiente locale o di deploy
 
 ## Passi successivi
 

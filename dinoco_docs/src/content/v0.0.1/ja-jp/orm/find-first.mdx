@@ -2,13 +2,13 @@ export const title = "find_first";
 
 # find_first
 
-最大1つのレコードを取得するために使用されます。
+最大1つのレコードを検索するために使用されます。
 
 ---
 
 ## できること
 
-`find_many` と同じメソッドを提供します：
+`find_many` と同じメソッドを公開しています。
 
 - `select`
 - `cond`
@@ -25,28 +25,28 @@ export const title = "find_first";
 - `.select::<T>()`: デフォルトのプロジェクションをカスタムプロジェクションに置き換えます。
 - `.cond(...)`: 検索にフィルターを追加します。
 - `.take(...)`: 考慮されるレコードの最大数を制限します。
-- `.skip(...)`: 最初の結果が選択される前にレコードをスキップします。
-- `.order_by(...)`: どのレコードを最初に考慮するかを定義します。
-- `.includes(...)`: メイン要素と一緒にリレーションをロードします。
-- `.count(...)`: プロジェクション内のリレーションカウントを計算します。
+- `.skip(...)`: 最初の結果を選択する前にレコードをスキップします。
+- `.order_by(...)`: どのレコードを最初に考慮すべきかを定義します。
+- `.includes(...)`: メインアイテムと一緒にリレーションをロードします。
+- `.count(...)`: プロジェクション内のリレーションのカウンターを計算します。
 - `.read_in_primary()`: プライマリデータベースからの読み取りを強制します。
-- `.execute(&client)`: クエリを実行し、最大1つの要素を返します。
+- `.execute(&client)`: クエリを実行し、最大1つのアイテムを返します。
 
 ## 戻り値
 
-`select::<T>()` がない場合、戻り値は次のようになります。
+`select::<T>()` を使用しない場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Option<M>>
 ```
 
-`select::<T>()` がある場合、戻り値は次のようになります。
+`select::<T>()` を使用する場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Option<T>>
 ```
 
-## 基本例
+## 基本的な例
 
 ```rust
 let user = dinoco::find_first::<User>()
@@ -55,7 +55,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## select の例
+## select を使用した例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -72,7 +72,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## リレーション付きの例
+## リレーションを使用した例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -91,7 +91,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## 並び替えの例
+## ソートを使用した例
 
 ```rust
 let latest_user = dinoco::find_first::<User>()

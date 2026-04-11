@@ -14,6 +14,7 @@ pub struct ParsedConfig {
     pub database: Database,
     pub database_url: ConnectionUrl,
     pub read_replicas: Vec<ConnectionUrl>,
+    pub redis: Option<RedisConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -27,6 +28,14 @@ pub enum Database {
 pub enum ConnectionUrl {
     Literal(String),
     Env(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RedisConfig {
+    pub url: Option<ConnectionUrl>,
+    pub host: Option<ConnectionUrl>,
+    pub username: Option<ConnectionUrl>,
+    pub password: Option<ConnectionUrl>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

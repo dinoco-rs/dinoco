@@ -1,4 +1,6 @@
-use dinoco_compiler::{ConnectionUrl, FunctionCall, ParsedField, ParsedFieldDefault, ParsedFieldType};
+use std::collections::BTreeMap;
+
+use dinoco_compiler::{ConnectionUrl, FunctionCall, ParsedField, ParsedFieldDefault, ParsedFieldType, RedisConfig};
 
 pub(crate) fn render_connection_url(url: &ConnectionUrl) -> String {
     match url {
@@ -7,6 +9,26 @@ pub(crate) fn render_connection_url(url: &ConnectionUrl) -> String {
             format!("std::env::var({value:?}).expect(\"missing environment variable for Dinoco client generation\")")
         }
     }
+}
+
+pub(crate) fn render_redis_config(redis: &RedisConfig) -> String {
+    if let Some(url) = &redis.url {
+        return format!("dinoco::DinocoRedisConfig::from_url({})", render_connection_url(url));
+    }
+
+    let host =
+        redis.host.as_ref().map(render_connection_url).expect("redis host should exist when url is not configured");
+    let mut output = format!("dinoco::DinocoRedisConfig::from_host({host})");
+
+    if let Some(username) = &redis.username {
+        output.push_str(&format!(".with_username({})", render_connection_url(username)));
+    }
+
+    if let Some(password) = &redis.password {
+        output.push_str(&format!(".with_password({})", render_connection_url(password)));
+    }
+
+    output
 }
 
 pub(crate) fn scalar_fields(fields: &[ParsedField]) -> Vec<&ParsedField> {
@@ -98,6 +120,45 @@ pub(crate) fn to_snake_case(value: &str) -> String {
     output
 }
 
+pub(crate) fn to_pascal_case(value: &str) -> String {
+    let mut output = String::new();
+    let mut uppercase_next = true;
+
+    for ch in value.chars() {
+        if ch == '_' || ch == '-' || ch == ' ' {
+            uppercase_next = true;
+            continue;
+        }
+
+        if uppercase_next {
+            output.extend(ch.to_uppercase());
+            uppercase_next = false;
+        } else {
+            output.push(ch);
+        }
+    }
+
+    output
+}
+
+pub(crate) fn singularize(value: &str) -> String {
+    if let Some(stripped) = value.strip_suffix("ies") {
+        return format!("{stripped}y");
+    }
+
+    if value.len() > 1 {
+        if let Some(stripped) = value.strip_suffix("ses") {
+            return stripped.to_string();
+        }
+
+        if let Some(stripped) = value.strip_suffix('s') {
+            return stripped.to_string();
+        }
+    }
+
+    value.to_string()
+}
+
 pub(crate) fn enum_variant_name(value: &str) -> String {
     if is_rust_keyword(value) {
         return format!("r#{value}");
@@ -133,6 +194,70 @@ pub(crate) fn default_value_expr(field: &ParsedField, enum_names: &[String]) -> 
         },
         ParsedFieldDefault::NotDefined => default_expr_by_type(field, enum_names),
     }
+}
+
+pub(crate) fn can_derive_default_for_model(
+    fields: &[&ParsedField],
+    enum_names: &[String],
+    enum_default_variants: &BTreeMap<String, String>,
+) -> bool {
+    fields.iter().all(|field| can_derive_default_for_field(field, enum_names, enum_default_variants))
+}
+
+fn can_derive_default_for_field(
+    field: &ParsedField,
+    enum_names: &[String],
+    enum_default_variants: &BTreeMap<String, String>,
+) -> bool {
+    if field.is_optional || field.is_list {
+        return true;
+    }
+
+    match &field.default_value {
+        ParsedFieldDefault::String(value) => value.is_empty(),
+        ParsedFieldDefault::Boolean(value) => !value,
+        ParsedFieldDefault::Integer(value) => *value == 0,
+        ParsedFieldDefault::Float(value) => *value == 0.0,
+        ParsedFieldDefault::EnumValue(value) => enum_default_variant(field, enum_names, enum_default_variants)
+            .is_some_and(|default_value| default_value == value),
+        ParsedFieldDefault::Function(FunctionCall::AutoIncrement) => true,
+        ParsedFieldDefault::NotDefined => field_uses_type_default(field, enum_names, enum_default_variants),
+        ParsedFieldDefault::Function(_) => false,
+    }
+}
+
+fn field_uses_type_default(
+    field: &ParsedField,
+    enum_names: &[String],
+    enum_default_variants: &BTreeMap<String, String>,
+) -> bool {
+    match &field.field_type {
+        ParsedFieldType::String => true,
+        ParsedFieldType::Boolean => true,
+        ParsedFieldType::Integer => true,
+        ParsedFieldType::Float => true,
+        ParsedFieldType::Json => true,
+        ParsedFieldType::Enum(_) => enum_default_variant(field, enum_names, enum_default_variants).is_some(),
+        ParsedFieldType::DateTime => false,
+        ParsedFieldType::Date => false,
+        ParsedFieldType::Relation(_) => unreachable!(),
+    }
+}
+
+fn enum_default_variant<'a>(
+    field: &ParsedField,
+    enum_names: &[String],
+    enum_default_variants: &'a BTreeMap<String, String>,
+) -> Option<&'a str> {
+    let ParsedFieldType::Enum(name) = &field.field_type else {
+        return None;
+    };
+
+    if !enum_names.iter().any(|item| item == name) {
+        return None;
+    }
+
+    enum_default_variants.get(name).map(String::as_str)
 }
 
 fn default_expr_by_type(field: &ParsedField, enum_names: &[String]) -> String {

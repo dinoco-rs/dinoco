@@ -12,7 +12,7 @@
 						{
 							"shortName": "introduction-dinoco",
 							"name": "Введение в Dinoco",
-							"mdxPath": "v0.0.1/ru-ru/orm/introduction-to-dinoco.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/introduction-to-dinoco.mdx",
 							"inPage": [
 								"Введение в Dinoco",
 								{
@@ -20,7 +20,7 @@
 									"items": []
 								},
 								{
-									"title": "Основы проекта",
+									"title": "Столпы проекта",
 									"items": []
 								},
 								{
@@ -32,15 +32,15 @@
 						{
 							"shortName": "first-steps",
 							"name": "Первые шаги",
-							"mdxPath": "v0.0.1/ru-ru/orm/first-steps.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/first-steps.mdx",
 							"inPage": [
 								"Первые шаги",
 								{
 									"title": "Как это работает?",
 									"items": [
-										"1. Определите схему и подключение",
+										"1. Определите свою схему и подключение",
 										"2. Создайте миграцию",
-										"3. Выполните запрос с DinocoClient"
+										"3. Запрос с DinocoClient"
 									]
 								},
 								{
@@ -52,7 +52,7 @@
 						{
 							"shortName": "supported-databases",
 							"name": "Обзор",
-							"mdxPath": "v0.0.1/ru-ru/orm/supported-databases.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/supported-databases.mdx",
 							"inPage": [
 								"Обзор",
 								{
@@ -83,11 +83,11 @@
 						{
 							"shortName": "models",
 							"name": "Модели",
-							"mdxPath": "v0.0.1/ru-ru/orm/models.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/models.mdx",
 							"inPage": [
 								"Модели",
 								{
-									"title": "Что представляет модель",
+									"title": "Что представляет собой модель",
 									"items": []
 								},
 								{
@@ -105,14 +105,14 @@
 									]
 								},
 								{
-									"title": "Модификаторы типов",
+									"title": "Модификаторы типа",
 									"items": [
 										"Необязательное поле",
 										"Поле-список"
 									]
 								},
 								{
-									"title": "Наиболее частые атрибуты",
+									"title": "Наиболее распространенные атрибуты",
 									"items": [
 										"`@id`",
 										"`@default(...)`",
@@ -133,8 +133,8 @@
 								{
 									"title": "Пример поиска пользователей с помощью API Dinoco",
 									"items": [
-										"Поиск одной записи",
-										"Поиск нескольких записей"
+										"Найти одну запись",
+										"Найти несколько записей"
 									]
 								},
 								{
@@ -154,19 +154,19 @@
 									"items": []
 								},
 								{
-									"title": "Когда стоит создавать новую модель",
+									"title": "Когда создавать новую модель",
 									"items": []
 								}
 							]
 						},
 						{
 							"shortName": "enums",
-							"name": "Enums",
-							"mdxPath": "v0.0.1/ru-ru/orm/enums.mdx",
+							"name": "Перечисления",
+							"mdxPath": "v0.0.1/pt-br/orm/enums.mdx",
 							"inPage": [
-								"Enums",
+								"Перечисления",
 								{
-									"title": "Что такое enum",
+									"title": "Что такое перечисление",
 									"items": []
 								},
 								{
@@ -174,11 +174,11 @@
 									"items": []
 								},
 								{
-									"title": "Когда использовать enum",
+									"title": "Когда использовать перечисления",
 									"items": []
 								},
 								{
-									"title": "Рекомендации",
+									"title": "Лучшие практики",
 									"items": []
 								},
 								{
@@ -189,10 +189,10 @@
 						},
 						{
 							"shortName": "relations",
-							"name": "Связи",
-							"mdxPath": "v0.0.1/ru-ru/orm/relations.mdx",
+							"name": "Отношения",
+							"mdxPath": "v0.0.1/pt-br/orm/relations.mdx",
 							"inPage": [
-								"Связи",
+								"Отношения",
 								{
 									"title": "@relation(...)",
 									"items": []
@@ -210,7 +210,7 @@
 									"items": []
 								},
 								{
-									"title": "Самоссылка",
+									"title": "Самоотношение",
 									"items": []
 								},
 								{
@@ -218,23 +218,23 @@
 									"items": []
 								},
 								{
-									"title": "Справочная схема для примеров",
+									"title": "Схема ссылки для примеров",
 									"items": []
 								},
 								{
-									"title": "Пример запроса со всеми возможными связями, начиная от User",
+									"title": "Пример поиска со всеми возможными отношениями от User",
 									"items": []
 								},
 								{
-									"title": "Пример вставки со связью с использованием User и Profile",
+									"title": "Пример вставки с отношением, использующим User и Profile",
 									"items": []
 								},
 								{
-									"title": "Пример `insert_many` с `with_relations(...)`",
+									"title": "Пример insert_many с with_relations(...)",
 									"items": []
 								},
 								{
-									"title": "Пример `insert_many` с `with_connections(...)`",
+									"title": "Пример insert_many с with_connections(...)",
 									"items": []
 								},
 								{
@@ -251,11 +251,11 @@
 						{
 							"shortName": "find-many",
 							"name": "find_many",
-							"mdxPath": "v0.0.1/ru-ru/orm/find-many.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/find-many.mdx",
 							"inPage": [
 								"find_many",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -279,23 +279,23 @@
 									"items": []
 								},
 								{
-									"title": "Пример пользовательского select",
+									"title": "Пример пользовательского выбора",
 									"items": []
 								},
 								{
-									"title": "Пример с простым include",
+									"title": "Пример с простым включением",
 									"items": []
 								},
 								{
-									"title": "Пример с include с фильтром",
+									"title": "Пример с отфильтрованным включением",
 									"items": []
 								},
 								{
-									"title": "Пример с вложенным include",
+									"title": "Пример с вложенным включением",
 									"items": []
 								},
 								{
-									"title": "Пример с подсчетом связей",
+									"title": "Пример с подсчетом отношений",
 									"items": []
 								},
 								{
@@ -311,11 +311,11 @@
 						{
 							"shortName": "find-first",
 							"name": "find_first",
-							"mdxPath": "v0.0.1/ru-ru/orm/find-first.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/find-first.mdx",
 							"inPage": [
 								"find_first",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -331,11 +331,11 @@
 									"items": []
 								},
 								{
-									"title": "Пример с select",
+									"title": "Пример с выбором",
 									"items": []
 								},
 								{
-									"title": "Пример со связью",
+									"title": "Пример с отношением",
 									"items": []
 								},
 								{
@@ -351,11 +351,11 @@
 						{
 							"shortName": "find-and-update",
 							"name": "find_and_update",
-							"mdxPath": "v0.0.1/ru-ru/orm/find-and-update.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/find-and-update.mdx",
 							"inPage": [
 								"find_and_update",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -387,11 +387,11 @@
 						{
 							"shortName": "insert-into",
 							"name": "insert_into",
-							"mdxPath": "v0.0.1/ru-ru/orm/insert-into.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/insert-into.mdx",
 							"inPage": [
 								"insert_into",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -407,7 +407,7 @@
 									"items": []
 								},
 								{
-									"title": "Пример со связью",
+									"title": "Пример с отношением",
 									"items": []
 								},
 								{
@@ -415,7 +415,7 @@
 									"items": []
 								},
 								{
-									"title": "Пример с типизированным результатом",
+									"title": "Пример с типизированным возвращаемым значением",
 									"items": []
 								},
 								{
@@ -427,11 +427,11 @@
 						{
 							"shortName": "insert-many",
 							"name": "insert_many",
-							"mdxPath": "v0.0.1/ru-ru/orm/insert-many.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/insert-many.mdx",
 							"inPage": [
 								"insert_many",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -447,19 +447,19 @@
 									"items": []
 								},
 								{
-									"title": "Пример с `with_relation(...)`",
+									"title": "Пример с with_relation(...)",
 									"items": []
 								},
 								{
-									"title": "Пример с `with_relations(...)`",
+									"title": "Пример с with_relations(...)",
 									"items": []
 								},
 								{
-									"title": "Пример с `with_connection(...)`",
+									"title": "Пример с with_connection(...)",
 									"items": []
 								},
 								{
-									"title": "Пример с `with_connections(...)`",
+									"title": "Пример с with_connections(...)",
 									"items": []
 								},
 								{
@@ -475,11 +475,11 @@
 						{
 							"shortName": "update",
 							"name": "update",
-							"mdxPath": "v0.0.1/ru-ru/orm/update.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/update.mdx",
 							"inPage": [
 								"update",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -491,11 +491,11 @@
 									"items": []
 								},
 								{
-									"title": "Пример с `connect(...)`",
+									"title": "Пример с connect(...)",
 									"items": []
 								},
 								{
-									"title": "Пример с `disconnect(...)`",
+									"title": "Пример с disconnect(...)",
 									"items": []
 								},
 								{
@@ -511,11 +511,11 @@
 						{
 							"shortName": "update-many",
 							"name": "update_many",
-							"mdxPath": "v0.0.1/ru-ru/orm/update-many.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/update-many.mdx",
 							"inPage": [
 								"update_many",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -543,11 +543,11 @@
 						{
 							"shortName": "delete",
 							"name": "delete",
-							"mdxPath": "v0.0.1/ru-ru/orm/delete.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/delete.mdx",
 							"inPage": [
 								"delete",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -571,11 +571,11 @@
 						{
 							"shortName": "delete-many",
 							"name": "delete_many",
-							"mdxPath": "v0.0.1/ru-ru/orm/delete-many.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/delete-many.mdx",
 							"inPage": [
 								"delete_many",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -599,11 +599,11 @@
 						{
 							"shortName": "count",
 							"name": "count",
-							"mdxPath": "v0.0.1/ru-ru/orm/count.mdx",
+							"mdxPath": "v0.0.1/pt-br/orm/count.mdx",
 							"inPage": [
 								"count",
 								{
-									"title": "Что можно сделать",
+									"title": "Что вы можете сделать",
 									"items": []
 								},
 								{
@@ -619,7 +619,7 @@
 									"items": []
 								},
 								{
-									"title": "Пример с логическим фильтром",
+									"title": "Пример с булевым фильтром",
 									"items": []
 								},
 								{
@@ -647,7 +647,7 @@
 						{
 							"shortName": "install",
 							"name": "Установка",
-							"mdxPath": "v0.0.1/ru-ru/cli/install.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/install.mdx",
 							"inPage": [
 								"Установка",
 								{
@@ -655,7 +655,7 @@
 									"items": []
 								},
 								{
-									"title": "Конфигурация",
+									"title": "Настройка",
 									"items": []
 								}
 							]
@@ -668,7 +668,7 @@
 						{
 							"shortName": "init",
 							"name": "Init",
-							"mdxPath": "v0.0.1/ru-ru/cli/init.mdx",
+							"mdxPath": "v0.0.1/pt-br/cli/init.mdx",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -687,8 +687,8 @@
 						},
 						{
 							"shortName": "database-reset",
-							"name": "Database reset",
-							"mdxPath": "v0.0.1/ru-ru/cli/database-reset.mdx",
+							"name": "Сброс базы данных",
+							"mdxPath": "v0.0.1/pt-br/cli/database-reset.mdx",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -696,7 +696,7 @@
 									"items": []
 								},
 								{
-									"title": "Предосторожности",
+									"title": "Меры предосторожности",
 									"items": []
 								},
 								{
@@ -707,10 +707,10 @@
 						},
 						{
 							"shortName": "migrate-generate",
-							"name": "Migrate generate",
-							"mdxPath": "v0.0.1/ru-ru/cli/migrate-generate.mdx",
+							"name": "Генерация миграции",
+							"mdxPath": "v0.0.1/pt-br/cli/migrate-generate.mdx",
 							"inPage": [
-								"Как это использовать?",
+								"Как использовать?",
 								{
 									"title": "Что делает команда",
 									"items": []
@@ -722,7 +722,7 @@
 									]
 								},
 								{
-									"title": "Пример использования без немедленного применения",
+									"title": "Пример использования без применения",
 									"items": []
 								},
 								{
@@ -737,10 +737,10 @@
 						},
 						{
 							"shortName": "migrate-run",
-							"name": "Migrate run",
-							"mdxPath": "v0.0.1/ru-ru/cli/migrate-run.mdx",
+							"name": "Запуск миграции",
+							"mdxPath": "v0.0.1/pt-br/cli/migrate-run.mdx",
 							"inPage": [
-								"Как это использовать?",
+								"Как использовать?",
 								{
 									"title": "Что делает команда",
 									"items": []
@@ -757,12 +757,12 @@
 						},
 						{
 							"shortName": "migrate-rollback",
-							"name": "Migrate rollback",
-							"mdxPath": "v0.0.1/ru-ru/cli/migrate-rollback.mdx",
+							"name": "Откат миграции",
+							"mdxPath": "v0.0.1/pt-br/cli/migrate-rollback.mdx",
 							"inPage": [
 								"Как использовать?",
 								{
-									"title": "Что выполняет команда",
+									"title": "Что делает команда",
 									"items": []
 								},
 								{
@@ -778,7 +778,7 @@
 									"items": []
 								},
 								{
-									"title": "Предосторожности",
+									"title": "Меры предосторожности",
 									"items": []
 								},
 								{
@@ -789,10 +789,10 @@
 						},
 						{
 							"shortName": "models-generate",
-							"name": "Models generate",
-							"mdxPath": "v0.0.1/ru-ru/cli/models-generate.mdx",
+							"name": "Генерация моделей",
+							"mdxPath": "v0.0.1/pt-br/cli/models-generate.mdx",
 							"inPage": [
-								"Как это использовать?",
+								"Как использовать?",
 								{
 									"title": "Что делает команда",
 									"items": []
@@ -809,8 +809,8 @@
 						},
 						{
 							"shortName": "schema-restore",
-							"name": "Schema restore",
-							"mdxPath": "v0.0.1/ru-ru/cli/schema-restore.mdx",
+							"name": "Восстановление схемы",
+							"mdxPath": "v0.0.1/pt-br/cli/schema-restore.mdx",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -818,7 +818,7 @@
 									"items": []
 								},
 								{
-									"title": "Пример восстановления из определенной миграции",
+									"title": "Пример восстановления из конкретной миграции",
 									"items": []
 								},
 								{
@@ -846,7 +846,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Введение",
-							"mdxPath": "v0.0.1/ru-ru/supersonic/introduction.mdx",
+							"mdxPath": "v0.0.1/pt-br/supersonic/introduction.mdx",
 							"inPage": [
 								"Введение"
 							]
@@ -866,7 +866,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Введение",
-							"mdxPath": "v0.0.1/ru-ru/dinocodb/introduction.mdx",
+							"mdxPath": "v0.0.1/pt-br/dinocodb/introduction.mdx",
 							"inPage": [
 								"Введение"
 							]

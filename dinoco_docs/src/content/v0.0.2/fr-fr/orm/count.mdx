@@ -1,0 +1,56 @@
+export const title = "count";
+
+# count
+
+Utilisé pour compter les enregistrements.
+
+---
+
+## Ce que vous pouvez faire
+
+- Filtrer avec `.cond(...)`
+- Exécuter avec `.execute(&client)`
+
+## Description des méthodes
+
+- `.cond(...)` : restreint les enregistrements inclus dans le compte.
+- `.execute(&client)` : exécute le compte dans la base de données.
+
+## Retour
+
+La valeur de retour de `count` est :
+
+```rust
+DinocoResult<usize>
+```
+
+## Exemple de base
+
+```rust
+let total = dinoco::count::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec filtre booléen
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.active.eq(true))
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec filtre de texte
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.name.includes("Ana"))
+    .execute(&client)
+    .await?;
+```
+
+## Prochaines étapes
+
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many) : récupère les enregistrements dans une liste.
+- [**`find_first::<M>()`**](/v0.0.1/orm/find-first) : récupère un seul enregistrement.

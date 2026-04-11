@@ -2,9 +2,9 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use dinoco_engine::{DinocoAdapterHandler, DinocoClient, DinocoClientConfig, SqliteAdapter};
+use uuid::Uuid;
 
 const INITIAL_SCHEMA: &str = r#"
 config {
@@ -44,11 +44,11 @@ fn init_command_creates_schema_from_automated_answers() {
     let schema_path = project.path().join("dinoco/schema.dinoco");
     let schema = fs::read_to_string(&schema_path).expect("schema should be created");
 
-    assert!(output.contains("Your Dinoco environment was successfully created"));
-    assert!(schema.contains("database = \"postgresql\""));
-    assert!(schema.contains("database_url = env(\"DATABASE_URL\")"));
-    assert!(schema.contains("env(\"DATABASE_URL_REPLICA_1\")"));
-    assert!(schema.contains("env(\"DATABASE_URL_REPLICA_2\")"));
+    assert!(output.contains("Dinoco environment was successfully created"), "unexpected init output:\n{output}");
+    assert!(schema.contains("database = \"postgresql\""), "unexpected schema:\n{schema}");
+    assert!(schema.contains("database_url = env(\"DATABASE_URL\")"), "unexpected schema:\n{schema}");
+    assert!(schema.contains("env(\"DATABASE_URL_REPLICA_1\")"), "unexpected schema:\n{schema}");
+    assert!(schema.contains("env(\"DATABASE_URL_REPLICA_2\")"), "unexpected schema:\n{schema}");
 }
 
 #[test]
@@ -69,10 +69,10 @@ fn init_command_supports_sqlite_from_automated_answers() {
     let schema_path = project.path().join("dinoco/schema.dinoco");
     let schema = fs::read_to_string(&schema_path).expect("schema should be created");
 
-    assert!(output.contains("Your Dinoco environment was successfully created"));
-    assert!(schema.contains("database = \"sqlite\""));
-    assert!(schema.contains("database_url = \"file:./dinoco/database.sqlite\""));
-    assert!(!schema.contains("read_replicas"));
+    assert!(output.contains("Dinoco environment was successfully created"), "unexpected init output:\n{output}");
+    assert!(schema.contains("database = \"sqlite\""), "unexpected schema:\n{schema}");
+    assert!(schema.contains("database_url = \"file:./dinoco/database.sqlite\""), "unexpected schema:\n{schema}");
+    assert!(!schema.contains("read_replicas"), "unexpected schema:\n{schema}");
 }
 
 #[tokio::test]
@@ -220,7 +220,10 @@ fn generate_apply_cleans_up_failed_sqlite_migration() {
         &[("DATABASE_URL", database_url.as_str()), ("DINOCO_CLI_MIGRATION_NAME", "InitialUsers")],
     );
 
-    assert!(output.contains("Applying the migration to the primary database"));
+    assert!(
+        output.contains("Applying the migration to the primary database"),
+        "unexpected migrate generate --apply output:\n{output}"
+    );
     assert!(
         !project.path().join("dinoco/migrations").exists()
             || fs::read_dir(project.path().join("dinoco/migrations"))
@@ -299,9 +302,8 @@ struct TestDir {
 impl TestDir {
     fn new() -> Self {
         let mut path = std::env::temp_dir();
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("system time should be valid").as_nanos();
 
-        path.push(format!("dinoco-cli-tests-{}-{nanos}", std::process::id()));
+        path.push(format!("dinoco-cli-tests-{}-{}", std::process::id(), Uuid::now_v7()));
 
         fs::create_dir_all(&path).expect("temp test dir should be created");
 

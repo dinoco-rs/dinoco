@@ -81,7 +81,9 @@ async fn postgres_migration_builds_and_applies_schema() {
 
         assert!(indexes.iter().any(|index| index.table_name == users_table && index.column_name == "status"));
         assert!(
-            indexes.iter().any(|index| index.table_name == users_table && index.column_name == "email" && index.is_unique)
+            indexes
+                .iter()
+                .any(|index| index.table_name == users_table && index.column_name == "email" && index.is_unique)
         );
 
         Ok::<(), String>(())
@@ -130,7 +132,9 @@ async fn mysql_migration_builds_and_applies_schema() {
 
         assert!(indexes.iter().any(|index| index.table_name == users_table && index.column_name == "status"));
         assert!(
-            indexes.iter().any(|index| index.table_name == users_table && index.column_name == "email" && index.is_unique)
+            indexes
+                .iter()
+                .any(|index| index.table_name == users_table && index.column_name == "email" && index.is_unique)
         );
 
         Ok::<(), String>(())

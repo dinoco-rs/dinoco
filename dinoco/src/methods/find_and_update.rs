@@ -1,13 +1,19 @@
 use std::marker::PhantomData;
 
+use chrono::{DateTime, Utc};
+
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression};
 
-use crate::{FieldUpdate, FindAndUpdateModel, execute_find_and_update};
+use crate::{
+    FieldUpdate, FindAndUpdateModel, execute_find_and_update,
+    queue::{QueueDispatch, enqueue_single_conditions},
+};
 
 #[derive(Debug, Clone)]
 pub struct FindAndUpdate<M> {
     conditions: Vec<Expression>,
     updates: Vec<FieldUpdate>,
+    queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> M>,
 }
 
@@ -15,7 +21,7 @@ pub fn find_and_update<M>() -> FindAndUpdate<M>
 where
     M: FindAndUpdateModel,
 {
-    FindAndUpdate { conditions: Vec::new(), updates: Vec::new(), marker: PhantomData }
+    FindAndUpdate { conditions: Vec::new(), updates: Vec::new(), queue: None, marker: PhantomData }
 }
 
 impl<M> FindAndUpdate<M>
@@ -38,6 +44,27 @@ where
         self
     }
 
+    #[doc(hidden)]
+    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
+        self.queue = Some(QueueDispatch::immediate(event));
+
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
+        self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
+
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
+        self.queue = Some(QueueDispatch::at(event, execute_at));
+
+        self
+    }
+
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -46,6 +73,15 @@ where
         M: 'a,
         A: DinocoAdapter,
     {
-        async move { execute_find_and_update::<M, A>(self.conditions, self.updates, client).await }
+        async move {
+            let conditions = self.conditions;
+            let result = execute_find_and_update::<M, A>(conditions.clone(), self.updates, client).await?;
+
+            if let Some(queue) = &self.queue {
+                enqueue_single_conditions(client, queue, result.update_identity_conditions()).await?;
+            }
+
+            Ok(result)
+        }
     }
 }

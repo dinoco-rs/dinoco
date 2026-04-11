@@ -1,6 +1,7 @@
 use crate::{Expression, OrderDirection};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SelectStatement {
     pub select: Vec<String>,
     pub from: String,

@@ -2,18 +2,18 @@ export const title = "概览";
 
 # 概览
 
-**Dinoco** 原生支持 **PostgreSQL**、**MySQL** 和 **SQLite**。  
-我们正在努力尽快把这项支持扩展到更多数据库。
+**Dinoco** 原生支持 **PostgreSQL**、**MySQL** 和 **SQLite** 数据库。
+我们正在努力尽快将支持扩展到新的数据库！
 
 > ⚠️
-> 目前 Dinoco 仅支持 **直接连接 URL**。
+> 目前，Dinoco 仅支持**直接连接 URL**。
 
 ---
 
 ## 支持的版本
 
-| 数据库 | 最低版本 |
-| :------------- | :------------ |
+| 数据库       | 最低版本 |
+| :----------- | :------- |
 | **SQLite**     | `>= 3.25`     |
 | **PostgreSQL** | `>= 10`       |
 | **MySQL**      | `>= 8.0`      |
@@ -22,11 +22,11 @@ export const title = "概览";
 
 ## 连接配置
 
-配置在 schema 文件中的 `config` 块里完成。
+配置在您的 schema 文件中的 `config` 块内完成。
 
 ### SQLite
 
-使用 SQLite 时，数据库文件会自动生成在 `dinoco` 文件夹中。
+使用 SQLite 时，数据库文件将自动在您的 `dinoco` 文件夹中生成。
 
 ```dinoco
 config {
@@ -37,7 +37,7 @@ config {
 
 ## PostgreSQL 或 MySQL
 
-对于外部数据库，请填写对应的连接字符串：
+对于外部数据库，请输入相应的连接字符串：
 
 ```dinoco
 config {

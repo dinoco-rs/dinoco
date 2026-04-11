@@ -68,6 +68,21 @@ where
         Self { inner: self.inner.read_in_primary() }
     }
 
+    #[doc(hidden)]
+    pub fn __enqueue(self, event: impl Into<String>) -> Self {
+        Self { inner: self.inner.__enqueue(event) }
+    }
+
+    #[doc(hidden)]
+    pub fn __enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Self {
+        Self { inner: self.inner.__enqueue_in(event, delay_ms) }
+    }
+
+    #[doc(hidden)]
+    pub fn __enqueue_at(self, event: impl Into<String>, execute_at: chrono::DateTime<chrono::Utc>) -> Self {
+        Self { inner: self.inner.__enqueue_at(event, execute_at) }
+    }
+
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -76,16 +91,22 @@ where
         A: DinocoAdapter,
     {
         async move {
+            let statement = self.inner.statement.limit(1);
             let mut rows = crate::execute_many::<M, S, A>(
-                self.inner.statement.limit(1),
+                statement.clone(),
                 &self.inner.includes,
                 &self.inner.counts,
                 self.inner.read_mode,
                 client,
             )
             .await?;
+            let result = rows.drain(..).next();
 
-            Ok(rows.drain(..).next())
+            if let Some(queue) = &self.inner.queue {
+                crate::queue::enqueue_find_statement(client, queue, statement, true).await?;
+            }
+
+            Ok(result)
         }
     }
 }

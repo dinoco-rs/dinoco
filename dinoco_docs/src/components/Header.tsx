@@ -1,12 +1,12 @@
 // 							<DropdownButton isOpen={versionOpen} onClick={() => closeOtherMenus('version')} className="py-1 px-2.5 h-8">
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { useRouter } from 'tuono-router';
 import { FaGithub, FaHeart } from 'react-icons/fa';
 import { FiCheck, FiChevronDown, FiGlobe, FiMoon, FiSun, FiMenu, FiBox, FiDatabase, FiLayers, FiTerminal } from 'react-icons/fi';
 
-import { buildDocsPath, getAvailableLocales, getGroupsForVersion, getVersionNames, parseDocsPath, resolveDocsPath } from '../jsons/versions';
+import { buildDocsPath, getAvailableLocales, getFirstDocsPath, getGroupsForVersion, getVersionNames, parseDocsPath, resolveDocsPath } from '../jsons/versions';
 import { useIntl } from '../hooks/useIntl';
 import { type DocsLocale, useDocs } from '../hooks/useDocs';
 
@@ -21,7 +21,7 @@ const iconMap = {
 
 function DropdownButton({ isOpen, children, onClick, className }: DropdownButtonProps): React.JSX.Element {
 	return (
-		<button onClick={onClick} className={clsx('flex cursor-pointer items-center gap-2 rounded-md py-1.5 transition-colors', className)}>
+		<button type="button" onClick={onClick} className={clsx('flex cursor-pointer items-center gap-2 rounded-md py-1.5 transition-colors', className)}>
 			{children}
 			<FiChevronDown size={14} className={clsx('text-slate-400 transition-transform duration-200', isOpen && 'rotate-180')} />
 		</button>
@@ -31,6 +31,7 @@ function DropdownButton({ isOpen, children, onClick, className }: DropdownButton
 function DropdownItem({ isActive, children, onClick }: DropdownItemProps): React.JSX.Element {
 	return (
 		<button
+			type="button"
 			onClick={onClick}
 			className={clsx(
 				'flex w-full cursor-pointer items-center justify-between px-4 py-2.5 text-left text-sm transition-colors hover:bg-light-100 dark:hover:bg-[#242424]',
@@ -108,13 +109,29 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 			subItemShortName: routeParams.subItemShortName,
 			locale: nextLocale,
 		});
-		if (resolved === undefined) return;
 
-		setVersion(resolved.version.name);
-		setLocale(nextLocale);
-		setConsumer(resolved.group.shortName);
+		const nextPath =
+			resolved === undefined
+				? getFirstDocsPath(nextVersion, nextLocale)
+				: buildDocsPath(
+						resolved.version.name,
+						resolved.group.shortName,
+						resolved.parentItem?.shortName ?? resolved.item.shortName,
+						resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName,
+					);
 
-		router.push(buildDocsPath(resolved.version.name, resolved.group.shortName, resolved.parentItem?.shortName ?? resolved.item.shortName, resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName));
+		startTransition(() => {
+			setLocale(nextLocale);
+			setVersion(resolved?.version.name ?? nextVersion);
+			setConsumer(resolved?.group.shortName ?? nextConsumer);
+			setLocaleOpen(false);
+			setVersionOpen(false);
+			setMobileConsumerOpen(false);
+
+			if (router.pathname !== nextPath) {
+				router.replace(nextPath);
+			}
+		});
 	};
 
 	const currentConsumerObj = consumerOptions.find(o => o.shortName === displayedConsumer);
@@ -205,11 +222,11 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 	}
 
 	return (
-		<header className="block md:sticky top-0 z-40 w-full border-b border-light-300 bg-light-50/95 backdrop-blur-md transition-colors duration-300 dark:border-[#242424] dark:bg-[#050505]/95">
+		<header className="block md:sticky top-0 z-[120] w-full border-b border-light-300 bg-light-50/95 backdrop-blur-sm transition-colors duration-300 dark:border-[#242424] dark:bg-[#050505]/95">
 			<div className="flex flex-col w-full px-4 sm:px-6 md:px-8" ref={controlsRef}>
 				<div className="flex md:h-10 mt-4 mb-2 sm:mb-0 items-center justify-between">
 					<div className="flex items-center gap-2 md:gap-4 mb-2 md:mb-0">
-						<button onClick={onMenuToggle} className="cursor-pointer rounded-md p-2 text-slate-500 hover:bg-light-200 dark:text-slate-400 dark:hover:bg-[#161616] lg:hidden">
+						<button type="button" onClick={onMenuToggle} className="cursor-pointer rounded-md p-2 text-slate-500 hover:bg-light-200 dark:text-slate-400 dark:hover:bg-[#161616] lg:hidden">
 							<FiMenu size={20} />
 						</button>
 
@@ -250,6 +267,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
 						<div className="hidden md:flex items-center rounded-full border border-light-300 bg-light-100 p-1 gap-2 dark:border-[#242424] dark:bg-[#161616]">
 							<button
+								type="button"
 								onClick={() => setTheme('light')}
 								className={clsx('cursor-pointer rounded-full p-2 transition-all', theme === 'light' ? 'bg-gray-200 text-orange-500 shadow-sm' : 'text-slate-400 hover:text-slate-600')}
 							>
@@ -257,6 +275,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 							</button>
 
 							<button
+								type="button"
 								onClick={() => setTheme('dark')}
 								className={clsx(
 									'cursor-pointer rounded-full p-2 transition-all border',
@@ -284,7 +303,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 						</div> */}
 
 						<div className="md:hidden flex items-center justify-center">
-							<button onClick={() => setTheme(theme == 'light' ? 'dark' : 'light')} className="cursor-pointer rounded-full transition-all">
+							<button type="button" onClick={() => setTheme(theme == 'light' ? 'dark' : 'light')} className="cursor-pointer rounded-full transition-all">
 								{theme == 'light' ? <FiMoon size={18} /> : <FiSun size={18} />}
 							</button>
 						</div>
@@ -300,6 +319,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
 						return (
 							<button
+								type="button"
 								key={option.name}
 								onClick={() => navigateToResolvedPath(displayedVersion, locale, option.shortName)}
 								className={clsx(
@@ -319,6 +339,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
 				<div className="block sm:hidden w-full relative mb-3">
 					<button
+						type="button"
 						onClick={() => closeOtherMenus('mobileConsumer')}
 						className="flex w-full cursor-pointer items-center justify-between rounded-md border border-light-300 bg-light-100 px-4 py-2.5 text-sm font-semibold transition-colors dark:border-[#242424] dark:bg-[#161616] dark:text-white"
 					>

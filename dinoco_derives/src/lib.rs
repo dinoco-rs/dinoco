@@ -11,7 +11,7 @@ pub fn rowable_derive(input: TokenStream) -> TokenStream {
     rowable::derive(input)
 }
 
-#[proc_macro_derive(Extend, attributes(extend))]
+#[proc_macro_derive(Extend, attributes(extend, insertable))]
 pub fn extend_derive(input: TokenStream) -> TokenStream {
     extend::derive(input)
 }

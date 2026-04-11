@@ -1,0 +1,111 @@
+export const title = 'cache()';
+
+# cache
+
+`client.cache()` espone l'accesso diretto a Redis configurato in `DinocoClient`, senza dipendere dagli helper di cache accoppiati in `find_first` e `find_many`.
+
+## Cosa puoi fare
+
+- Leggere una chiave con `.get::<T>(...)`
+- Salvare una chiave con `.set(...)`
+- Salvare con scadenza usando `.set_with_ttl(...)`
+- Rimuovere una chiave con `.delete(...)`
+
+## Quando usarlo
+
+Usa `client.cache()` quando vuoi:
+
+- montare una cache manuale
+- invalidare le chiavi dopo operazioni di scrittura
+- condividere payload tra più query
+- memorizzare strutture pronte per una lettura rapida
+
+## Come funziona
+
+Il metodo usa Redis configurato in `DinocoClientConfig::with_redis(...)`.
+
+Se il client non ha Redis configurato, l'operazione restituisce un errore.
+
+## Metodi disponibili
+
+- `.get::<T>(key)`: cerca e deserializza il valore come `T`
+- `.set(key, &value)`: serializza e salva senza TTL
+- `.set_with_ttl(key, &value, ttl_seconds)`: serializza e salva con scadenza in secondi
+- `.delete(key)`: rimuove la chiave
+
+## Esempio base
+
+```rust
+use database::*;
+
+let cache = client.cache();
+
+cache.set("users:count", &42_i64).await?;
+
+let count = cache.get::<i64>("users:count").await?;
+
+println!("{count:?}");
+```
+
+## Esempio con lista tipizzata
+
+```rust
+use database::*;
+
+let users = vec![
+    User { id: 1, name: "Matheus".to_string() },
+    User { id: 2, name: "Ana".to_string() },
+];
+
+client.cache().set("users:list", &users).await?;
+
+let cached = client.cache().get::<Vec<User>>("users:list").await?;
+```
+
+## Esempio con TTL
+
+```rust
+use database::*;
+
+client.cache().set_with_ttl("users:top-10", &vec![1, 2, 3], 60).await?;
+```
+
+## Esempio di invalidazione
+
+```rust
+use database::*;
+
+dinoco::update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .values(User { id: 1, name: "Novo nome".to_string() })
+    .execute(&client)
+    .await?;
+
+client.cache().delete("users:1").await?;
+client.cache().delete("users:list").await?;
+```
+
+## Tipi supportati
+
+I valori sono serializzati in JSON, quindi il tipo deve essere compatibile con `serde`.
+
+Esempi comuni:
+
+- `Vec<User>`
+- `Option<User>`
+- `String`
+- `bool`
+- `i64`
+- structs serializzabili
+
+## Osservazioni
+
+- `client.cache()` è una cache manuale; non esegue query sul database.
+- Per la cache integrata nelle query, usa `find_first().cache(...)` e `find_many().cache(...)`.
+- Puoi chiamare `client.cache()` quante volte vuoi; crea solo un wrapper leggero.
+
+## Prossimi passi
+
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`queues`**](/v0.0.2/orm/queues)

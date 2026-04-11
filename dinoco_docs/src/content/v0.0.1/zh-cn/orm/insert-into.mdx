@@ -6,30 +6,30 @@ export const title = "insert_into";
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
-- 通过 `.values(item)` 传递值
+- 使用 `.values(item)` 传递值
 - 通过 `.with_relation(related)` 插入关联
-- 通过 `.with_connection(connected)` 连接现有关联
-- 通过 `.execute(&client)` 执行
+- 通过 `.with_connection(connected)` 连接现有关系
+- 使用 `.execute(&client)` 执行
 
 ## 方法说明
 
 - `.values(item)`: 定义要插入的记录。
-- `.with_relation(related)`: 与父级一起插入新的关联记录。
-- `.with_connection(connected)`: 将插入的记录与现有元素连接，通常在支持连接的关系流中。
-- `.returning::<T>()`: 将返回值更改为插入元素的类型化投影。
+- `.with_relation(related)`: 与父记录一起插入新的关联记录。
+- `.with_connection(connected)`: 将插入的记录连接到现有项，通常在支持连接的关系流中。
+- `.returning::<T>()`: 将返回值更改为插入项的类型化投影。
 - `.execute(&client)`: 执行数据库写入操作。
 
 ## 返回值
 
-如果没有 `.returning::<T>()`，则返回值为:
+如果没有 `.returning::<T>()`，返回值为：
 
 ```rust
 DinocoResult<()>
 ```
 
-如果使用 `.returning::<T>()`，则返回值为:
+使用 `.returning::<T>()`，返回值变为：
 
 ```rust
 DinocoResult<T>
@@ -48,9 +48,9 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## 关系示例
+## 关联示例
 
-当生成的模型支持父级和关联项的联合插入时，请使用 `.with_relation(...)`。
+当生成的模型支持同时插入父级和关联项时，使用 `.with_relation(...)`。
 
 ```rust
 dinoco::insert_into::<User>()
@@ -62,7 +62,7 @@ dinoco::insert_into::<User>()
 
 ## 连接示例
 
-当您想要插入一个元素并连接一个已存在的关联时，请使用 `.with_connection(...)`。
+当您想插入一个项并连接一个现有关系时，使用 `.with_connection(...)`。
 
 ```rust
 dinoco::insert_into::<User>()
@@ -92,4 +92,4 @@ let created = dinoco::insert_into::<User>()
 ## 下一步
 
 - [**`insert_many::<M>()`**](/v0.0.1/orm/insert-many): 批量插入。
-- [**`update::<M>()`**](/v0.0.1/orm/update): 更新记录。
+- [**`update::<M>()`**](/v0.0.1/orm/update): 记录更新。

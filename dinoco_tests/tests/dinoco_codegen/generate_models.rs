@@ -77,6 +77,191 @@ model Post {
 }
 
 #[test]
+fn generate_models_adds_cache_extensions_when_redis_is_configured() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+
+    redis = {
+        url = env("REDIS_URL")
+    }
+}
+
+model User {
+    id String @id @default(uuid())
+    name String
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let dinoco_module =
+        fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
+
+    assert!(dinoco_module.contains("pub trait DinocoClientCacheExt<A>"));
+    assert!(dinoco_module.contains("pub trait FindFirstCacheExt"));
+    assert!(dinoco_module.contains("pub trait FindManyCacheExt"));
+    assert!(dinoco_module.contains("fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S>"));
+    assert!(dinoco_module.contains("cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64)"));
+    assert!(dinoco_module.contains("pub trait FindManyQueueExt"));
+    assert!(dinoco_module.contains("pub trait InsertQueueExt"));
+    assert!(dinoco_module.contains("pub trait FindAndUpdateQueueExt"));
+    assert!(dinoco_module.contains("pub fn workers() -> QueueWorkers<SqliteAdapter>"));
+    assert!(dinoco_module.contains("config.with_redis(dinoco::DinocoRedisConfig::from_url("));
+}
+
+#[test]
+fn generate_models_adds_workers_helper() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+
+    redis = {
+        url = env("REDIS_URL")
+    }
+}
+
+model User {
+    id String @id @default(uuid())
+    name String
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let dinoco_module =
+        fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
+
+    assert!(dinoco_module.contains("pub fn workers() -> QueueWorkers<SqliteAdapter>"));
+    assert!(dinoco_module.contains("QueueWorkers::<SqliteAdapter>::new()"));
+}
+
+#[test]
+fn generate_models_skips_cache_extensions_without_redis() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model User {
+    id String @id @default(uuid())
+    name String
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let dinoco_module =
+        fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
+
+    assert!(!dinoco_module.contains("pub trait DinocoClientCacheExt"));
+    assert!(!dinoco_module.contains("pub trait FindFirstCacheExt"));
+    assert!(!dinoco_module.contains("pub trait FindManyCacheExt"));
+    assert!(!dinoco_module.contains("pub trait FindManyQueueExt"));
+    assert!(!dinoco_module.contains("pub trait InsertQueueExt"));
+    assert!(!dinoco_module.contains("pub fn workers() -> QueueWorkers<"));
+    assert!(!dinoco_module.contains("config.with_redis("));
+}
+
+#[test]
+fn generate_models_prefers_default_derives_when_defaults_match_rust_defaults() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum Role {
+    USER
+    ADMIN
+}
+
+model User {
+    id Integer @id @default(autoincrement())
+    name String
+    active Boolean
+    payload Json
+    role Role
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let user_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/user.rs")).expect("generated user model should exist");
+    let enums_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/enums.rs")).expect("generated enums file should exist");
+
+    assert!(user_file.contains("Deserialize, Rowable, Default)]"));
+    assert!(!user_file.contains("impl Default for User {"));
+    assert!(user_file.contains("#[derive(Default)]\npub struct UserInclude {}"));
+    assert!(user_file.contains("#[derive(Default)]\npub struct UserRelations {}"));
+    assert!(!user_file.contains("impl Default for UserInclude {"));
+    assert!(!user_file.contains("impl Default for UserRelations {"));
+
+    assert!(enums_file.contains("PartialEq, Eq, Default, dinoco::serde::Serialize"));
+    assert!(enums_file.contains("#[default]\n    #[serde(rename = \"USER\")]"));
+    assert!(!enums_file.contains("impl Default for Role {"));
+}
+
+#[test]
+fn generate_models_preserves_manual_default_when_schema_requires_custom_defaults() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum Role {
+    USER
+    ADMIN
+}
+
+model User {
+    id Integer @id @default(autoincrement())
+    name String @default("Dinoco")
+    createdAt DateTime @default(now())
+    role Role @default(ADMIN)
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let user_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/user.rs")).expect("generated user model should exist");
+
+    assert!(user_file.contains("Deserialize, Rowable)]"));
+    assert!(!user_file.contains("Deserialize, Rowable, Default)]"));
+    assert!(user_file.contains("impl Default for User {"));
+    assert!(user_file.contains("name: \"Dinoco\".to_string()"));
+    assert!(user_file.contains("createdAt: dinoco::Utc::now()"));
+    assert!(user_file.contains("role: super::enums::Role::ADMIN"));
+}
+
+#[test]
 fn generate_models_uses_partitioned_loader_for_many_to_many_include_limits() {
     let _lock = lock_current_dir();
     let raw = r#"
@@ -202,8 +387,11 @@ model Tag {
         fs::read_to_string(temp_dir.path().join("dinoco/models/post.rs")).expect("generated post model should exist");
 
     assert!(user_file.contains("pub fn __dinoco_load_profile"));
-    assert!(user_file.contains("client.read_adapter(false)"));
-    assert!(user_file.contains("Expression::Column(\"userId\".to_string()).in_values"));
+    assert!(user_file.contains("qualify_select_statement"));
+    assert!(user_file.contains("LEFT JOIN"));
+    assert!(user_file.contains("client.read_adapter(matches!(read_mode, dinoco::ReadMode::Primary))"));
+    assert!(user_file.contains("Expression::Column(format!(\"{}.{}\", \"User\", \"id\"))"));
+    assert!(user_file.contains("row.get_optional::<i64>(relation_offset)?"));
 
     assert!(user_file.contains("pub fn __dinoco_load_followers"));
     assert!(user_file.contains(".condition(dinoco::Expression::Column(\"user_A_id\".to_string())"));
@@ -219,6 +407,10 @@ model Tag {
     assert!(post_file.contains("pub fn __dinoco_load_tags"));
     assert!(post_file.contains(".from(\"_PostTags\")"));
     assert!(post_file.contains(".condition(dinoco::Expression::Column(\"post_id\".to_string())"));
+    assert!(post_file.contains("pub enum PostConnection"));
+    assert!(post_file.contains("Tag(i64)"));
+    assert!(post_file.contains("impl dinoco::InsertConnectionPayload<Post> for PostConnection"));
+    assert!(post_file.contains("Self::Tag(value) => vec![dinoco::RelationLinkPlan"));
     assert!(user_file.contains("pub fn __dinoco_count_posts"));
     assert!(user_file.contains("C::load_counts(&mut children, &include.counts, client, read_mode).await?;"));
     assert!(post_file.contains("pub fn __dinoco_count_comments"));
@@ -271,14 +463,13 @@ model Task {
         fs::read_to_string(temp_dir.path().join("dinoco/models/task.rs")).expect("generated task model should exist");
 
     assert!(enum_file.contains("pub enum Status"));
-    assert!(
-        enum_file
-            .contains("#[derive(Debug, Clone, PartialEq, Eq, dinoco::serde::Serialize, dinoco::serde::Deserialize)]")
-    );
+    assert!(enum_file.contains(
+        "#[derive(Debug, Clone, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize)]"
+    ));
     assert!(enum_file.contains("#[serde(crate = \"dinoco::serde\")]"));
     assert!(enum_file.contains("    #[serde(rename = \"IN_PROGRESS\")]"));
     assert!(enum_file.contains("    IN_PROGRESS,"));
-    assert!(enum_file.contains("        Self::IN_PROGRESS"));
+    assert!(enum_file.contains("    #[default]"));
     assert!(enum_file.contains("\"IN_PROGRESS\" => Ok(Self::IN_PROGRESS)"));
     assert!(model_file.contains("status: super::enums::Status::IN_PROGRESS"));
 }

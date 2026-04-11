@@ -6,9 +6,9 @@ export const title = "find_first";
 
 ---
 
-## 할 수 있는 것
+## 무엇을 할 수 있나요
 
-`find_many`와 동일한 메서드를 제공합니다:
+`find_many`와 동일한 메서드를 노출합니다:
 
 - `select`
 - `cond`
@@ -22,17 +22,17 @@ export const title = "find_first";
 
 ## 메서드 설명
 
-- `.select::<T>()`: 기본 프로젝션을 사용자 정의 프로젝션으로 대체합니다.
+- `.select::<T>()`: 기본 프로젝션을 사용자 지정 프로젝션으로 변경합니다.
 - `.cond(...)`: 검색에 필터를 추가합니다.
 - `.take(...)`: 고려할 최대 레코드 수를 제한합니다.
-- `.skip(...)`: 첫 번째 결과를 선택하기 전에 레코드를 건너뜠니다.
-- `.order_by(...)`: 어떤 레코드를 먼저 고려할지 정의합니다.
-- `.includes(...)`: 주 요소와 함께 관계를 로드합니다.
+- `.skip(...)`: 첫 번째 결과를 선택하기 전에 레코드를 건너뜠습니다.
+- `.order_by(...)`: 어떤 레코드를 먼저 고려해야 할지 정의합니다.
+- `.includes(...)`: 주 항목과 함께 관계를 로드합니다.
 - `.count(...)`: 프로젝션에서 관계 카운터를 계산합니다.
-- `.read_in_primary()`: 기본 데이터베이스에서 읽기를 강제합니다.
-- `.execute(&client)`: 쿼리를 실행하고 최대 하나의 요소를 반환합니다.
+- `.read_in_primary()`: 주 데이터베이스에서 읽기를 강제합니다.
+- `.execute(&client)`: 쿼리를 실행하고 최대 하나의 항목을 반환합니다.
 
-## 반환값
+## 반환 값
 
 `select::<T>()`가 없으면 반환 값은 다음과 같습니다:
 
@@ -40,13 +40,13 @@ export const title = "find_first";
 DinocoResult<Option<M>>
 ```
 
-`select::<T>()`가 있으면 반환 값은 다음과 같습니다:
+`select::<T>()`가 있으면 반환 값은 다음과 같이 변경됩니다:
 
 ```rust
 DinocoResult<Option<T>>
 ```
 
-## 기본 예제
+## 기본 예시
 
 ```rust
 let user = dinoco::find_first::<User>()
@@ -55,7 +55,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## select 예제
+## select를 사용한 예시
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -72,7 +72,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## 관계 예제
+## 관계를 사용한 예시
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -91,7 +91,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-## 정렬 예제
+## 정렬을 사용한 예시
 
 ```rust
 let latest_user = dinoco::find_first::<User>()
@@ -103,4 +103,4 @@ let latest_user = dinoco::find_first::<User>()
 ## 다음 단계
 
 - [**`find_many::<M>()`**](/v0.0.1/orm/find-many): 여러 레코드를 검색합니다.
-- [**`count::<M>()`**](/v0.0.1/orm/count): 레코드 수.
+- [**`count::<M>()`**](/v0.0.1/orm/count): 레코드 수입니다.

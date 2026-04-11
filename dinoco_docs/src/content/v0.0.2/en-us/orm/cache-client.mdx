@@ -1,0 +1,111 @@
+export const title = 'cache()';
+
+# cache
+
+`client.cache()` exposes direct access to the Redis configured in `DinocoClient`, without relying on the cache helpers coupled with `find_first` and `find_many`.
+
+## What you can do
+
+- Read a key with `.get::<T>(...)`
+- Save a key with `.set(...)`
+- Save with expiration using `.set_with_ttl(...)`
+- Remove a key with `.delete(...)`
+
+## When to use
+
+Use `client.cache()` when you want to:
+
+- set up manual cache
+- invalidate keys after write operations
+- share payloads between multiple queries
+- store structures ready for fast reading
+
+## How it works
+
+The method uses the Redis configured in `DinocoClientConfig::with_redis(...)`.
+
+If the client does not have Redis configured, the operation returns an error.
+
+## Available Methods
+
+- `.get::<T>(key)`: fetches and deserializes the value as `T`
+- `.set(key, &value)`: serializes and saves without TTL
+- `.set_with_ttl(key, &value, ttl_seconds)`: serializes and saves with expiration in seconds
+- `.delete(key)`: removes the key
+
+## Basic Example
+
+```rust
+use database::*;
+
+let cache = client.cache();
+
+cache.set("users:count", &42_i64).await?;
+
+let count = cache.get::<i64>("users:count").await?;
+
+println!("{count:?}");
+```
+
+## Example with Typed List
+
+```rust
+use database::*;
+
+let users = vec![
+    User { id: 1, name: "Matheus".to_string() },
+    User { id: 2, name: "Ana".to_string() },
+];
+
+client.cache().set("users:list", &users).await?;
+
+let cached = client.cache().get::<Vec<User>>("users:list").await?;
+```
+
+## Example with TTL
+
+```rust
+use database::*;
+
+client.cache().set_with_ttl("users:top-10", &vec![1, 2, 3], 60).await?;
+```
+
+## Invalidation Example
+
+```rust
+use database::*;
+
+dinoco::update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .values(User { id: 1, name: "Novo nome".to_string() })
+    .execute(&client)
+    .await?;
+
+client.cache().delete("users:1").await?;
+client.cache().delete("users:list").await?;
+```
+
+## Supported Types
+
+Values are serialized to JSON, so the type must be compatible with `serde`.
+
+Common examples:
+
+- `Vec<User>`
+- `Option<User>`
+- `String`
+- `bool`
+- `i64`
+- serializable structs
+
+## Notes
+
+- `client.cache()` is manual cache; it does not execute database queries.
+- For integrated query caching, use `find_first().cache(...)` and `find_many().cache(...)`.
+- You can call `client.cache()` as many times as you want; it only creates a lightweight wrapper.
+
+## Next Steps
+
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`queues`**](/v0.0.2/orm/queues)

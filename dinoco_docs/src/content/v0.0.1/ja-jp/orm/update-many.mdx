@@ -2,14 +2,14 @@ export const title = "update_many";
 
 # update_many
 
-複数のレコードを一度に更新するために使用されます。
+一度に複数のレコードを更新するために使用されます。
 
 ---
 
 ## できること
 
 - `.cond(...)`: 更新できるレコードを制限します。
-- `.values(Vec<M>)`: バッチ更新で使用される要素を定義します。
+- `.values(Vec<M>)`: バッチ更新で使用するアイテムを定義します。
 - `.returning::<T>()`: 更新されたレコードを型付きリストとして返します。
 - `.execute(&client)`: バッチ更新を実行します。
 
@@ -27,7 +27,7 @@ DinocoResult<()>
 DinocoResult<Vec<T>>
 ```
 
-## 基本例
+## 基本的な例
 
 ```rust
 dinoco::update_many::<User>()
@@ -39,7 +39,7 @@ dinoco::update_many::<User>()
     .await?;
 ```
 
-<h2>戻り値の例</h2>
+## 戻り値を含む例
 
 ```rust
 let updated = dinoco::update_many::<User>()
@@ -52,7 +52,7 @@ let updated = dinoco::update_many::<User>()
     .await?;
 ```
 
-<h2>フィルターの例</h2>
+## フィルターを含む例
 
 ```rust
 dinoco::update_many::<User>()
@@ -67,5 +67,5 @@ dinoco::update_many::<User>()
 
 ## 次のステップ
 
-- [**`update::<M>()`**](/v0.0.1/orm/update): 条件付きの伝統的な更新。
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 単一レコードのアトミックな更新。
+- [**`update::<M>()`**](/v0.0.1/orm/update): 条件付きの従来の更新。
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 単一レコードのアトミック更新。

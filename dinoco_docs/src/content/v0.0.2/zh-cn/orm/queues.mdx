@@ -1,0 +1,153 @@
+export const title = '队列';
+
+# 队列
+
+Dinoco 的队列系统允许从 `insert`、`find` 和 `update` 发布异步事件，仅将重新水合记录所需的数据存储在 `Redis` 中，以便 worker 执行时使用。
+
+## 您可以做什么
+
+- 允许在所有客户端方法中（删除操作除外）链式调用 .enqueue(...)、.enqueue_in(...) 和 .enqueue_at(...)。
+- 使用 `workers().on::<Model>(... )` 处理任务。
+- 使用 `workers().on_with_relation::<Model, Projection>(... )` 在 worker 中加载带关系的投影。
+- 在 handler 运行之前重新加载最新数据。
+- 自动忽略记录已不存在的任务。
+
+## 工作原理
+
+当您使用 `enqueue` 时，Dinoco 会：
+
+1. 正常执行主要操作。
+2. 仅将记录的搜索条件保存到队列中。
+3. 在 worker 中，从数据库获取最新数据。
+4. 然后才执行 handler。
+
+如果在查找时记录已不存在，则 handler 不会运行，并且任务将从队列中移除。
+
+## 入队方法
+
+- `.enqueue(事件)`: 安排立即执行。
+- `.enqueue_in(事件, 延迟毫秒)`: 安排延迟执行（以毫秒为单位）。
+- `.enqueue_at(事件, UTC日期)`: 安排在 `chrono::DateTime<Utc>` 中的特定日期执行。
+
+```rust
+use database::*;
+
+insert_into::<User>()
+    .values(User { id: 1, name: "马修".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+
+insert_into::<User>()
+    .values(User { id: 2, name: "安娜".to_string() })
+    .enqueue_in("user.reminder", 30_000)
+    .execute(&client)
+    .await?;
+
+insert_into::<User>()
+    .values(User { id: 3, name: "莉亚".to_string() })
+    .enqueue_at("user.scheduled", dinoco::Utc::now() + chrono::Duration::hours(1))
+    .execute(&client)
+    .await?;
+```
+
+## Worker
+
+使用 `workers()` 注册异步 handler。worker 的上下文暴露：
+
+- `data`: 重新水合的记录。
+- `client`: `DinocoClient` 的副本。
+- `success()` 或 `remove()`: 从队列中移除任务。
+- `fail()`: 使用默认重试机制重新安排。
+- `retry_in()` 和 `retry_at()`: 与 `enqueue_in` 和 `enqueue_at` 理念相同。
+- `.run().await?`: 在后台启动 worker 并立即返回一个 `JoinHandle`。
+
+调用 `run` 时，Dinoco 会为 worker 创建一个专属的 `DinocoClient`，带有自己的连接池。这样，队列循环就不会重复利用主应用程序的连接池。
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("正在处理 {}", job.data.name);
+        job.success()
+    })
+    .run()
+    .await?;
+```
+
+如果您需要带关系的投影，请使用 `on_with_relation`。Dinoco 会在 handler 运行之前重新加载记录并应用包含树。
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{} 有 {} 篇帖子", job.data.name, job.data.posts.len());
+            job.success()
+        },
+    )
+    .run()
+    .await?;
+```
+
+您也可以处理列表：
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        for user in job.data {
+            println!("{}", user.name);
+        }
+
+        job.success()
+    })
+    .run()
+    .await?;
+```
+
+## Redis 配置
+
+队列使用在 `DinocoClientConfig::with_redis(...)` 中配置的 `Redis`。对于 `enqueue_in` 和 `enqueue_at`，建议启用持久化，因为计划任务会一直存在于 Redis 中直到执行时间。
+
+建议：同时使用 **AOF + RDB**。
+
+```conf
+# 启用 AOF
+appendonly yes
+
+# fsync 频率
+appendfsync everysec
+
+# AOF 文件
+appendfilename "appendonly.aof"
+
+# --- 快照 (RDB) ---
+save 900 1
+save 300 10
+save 60 10000
+
+# --- 安全 ---
+dir /data
+
+# --- 性能 ---
+no-appendfsync-on-rewrite yes
+```
+
+## 注意事项
+
+- `delete` 和 `delete_many` 不支持 `enqueue`。
+- worker 是完全异步的，底层使用 `tokio`。
+- `run()` 不会阻塞应用程序的其余部分：它在后台启动循环。
+- worker 注册接受 `Option<User>`，但 handler 仅在有记录可重新水合时运行。
+
+## 下一步
+
+- [**`insert_into::<M>()`**](/v0.0.2/orm/insert-into)
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`update::<M>()`**](/v0.0.2/orm/update)

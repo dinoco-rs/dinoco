@@ -20,6 +20,7 @@ pub use dialect::SqliteDialect;
 
 static SQLITE_DIALECT: SqliteDialect = SqliteDialect;
 
+#[derive(Clone)]
 pub struct SqliteAdapter {
     pub url: String,
     pub pool: Arc<Pool>,

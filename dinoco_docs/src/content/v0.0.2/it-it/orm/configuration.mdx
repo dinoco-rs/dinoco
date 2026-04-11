@@ -1,0 +1,67 @@
+export const title = "Configurazione";
+
+# Configurazione
+
+Il blocco `config {}` definisce come Dinoco si connetterà al database e quali risorse extra saranno disponibili nel progetto.
+
+## Cosa include `config {}`
+
+- `database`: definisce l'adattatore principale, come `sqlite`, `postgresql` o `mysql`.
+- `database_url`: specifica l'URL di connessione principale.
+- `read_replicas`: opzionale, aggiunge repliche di lettura.
+- `redis`: opzionale, abilita cache e code basate su Redis.
+
+## Esempio base
+
+```dinoco
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+```
+
+## Esempio con Redis
+
+```dinoco
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+
+    redis = {
+        url = env("REDIS_URL")
+    }
+}
+```
+
+## Esempio con repliche
+
+```dinoco
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+
+    read_replicas = [
+        env("DATABASE_READ_URL_1"),
+        env("DATABASE_READ_URL_2")
+    ]
+}
+```
+
+## Cosa cambia nell'API generata
+
+- Con `redis`, il progetto espone funzioni ausiliarie come `client.cache()`, `.cache(...)` e code con `workers()`.
+- Con `read_replicas`, le letture possono usare una replica mentre le scritture continuano sul database principale.
+- Senza `redis`, le funzionalità di cache e coda non sono completamente disponibili.
+
+## Quando modificare questo blocco
+
+- Quando si cambia il database principale del progetto.
+- Quando si aggiunge Redis per la cache o le code.
+- Quando si configura una replica di lettura.
+- Quando si regolano le variabili d'ambiente di connessione.
+
+## Prossimi passi
+
+- [**Panoramica**](/v0.0.2/orm/supported-databases)
+- [**Modelli**](/v0.0.2/orm/models)
+- [**Relazioni**](/v0.0.2/orm/relations)

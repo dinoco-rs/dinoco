@@ -9,33 +9,33 @@ export const title = "insert_into";
 ## できること
 
 - `.values(item)` で値を渡す
-- `.with_relation(related)` でリレーションシップと共に挿入する
-- `.with_connection(connected)` で既存のリレーションシップを接続する
+- `.with_relation(related)` で関連を付けて挿入する
+- `.with_connection(connected)` で既存の関連を接続する
 - `.execute(&client)` で実行する
 
 ## メソッドの説明
 
 - `.values(item)`: 挿入するレコードを定義します。
-- `.with_relation(related)`: 親レコードと共に新しい関連レコードを挿入します。
-- `.with_connection(connected)`: 挿入されたレコードを既存の要素に接続します。通常、接続をサポートするリレーションシップフローで使用されます。
-- `.returning::<T>()`: 戻り値を、挿入された要素の型付きプロジェクションに変更します。
-- `.execute(&client)`: データベースへの書き込み操作を実行します。
+- `.with_relation(related)`: 親と一緒に新しい関連レコードを挿入します。
+- `.with_connection(connected)`: 挿入されたレコードを既存のアイテムに接続します。通常、接続がサポートされている関連フローで使用されます。
+- `.returning::<T>()`: 戻り値を、挿入されたアイテムの型付きプロジェクションに変更します。
+- `.execute(&client)`: データベースへの書き込みを実行します。
 
 ## 戻り値
 
-`.returning::<T>()` なしの場合、戻り値は次のようになります。
+`.returning::<T>()` なしの場合、戻り値は次のとおりです。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()` を使用する場合、戻り値は次のようになります。
+`.returning::<T>()` ありの場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<T>
 ```
 
-## 基本例
+## シンプルな例
 
 ```rust
 dinoco::insert_into::<User>()
@@ -48,9 +48,9 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## リレーション付きの例
+## 関連を伴う例
 
-生成されたモデルが親要素と関連要素の同時挿入をサポートしている場合は、`.with_relation(...)` を使用します。
+生成されたモデルが親と関連を一緒に挿入することをサポートしている場合、`.with_relation(...)` を使用します。
 
 ```rust
 dinoco::insert_into::<User>()
@@ -60,9 +60,9 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## 接続付きの例
+## 接続を伴う例
 
-要素を挿入し、既存のリレーションシップを接続したい場合は、`.with_connection(...)` を使用します。
+アイテムを挿入し、既存の関連を接続したい場合、`.with_connection(...)` を使用します。
 
 ```rust
 dinoco::insert_into::<User>()
@@ -72,7 +72,7 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-## 型付き戻り値の例
+## 型付き戻り値を伴う例
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]

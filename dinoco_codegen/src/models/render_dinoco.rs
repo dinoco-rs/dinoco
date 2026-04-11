@@ -1,6 +1,6 @@
 use dinoco_compiler::{Database, ParsedSchema};
 
-use super::helpers::render_connection_url;
+use super::helpers::{render_connection_url, render_redis_config};
 
 const GENERATED_FILE_BANNER: &str = "// ==============================================================\n\
 // =================== DINOCO MANAGED FILE =======================\n\
@@ -10,6 +10,90 @@ const GENERATED_FILE_BANNER: &str = "// ========================================
 // Any manual changes will be overwritten the next time Dinoco runs.\n\
 // ==============================================================\n\n";
 const GENERATED_FILE_LINTS: &str = "#![allow(dead_code)]\n#![allow(non_camel_case_types)]\n#![allow(non_snake_case)]\n#![allow(non_upper_case_globals)]\n#![allow(unused_imports)]\n#![allow(unused_variables)]\n\n";
+
+fn render_cache_client_extension() -> String {
+    String::from(
+        "pub trait DinocoClientCacheExt<A>\nwhere\n    A: dinoco::DinocoAdapter,\n{\n    fn cache(&self) -> dinoco::DinocoCache<'_, A>;\n}\n\nimpl<A> DinocoClientCacheExt<A> for dinoco::DinocoClient<A>\nwhere\n    A: dinoco::DinocoAdapter,\n{\n    fn cache(&self) -> dinoco::DinocoCache<'_, A> {\n        dinoco::DinocoCache::new(self)\n    }\n}\n",
+    )
+}
+
+fn render_cache_find_first_extension() -> String {
+    String::from(
+        "pub trait FindFirstCacheExt<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M> + dinoco::serde::Serialize + dinoco::serde::de::DeserializeOwned,\n{\n    fn cache(self, key: impl Into<String>) -> dinoco::CachedFindFirst<M, S>;\n    fn cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64) -> dinoco::CachedFindFirst<M, S>;\n}\n\nimpl<M, S> FindFirstCacheExt<M, S> for dinoco::FindFirst<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M> + dinoco::serde::Serialize + dinoco::serde::de::DeserializeOwned,\n{\n    fn cache(self, key: impl Into<String>) -> dinoco::CachedFindFirst<M, S> {\n        dinoco::CachedFindFirst::new(self, dinoco::CachePolicy::new(key))\n    }\n\n    fn cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64) -> dinoco::CachedFindFirst<M, S> {\n        dinoco::CachedFindFirst::new(self, dinoco::CachePolicy::with_ttl(key, ttl_seconds))\n    }\n}\n",
+    )
+}
+
+fn render_cache_find_many_extension() -> String {
+    String::from(
+        "pub trait FindManyCacheExt<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M> + dinoco::serde::Serialize + dinoco::serde::de::DeserializeOwned,\n{\n    fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S>;\n    fn cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64) -> dinoco::CachedFindMany<M, S>;\n}\n\nimpl<M, S> FindManyCacheExt<M, S> for dinoco::FindMany<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M> + dinoco::serde::Serialize + dinoco::serde::de::DeserializeOwned,\n{\n    fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S> {\n        dinoco::CachedFindMany::new(self, dinoco::CachePolicy::new(key))\n    }\n\n    fn cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64) -> dinoco::CachedFindMany<M, S> {\n        dinoco::CachedFindMany::new(self, dinoco::CachePolicy::with_ttl(key, ttl_seconds))\n    }\n}\n",
+    )
+}
+
+fn render_find_first_queue_extension() -> String {
+    String::from(
+        "pub trait FindFirstQueueExt<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::FindFirst<M, S>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::FindFirst<M, S>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::FindFirst<M, S>;\n}\n\nimpl<M, S> FindFirstQueueExt<M, S> for dinoco::FindFirst<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::FindFirst<M, S> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::FindFirst<M, S> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::FindFirst<M, S> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_find_many_queue_extension() -> String {
+    String::from(
+        "pub trait FindManyQueueExt<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::FindMany<M, S>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::FindMany<M, S>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::FindMany<M, S>;\n}\n\nimpl<M, S> FindManyQueueExt<M, S> for dinoco::FindMany<M, S>\nwhere\n    M: dinoco::Model,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::FindMany<M, S> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::FindMany<M, S> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::FindMany<M, S> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_insert_queue_extension() -> String {
+    String::from(
+        "pub trait InsertQueueExt<M, V>\nwhere\n    M: dinoco::InsertModel,\n    V: dinoco::InsertPayload<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::Insert<M, V>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::Insert<M, V>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::Insert<M, V>;\n}\n\nimpl<M, V> InsertQueueExt<M, V> for dinoco::Insert<M, V>\nwhere\n    M: dinoco::InsertModel,\n    V: dinoco::InsertPayload<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::Insert<M, V> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::Insert<M, V> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::Insert<M, V> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_insert_returning_queue_extension() -> String {
+    String::from(
+        "pub trait InsertReturningQueueExt<M, V, S>\nwhere\n    M: dinoco::InsertModel,\n    V: dinoco::InsertPayload<M>,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::InsertReturning<M, V, S>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::InsertReturning<M, V, S>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::InsertReturning<M, V, S>;\n}\n\nimpl<M, V, S> InsertReturningQueueExt<M, V, S> for dinoco::InsertReturning<M, V, S>\nwhere\n    M: dinoco::InsertModel,\n    V: dinoco::InsertPayload<M>,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::InsertReturning<M, V, S> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::InsertReturning<M, V, S> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::InsertReturning<M, V, S> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_insert_many_queue_extension() -> String {
+    String::from(
+        "pub trait InsertManyQueueExt<M, V>\nwhere\n    M: dinoco::InsertModel,\n    V: dinoco::InsertPayload<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::InsertMany<M, V>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::InsertMany<M, V>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::InsertMany<M, V>;\n}\n\nimpl<M, V> InsertManyQueueExt<M, V> for dinoco::InsertMany<M, V>\nwhere\n    M: dinoco::InsertModel,\n    V: dinoco::InsertPayload<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::InsertMany<M, V> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::InsertMany<M, V> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::InsertMany<M, V> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_insert_many_returning_queue_extension() -> String {
+    String::from(
+        "pub trait InsertManyReturningQueueExt<M, V, S>\nwhere\n    M: dinoco::InsertModel,\n    V: dinoco::InsertPayload<M>,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::InsertManyReturning<M, V, S>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::InsertManyReturning<M, V, S>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::InsertManyReturning<M, V, S>;\n}\n\nimpl<M, V, S> InsertManyReturningQueueExt<M, V, S> for dinoco::InsertManyReturning<M, V, S>\nwhere\n    M: dinoco::InsertModel,\n    V: dinoco::InsertPayload<M>,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::InsertManyReturning<M, V, S> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::InsertManyReturning<M, V, S> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::InsertManyReturning<M, V, S> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_update_queue_extension() -> String {
+    String::from(
+        "pub trait UpdateQueueExt<M>\nwhere\n    M: dinoco::UpdateModel,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::Update<M>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::Update<M>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::Update<M>;\n}\n\nimpl<M> UpdateQueueExt<M> for dinoco::Update<M>\nwhere\n    M: dinoco::UpdateModel,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::Update<M> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::Update<M> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::Update<M> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_update_returning_queue_extension() -> String {
+    String::from(
+        "pub trait UpdateReturningQueueExt<M, S>\nwhere\n    M: dinoco::UpdateModel + dinoco::Projection<M>,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::UpdateReturning<M, S>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::UpdateReturning<M, S>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::UpdateReturning<M, S>;\n}\n\nimpl<M, S> UpdateReturningQueueExt<M, S> for dinoco::UpdateReturning<M, S>\nwhere\n    M: dinoco::UpdateModel + dinoco::Projection<M>,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::UpdateReturning<M, S> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::UpdateReturning<M, S> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::UpdateReturning<M, S> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_update_many_queue_extension() -> String {
+    String::from(
+        "pub trait UpdateManyQueueExt<M>\nwhere\n    M: dinoco::UpdateModel,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::UpdateMany<M>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::UpdateMany<M>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::UpdateMany<M>;\n}\n\nimpl<M> UpdateManyQueueExt<M> for dinoco::UpdateMany<M>\nwhere\n    M: dinoco::UpdateModel,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::UpdateMany<M> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::UpdateMany<M> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::UpdateMany<M> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_update_many_returning_queue_extension() -> String {
+    String::from(
+        "pub trait UpdateManyReturningQueueExt<M, S>\nwhere\n    M: dinoco::UpdateModel,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::UpdateManyReturning<M, S>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::UpdateManyReturning<M, S>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::UpdateManyReturning<M, S>;\n}\n\nimpl<M, S> UpdateManyReturningQueueExt<M, S> for dinoco::UpdateManyReturning<M, S>\nwhere\n    M: dinoco::UpdateModel,\n    S: dinoco::Projection<M>,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::UpdateManyReturning<M, S> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::UpdateManyReturning<M, S> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::UpdateManyReturning<M, S> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
+
+fn render_find_and_update_queue_extension() -> String {
+    String::from(
+        "pub trait FindAndUpdateQueueExt<M>\nwhere\n    M: dinoco::FindAndUpdateModel,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::FindAndUpdate<M>;\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::FindAndUpdate<M>;\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::FindAndUpdate<M>;\n}\n\nimpl<M> FindAndUpdateQueueExt<M> for dinoco::FindAndUpdate<M>\nwhere\n    M: dinoco::FindAndUpdateModel,\n{\n    fn enqueue(self, event: impl Into<String>) -> dinoco::FindAndUpdate<M> {\n        self.__enqueue(event)\n    }\n\n    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> dinoco::FindAndUpdate<M> {\n        self.__enqueue_in(event, delay_ms)\n    }\n\n    fn enqueue_at(self, event: impl Into<String>, execute_at: dinoco::DateTimeUtc<dinoco::Utc>) -> dinoco::FindAndUpdate<M> {\n        self.__enqueue_at(event, execute_at)\n    }\n}\n",
+    )
+}
 
 pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
     let adapter = match schema.config.database {
@@ -25,8 +109,70 @@ pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
 
         format!("vec![{values}]")
     };
+    let redis_config = schema.config.redis.as_ref().map(render_redis_config);
+    let has_redis = redis_config.is_some();
+    let mut output = format!(
+        "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoClientConfig, DinocoResult, QueueWorkers, {adapter}}};\n\npub mod models;\npub use models::*;\n\n"
+    );
 
-    format!(
-        "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoClientConfig, DinocoResult, {adapter}}};\n\npub mod models;\npub use models::*;\n\npub async fn create_connection(config: DinocoClientConfig) -> DinocoResult<DinocoClient<{adapter}>> {{\n    DinocoClient::<{adapter}>::new({database_url}, {read_replicas}, config).await\n}}\n"
-    )
+    if has_redis {
+        output.push_str(&render_cache_client_extension());
+        output.push('\n');
+        output.push_str(&render_cache_find_first_extension());
+        output.push('\n');
+        output.push_str(&render_cache_find_many_extension());
+        output.push('\n');
+        output.push_str(&render_find_first_queue_extension());
+        output.push('\n');
+        output.push_str(&render_find_many_queue_extension());
+        output.push('\n');
+        output.push_str(&render_insert_queue_extension());
+        output.push('\n');
+        output.push_str(&render_insert_returning_queue_extension());
+        output.push('\n');
+        output.push_str(&render_insert_many_queue_extension());
+        output.push('\n');
+        output.push_str(&render_insert_many_returning_queue_extension());
+        output.push('\n');
+        output.push_str(&render_update_queue_extension());
+        output.push('\n');
+        output.push_str(&render_update_returning_queue_extension());
+        output.push('\n');
+        output.push_str(&render_update_many_queue_extension());
+        output.push('\n');
+        output.push_str(&render_update_many_returning_queue_extension());
+        output.push('\n');
+        output.push_str(&render_find_and_update_queue_extension());
+        output.push('\n');
+    }
+
+    output.push_str("pub async fn create_connection(config: DinocoClientConfig) -> DinocoResult<DinocoClient<");
+    output.push_str(adapter);
+    output.push_str(">> {\n");
+
+    if let Some(redis_config) = &redis_config {
+        output.push_str("    let config = config.with_redis(");
+        output.push_str(redis_config);
+        output.push_str(");\n");
+    }
+
+    output.push_str("    DinocoClient::<");
+    output.push_str(adapter);
+    output.push_str(">::new(");
+    output.push_str(&database_url);
+    output.push_str(", ");
+    output.push_str(&read_replicas);
+    output.push_str(", config).await\n}\n");
+
+    if has_redis {
+        output.push_str("\n");
+        output.push_str("pub fn workers() -> QueueWorkers<");
+        output.push_str(adapter);
+        output.push_str("> {\n");
+        output.push_str("    QueueWorkers::<");
+        output.push_str(adapter);
+        output.push_str(">::new()\n}\n");
+    }
+
+    output
 }

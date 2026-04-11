@@ -1,6 +1,6 @@
 use dinoco_compiler::{
     ConnectionUrl, Database, FunctionCall, ParsedField, ParsedFieldDefault, ParsedFieldType, ParsedRelation,
-    ParsedSchema, ReferentialAction,
+    ParsedSchema, RedisConfig, ReferentialAction,
 };
 
 pub fn render_schema(schema: &ParsedSchema) -> String {
@@ -56,7 +56,35 @@ fn render_config(schema: &ParsedSchema) -> String {
         output.push_str(&format!("    read_replicas = [{}]\n", read_replicas));
     }
 
+    if let Some(redis) = &schema.config.redis {
+        output.push_str(&render_redis(redis));
+    }
+
     output.push_str("}\n");
+
+    output
+}
+
+fn render_redis(redis: &RedisConfig) -> String {
+    let mut output = String::from("    redis = {\n");
+
+    if let Some(url) = &redis.url {
+        output.push_str(&format!("        url = {}\n", render_connection_url(url)));
+    } else {
+        if let Some(host) = &redis.host {
+            output.push_str(&format!("        host = {}\n", render_connection_url(host)));
+        }
+
+        if let Some(username) = &redis.username {
+            output.push_str(&format!("        username = {}\n", render_connection_url(username)));
+        }
+
+        if let Some(password) = &redis.password {
+            output.push_str(&format!("        password = {}\n", render_connection_url(password)));
+        }
+    }
+
+    output.push_str("    }\n");
 
     output
 }

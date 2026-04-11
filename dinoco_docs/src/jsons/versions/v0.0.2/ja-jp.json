@@ -1,0 +1,1116 @@
+{
+	"description": "Dinoco v0.0.2のドキュメント。",
+	"groups": [
+		{
+			"icon": "database",
+			"name": "Dinoco ORM",
+			"shortName": "orm",
+			"sections": [
+				{
+					"title": "はじめに",
+					"items": [
+						{
+							"shortName": "introduction-dinoco",
+							"name": "Dinocoの紹介",
+							"mdxPath": "v0.0.2/pt-br/orm/introduction-to-dinoco.mdx",
+							"inPage": [
+								"Dinocoの紹介",
+								{
+									"title": "RustにおけるPrisma体験",
+									"items": []
+								},
+								{
+									"title": "プロジェクトの柱",
+									"items": []
+								},
+								{
+									"title": "私たちの立ち位置",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "first-steps",
+							"name": "最初のステップ",
+							"mdxPath": "v0.0.2/pt-br/orm/first-steps.mdx",
+							"inPage": [
+								"最初のステップ",
+								{
+									"title": "仕組み",
+									"items": ["1. スキーマと接続を定義する", "2. マイグレーションを作成する", "3. DinocoClientでクエリを実行する"]
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "supported-databases",
+							"name": "概要",
+							"mdxPath": "v0.0.2/pt-br/orm/supported-databases.mdx",
+							"inPage": [
+								"概要",
+								{
+									"title": "サポートされているバージョン",
+									"items": []
+								},
+								{
+									"title": "接続設定",
+									"items": ["SQLite"]
+								},
+								{
+									"title": "PostgreSQLまたはMySQL",
+									"items": []
+								},
+								{
+									"title": "型マッピング",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinocoスキーマ",
+					"items": [
+						{
+							"shortName": "configuration",
+							"name": "設定",
+							"mdxPath": "v0.0.2/pt-br/orm/configuration.mdx",
+							"inPage": [
+								"設定",
+								{
+									"title": "`config {}`に入るもの",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "Redisの例",
+									"items": []
+								},
+								{
+									"title": "レプリカの例",
+									"items": []
+								},
+								{
+									"title": "生成されたAPIで変わること",
+									"items": []
+								},
+								{
+									"title": "このブロックを編集するタイミング",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models",
+							"name": "モデル",
+							"mdxPath": "v0.0.2/pt-br/orm/models.mdx",
+							"inPage": [
+								"モデル",
+								{
+									"title": "モデルが表すもの",
+									"items": []
+								},
+								{
+									"title": "完全な例",
+									"items": []
+								},
+								{
+									"title": "フィールドの構造",
+									"items": []
+								},
+								{
+									"title": "フィールドの型",
+									"items": ["スカラフィールド"]
+								},
+								{
+									"title": "型修飾子",
+									"items": ["オプションフィールド", "リストフィールド"]
+								},
+								{
+									"title": "最も一般的な属性",
+									"items": ["`@id`", "`@default(...)`", "`@unique`"]
+								},
+								{
+									"title": "モデルデコレータ",
+									"items": ["`@@ids([...])`", "`@@table_name(\"...\")`"]
+								},
+								{
+									"title": "ユーザーモデルの例",
+									"items": []
+								},
+								{
+									"title": "Dinoco APIを使用したユーザー検索の例",
+									"items": ["単一レコードの検索", "複数レコードの検索"]
+								},
+								{
+									"title": "Dinoco APIを使用したユーザー作成の例",
+									"items": []
+								},
+								{
+									"title": "Dinoco APIを使用したユーザー更新の例",
+									"items": []
+								},
+								{
+									"title": "Dinoco APIを使用したユーザー削除の例",
+									"items": []
+								},
+								{
+									"title": "クイックサマリー",
+									"items": []
+								},
+								{
+									"title": "新しいモデルを作成するタイミング",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "enums",
+							"name": "列挙型",
+							"mdxPath": "v0.0.2/pt-br/orm/enums.mdx",
+							"inPage": [
+								"列挙型",
+								{
+									"title": "列挙型とは",
+									"items": []
+								},
+								{
+									"title": "モデルでの使用",
+									"items": []
+								},
+								{
+									"title": "列挙型を使用するタイミング",
+									"items": []
+								},
+								{
+									"title": "ベストプラクティス",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "relations",
+							"name": "リレーション",
+							"mdxPath": "v0.0.2/pt-br/orm/relations.mdx",
+							"inPage": [
+								"リレーション",
+								{
+									"title": "@relation(...)",
+									"items": []
+								},
+								{
+									"title": "onDeleteとonUpdate",
+									"items": []
+								},
+								{
+									"title": "One to many",
+									"items": []
+								},
+								{
+									"title": "Many to many",
+									"items": []
+								},
+								{
+									"title": "Self relation",
+									"items": []
+								},
+								{
+									"title": "実践的なヒント",
+									"items": []
+								},
+								{
+									"title": "例のリファレンススキーマ",
+									"items": []
+								},
+								{
+									"title": "Userからのすべての可能なリレーションを含む検索の例",
+									"items": []
+								},
+								{
+									"title": "UserとProfileを使用したリレーションを持つ挿入の例",
+									"items": []
+								},
+								{
+									"title": "ネストされたリレーションを持つinsert_manyの例",
+									"items": []
+								},
+								{
+									"title": "ネストされた接続を持つinsert_manyの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinocoコア",
+					"items": [
+						{
+							"shortName": "derives",
+							"name": "派生",
+							"mdxPath": "v0.0.2/pt-br/core/derives.mdx",
+							"inPage": [
+								"派生",
+								{
+									"title": "Dinocoにおける派生とは",
+									"items": []
+								},
+								{
+									"title": "Derive Rowable",
+									"items": []
+								},
+								{
+									"title": "Derive Extend",
+									"items": []
+								},
+								{
+									"title": "`#[insertable]`属性",
+									"items": []
+								},
+								{
+									"title": "Rowableの例",
+									"items": []
+								},
+								{
+									"title": "Extendの例",
+									"items": []
+								},
+								{
+									"title": "`#[insertable]`の例",
+									"items": []
+								},
+								{
+									"title": "それぞれの使用タイミング",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "traits",
+							"name": "トレイト",
+							"mdxPath": "v0.0.2/pt-br/core/traits.mdx",
+							"inPage": [
+								"トレイト",
+								{
+									"title": "Dinocoにおけるトレイトとは",
+									"items": []
+								},
+								{
+									"title": "Trait Model",
+									"items": []
+								},
+								{
+									"title": "Trait Projection",
+									"items": []
+								},
+								{
+									"title": "Trait InsertModel",
+									"items": []
+								},
+								{
+									"title": "Trait UpdateModel",
+									"items": []
+								},
+								{
+									"title": "Trait InsertPayload",
+									"items": []
+								},
+								{
+									"title": "Trait InsertConnectionPayload",
+									"items": []
+								},
+								{
+									"title": "モデルによって実装されたトレイト",
+									"items": []
+								},
+								{
+									"title": "トレイトと派生を組み合わせた例",
+									"items": []
+								},
+								{
+									"title": "それぞれの使用タイミング",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinocoクライアント",
+					"items": [
+						{
+							"shortName": "find-many",
+							"name": "find_many",
+							"mdxPath": "v0.0.2/pt-br/orm/find-many.mdx",
+							"inPage": [
+								"find_many",
+								{
+									"title": "できること",
+									"items": []
+								},
+
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "フィルターの例",
+									"items": []
+								},
+								{
+									"title": "ページネーションとソートの例",
+									"items": []
+								},
+								{
+									"title": "カスタム選択の例",
+									"items": []
+								},
+								{
+									"title": "シンプルなインクルードの例",
+									"items": []
+								},
+								{
+									"title": "フィルターされたインクルードの例",
+									"items": []
+								},
+								{
+									"title": "ネストされたインクルードの例",
+									"items": []
+								},
+								{
+									"title": "リレーションのカウントの例",
+									"items": []
+								},
+								{
+									"title": "メインデータベースからの読み込みの例",
+									"items": []
+								},
+
+								{
+									"title": "キャッシュの例",
+									"items": []
+								},
+								{
+									"title": "キャッシュと有効期限の例",
+									"items": []
+								},
+								{
+									"title": "ワーカーの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-first",
+							"name": "find_first",
+							"mdxPath": "v0.0.2/pt-br/orm/find-first.mdx",
+							"inPage": [
+								"find_first",
+								{
+									"title": "できること",
+									"items": []
+								},
+
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "選択の例",
+									"items": []
+								},
+								{
+									"title": "リレーションの例",
+									"items": []
+								},
+								{
+									"title": "ソートの例",
+									"items": []
+								},
+								{
+									"title": "キャッシュの例",
+									"items": []
+								},
+								{
+									"title": "ワーカーの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-and-update",
+							"name": "find_and_update",
+							"mdxPath": "v0.0.2/pt-br/orm/find-and-update.mdx",
+							"inPage": [
+								"find_and_update",
+								{
+									"title": "できること",
+									"items": []
+								},
+
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "ワーカーの例",
+									"items": []
+								},
+								{
+									"title": "`ModelUpdate`で利用可能な操作",
+									"items": []
+								},
+								{
+									"title": "備考",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-into",
+							"name": "insert_into",
+							"mdxPath": "v0.0.2/pt-br/orm/insert-into.mdx",
+							"inPage": [
+								"insert_into",
+								{
+									"title": "できること",
+									"items": []
+								},
+
+								{
+									"title": "Extend #[insertable]の例",
+									"items": []
+								},
+								{
+									"title": "ネストされたリレーションの例",
+									"items": []
+								},
+								{
+									"title": "ネストされた接続の例",
+									"items": []
+								},
+								{
+									"title": "ArticleConnectionの例",
+									"items": []
+								},
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "シンプルな例",
+									"items": []
+								},
+								{
+									"title": "型付き戻り値の例",
+									"items": []
+								},
+								{
+									"title": "ワーカーの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-many",
+							"name": "insert_many",
+							"mdxPath": "v0.0.2/pt-br/orm/insert-many.mdx",
+							"inPage": [
+								"insert_many",
+								{
+									"title": "できること",
+									"items": []
+								},
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "シンプルな例",
+									"items": []
+								},
+								{
+									"title": "戻り値の例",
+									"items": []
+								},
+								{
+									"title": "ワーカーの例",
+									"items": []
+								},
+								{
+									"title": "ネストされたリレーションの例",
+									"items": []
+								},
+								{
+									"title": "ネストされた接続の例",
+									"items": []
+								},
+								{
+									"title": "ArticleConnectionの例",
+									"items": []
+								},
+								{
+									"title": "Extend #[insertable]の例",
+									"items": []
+								},
+								{
+									"title": "備考",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update",
+							"name": "update",
+							"mdxPath": "v0.0.2/pt-br/orm/update.mdx",
+							"inPage": [
+								"update",
+								{
+									"title": "できること",
+									"items": []
+								},
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "フィールド更新の例",
+									"items": []
+								},
+								{
+									"title": "`connect(...)`の例",
+									"items": []
+								},
+								{
+									"title": "`disconnect(...)`の例",
+									"items": []
+								},
+								{
+									"title": "connectとdisconnectで利用可能なフィルター",
+									"items": []
+								},
+								{
+									"title": "ワーカーの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update-many",
+							"name": "update_many",
+							"mdxPath": "v0.0.2/pt-br/orm/update-many.mdx",
+							"inPage": [
+								"update_many",
+								{
+									"title": "できること",
+									"items": []
+								},
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "戻り値の例",
+									"items": []
+								},
+								{
+									"title": "フィルターの例",
+									"items": []
+								},
+								{
+									"title": "ワーカーの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "count",
+							"name": "count",
+							"mdxPath": "v0.0.2/pt-br/orm/count.mdx",
+							"inPage": [
+								"count",
+								{
+									"title": "できること",
+									"items": []
+								},
+								{
+									"title": "メソッドの説明",
+									"items": []
+								},
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "ブールフィルターの例",
+									"items": []
+								},
+								{
+									"title": "テキストフィルターの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete",
+							"name": "delete",
+							"mdxPath": "v0.0.2/pt-br/orm/delete.mdx",
+							"inPage": [
+								"delete",
+								{
+									"title": "できること",
+									"items": []
+								},
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "別のフィルターの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete-many",
+							"name": "delete_many",
+							"mdxPath": "v0.0.2/pt-br/orm/delete-many.mdx",
+							"inPage": [
+								"delete_many",
+								{
+									"title": "できること",
+									"items": []
+								},
+								{
+									"title": "戻り値",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "フィルターなしの例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "cache-client",
+							"name": "cache",
+							"mdxPath": "v0.0.2/pt-br/orm/cache-client.mdx",
+							"inPage": [
+								"cache",
+								{
+									"title": "できること",
+									"items": []
+								},
+								{
+									"title": "使用タイミング",
+									"items": []
+								},
+								{
+									"title": "仕組み",
+									"items": []
+								},
+								{
+									"title": "利用可能なメソッド",
+									"items": []
+								},
+								{
+									"title": "基本例",
+									"items": []
+								},
+								{
+									"title": "型付きリストの例",
+									"items": []
+								},
+								{
+									"title": "TTLの例",
+									"items": []
+								},
+								{
+									"title": "無効化の例",
+									"items": []
+								},
+								{
+									"title": "サポートされている型",
+									"items": []
+								},
+								{
+									"title": "備考",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "queues",
+							"name": "workers",
+							"mdxPath": "v0.0.2/pt-br/orm/queues.mdx",
+							"inPage": [
+								"queues",
+								{
+									"title": "できること",
+									"items": []
+								},
+								{
+									"title": "仕組み",
+									"items": []
+								},
+								{
+									"title": "キューイングメソッド",
+									"items": []
+								},
+								{
+									"title": "ワーカー",
+									"items": []
+								},
+								{
+									"title": "Redisの設定",
+									"items": []
+								},
+								{
+									"title": "備考",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "terminal",
+			"name": "Dinoco CLI",
+			"shortName": "cli",
+			"sections": [
+				{
+					"title": "インストール",
+					"items": [
+						{
+							"shortName": "install",
+							"name": "インストール",
+							"mdxPath": "v0.0.2/pt-br/cli/install.mdx",
+							"inPage": [
+								"インストール",
+								{
+									"title": "インストール",
+									"items": []
+								},
+								{
+									"title": "設定",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "コマンド",
+					"items": [
+						{
+							"shortName": "init",
+							"name": "Init",
+							"mdxPath": "v0.0.2/pt-br/cli/init.mdx",
+							"inPage": [
+								"使い方",
+								{
+									"title": "コマンドの機能",
+									"items": []
+								},
+								{
+									"title": "使用タイミング",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "database-reset",
+							"name": "Database reset",
+							"mdxPath": "v0.0.2/pt-br/cli/database-reset.mdx",
+							"inPage": [
+								"使い方",
+								{
+									"title": "コマンドの機能",
+									"items": []
+								},
+								{
+									"title": "注意事項",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-generate",
+							"name": "Migrate generate",
+							"mdxPath": "v0.0.2/pt-br/cli/migrate-generate.mdx",
+							"inPage": [
+								"使い方",
+								{
+									"title": "コマンドの機能",
+									"items": []
+								},
+								{
+									"title": "パラメータ",
+									"items": ["--apply"]
+								},
+								{
+									"title": "適用しない使用例",
+									"items": []
+								},
+								{
+									"title": "即時適用する使用例",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-run",
+							"name": "Migrate run",
+							"mdxPath": "v0.0.2/pt-br/cli/migrate-run.mdx",
+							"inPage": [
+								"使い方",
+								{
+									"title": "コマンドの機能",
+									"items": []
+								},
+								{
+									"title": "使用タイミング",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-rollback",
+							"name": "Migrate rollback",
+							"mdxPath": "v0.0.2/pt-br/cli/migrate-rollback.mdx",
+							"inPage": [
+								"使い方",
+								{
+									"title": "コマンドの機能",
+									"items": []
+								},
+								{
+									"title": "パラメータ",
+									"items": []
+								},
+								{
+									"title": "使用例",
+									"items": []
+								},
+								{
+									"title": "使用タイミング",
+									"items": []
+								},
+								{
+									"title": "注意事項",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models-generate",
+							"name": "Models generate",
+							"mdxPath": "v0.0.2/pt-br/cli/models-generate.mdx",
+							"inPage": [
+								"使い方",
+								{
+									"title": "コマンドの機能",
+									"items": []
+								},
+								{
+									"title": "使用タイミング",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "schema-restore",
+							"name": "Schema restore",
+							"mdxPath": "v0.0.2/pt-br/cli/schema-restore.mdx",
+							"inPage": [
+								"使い方",
+								{
+									"title": "コマンドの機能",
+									"items": []
+								},
+								{
+									"title": "特定のマイグレーションからの復元の例",
+									"items": []
+								},
+								{
+									"title": "使用タイミング",
+									"items": []
+								},
+								{
+									"title": "次のステップ",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "rocket",
+			"name": "Dinoco Supersonic",
+			"shortName": "supersonic",
+			"sections": [
+				{
+					"title": "はじめに",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "はじめに",
+							"mdxPath": "v0.0.2/pt-br/supersonic/introduction.mdx",
+							"inPage": ["はじめに"]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "box",
+			"name": "DinocoDB",
+			"shortName": "dinocodb",
+			"sections": [
+				{
+					"title": "はじめに",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "はじめに",
+							"mdxPath": "v0.0.2/pt-br/dinocodb/introduction.mdx",
+							"inPage": ["はじめに"]
+						}
+					]
+				}
+			]
+		}
+	],
+	"locale": "ja-jp",
+	"name": "v0.0.2"
+}

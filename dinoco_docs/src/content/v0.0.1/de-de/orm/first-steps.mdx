@@ -2,21 +2,21 @@ export const title = "Erste Schritte";
 
 # Erste Schritte
 
-Um mit Dinoco zu beginnen, müssen Sie unsere CLI installieren, damit Sie Migrationen und andere Systeme verwalten können!
+Um Dinoco zu verwenden, müssen Sie unsere CLI installieren, damit Sie Migrationen und andere Systeme verwalten können!
 
 ```bash
 cargo install dinoco-cli
 ```
 
-Um die Dinoco-Umgebung zu erstellen, führen Sie den folgenden Befehl aus:
+Um die Dinoco-Umgebung zu erstellen, führen wir den folgenden Befehl aus:
 
 ```bash
 dinoco init
 ```
 
-Nachdem Sie die Datenbank und alle erforderlichen Konfigurationen ausgewählt haben, wird der dinoco-Ordner im Stammverzeichnis Ihres Projekts erstellt.
+Nachdem Sie die Datenbank und alle notwendigen Konfigurationen ausgewählt haben, wird der Ordner `dinoco` im Stammverzeichnis Ihres Projekts erstellt.
 
-Dieser Ordner wird Folgendes enthalten:
+Dieser Ordner enthält:
 
 - **Migrations:** Der Änderungsverlauf Ihrer Datenbank.
 - **Schema:** Die zentrale Definition Ihrer Datenstruktur.
@@ -26,7 +26,7 @@ Dieser Ordner wird Folgendes enthalten:
 
 ### 1. Definieren Sie Ihr Schema und Ihre Verbindung
 
-Das Dinoco-Schema definiert den Inhalt Ihrer Models und die Datenbankkonfigurationen.
+Das Dinoco-Schema definiert den Inhalt Ihrer Modelle und Datenbankkonfigurationen.
 
 ```dinoco
 config {
@@ -54,7 +54,7 @@ model Post {
 
 ### 2. Erstellen Sie die Migration
 
-Wenn Sie die Migration mit `--apply` generieren, wird sie auf die Datenbank angewendet und die Models werden automatisch generiert!
+Wenn Sie die Migration mit `--apply` generieren, wird sie auf die Datenbank angewendet und die Modelle werden automatisch generiert!
 
 ```bash
 dinoco migrate generate --apply
@@ -95,10 +95,10 @@ async fn main() -> dinoco::DinocoResult<()> {
 
     let client = database::create_connection(config).await?;
 
-    // Fügen Sie einen Benutzer mit einem verwandten Beitrag ein.
+    // Fügen Sie einen Benutzer mit einem zugehörigen Beitrag ein.
     insert_into::<User>()
         .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
-        .with_relation(Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None })
+        .with_relation(Post { id: 0, title: "Mein erster Beitrag".to_string(), published: true, authorId: None })
         .execute(&client)
         .await?;
 
@@ -113,7 +113,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // 		email: "bia@dinoco.rs",
     // 		posts: [
     // 			Post {
-    // 				title: "Meu primeiro post",
+    // 				title: "Mein erster Beitrag",
     // 				published: true,
     // 			},
     // 		],
@@ -126,5 +126,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## Nächste Schritte
 
-- [**Dinoco schema**](/v0.0.1/orm/introduction-dinoco): Verstehen Sie die Struktur und den Zweck von Dinoco besser.
-- [**Dinoco client**](/v0.0.1/orm/first-steps): Überprüfen Sie diesen vollständigen Client-Flow.
+- [**Dinoco-Schema**](/v0.0.1/orm/introduction-dinoco): Verstehen Sie die Struktur und den Zweck von Dinoco besser.
+- [**Dinoco-Client**](/v0.0.1/orm/first-steps): Überprüfen Sie diesen vollständigen Client-Workflow.

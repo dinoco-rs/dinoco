@@ -1,0 +1,39 @@
+export const title = "Redefinição do banco de dados";
+
+# Como usar?
+
+O comando `dinoco database reset` redefine o banco de dados configurado.
+
+É útil no desenvolvimento quando você deseja limpar completamente o estado atual do banco de dados.
+
+---
+
+## O que o comando faz
+
+Ao executar este comando, a CLI tenta remover objetos do banco de dados atual e recriar um estado limpo para o ambiente configurado.
+
+Este fluxo é especialmente útil para:
+
+- Reiniciar um ambiente local do zero
+- Limpar dados de teste
+- Corrigir ambientes inconsistentes durante o desenvolvimento
+
+## Precauções
+
+- Este comando é destrutivo para o banco de dados configurado.
+- Use com cautela fora de um ambiente local.
+- Sempre confirme que a URL de conexão aponta para o banco de dados correto.
+
+## Próximos passos
+
+Após a redefinição, você geralmente executa:
+
+```bash
+dinoco migrate run
+```
+
+ou:
+
+```bash
+dinoco migrate generate --apply
+```

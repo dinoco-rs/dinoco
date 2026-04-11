@@ -1,0 +1,159 @@
+export const title = "Erste Schritte";
+
+# Erste Schritte
+
+Um mit Dinoco zu beginnen, sollten Sie unsere CLI installieren, um Migrationen und andere Systeme zu verwalten!
+
+```bash
+cargo install dinoco-cli
+```
+
+Um die Dinoco-Umgebung zu erstellen, führen wir den folgenden Befehl aus:
+
+```bash
+dinoco init
+```
+
+Nachdem Sie die Datenbank und alle erforderlichen Konfigurationen ausgewählt haben, wird der Ordner dinoco im Stammverzeichnis Ihres Projekts erstellt.
+
+Dieser Ordner enthält:
+
+- **Migrations:** Der Änderungsverlauf Ihrer Datenbank.
+- **Schema:** Die zentrale Definition Ihrer Datenstruktur.
+- **Models:** Die typisierten Repräsentationen zur Verwendung in Ihrem Rust-Code.
+
+## Wie funktioniert es?
+
+### 1. Definieren Sie Ihr Schema und Ihre Verbindung
+
+Das Dinoco-Schema definiert den Inhalt Ihrer Modelle und Datenbankkonfigurationen.
+
+```dinoco
+config {
+	database = "postgresql"
+	database_url = env("DATABASE_URL")
+	redis = {
+		url = env("REDIS_URL")
+	}
+}
+
+model User {
+	id    Integer     @id @default(autoincrement())
+	email String  @unique
+	name  String?
+
+	posts Post[]
+}
+
+model Post {
+	id        Integer     @id @default(autoincrement())
+	title     String
+	published Boolean @default(false)
+
+	author    User?   @relation(fields: [authorId], references: [id])
+	authorId  Integer?
+}
+```
+
+### 2. Erstellen Sie die Migration
+
+Beim Generieren der Migration mit --apply wird diese auf die Datenbank angewendet und die Modelle werden automatisch generiert!
+
+```bash
+dinoco migrate generate --apply
+```
+
+### 3. Abfrage mit DinocoClient
+
+```rust
+use dinoco::{DinocoClientConfig, DinocoQueryLogger, DinocoQueryLoggerOptions, Extend, find_many, insert_into};
+
+#[path = "../dinoco/mod.rs"]
+mod database;
+
+use database::*;
+use database::models::*;
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserWithRelation {
+    id: i64,
+    email: String,
+    posts: Vec<PostSimple>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+struct PostSimple {
+    title: String,
+    published: bool,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithPostInsert {
+    id: i64,
+    email: String,
+    name: Option<String>,
+    posts: Vec<Post>,
+}
+
+#[tokio::main]
+async fn main() -> dinoco::DinocoResult<()> {
+    let _ = dotenvy::dotenv();
+
+    let config = DinocoClientConfig::default()
+        .with_snowflake_node_id(7)
+        .with_query_logger(DinocoQueryLogger::stdout(DinocoQueryLoggerOptions::verbose()));
+
+    let client = database::create_connection(config).await?;
+
+    // Fügen Sie einen Benutzer mit einem zugehörigen Beitrag ein.
+    insert_into::<User>()
+        .values(UserWithPostInsert {
+            id: 0,
+            email: "bia@dinoco.rs".to_string(),
+            name: Some("Bia".to_string()),
+            posts: vec![Post { id: 0, title: "Mein erster Beitrag".to_string(), published: true, authorId: None }],
+        })
+        .execute(&client)
+        .await?;
+
+    // Suchen Sie alle Benutzer mit ihren Beiträgen.
+    let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
+
+    let cached_users = find_many::<User>()
+        .select::<UserWithRelation>()
+        .includes(|x| x.posts())
+        .cache_with_expiration("users:with-posts", 30)
+        .execute(&client)
+        .await?;
+
+    let cached_direct = client.cache().get::<Vec<UserWithRelation>>("users:with-posts").await?;
+
+    println!("{users:#?}");
+    println!("{cached_users:#?}");
+    println!("{cached_direct:#?}");
+
+    // Ergebnis:
+    // [
+    // 	UserWithRelation {
+    // 		email: "bia@dinoco.rs",
+    // 		posts: [
+    // 			Post {
+    // 				title: "Mein erster Beitrag",
+    // 				published: true,
+    // 			},
+    // 		],
+    // 	},
+    // ]
+
+    Ok(())
+}
+```
+
+## Nächste Schritte
+
+- [**Dinoco-Schema**](/v0.0.2/orm/introduction-dinoco): Verstehen Sie die Struktur und den Zweck von Dinoco besser.
+- [**find_many**](/v0.0.2/orm/find-many): Sehen Sie sich Filter, Includes und Cache in Listenabfragen an.

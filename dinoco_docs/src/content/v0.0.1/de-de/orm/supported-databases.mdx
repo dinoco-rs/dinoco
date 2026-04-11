@@ -2,8 +2,8 @@ export const title = "Übersicht";
 
 # Übersicht
 
-**Dinoco** bietet native Unterstützung für **PostgreSQL**, **MySQL** und **SQLite** Datenbanken.  
-Wir arbeiten daran, diesen Support bald auf neue Datenbanken auszuweiten!
+**Dinoco** bietet native Unterstützung für die Datenbanken **PostgreSQL**, **MySQL** und **SQLite**.
+Wir arbeiten daran, diese Unterstützung bald auf neue Datenbanken auszuweiten!
 
 > ⚠️
 > Derzeit unterstützt Dinoco ausschließlich **direkte Verbindungs-URLs**.
@@ -26,7 +26,7 @@ Die Konfiguration erfolgt innerhalb des `config`-Blocks in Ihrer Schema-Datei.
 
 ### SQLite
 
-Bei Verwendung von SQLite wird die Datenbankdatei automatisch in Ihrem `dinoco`-Ordner generiert.
+Bei der Verwendung von SQLite wird die Datenbankdatei automatisch in Ihrem `dinoco`-Ordner generiert.
 
 ```dinoco
 config {
@@ -41,7 +41,7 @@ Für externe Datenbanken geben Sie die entsprechende Verbindungszeichenfolge ein
 
 ```dinoco
 config {
-  database = "postgresql" # ou "mysql"
+  database = "postgresql" # oder "mysql"
   database_url = env("DATABASE_URL")
 }
 ```

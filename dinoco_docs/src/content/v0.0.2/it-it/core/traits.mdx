@@ -1,0 +1,155 @@
+export const title = 'Traits';
+
+# Traits
+
+Panoramica delle trait centrali che i model e i payload utilizzano in Dinoco.
+
+---
+
+## Cosa sono le trait in Dinoco
+
+Le trait definiscono il comportamento base dell'ORM: come un model espone i metadati, come proietta le colonne, come inserisce, come aggiorna e come vengono elaborati i payload annidati.
+
+Nei model generati dal codegen, la maggior parte di ciò è già implementata automaticamente.
+
+## Trait Model
+
+`Model` definisce i metadati di base del model, come `Include`, `Where` e il nome della tabella.
+
+```rust
+impl dinoco::Model for User {
+    type Include = UserInclude;
+    type Where = UserWhere;
+
+    fn table_name() -> &'static str {
+        "users"
+    }
+}
+```
+
+## Trait Projection
+
+`Projection` definisce come una struct legge le colonne da un model e quali colonne deve caricare.
+
+```rust
+impl dinoco::Projection<User> for UserSummary {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+```
+
+È molto usata con `select::<T>()`, `include` e struct derivate con `Extend`.
+
+## Trait InsertModel
+
+`InsertModel` descrive come Dinoco deve assemblare una riga di insert per il model.
+
+```rust
+impl dinoco::InsertModel for User {
+    fn insert_columns() -> &'static [&'static str] {
+        &["id", "email", "name"]
+    }
+}
+```
+
+Nei model generati, questa trait è già pronta.
+
+## Trait UpdateModel
+
+`UpdateModel` descrive i campi che possono essere inviati in update e come identificare il record da modificare.
+
+```rust
+impl dinoco::UpdateModel for User {
+    fn update_columns() -> &'static [&'static str] {
+        &["email", "name"]
+    }
+}
+```
+
+## Trait InsertPayload
+
+`InsertPayload` permette a `.values(...)` di accettare qualcosa di diverso dal model grezzo, separando il payload in:
+
+- model base da inserire
+- contenuto annidato che verrà elaborato in seguito
+
+È questa trait che `#[insertable]` implementa automaticamente.
+
+## Trait InsertConnectionPayload
+
+`InsertConnectionPayload` è usata quando il payload annidato rappresenta connessioni con record già esistenti.
+
+È l'incastro usato dagli enum generati dal codegen, come `ArticleConnection`.
+
+```rust
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
+```
+
+## Trait implementate dal model
+
+In un model generato da Dinoco, è più comune ricevere già implementazioni di:
+
+- `Model`
+- `Projection`
+- `InsertModel`
+- `UpdateModel`
+- `FindAndUpdateModel`
+- `RelationMutationModel`
+
+A seconda delle relazioni dello schema, il model può anche ricevere:
+
+- `InsertRelation<T>`
+- `InsertConnection<T>`
+
+## Esempio con trait e derive insieme
+
+In pratica, il flusso più comune è:
+
+- `Rowable` per la lettura della riga
+- `Extend` per proiezioni o payload arricchiti
+- `#[insertable]` per insert annidati
+- trait come `Model`, `Projection` e `InsertModel` generate automaticamente dal codegen
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-30".into(),
+        title: "Core Example".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Quando usare ogni trait
+
+- Usa `Model` per identificare tabella, `Where` e `Include`.
+- Usa `Projection` quando la struct deve essere caricata da `select`.
+- Usa `InsertModel` e `UpdateModel` per capire il percorso di scrittura dell'ORM.
+- Usa `InsertPayload` quando si lavora con payload annidati.
+- Usa `InsertConnectionPayload` quando il payload annidato connette record esistenti.
+
+## Prossimi passi
+
+- [**Derive**](/v0.0.2/core/derives): vedi i derive e gli attributi usati insieme a queste trait.
+- [**Relazioni**](/v0.0.2/orm/relations): vedi come questo si connette al sistema di relazioni.

@@ -50,7 +50,7 @@ config_array = { array_open ~ (config_array_value ~ (array_separator ~ config_ar
 config_array_value = { string_literal | function | config_object | config_field | COMMENT }
 
 config_object = { block_open ~ config_field* ~ block_close }
-config_param = { config_array | function | string_literal | config_field } 
+config_param = { config_array | config_object | function | string_literal | config_field } 
 config_field = { ident ~ config_separator ~ config_param }
 
 field_type = @{ ident }

@@ -8,30 +8,30 @@ export const title = "update";
 
 ## できること
 
-- `.cond(...)`: 更新するレコードを定義します。
+- `.cond(...)`: どのレコードが更新されるかを定義します。
 - `.values(item)`: レコードの新しい値を指定します。
-- `.connect(...)`: 書き込み操作でサポートされているリレーションシップリンクを作成します。
-- `.disconnect(...)`: 書き込み操作でサポートされているリレーションシップリンクを削除します。
-- `.returning::<T>()`: 更新されたレコードを型付きプロジェクションで返します。
+- `.connect(...)`: 書き込みがサポートされているリレーションシップリンクを作成します。
+- `.disconnect(...)`: 書き込みがサポートされているリレーションシップリンクを削除します。
+- `.returning::<T>()`: 型付きプロジェクションで更新されたレコードを返します。
 - `.execute(&client)`: データベースで更新を実行します。
 
 ## 戻り値
 
-`.returning::<T>()` がない場合の戻り値は次のとおりです。
+`.returning::<T>()`がない場合、戻り値は次のとおりです。
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()` がある場合の戻り値は次のとおりです。
+`.returning::<T>()`がある場合、戻り値は次のようになります。
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-注:
+注記：
 
-- `update().returning()` は、`.connect(...)` または `.disconnect(...)` を使用したリレーショナルな書き込み操作をサポートしていません。
+- `update().returning()` は、`.connect(...)` または `.disconnect(...)` を使用したリレーション書き込みをサポートしていません。
 
 ## フィールド更新の例
 
@@ -41,7 +41,7 @@ dinoco::update::<User>()
     .values(User {
         id: 10,
         email: "novo@acme.com".to_string(),
-        name: "Novo Nome".to_string(),
+        name: "新しい名前".to_string(),
     })
     .execute(&client)
     .await?;
@@ -49,7 +49,7 @@ dinoco::update::<User>()
 
 ## `connect(...)` の例
 
-書き込み操作でサポートされているリレーションシップ（通常は多対多）を接続するために使用されます。
+書き込みがサポートされているリレーションシップ（通常は多対多）を接続するために使用されます。
 
 ```rust
 dinoco::update::<User>()
@@ -71,7 +71,7 @@ dinoco::update::<User>()
     .await?;
 ```
 
-## connect と disconnect で使えるフィルター
+## `connect` および `disconnect` で利用可能なフィルター
 
 - `eq`
 - `neq`
@@ -90,4 +90,4 @@ dinoco::update::<User>()
 ## 次のステップ
 
 - [**`update_many::<M>()`**](/v0.0.1/orm/update-many): バッチ更新。
-- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 戻り値付きのアトミックな更新。
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 戻り値付きのアトミック更新。

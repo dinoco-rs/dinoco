@@ -1,0 +1,96 @@
+export const title = "update_many";
+
+# update_many
+
+一度に複数のレコードを更新するために使用されます。
+
+---
+
+## できること
+
+- `.cond(...)`: 更新できるレコードを制限します。
+- `.values(Vec<M>)`: バッチ更新で使用するアイテムを定義します。
+- `.returning::<T>()`: 更新されたレコードを型付きリストとして返します。
+- `.execute(&client)`: バッチ更新を実行します。
+
+## 戻り値
+
+`.returning::<T>()`がない場合、戻り値は次のようになります。
+
+```rust
+DinocoResult<()>
+```
+
+`.returning::<T>()`がある場合、戻り値は次のようになります。
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## 基本的な例
+
+```rust
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 1, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 2, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## 戻り値を含む例
+
+```rust
+let updated = dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana Batch".to_string() },
+        User { id: 3, name: "Caio Batch".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## フィルターを含む例
+
+```rust
+dinoco::update_many::<User>()
+    .cond(|x| x.active.eq(true))
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## ワーカーを含む例
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        println!("ユーザーが更新されました: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .enqueue("user.batch-updated")
+    .execute(&client)
+    .await?;
+```
+
+ワーカーの詳細については、[**`queues`**](/v0.0.2/orm/queues)を参照してください。
+
+## 次のステップ
+
+- [**`update::<M>()`**](/v0.0.1/orm/update): 条件付きの従来の更新。
+- [**`find_and_update::<M>()`**](/v0.0.1/orm/find-and-update): 単一レコードのアトミック更新。

@@ -2,9 +2,10 @@ use dinoco_engine::{DinocoRow, DinocoValue, Expression};
 
 use crate::{CountNode, IncludeNode};
 
-pub type IncludeApplier<'a, T> = Box<dyn FnOnce(&mut [T]) + 'a>;
-pub type IncludeLoaderFuture<'a, T> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<IncludeApplier<'a, T>>> + 'a>>;
+pub type IncludeApplier<'a, T> = Box<dyn FnOnce(&mut [T]) + Send + 'a>;
+pub type IncludeLoaderFuture<'a, T> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<IncludeApplier<'a, T>>> + Send + 'a>,
+>;
 
 pub trait Model: Sized {
     type Include: Default;
@@ -21,7 +22,7 @@ pub trait Projection<M: Model>: DinocoRow {
         _includes: &'a [IncludeNode],
         _client: &'a dinoco_engine::DinocoClient<A>,
         _read_mode: crate::ReadMode,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a>>
     where
         Self: Sized,
         A: dinoco_engine::DinocoAdapter,
@@ -34,7 +35,7 @@ pub trait Projection<M: Model>: DinocoRow {
         _counts: &'a [CountNode],
         _client: &'a dinoco_engine::DinocoClient<A>,
         _read_mode: crate::ReadMode,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a>>
     where
         Self: Sized,
         A: dinoco_engine::DinocoAdapter,
@@ -60,12 +61,61 @@ pub trait InsertModel: Model {
     }
 }
 
+pub trait InsertNested<M>
+where
+    M: InsertModel,
+{
+    fn execute<'a, A>(
+        self,
+        parent: &'a M,
+        client: &'a dinoco_engine::DinocoClient<A>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    where
+        A: dinoco_engine::DinocoAdapter;
+}
+
+pub trait InsertPayload<M>
+where
+    M: InsertModel,
+{
+    type Nested: InsertNested<M>;
+
+    fn split_insert_payload(self) -> (M, Self::Nested);
+}
+
 pub trait UpdateModel: Model {
     fn update_columns() -> &'static [&'static str];
     fn into_update_row(self) -> Vec<DinocoValue>;
     fn update_identity_conditions(&self) -> Vec<Expression>;
     fn validate_update(&self) -> dinoco_engine::DinocoResult<()> {
         Ok(())
+    }
+}
+
+impl<M> InsertNested<M> for ()
+where
+    M: InsertModel,
+{
+    fn execute<'a, A>(
+        self,
+        _parent: &'a M,
+        _client: &'a dinoco_engine::DinocoClient<A>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    where
+        A: dinoco_engine::DinocoAdapter,
+    {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+impl<M> InsertPayload<M> for M
+where
+    M: InsertModel,
+{
+    type Nested = ();
+
+    fn split_insert_payload(self) -> (M, Self::Nested) {
+        (self, ())
     }
 }
 
@@ -90,6 +140,19 @@ pub trait InsertConnection<R>: InsertRelation<R> {
 
     fn connection_links(&self, item: &R) -> Vec<RelationLinkPlan> {
         self.relation_links(item)
+    }
+}
+
+pub trait InsertConnectionPayload<M>
+where
+    M: InsertModel,
+{
+    fn connection_updates(&self, _parent: &M) -> Vec<ConnectionUpdatePlan> {
+        Vec::new()
+    }
+
+    fn relation_links(&self, _parent: &M) -> Vec<RelationLinkPlan> {
+        Vec::new()
     }
 }
 

@@ -2,7 +2,7 @@ export const title = "Overview";
 
 # Overview
 
-**Dinoco** offers native support for **PostgreSQL**, **MySQL**, and **SQLite** databases.
+**Dinoco** natively supports **PostgreSQL**, **MySQL**, and **SQLite** databases.
 We are working to expand this support to new databases soon!
 
 > ⚠️
@@ -13,16 +13,16 @@ We are working to expand this support to new databases soon!
 ## Supported Versions
 
 | Database       | Minimum Version |
-| :------------- | :------------   |
-| **SQLite**     | `>= 3.25`       |
-| **PostgreSQL** | `>= 10`         |
-| **MySQL**      | `>= 8.0`        |
+| :------------- | :------------ |
+| **SQLite**     | `>= 3.25`     |
+| **PostgreSQL** | `>= 10`       |
+| **MySQL**      | `>= 8.0`      |
 
 ---
 
 ## Connection Configuration
 
-The configuration is done within the `config` block in your schema file.
+Configuration is done within the `config` block in your schema file.
 
 ### SQLite
 
@@ -37,7 +37,7 @@ config {
 
 ## PostgreSQL or MySQL
 
-For external databases, insert the corresponding connection string:
+For external databases, enter the corresponding connection string:
 
 ```dinoco
 config {
@@ -54,6 +54,6 @@ config {
 | **Boolean**  | BOOLEAN  | BOOLEAN          | TINYINT(1)       |
 | **Integer**  | INTEGER  | BIGINT           | BIGINT           |
 | **Float**    | REAL     | DOUBLE PRECISION | DOUBLE PRECISION |
-| **DateTime** | TIMESTAMP | TIMESTAMP        | TIMESTAMP        |
+| **DateTime** | DATETIME | TIMESTAMP        | TIMESTAMP        |
 | **Date**     | DATE     | DATE             | DATE             |
 | **Json**     | BLOB     | JSONB            | JSON             |

@@ -2,14 +2,14 @@ export const title = "delete_many";
 
 # delete_many
 
-Utilizzato per eliminare più record con una o più condizioni.
+Usato per eliminare più record con una o più condizioni.
 
 ---
 
 ## Cosa puoi fare
 
-- `.cond(...)`: aggiunge filtri per l'eliminazione in blocco.
-- `.execute(&client)`: esegue l'eliminazione dei record corrispondenti.
+- `.cond(...)`: aggiunge filtri per la rimozione in blocco.
+- `.execute(&client)`: esegue la rimozione dei record corrispondenti.
 
 ## Ritorno
 
@@ -40,7 +40,7 @@ dinoco::delete_many::<TaskAssignees>()
     .await?;
 ```
 
-## Passi successivi
+## Prossimi passi
 
-- [**`delete::<M>()`**](/v0.0.1/orm/delete): eliminazione puntuale con filtro esplicito.
-- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): elencare prima dell'eliminazione in blocco.
+- [**`delete::<M>()`**](/v0.0.1/orm/delete): rimozione puntuale con filtro esplicito.
+- [**`find_many::<M>()`**](/v0.0.1/orm/find-many): elencare prima di rimuovere in blocco.

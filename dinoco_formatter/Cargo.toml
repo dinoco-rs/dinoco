@@ -10,4 +10,4 @@ readme = "../crates.md"
 keywords = ["orm", "formatter", "schema", "database", "tooling"]
 
 [dependencies]
-dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.1" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.2" }

@@ -1,0 +1,155 @@
+export const title = '特性';
+
+# 特性
+
+Dinoco 中模型和负载使用的核心特性概述。
+
+---
+
+## Dinoco 中的特性是什么
+
+特性定义了 ORM 的基本行为：模型如何公开元数据，如何投影列，如何插入，如何更新以及如何处理嵌套负载。
+
+在代码生成器生成的模型中，大部分功能已自动实现。
+
+## Model 特性
+
+`Model` 定义了模型的基本元数据，例如 `Include`、`Where` 和表名。
+
+```rust
+impl dinoco::Model for User {
+    type Include = UserInclude;
+    type Where = UserWhere;
+
+    fn table_name() -> &'static str {
+        "users"
+    }
+}
+```
+
+## Projection 特性
+
+`Projection` 定义了结构体如何从模型中读取列以及需要加载哪些列。
+
+```rust
+impl dinoco::Projection<User> for UserSummary {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+```
+
+它常与 `select::<T>()`、`include` 以及使用 `Extend` 派生的结构体一起使用。
+
+## InsertModel 特性
+
+`InsertModel` 描述了 Dinoco 应该如何为模型组装插入行。
+
+```rust
+impl dinoco::InsertModel for User {
+    fn insert_columns() -> &'static [&'static str] {
+        &["id", "email", "name"]
+    }
+}
+```
+
+在生成的模型中，此特性已准备就绪。
+
+## UpdateModel 特性
+
+`UpdateModel` 描述了可以在更新中发送的字段以及如何识别要更改的记录。
+
+```rust
+impl dinoco::UpdateModel for User {
+    fn update_columns() -> &'static [&'static str] {
+        &["email", "name"]
+    }
+}
+```
+
+## InsertPayload 特性
+
+`InsertPayload` 允许 `.values(...)` 接受与原始模型不同的内容，将负载分为：
+
+- 要插入的基础模型
+- 稍后将处理的嵌套内容
+
+正是这个特性，`#[insertable]` 会自动实现。
+
+## InsertConnectionPayload 特性
+
+当嵌套负载表示与现有记录的连接时，使用 `InsertConnectionPayload`。
+
+它是代码生成器生成的枚举（例如 `ArticleConnection`）使用的连接点。
+
+```rust
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
+```
+
+## 模型实现的特性
+
+在 Dinoco 生成的模型中，最常见的是您已经收到以下实现：
+
+- `Model`
+- `Projection`
+- `InsertModel`
+- `UpdateModel`
+- `FindAndUpdateModel`
+- `RelationMutationModel`
+
+根据 schema 的关系，模型还可以接收：
+
+- `InsertRelation<T>`
+- `InsertConnection<T>`
+
+## 特性和派生一起使用的示例
+
+实际上，最常见的流程是：
+
+- `Rowable` 用于读取行
+- `Extend` 用于投影或富负载
+- `#[insertable]` 用于嵌套插入
+- `Model`、`Projection` 和 `InsertModel` 等特性由代码生成器自动生成
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-30".into(),
+        title: "Core Example".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## 何时使用每个特性
+
+- 使用 `Model` 来标识表、`Where` 和 `Include`。
+- 当结构体需要通过 `select` 加载时，使用 `Projection`。
+- 使用 `InsertModel` 和 `UpdateModel` 来理解 ORM 的写入路径。
+- 当处理嵌套负载时，使用 `InsertPayload`。
+- 当嵌套负载连接现有记录时，使用 `InsertConnectionPayload`。
+
+## 下一步
+
+- [**派生**](/v0.0.2/core/derives)：查看与这些特性一起使用的派生和属性。
+- [**关系**](/v0.0.2/orm/relations)：了解这如何与关系系统连接。

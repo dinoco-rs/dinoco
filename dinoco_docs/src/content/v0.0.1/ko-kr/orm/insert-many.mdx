@@ -2,35 +2,35 @@ export const title = "insert_many";
 
 # insert_many
 
-배치 삽입에 사용됩니다.
+일괄 삽입에 사용됩니다.
 
 ---
 
-## 할 수 있는 것
+## 수행할 수 있는 작업
 
-- `.values(Vec<M>)`: 배치로 삽입할 레코드를 정의합니다.
-- `.with_relation(Vec<R>)`: 각 부모 요소에 대해 정확히 하나의 새로운 관련 엔티티를 삽입합니다.
-- `.with_relations(Vec<Vec<R>>)`: 각 부모 요소에 대해 여러 개의 새로운 관련 엔티티를 삽입합니다.
-- `.with_connection(Vec<R>)`: 삽입된 각 부모 요소에 대해 정확히 하나의 기존 관계를 연결합니다.
-- `.with_connections(Vec<Vec<R>>)`: 삽입된 각 부모 요소에 대해 여러 개의 기존 관계를 연결합니다. 일반적으로 다대다 시나리오에서 사용됩니다.
-- `.returning::<T>()`: 반환 값을 삽입된 요소의 타입 지정된 목록으로 변경합니다.
-- `.execute(&client)`: 배치 작업을 실행합니다.
+- `.values(Vec<M>)`: 일괄 삽입될 레코드를 정의합니다.
+- `.with_relation(Vec<R>)`: 각 부모에 대해 정확히 하나의 새 관련 항목을 삽입합니다.
+- `.with_relations(Vec<Vec<R>>)` : 각 부모에 대해 여러 개의 새 관련 항목을 삽입합니다.
+- `.with_connection(Vec<R>)`: 삽입된 각 부모에 대해 정확히 하나의 기존 관계를 연결합니다.
+- `.with_connections(Vec<Vec<R>>)` : 삽입된 각 부모에 대해 여러 기존 관계를 연결합니다. 일반적으로 다대다 시나리오에서 사용됩니다.
+- `.returning::<T>()`: 반환 값을 삽입된 항목의 유형화된 목록으로 변경합니다.
+- `.execute(&client)`: 일괄 작업을 실행합니다.
 
-## 반환값
+## 반환 값
 
-`.returning::<T>()`가 없으면 반환 값은 다음과 같습니다:
+`.returning::<T>()`가 없으면 반환 값은 다음과 같습니다.
 
 ```rust
 DinocoResult<()>
 ```
 
-`.returning::<T>()`가 있으면 반환 값은 다음과 같습니다:
+`.returning::<T>()`가 있으면 반환 값은 다음과 같습니다.
 
 ```rust
 DinocoResult<Vec<T>>
 ```
 
-## 기본 예제
+## 간단한 예시
 
 ```rust
 dinoco::insert_many::<User>()
@@ -42,7 +42,7 @@ dinoco::insert_many::<User>()
     .await?;
 ```
 
-## 반환값 예제
+## 반환 값이 있는 예시
 
 ```rust
 let created = dinoco::insert_many::<User>()
@@ -55,9 +55,9 @@ let created = dinoco::insert_many::<User>()
     .await?;
 ```
 
-## `with_relation(...)` 예제
+## `with_relation(...)` 예시
 
-각 부모 요소가 생성되고 연결되어야 할 때 `with_relation(...)`을 사용합니다.
+각 부모가 생성되고 연결되어야 할 때 `with_relation(...)`을 사용합니다.
 
 ```rust
 dinoco::insert_many::<Post>()
@@ -73,9 +73,9 @@ dinoco::insert_many::<Post>()
     .await?;
 ```
 
-## `with_relations(...)` 예제
+## `with_relations(...)` 예시
 
-각 부모 레코드가 하나 이상의 자식을 가질 때 `with_relations(...)`을 사용합니다. 레코드는 자동으로 생성되고 연결됩니다.
+각 부모 레코드에 여러 자식이 있을 때 `with_relations(...)`를 사용합니다. 레코드는 자동으로 생성되고 연결됩니다.
 
 ```rust
 dinoco::insert_many::<Post>()
@@ -95,9 +95,9 @@ dinoco::insert_many::<Post>()
     .await?;
 ```
 
-## `with_connection(...)` 예제
+## `with_connection(...)` 예시
 
-각 부모 요소가 정확히 하나의 기존 레코드와 연결되어야 할 때 `with_connection(...)`을 사용합니다.
+각 부모가 정확히 하나의 기존 레코드에 연결되어야 할 때 `with_connection(...)`을 사용합니다.
 
 ```rust
 dinoco::insert_many::<Team>()
@@ -113,9 +113,9 @@ dinoco::insert_many::<Team>()
     .await?;
 ```
 
-## `with_connections(...)` 예제
+## `with_connections(...)` 예시
 
-각 부모 요소가 여러 개의 기존 레코드와 연결되어야 할 때 `with_connections(...)`을 사용합니다.
+각 부모가 여러 기존 레코드에 연결되어야 할 때 `with_connections(...)`를 사용합니다.
 이는 다대다 관계에서 흔히 사용됩니다.
 
 ```rust
@@ -139,12 +139,12 @@ dinoco::insert_many::<Article>()
 
 ## 참고 사항
 
-- ``with_relation(...)` 및 `with_relations(...)`는 부모 요소가 메모리에 이미 알려진 `id`를 가지고 있을 때 가장 잘 작동합니다.`
-- ``with_connection(...)` 및 `with_connections(...)`는 기존 관계를 연결하기 위한 것입니다.`
-- ``with_connection(...)`은 `values(...)`와 동일한 수의 요소를 필요로 합니다.`
-- ``with_connections(...)`는 주 벡터에 비례하여 동일한 수의 그룹을 필요로 합니다.`
+- `with_relation(...)` 및 `with_relations(...)`는 부모가 이미 메모리에 알려진 ID를 가지고 있을 때 가장 잘 작동합니다.
+- `with_connection(...)` 및 `with_connections(...)`는 기존 관계를 연결하는 데 중점을 둡니다.
+- `with_connection(...)`은 `values(...)`와 동일한 수의 항목을 요구합니다.
+- `with_connections(...)`는 주 벡터와 동일한 수의 그룹을 요구합니다.
 
 ## 다음 단계
 
-- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): 단일 삽입.
-- [**`update::<M>()`**](/v0.0.1/orm/update): 필터를 사용한 업데이트.
+- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): 단일 삽입
+- [**`update::<M>()`**](/v0.0.1/orm/update): 필터링된 업데이트

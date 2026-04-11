@@ -1,0 +1,111 @@
+export const title = 'cache()';
+
+# cache
+
+`client.cache()` предоставляет прямой доступ к Redis, настроенному в `DinocoClient`, без зависимости от вспомогательных функций кэширования, встроенных в `find_first` и `find_many`.
+
+## Что вы можете сделать
+
+- Читать ключ с помощью `.get::<T>(...)`
+- Сохранять ключ с помощью `.set(...)`
+- Сохранять с истечением срока действия, используя `.set_with_ttl(...)`
+- Удалять ключ с помощью `.delete(...)`
+
+## Когда использовать
+
+Используйте `client.cache()`, когда вы хотите:
+
+- настроить ручное кэширование
+- инвалидировать ключи после операций записи
+- обмениваться полезными данными между несколькими запросами
+- хранить структуры, готовые для быстрого чтения
+
+## Как это работает
+
+Метод использует Redis, настроенный в `DinocoClientConfig::with_redis(...)`.
+
+Если клиент не имеет настроенного Redis, операция возвращает ошибку.
+
+## Доступные методы
+
+- `.get::<T>(key)`: извлекает и десериализует значение как `T`
+- `.set(key, &value)`: сериализует и сохраняет без TTL
+- `.set_with_ttl(key, &value, ttl_seconds)`: сериализует и сохраняет с истечением срока действия в секундах
+- `.delete(key)`: удаляет ключ
+
+## Базовый пример
+
+```rust
+use database::*;
+
+let cache = client.cache();
+
+cache.set("users:count", &42_i64).await?;
+
+let count = cache.get::<i64>("users:count").await?;
+
+println!("{count:?}");
+```
+
+## Пример с типизированным списком
+
+```rust
+use database::*;
+
+let users = vec![
+    User { id: 1, name: "Матвей".to_string() },
+    User { id: 2, name: "Анна".to_string() },
+];
+
+client.cache().set("users:list", &users).await?;
+
+let cached = client.cache().get::<Vec<User>>("users:list").await?;
+```
+
+## Пример с TTL
+
+```rust
+use database::*;
+
+client.cache().set_with_ttl("users:top-10", &vec![1, 2, 3], 60).await?;
+```
+
+## Пример инвалидации
+
+```rust
+use database::*;
+
+dinoco::update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .values(User { id: 1, name: "Новое имя".to_string() })
+    .execute(&client)
+    .await?;
+
+client.cache().delete("users:1").await?;
+client.cache().delete("users:list").await?;
+```
+
+## Поддерживаемые типы
+
+Значения сериализуются в JSON, поэтому тип должен быть совместим с `serde`.
+
+Общие примеры:
+
+- `Vec<User>`
+- `Option<User>`
+- `String`
+- `bool`
+- `i64`
+- сериализуемые структуры
+
+## Примечания
+
+- `client.cache()` — это ручное кэширование; оно не выполняет запросы к базе данных.
+- Для встроенного кэширования в запросах используйте `find_first().cache(...)` и `find_many().cache(...)`.
+- Вы можете вызывать `client.cache()` сколько угодно раз; он просто создает легкую обертку.
+
+## Следующие шаги
+
+- [**`find_first::<M>()`**](/v0.0.2/orm/find-first)
+- [**`find_many::<M>()`**](/v0.0.2/orm/find-many)
+- [**`queues`**](/v0.0.2/orm/queues)

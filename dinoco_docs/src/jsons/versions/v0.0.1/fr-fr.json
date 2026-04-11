@@ -1,5 +1,5 @@
 {
-	"description": "Première version publique de la documentation Dinoco.",
+	"description": "Première version publique de la documentation de Dinoco.",
 	"groups": [
 		{
 			"icon": "database",
@@ -7,7 +7,7 @@
 			"shortName": "orm",
 			"sections": [
 				{
-					"title": "Bien démarrer",
+					"title": "Pour commencer",
 					"items": [
 						{
 							"shortName": "introduction-dinoco",
@@ -24,7 +24,7 @@
 									"items": []
 								},
 								{
-									"title": "Où nous situons-nous ?",
+									"title": "Où nous positionnons-nous ?",
 									"items": []
 								}
 							]
@@ -36,11 +36,11 @@
 							"inPage": [
 								"Premiers pas",
 								{
-									"title": "Comment ça fonctionne ?",
+									"title": "Comment ça marche ?",
 									"items": [
 										"1. Définissez votre schéma et votre connexion",
 										"2. Créez la migration",
-										"3. Interrogez avec DinocoClient"
+										"3. Requête avec DinocoClient"
 									]
 								},
 								{
@@ -51,16 +51,16 @@
 						},
 						{
 							"shortName": "supported-databases",
-							"name": "Vue d'overview",
+							"name": "Vue d'ensemble",
 							"mdxPath": "v0.0.1/fr-fr/orm/supported-databases.mdx",
 							"inPage": [
-								"Vue d'overview",
+								"Vue d'ensemble",
 								{
 									"title": "Versions prises en charge",
 									"items": []
 								},
 								{
-									"title": "Configuration de connexion",
+									"title": "Configuration de la connexion",
 									"items": [
 										"SQLite"
 									]
@@ -70,7 +70,7 @@
 									"items": []
 								},
 								{
-									"title": "Correspondance des types",
+									"title": "Mappage des types",
 									"items": []
 								}
 							]
@@ -87,7 +87,7 @@
 							"inPage": [
 								"Modèles",
 								{
-									"title": "Ce que représente un modèle",
+									"title": "Ce qu'un modèle représente",
 									"items": []
 								},
 								{
@@ -99,7 +99,7 @@
 									"items": []
 								},
 								{
-									"title": "Types de champ",
+									"title": "Types de champs",
 									"items": [
 										"Champs scalaires"
 									]
@@ -108,7 +108,7 @@
 									"title": "Modificateurs de type",
 									"items": [
 										"Champ optionnel",
-										"Champ liste"
+										"Champ en liste"
 									]
 								},
 								{
@@ -127,7 +127,7 @@
 									]
 								},
 								{
-									"title": "Exemple de modèle utilisateur",
+									"title": "Exemple de modèle d'utilisateur",
 									"items": []
 								},
 								{
@@ -174,7 +174,7 @@
 									"items": []
 								},
 								{
-									"title": "Quand utiliser des enums",
+									"title": "Quand utiliser les enums",
 									"items": []
 								},
 								{
@@ -210,7 +210,7 @@
 									"items": []
 								},
 								{
-									"title": "Auto-relation",
+									"title": "Relation réflexive",
 									"items": []
 								},
 								{
@@ -222,19 +222,19 @@
 									"items": []
 								},
 								{
-									"title": "Exemple de requête avec toutes les relations possibles à partir de User",
+									"title": "Exemple de recherche avec toutes les relations possibles à partir de User",
 									"items": []
 								},
 								{
-									"title": "Exemple d'insert avec relation en utilisant User et Profile",
+									"title": "Exemple d'insertion avec relation utilisant User et Profile",
 									"items": []
 								},
 								{
-									"title": "Exemple de `insert_many` avec `with_relations(...)`",
+									"title": "Exemple d'insert_many avec with_relations(...)",
 									"items": []
 								},
 								{
-									"title": "Exemple de `insert_many` avec `with_connections(...)`",
+									"title": "Exemple d'insert_many avec with_connections(...)",
 									"items": []
 								},
 								{
@@ -279,7 +279,7 @@
 									"items": []
 								},
 								{
-									"title": "Exemple de select personnalisé",
+									"title": "Exemple de sélection personnalisée",
 									"items": []
 								},
 								{
@@ -295,11 +295,11 @@
 									"items": []
 								},
 								{
-									"title": "Exemple avec comptage des relations",
+									"title": "Exemple avec count de relation",
 									"items": []
 								},
 								{
-									"title": "Exemple de lecture depuis la base de données primaire",
+									"title": "Exemple de lecture dans la base de données principale",
 									"items": []
 								},
 								{
@@ -375,7 +375,7 @@
 									"items": []
 								},
 								{
-									"title": "Remarques",
+									"title": "Observations",
 									"items": []
 								},
 								{
@@ -447,23 +447,23 @@
 									"items": []
 								},
 								{
-									"title": "Exemple avec `with_relation(...)`",
+									"title": "Exemple avec with_relation(...)",
 									"items": []
 								},
 								{
-									"title": "Exemple avec `with_relations(...)`",
+									"title": "Exemple avec with_relations(...)",
 									"items": []
 								},
 								{
-									"title": "Exemple avec `with_connection(...)`",
+									"title": "Exemple avec with_connection(...)",
 									"items": []
 								},
 								{
-									"title": "Exemple avec `with_connections(...)`",
+									"title": "Exemple avec with_connections(...)",
 									"items": []
 								},
 								{
-									"title": "Remarques",
+									"title": "Observations",
 									"items": []
 								},
 								{
@@ -491,11 +491,11 @@
 									"items": []
 								},
 								{
-									"title": "Exemple avec `connect(...)`",
+									"title": "Exemple avec connect(...)",
 									"items": []
 								},
 								{
-									"title": "Exemple avec `disconnect(...)`",
+									"title": "Exemple avec disconnect(...)",
 									"items": []
 								},
 								{
@@ -524,6 +524,14 @@
 								},
 								{
 									"title": "Exemple de base",
+									"items": []
+								},
+								{
+									"title": "Exemple avec retour",
+									"items": []
+								},
+								{
+									"title": "Exemple avec filtre",
 									"items": []
 								},
 								{
@@ -662,13 +670,13 @@
 							"name": "Init",
 							"mdxPath": "v0.0.1/fr-fr/cli/init.mdx",
 							"inPage": [
-								"Utilisation ?",
+								"Comment utiliser ?",
 								{
-									"title": "Ce que fait la commande",
+									"title": "Ce que la commande fait",
 									"items": []
 								},
 								{
-									"title": "Quand l'utiliser",
+									"title": "Quand utiliser",
 									"items": []
 								},
 								{
@@ -679,12 +687,12 @@
 						},
 						{
 							"shortName": "database-reset",
-							"name": "Database reset",
+							"name": "Réinitialisation de la base de données",
 							"mdxPath": "v0.0.1/fr-fr/cli/database-reset.mdx",
 							"inPage": [
-								"Utilisation ?",
+								"Comment utiliser ?",
 								{
-									"title": "Ce que fait la commande",
+									"title": "Ce que la commande fait",
 									"items": []
 								},
 								{
@@ -699,12 +707,12 @@
 						},
 						{
 							"shortName": "migrate-generate",
-							"name": "Migrate generate",
+							"name": "Générer une migration",
 							"mdxPath": "v0.0.1/fr-fr/cli/migrate-generate.mdx",
 							"inPage": [
-								"Utilisation ?",
+								"Comment utiliser ?",
 								{
-									"title": "Ce que fait la commande",
+									"title": "Ce que la commande fait",
 									"items": []
 								},
 								{
@@ -714,7 +722,7 @@
 									]
 								},
 								{
-									"title": "Exemple d'utilisation sans application immédiate",
+									"title": "Exemple d'utilisation sans appliquer",
 									"items": []
 								},
 								{
@@ -729,16 +737,16 @@
 						},
 						{
 							"shortName": "migrate-run",
-							"name": "Migrate run",
+							"name": "Exécuter la migration",
 							"mdxPath": "v0.0.1/fr-fr/cli/migrate-run.mdx",
 							"inPage": [
-								"Utilisation ?",
+								"Comment utiliser ?",
 								{
-									"title": "Ce que fait la commande",
+									"title": "Ce que la commande fait",
 									"items": []
 								},
 								{
-									"title": "Quand l'utiliser",
+									"title": "Quand utiliser",
 									"items": []
 								},
 								{
@@ -749,12 +757,12 @@
 						},
 						{
 							"shortName": "migrate-rollback",
-							"name": "Migrate rollback",
+							"name": "Annuler la migration",
 							"mdxPath": "v0.0.1/fr-fr/cli/migrate-rollback.mdx",
 							"inPage": [
-								"Utilisation ?",
+								"Comment utiliser ?",
 								{
-									"title": "Ce que fait la commande",
+									"title": "Ce que la commande fait",
 									"items": []
 								},
 								{
@@ -766,7 +774,7 @@
 									"items": []
 								},
 								{
-									"title": "Quand l'utiliser",
+									"title": "Quand utiliser",
 									"items": []
 								},
 								{
@@ -781,16 +789,16 @@
 						},
 						{
 							"shortName": "models-generate",
-							"name": "Models generate",
+							"name": "Générer les modèles",
 							"mdxPath": "v0.0.1/fr-fr/cli/models-generate.mdx",
 							"inPage": [
-								"Utilisation ?",
+								"Comment utiliser ?",
 								{
-									"title": "Ce que fait la commande",
+									"title": "Ce que la commande fait",
 									"items": []
 								},
 								{
-									"title": "Quand l'utiliser",
+									"title": "Quand utiliser",
 									"items": []
 								},
 								{
@@ -801,12 +809,12 @@
 						},
 						{
 							"shortName": "schema-restore",
-							"name": "Schema restore",
+							"name": "Restaurer le schéma",
 							"mdxPath": "v0.0.1/fr-fr/cli/schema-restore.mdx",
 							"inPage": [
-								"Utilisation ?",
+								"Comment utiliser ?",
 								{
-									"title": "Ce que fait la commande",
+									"title": "Ce que la commande fait",
 									"items": []
 								},
 								{
@@ -814,7 +822,7 @@
 									"items": []
 								},
 								{
-									"title": "Quand l'utiliser",
+									"title": "Quand utiliser",
 									"items": []
 								},
 								{

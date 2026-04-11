@@ -3,8 +3,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use dinoco_engine::{
-    DinocoClientConfig, DinocoQueryLog, DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions, DinocoValue,
-    SqliteAdapter, current_snowflake_node_id,
+    DinocoClientConfig, DinocoQueryLog, DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions,
+    DinocoRedisConfig, DinocoValue, SqliteAdapter, current_snowflake_node_id,
 };
 
 #[derive(Clone)]
@@ -58,6 +58,21 @@ fn compact_logger_can_skip_params() {
     assert!(!message.contains("params="));
     assert!(message.contains("duration=3"));
     assert!(message.contains("DELETE FROM users"));
+}
+
+#[test]
+fn redis_config_builds_connection_url_from_parameters() {
+    let redis = DinocoRedisConfig::from_host("localhost:6379").with_username("dinoco").with_password("secret");
+
+    assert_eq!(redis.connection_url(), "redis://dinoco:secret@localhost:6379");
+}
+
+#[test]
+fn client_config_can_store_redis_configuration() {
+    let config = DinocoClientConfig::default().with_redis(DinocoRedisConfig::from_url("redis://127.0.0.1:6379"));
+
+    assert!(config.redis.is_some());
+    assert!(matches!(config.redis, Some(DinocoRedisConfig::Url { .. })));
 }
 
 #[test]

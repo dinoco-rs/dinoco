@@ -2,24 +2,24 @@ export const title = "delete";
 
 # delete
 
-用于使用显式过滤器进行删除。
+用于通过显式过滤器删除。
 
 ---
 
-## 你可以做什么
+## 您可以做什么
 
 - `.cond(...)`: 定义要删除的记录。
 - `.execute(&client)`: 在数据库中执行删除操作。
 
 ## 返回值
 
-delete 的返回值是：
+`delete`的返回值是：
 
 ```rust
 DinocoResult<()>
 ```
 
-## 基础示例
+## 基本示例
 
 ```rust
 dinoco::delete::<User>()
@@ -28,7 +28,7 @@ dinoco::delete::<User>()
     .await?;
 ```
 
-## 另一个过滤器示例
+## 带有其他过滤器的示例
 
 ```rust
 dinoco::delete::<Session>()

@@ -8,23 +8,23 @@ Utilisé pour l'insertion par lots.
 
 ## Ce que vous pouvez faire
 
-- `.values(Vec<M>)`: Définit les enregistrements à insérer en lot.
-- `.with_relation(Vec<R>)`: Insère exactement un nouvel enregistrement lié pour chaque parent.
-- `.with_relations(Vec<Vec<R>>)` : Insère plusieurs nouveaux enregistrements liés pour chaque parent.
-- `.with_connection(Vec<R>)`: Connecte exactement une relation déjà existante pour chaque parent inséré.
-- `.with_connections(Vec<Vec<R>>)` : Connecte plusieurs relations déjà existantes pour chaque parent inséré, généralement dans des scénarios Many-to-Many.
-- `.returning::<T>()`: Modifie la valeur de retour en une liste typée des éléments insérés.
-- `.execute(&client)`: Exécute l'opération par lots.
+- `.values(Vec<M>)`: définit les enregistrements qui seront insérés par lots.
+- `.with_relation(Vec<R>)`: insère exactement un nouvel élément lié pour chaque parent.
+- `.with_relations(Vec<Vec<R>>)` : insère plusieurs nouveaux éléments liés pour chaque parent.
+- `.with_connection(Vec<R>)`: connecte exactement une relation existante pour chaque parent inséré.
+- `.with_connections(Vec<Vec<R>>)` : connecte plusieurs relations existantes pour chaque parent inséré, généralement dans des scénarios many-to-many.
+- `.returning::<T>()`: modifie le retour en une liste typée des éléments insérés.
+- `.execute(&client)`: exécute l'opération par lots.
 
 ## Retour
 
-Sans `.returning::<T>()`, la valeur de retour est :
+Sans `.returning::<T>()`, le retour est :
 
 ```rust
 DinocoResult<()>
 ```
 
-Avec `.returning::<T>()`, la valeur de retour devient :
+Avec `.returning::<T>()`, le retour devient :
 
 ```rust
 DinocoResult<Vec<T>>
@@ -55,14 +55,14 @@ let created = dinoco::insert_many::<User>()
     .await?;
 ```
 
-## Exemple avec `with_relation(...)`
+## Exemple avec with_relation(...)
 
-Utilisez `with_relation(...)` lorsque chaque parent doit être créé et lié.
+Utilisez `with_relation(...)` lorsque chaque parent doit être créé et connecté.
 
 ```rust
 dinoco::insert_many::<Post>()
     .values(vec![
-        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-11".into(), name: "Données".into() },
         Team { id: "team-12".into(), name: "DX".into() },
     ])
     .with_relation(vec![
@@ -73,14 +73,14 @@ dinoco::insert_many::<Post>()
     .await?;
 ```
 
-## Exemple avec `with_relations(...)`
+## Exemple avec with_relations(...)
 
-Utilisez `with_relations(...)` lorsque chaque enregistrement parent a plus d'un enfant ; les enregistrements seront automatiquement créés et liés.
+Utilisez with_relations(...) lorsque chaque enregistrement parent a plus d'un enfant ; les enregistrements seront créés et liés automatiquement.
 
 ```rust
 dinoco::insert_many::<Post>()
     .values(vec![
-        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-11".into(), name: "Données".into() },
         Team { id: "team-12".into(), name: "DX".into() },
     ])
     .with_relation(vec![
@@ -95,14 +95,14 @@ dinoco::insert_many::<Post>()
     .await?;
 ```
 
-## Exemple avec `with_connection(...)`
+## Exemple avec with_connection(...)
 
-Utilisez `with_connection(...)` lorsque chaque parent doit être connecté à exactement un enregistrement déjà existant.
+Utilisez `with_connection(...)` lorsque chaque parent doit être connecté à exactement un enregistrement existant.
 
 ```rust
 dinoco::insert_many::<Team>()
     .values(vec![
-        Team { id: "team-11".into(), name: "Data".into() },
+        Team { id: "team-11".into(), name: "Données".into() },
         Team { id: "team-12".into(), name: "DX".into() },
     ])
     .with_connection(vec![
@@ -113,16 +113,16 @@ dinoco::insert_many::<Team>()
     .await?;
 ```
 
-## Exemple avec `with_connections(...)`
+## Exemple avec with_connections(...)
 
-Utilisez `with_connections(...)` lorsque chaque parent doit être connecté à plusieurs enregistrements déjà existants.
-C'est un cas d'utilisation courant pour les relations Many-to-Many.
+Utilisez `with_connections(...)` lorsque chaque parent doit être connecté à plusieurs enregistrements existants.
+C'est une utilisation courante dans les relations many-to-many.
 
 ```rust
 dinoco::insert_many::<Article>()
     .values(vec![
-        Article { id: "article-11".into(), title: "Connect Multiple".into() },
-        Article { id: "article-12".into(), title: "Connect Batch".into() },
+        Article { id: "article-11".into(), title: "Connecter Plusieurs".into() },
+        Article { id: "article-12".into(), title: "Connecter par Lots".into() },
     ])
     .with_connections(vec![
         vec![
@@ -139,12 +139,12 @@ dinoco::insert_many::<Article>()
 
 ## Remarques
 
-- `with_relation(...)` et `with_relations(...)` fonctionnent mieux lorsque le parent a déjà un ID connu en mémoire.
-- `with_connection(...)` et `with_connections(...)` sont utilisés pour connecter des relations déjà existantes.
-- `with_connection(...)` nécessite le même nombre d'éléments que `values(...)`.
-- `with_connections(...)` nécessite le même nombre de groupes par rapport au vecteur principal.
+- `with_relation(...)` et `with_relations(...)` fonctionnent mieux lorsque le parent possède déjà un ID connu en mémoire.
+- `with_connection(...)` et `with_connections(...)` sont destinés à la connexion de relations existantes.
+- `with_connection(...)` exige le même nombre d'éléments que `values(...)`.
+- `with_connections(...)` exige le même nombre de groupes par rapport au vecteur principal.
 
 ## Prochaines étapes
 
-- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): Insertion unique.
-- [**`update::<M>()`**](/v0.0.1/orm/update): Mise à jour avec filtre.
+- [**`insert_into::<M>()`**](/v0.0.1/orm/insert-into): insertion unique.
+- [**`update::<M>()`**](/v0.0.1/orm/update): mise à jour avec filtre.

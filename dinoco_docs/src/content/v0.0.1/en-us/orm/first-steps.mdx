@@ -1,6 +1,6 @@
-export const title = "Getting started";
+export const title = "First steps";
 
-# Getting started
+# First steps
 
 To start using Dinoco, you must install our CLI so you can manage migrations and other systems!
 
@@ -8,21 +8,21 @@ To start using Dinoco, you must install our CLI so you can manage migrations and
 cargo install dinoco-cli
 ```
 
-To create the Dinoco environment, run the following command:
+To create the Dinoco environment, we run the following command:
 
 ```bash
 dinoco init
 ```
 
-After choosing the database and all necessary configurations, the dinoco folder will be created in the root of your project.
+After choosing the database and all necessary configurations, the `dinoco` folder will be created at the root of your project.
 
 This folder will contain:
 
-- **Migrations:** The history of changes to your database.
-- **Schema:** The central definition of your data structure.
-- **Models:** The typed representations for use in your Rust code.
+-   **Migrations:** The history of changes to your database.
+-   **Schema:** The central definition of your data structure.
+-   **Models:** The typed representations for use in your Rust code.
 
-## How it works?
+## How does it work?
 
 ### 1. Define your schema and connection
 
@@ -54,7 +54,7 @@ model Post {
 
 ### 2. Create the migration
 
-When generating the migration with --apply, it will be applied to the database and the models will be generated automatically!
+When generating the migration with `--apply`, it will be applied to the database and the models will be generated automatically!
 
 ```bash
 dinoco migrate generate --apply
@@ -98,11 +98,11 @@ async fn main() -> dinoco::DinocoResult<()> {
     // Insert a user with a related post.
     insert_into::<User>()
         .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
-        .with_relation(Post { id: 0, title: "Meu primeiro post".to_string(), published: true, authorId: None })
+        .with_relation(Post { id: 0, title: "My first post".to_string(), published: true, authorId: None })
         .execute(&client)
         .await?;
 
-    // Find all users with their posts.
+    // Fetch all users with their posts.
     let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
 
     println!("{users:#?}");
@@ -113,7 +113,7 @@ async fn main() -> dinoco::DinocoResult<()> {
     // 		email: "bia@dinoco.rs",
     // 		posts: [
     // 			Post {
-    // 				title: "Meu primeiro post",
+    // 				title: "My first post",
     // 				published: true,
     // 			},
     // 		],
@@ -126,5 +126,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## Next steps
 
-- [**Dinoco schema**](/v0.0.1/orm/introduction-dinoco): Better understand Dinoco's structure and proposal.
-- [**Dinoco client**](/v0.0.1/orm/first-steps): Review this complete client flow.
+-   [**Dinoco schema**](/v0.0.1/orm/introduction-dinoco): Better understand Dinoco's structure and proposal.
+-   [**Dinoco client**](/v0.0.1/orm/first-steps): Review this complete client flow.

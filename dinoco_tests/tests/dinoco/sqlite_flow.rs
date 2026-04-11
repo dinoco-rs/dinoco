@@ -1,10 +1,10 @@
 use std::env;
 
 use dinoco::{
-    DinocoAdapter, DinocoClient, DinocoError, DinocoResult, DinocoValue, InsertConnection, InsertModel, InsertRelation,
-    Model, Projection, RelationLinkPlan, RelationMutationModel, RelationMutationWhere, RelationScalarField,
-    RelationWritePlan, Rowable, ScalarField, UpdateModel, count, delete, delete_many, find_first, find_many,
-    insert_into, insert_many, update, update_many,
+    DinocoAdapter, DinocoClient, DinocoError, DinocoResult, DinocoValue, Extend, InsertConnection, InsertModel,
+    InsertRelation, Model, Projection, RelationLinkPlan, RelationMutationModel, RelationMutationWhere,
+    RelationScalarField, RelationWritePlan, Rowable, ScalarField, UpdateModel, count, delete, delete_many, find_first,
+    find_many, insert_into, insert_many, update, update_many,
 };
 use uuid::Uuid;
 
@@ -122,6 +122,38 @@ struct ArticleLabel {
     label_id: String,
 }
 
+#[derive(Debug, Clone, Extend)]
+#[extend(Team)]
+#[insertable]
+struct TeamWithMembersInsert {
+    id: String,
+    name: String,
+    members: Vec<Member>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabelsInsert {
+    id: String,
+    title: String,
+    labels: Vec<Label>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabelConnectionsInsert {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+#[derive(Debug, Clone)]
+enum ArticleConnection {
+    Label(String),
+}
+
 struct ArticleLabelWhere {
     article_id: ScalarField<String>,
     label_id: ScalarField<String>,
@@ -170,6 +202,18 @@ struct AutoArticleLabelWhere {
 
 #[derive(Default)]
 struct AutoArticleLabelInclude {}
+
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
 
 fn sqlite_url(name: &str) -> String {
     let mut path = env::temp_dir();
@@ -473,6 +517,39 @@ async fn relation_insert_binds_foreign_keys_for_single_and_many() -> DinocoResul
 }
 
 #[tokio::test]
+async fn insert_into_accepts_insertable_extend_with_relations() -> DinocoResult<()> {
+    let client = DinocoClient::<dinoco_engine::SqliteAdapter>::new(
+        sqlite_url("insertable-extend-single"),
+        vec![],
+        dinoco::DinocoClientConfig::default(),
+    )
+    .await?;
+
+    create_team_tables(&client).await;
+
+    insert_into::<Team>()
+        .values(TeamWithMembersInsert {
+            id: "team-20".to_string(),
+            name: "Nested Team".to_string(),
+            members: vec![
+                Member { id: "member-20".to_string(), name: "Rafa".to_string(), teamId: "legacy".to_string() },
+                Member { id: "member-21".to_string(), name: "Bia".to_string(), teamId: "legacy".to_string() },
+            ],
+        })
+        .execute(&client)
+        .await?;
+
+    let members = find_many::<Member>().order_by(|x| x.id.asc()).execute(&client).await?;
+
+    assert_eq!(
+        members.iter().map(|item| (&item.id, &item.teamId)).collect::<Vec<_>>(),
+        vec![(&"member-20".to_string(), &"team-20".to_string()), (&"member-21".to_string(), &"team-20".to_string()),]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn relation_insert_with_autoincrement_binds_generated_foreign_keys() -> DinocoResult<()> {
     let client = DinocoClient::<dinoco_engine::SqliteAdapter>::new(
         sqlite_url("relations-autoincrement"),
@@ -699,6 +776,113 @@ async fn insert_with_connection_links_existing_relations() -> DinocoResult<()> {
             (&"article-11".to_string(), &"label-11".to_string()),
             (&"article-11".to_string(), &"label-12".to_string()),
             (&"article-12".to_string(), &"label-10".to_string()),
+        ]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn insert_many_accepts_insertable_extend_with_many_to_many_relations() -> DinocoResult<()> {
+    let client = DinocoClient::<dinoco_engine::SqliteAdapter>::new(
+        sqlite_url("insertable-extend-many"),
+        vec![],
+        dinoco::DinocoClientConfig::default(),
+    )
+    .await?;
+
+    create_article_tables(&client).await;
+
+    insert_many::<Article>()
+        .values(vec![
+            ArticleWithLabelsInsert {
+                id: "article-20".to_string(),
+                title: "Insertable Extend".to_string(),
+                labels: vec![
+                    Label { id: "label-20".to_string(), name: "orm".to_string() },
+                    Label { id: "label-21".to_string(), name: "rust".to_string() },
+                ],
+            },
+            ArticleWithLabelsInsert {
+                id: "article-21".to_string(),
+                title: "Insertable Extend Batch".to_string(),
+                labels: vec![Label { id: "label-22".to_string(), name: "backend".to_string() }],
+            },
+        ])
+        .execute(&client)
+        .await?;
+
+    let rows = find_many::<ArticleLabel>().order_by(|x| x.article_id.asc()).execute(&client).await?;
+
+    assert_eq!(
+        rows.iter().map(|row| (&row.article_id, &row.label_id)).collect::<Vec<_>>(),
+        vec![
+            (&"article-20".to_string(), &"label-20".to_string()),
+            (&"article-20".to_string(), &"label-21".to_string()),
+            (&"article-21".to_string(), &"label-22".to_string()),
+        ]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn insertable_extend_accepts_connection_payloads() -> DinocoResult<()> {
+    let client = DinocoClient::<dinoco_engine::SqliteAdapter>::new(
+        sqlite_url("insertable-extend-connections"),
+        vec![],
+        dinoco::DinocoClientConfig::default(),
+    )
+    .await?;
+
+    create_article_tables(&client).await;
+
+    insert_many::<Label>()
+        .values(vec![
+            Label { id: "label-30".to_string(), name: "orm".to_string() },
+            Label { id: "label-31".to_string(), name: "rust".to_string() },
+            Label { id: "label-32".to_string(), name: "backend".to_string() },
+        ])
+        .execute(&client)
+        .await?;
+
+    insert_into::<Article>()
+        .values(ArticleWithLabelConnectionsInsert {
+            id: "article-30".to_string(),
+            title: "Single Connect Payload".to_string(),
+            labels: vec![ArticleConnection::Label("label-30".to_string())],
+        })
+        .execute(&client)
+        .await?;
+
+    insert_many::<Article>()
+        .values(vec![
+            ArticleWithLabelConnectionsInsert {
+                id: "article-31".to_string(),
+                title: "Connect Multiple".to_string(),
+                labels: vec![
+                    ArticleConnection::Label("label-30".to_string()),
+                    ArticleConnection::Label("label-31".to_string()),
+                ],
+            },
+            ArticleWithLabelConnectionsInsert {
+                id: "article-32".to_string(),
+                title: "Connect Batch".to_string(),
+                labels: vec![ArticleConnection::Label("label-32".to_string())],
+            },
+        ])
+        .execute(&client)
+        .await?;
+
+    let rows = find_many::<ArticleLabel>().order_by(|x| x.article_id.asc()).execute(&client).await?;
+
+    assert_eq!(
+        rows.iter().map(|row| (&row.article_id, &row.label_id)).collect::<Vec<_>>(),
+        vec![
+            (&"article-30".to_string(), &"label-30".to_string()),
+            (&"article-31".to_string(), &"label-30".to_string()),
+            (&"article-31".to_string(), &"label-31".to_string()),
+            (&"article-32".to_string(), &"label-32".to_string()),
         ]
     );
 

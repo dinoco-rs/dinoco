@@ -19,6 +19,7 @@ pub use dialect::MySqlDialect;
 
 static MYSQL_DIALECT: MySqlDialect = MySqlDialect;
 
+#[derive(Clone)]
 pub struct MySqlAdapter {
     pub url: String,
     pub client: Arc<Pool>,

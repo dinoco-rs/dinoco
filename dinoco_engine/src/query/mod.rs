@@ -13,6 +13,7 @@ pub use select::*;
 pub use update::*;
 
 use crate::{AdapterDialect, DinocoValue};
+use std::collections::HashSet;
 use std::fmt::Write;
 
 pub trait QueryBuilder: AdapterDialect {
@@ -241,11 +242,12 @@ pub trait QueryBuilder: AdapterDialect {
             return (sql, params);
         }
 
-        let mut columns = Vec::<String>::new();
+        let mut columns = Vec::new();
+        let mut seen_columns = HashSet::new();
 
         for batch in &stmt.batches {
             for (column, _) in &batch.values {
-                if !columns.contains(column) {
+                if seen_columns.insert(column.as_str()) {
                     columns.push(column.clone());
                 }
             }

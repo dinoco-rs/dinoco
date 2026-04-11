@@ -1,31 +1,32 @@
-export const title = "Vue d'ensemble";
+export const title = "Aperçu";
 
-# Vue d'ensemble
+# Aperçu
 
-**Dinoco** prend en charge nativement les bases **PostgreSQL**, **MySQL** et **SQLite**. Nous travaillons à étendre bientôt ce support à de nouvelles bases de données.
+**Dinoco** prend en charge nativement les bases de données **PostgreSQL**, **MySQL** et **SQLite**.  
+Nous travaillons à étendre ce support à de nouvelles bases de données prochainement !
 
 > ⚠️
-> Actuellement, Dinoco prend en charge uniquement les **URL de connexion directes**.
+> Actuellement, Dinoco prend en charge exclusivement les **URL de connexion directe**.
 
 ---
 
 ## Versions prises en charge
 
 | Base de données | Version minimale |
-| :------------- | :------------  |
-| **SQLite**     | `>= 3.25`      |
-| **PostgreSQL** | `>= 10`        |
-| **MySQL**      | `>= 8.0`       |
+| :-------------- | :--------------- |
+| **SQLite**      | `>= 3.25`        |
+| **PostgreSQL**  | `>= 10`          |
+| **MySQL**       | `>= 8.0`         |
 
 ---
 
-## Configuration de connexion
+## Configuration de la connexion
 
-La configuration se fait dans le bloc `config` de votre fichier de schéma.
+La configuration est effectuée dans le bloc `config` de votre fichier de schéma.
 
 ### SQLite
 
-Avec SQLite, le fichier de base de données est généré automatiquement dans votre dossier `dinoco`.
+Lors de l'utilisation de SQLite, le fichier de la base de données sera généré automatiquement dans votre dossier `dinoco`.
 
 ```dinoco
 config {
@@ -36,7 +37,7 @@ config {
 
 ## PostgreSQL ou MySQL
 
-Pour les bases externes, indiquez la chaîne de connexion correspondante :
+Pour les bases de données externes, insérez la chaîne de connexion correspondante :
 
 ```dinoco
 config {
@@ -45,7 +46,7 @@ config {
 }
 ```
 
-## Correspondance des types
+## Mappage des types
 
 | Dinoco       | Sqlite   | PostgreSQL       | MySQL            |
 | :----------- | :------- | :--------------- | :--------------- |

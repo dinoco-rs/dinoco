@@ -1,0 +1,67 @@
+export const title = "Configuration";
+
+# Configuration
+
+The `config {}` block defines how Dinoco will connect to the database and what extra features are available in the project.
+
+## What goes into `config {}`
+
+- `database`: defines the main adapter, such as `sqlite`, `postgresql`, or `mysql`.
+- `database_url`: informs the main connection URL.
+- `read_replicas`: optional, adds read replicas.
+- `redis`: optional, enables Redis-based cache and queues.
+
+## Basic example
+
+```dinoco
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+```
+
+## Example with Redis
+
+```dinoco
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+
+    redis = {
+        url = env("REDIS_URL")
+    }
+}
+```
+
+## Example with replicas
+
+```dinoco
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+
+    read_replicas = [
+        env("DATABASE_READ_URL_1"),
+        env("DATABASE_READ_URL_2")
+    ]
+}
+```
+
+## What changes in the generated API
+
+- With `redis`, the project starts exposing helper functions like `client.cache()`, `.cache(...)` and queues with `workers()`.
+- With `read_replicas`, reads can use a replica while writes continue on the main database.
+- Without `redis`, cache and queue features are not fully available.
+
+## When to edit this block
+
+- When changing the project's main database.
+- When adding Redis for cache or queues.
+- When configuring a read replica.
+- When adjusting connection environment variables.
+
+## Next steps
+
+- [**Overview**](/v0.0.2/orm/supported-databases)
+- [**Models**](/v0.0.2/orm/models)
+- [**Relations**](/v0.0.2/orm/relations)

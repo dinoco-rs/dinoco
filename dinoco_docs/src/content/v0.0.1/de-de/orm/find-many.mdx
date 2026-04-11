@@ -15,20 +15,20 @@ Wird verwendet, um eine Liste von Datensätzen abzurufen.
 - Mit `.order_by(...)` sortieren
 - Beziehungen mit `.includes(...)` laden
 - Beziehungen mit `.count(...)` zählen
-- Das Lesen in der primären Datenbank mit `.read_in_primary()` erzwingen
+- Lesen in der primären Datenbank mit `.read_in_primary()` erzwingen
 - Mit `.execute(&client)` ausführen
 
-## Beschreibung der Methoden
+## Methodenbeschreibung
 
-- `.select::<T>()`: Ersetzt die Standardprojektion des Modells durch eine benutzerdefinierte Projektion.
-- `.cond(...)`: Fügt Filterbedingungen zur Abfrage hinzu.
-- `.take(...)`: Begrenzt die Anzahl der zurückgegebenen Datensätze.
-- `.skip(...)`: Überspringt eine Anzahl von Datensätzen, bevor das Ergebnis zurückgegeben wird.
-- `.order_by(...)`: Definiert die Sortierung der Abfrage.
-- `.includes(...)`: Lädt Beziehungen zusammen mit den Hauptdatensätzen.
-- `.count(...)`: Berechnet Beziehungszähler und füllt Felder wie `posts_count` aus.
-- `.read_in_primary()`: Erzwingt das Lesen in der primären Datenbank, ohne eine Replik zu verwenden.
-- `.execute(&client)`: Führt die Abfrage in der Datenbank aus.
+- `.select::<T>()`: ersetzt die Standardprojektion des Modells durch eine benutzerdefinierte Projektion.
+- `.cond(...)`: fügt Filterbedingungen zur Abfrage hinzu.
+- `.take(...)`: begrenzt die Anzahl der zurückgegebenen Datensätze.
+- `.skip(...)`: überspringt eine Anzahl von Datensätzen, bevor das Ergebnis zurückgegeben wird.
+- `.order_by(...)`: definiert die Sortierung der Abfrage.
+- `.includes(...)`: lädt Beziehungen zusammen mit den Hauptdatensätzen.
+- `.count(...)`: berechnet Beziehungszähler und füllt Felder wie `posts_count` aus.
+- `.read_in_primary()`: erzwingt das Lesen aus der primären Datenbank, ohne eine Replik zu verwenden.
+- `.execute(&client)`: führt die Abfrage in der Datenbank aus.
 
 ## Rückgabe
 
@@ -72,7 +72,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Beispiel für benutzerdefinierten Select
+## Beispiel für benutzerdefinierte Auswahl
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -88,7 +88,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Beispiel mit einfachem Include
+## Beispiel mit einfacher Einbindung
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -106,7 +106,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Beispiel mit gefiltertem Include
+## Beispiel mit gefilterter Einbindung
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -124,7 +124,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Beispiel mit verschachteltem Include
+## Beispiel mit verschachtelter Einbindung
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -162,7 +162,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Beispiel mit Beziehungszähler
+## Beispiel mit Beziehungszählung
 
 ```rust
 #[derive(Debug, Clone, dinoco::Extend)]

@@ -1,5 +1,6 @@
 import React from 'react';
 
+import v0_0_2 from './versions/v0.0.2';
 import v0_0_1 from './versions/v0.0.1';
 
 export type DocsLocale = 'pt-br' | 'en-us' | 'ru-ru' | 'ja-jp' | 'ko-kr' | 'de-de' | 'it-it' | 'zh-cn' | 'fr-fr';
@@ -8,8 +9,9 @@ type RawDocsLocale = DocsLocale | 'pt';
 
 type MdxModule = {
 	default: React.ComponentType<{ components?: Record<string, React.ElementType> }>;
-	title?: string;
 };
+
+type MdxImport = () => Promise<MdxModule>;
 
 type DocsItemData = {
 	description: string;
@@ -47,7 +49,7 @@ type DocsVersionData = {
 };
 
 export type DocsItem = Omit<DocsItemData, 'subItems'> & {
-	component: React.ComponentType<{ components?: Record<string, React.ElementType> }>;
+	component: React.ComponentType<{ components?: Record<string, React.ElementType> }> | React.LazyExoticComponent<React.ComponentType<{ components?: Record<string, React.ElementType> }>>;
 	documentTitle: string;
 	subItems?: DocsItem[];
 };
@@ -71,23 +73,23 @@ export type DocsVersion = Omit<DocsVersionData, 'groups'> & {
 	groups: DocsGroup[];
 };
 
-const mdxModules = import.meta.glob('../content/**/*.mdx', {
-	eager: true,
-}) as Record<string, MdxModule>;
+const mdxModules = import.meta.glob('../content/**/*.mdx') as Record<string, MdxImport>;
 
 function getMdxComponent(path: string) {
-	return mdxModules[`../content/${path}`]?.default ?? (() => null);
-}
+	const importer = mdxModules[`../content/${path}`];
 
-function getMdxTitle(path: string) {
-	return mdxModules[`../content/${path}`]?.title;
+	if (importer === undefined) {
+		return () => null;
+	}
+
+	return React.lazy(importer);
 }
 
 function mapItem(item: DocsItemData): DocsItem {
 	return {
 		...item,
 		component: getMdxComponent(item.mdxPath),
-		documentTitle: getMdxTitle(item.mdxPath) ?? item.name,
+		documentTitle: item.name,
 		subItems: item.subItems?.map(mapItem),
 	};
 }
@@ -114,7 +116,7 @@ function normalizeLocalizedRecord<T>(record: Partial<Record<RawDocsLocale, T>>):
 	) as Partial<Record<DocsLocale, T>>;
 }
 
-const versionsData: DocsVersionData[] = [v0_0_1 as DocsVersionData];
+const versionsData: DocsVersionData[] = [v0_0_2 as DocsVersionData, v0_0_1 as DocsVersionData];
 
 export const versions: DocsVersion[] = versionsData.map(version => ({
 	...version,
@@ -226,6 +228,8 @@ export function getLocalizedSections(group: DocsGroup, locale: DocsLocale): Docs
 
 export function getGroupByShortName(versionName: string, locale: DocsLocale, groupShortName?: string): DocsGroup | undefined {
 	const groups = getGroupsForVersion(versionName, locale);
+
+	console.log(groups);
 
 	if (groupShortName === undefined) {
 		return groups[0];

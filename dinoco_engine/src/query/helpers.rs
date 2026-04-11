@@ -1,4 +1,5 @@
 use crate::{AdapterDialect, BinaryOperator, DinocoValue, Expression};
+use std::fmt::Write;
 
 pub fn push_joined<I, T, F>(buf: &mut String, iter: I, sep: &str, mut f: F)
 where
@@ -28,20 +29,20 @@ pub fn append_limit_skip<D: AdapterDialect + ?Sized>(
     match (limit, skip) {
         (Some(limit), Some(skip)) => {
             params.push(DinocoValue::Integer(limit as i64));
-            sql.push_str(&format!(" LIMIT {}", dialect.bind_param(params.len())));
+            let _ = write!(sql, " LIMIT {}", dialect.bind_param(params.len()));
 
             params.push(DinocoValue::Integer(skip as i64));
-            sql.push_str(&format!(" OFFSET {}", dialect.bind_param(params.len())));
+            let _ = write!(sql, " OFFSET {}", dialect.bind_param(params.len()));
         }
         (Some(limit), None) => {
             params.push(DinocoValue::Integer(limit as i64));
-            sql.push_str(&format!(" LIMIT {}", dialect.bind_param(params.len())));
+            let _ = write!(sql, " LIMIT {}", dialect.bind_param(params.len()));
         }
         (None, Some(skip)) => {
-            sql.push_str(&format!(" LIMIT {}", dialect.offset_without_limit()));
+            let _ = write!(sql, " LIMIT {}", dialect.offset_without_limit());
             params.push(DinocoValue::Integer(skip as i64));
 
-            sql.push_str(&format!(" OFFSET {}", dialect.bind_param(params.len())));
+            let _ = write!(sql, " OFFSET {}", dialect.bind_param(params.len()));
         }
         (None, None) => {}
     }
