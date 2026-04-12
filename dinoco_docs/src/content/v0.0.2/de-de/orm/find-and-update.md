@@ -1,0 +1,73 @@
+# find_and_update
+
+Wird verwendet, um einen einzelnen Datensatz zu finden, atomare Updates in der Datenbank anzuwenden und das aktualisierte Element zurückzugeben.
+
+---
+
+## Was Sie tun können
+
+- `.cond(...)`: definiert, welcher Datensatz gefunden werden soll.
+- `.update(...)`: wendet eine atomare Operation auf ein Feld des Modells an.
+- `.execute(&client)`: führt das Update aus und gibt den aktualisierten Datensatz zurück.
+
+## Rückgabe
+
+Die Rückgabe von `find_and_update` ist:
+
+```rust
+DinocoResult<M>
+```
+
+## Grundlegendes Beispiel
+
+```rust
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Task, _, _>("task.reviewed", |job| async move {
+        // Aufgabe aktualisiert auf
+        println!("Aufgabe aktualisiert auf {:?}", job.data.status);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .enqueue("task.reviewed")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
+
+## Verfügbare Operationen in `ModelUpdate`
+
+- `set(value)`
+- `increment(value)`
+- `decrement(value)`
+- `multiply(value)`
+- `division(value)`
+
+## Anmerkungen
+
+- Das Update wird in einem einzigen `UPDATE` ausgeführt.
+- Wenn keine Zeile der Bedingung entspricht, ist die Rückgabe `DinocoError::RecordNotFound`.
+- Die Update-DSL legt keine Beziehungen offen.
+- Derzeit unterstützt der Workflow einfache Primärschlüssel, um den aktualisierten Datensatz zu finden und zurückzugeben.
+
+## Nächste Schritte
+
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): traditionelles Update.
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): Batch-Update.

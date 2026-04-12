@@ -1,0 +1,350 @@
+# Modelle
+
+Die `Modelle` definieren die zentralen Entitäten Ihrer Anwendung im Dinoco-Schema. Jedes `Modell` repräsentiert normalerweise eine Tabelle in der Datenbank und dient als Grundlage für die Codegenerierung, typisierte Abfragen und Operationen mit der Dinoco-API.
+
+---
+
+## Was ein Modell repräsentiert
+
+Ein `Modell` beschreibt:
+
+- Den Namen der Entität.
+- Die in der Datenbank gespeicherten Felder.
+- Welche Felder obligatorisch oder optional sind.
+- Welche Felder eindeutig oder Identifikatoren sind.
+- Wie diese Daten vom Codegen und der API verwendet werden.
+
+Beispiel:
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	email String  @unique
+	name  String?
+}
+```
+
+In diesem Beispiel:
+
+- `User` ist das Modell.
+- `id`, `email` und `name` sind skalare Felder.
+- `id` ist der Primäridentifikator.
+- `email` hat eine Eindeutigkeitsbeschränkung.
+
+## Vollständiges Beispiel
+
+Ein einfaches Schema mit einem Modell sieht normalerweise so aus:
+
+```dinoco
+config {
+	database = "postgresql"
+	database_url = env("DATABASE_URL")
+}
+
+model User {
+	id        Integer  @id @default(autoincrement())
+	email     String   @unique
+	name      String?
+	active    Boolean  @default(true)
+	createdAt DateTime @default(now())
+}
+
+model Post {
+	id        Integer  @id @default(autoincrement())
+	title     String
+	content   String?
+	published Boolean  @default(false)
+	createdAt DateTime @default(now())
+}
+```
+
+## Struktur eines Feldes
+
+Jedes Feld eines Modells besteht aus:
+
+- Name
+- Typ
+- Optionaler Modifikator
+- Optionale Attribute
+
+Beispiel:
+
+```dinoco
+email String @unique
+```
+
+In dieser Zeile:
+
+- `email` ist der Feldname.
+- `String` ist der Typ.
+- `@unique` ist ein Attribut.
+
+## Feldtypen
+
+Felder können grundlegende Schemwerte wie Text, Zahlen, Boole'sche Werte und Datumsangaben darstellen.
+
+### Skalare Felder
+
+Dies sind Felder, die direkte Werte wie Text, Zahlen, Boole'sche Werte und Datumsangaben speichern.
+
+```dinoco
+model Product {
+	id          Integer  @id @default(autoincrement())
+	name        String
+	description String?
+	price       Float
+	active      Boolean  @default(true)
+	createdAt   DateTime @default(now())
+}
+```
+
+## Typmodifikatoren
+
+Dinoco unterstützt zwei Hauptmodifikatoren:
+
+| Modifikator | Bedeutung         | Beispiel        |
+| :---------- | :---------------- | :-------------- |
+| `?`         | Optionales Feld   | `name String?`  |
+| `[]`        | Liste             | `tags String[]` |
+
+### Optionales Feld
+
+```dinoco
+model User {
+	id   Integer @id @default(autoincrement())
+	name String?
+}
+```
+
+`name` kann null oder fehlen, abhängig von der Datenbank und der generierten Schicht.
+
+### Listenfeld
+
+```dinoco
+model Article {
+	id   Integer  @id @default(autoincrement())
+	tags String[]
+}
+```
+
+Dieses Format repräsentiert eine Liste von Werten, wenn die Datenbank und der Workflow diese Art von Struktur unterstützen.
+
+## Häufigste Attribute
+
+Attribute ändern das Verhalten von Feldern und Modellen.
+
+| Attribut        | Verwendung                         |
+| :-------------- | :--------------------------------- |
+| `@id`           | Definiert den Primäridentifikator  |
+| `@default(...)` | Definiert einen Standardwert       |
+| `@unique`       | Garantiert Eindeutigkeit           |
+
+### `@id`
+
+Definiert das Feld, das einen Datensatz eindeutig identifiziert.
+
+```dinoco
+id Integer @id @default(autoincrement())
+```
+
+Jedes Modell muss einen klaren Identifikator haben, damit die generierte API sicher arbeiten kann.
+
+### `@default(...)`
+
+Definiert einen Standardwert für das Feld.
+
+```dinoco
+active    Boolean  @default(true)
+createdAt DateTime @default(now())
+id        Integer  @default(autoincrement())
+```
+
+Häufige Funktionen und Werte:
+
+| Beispiel                    | Verwendung                |
+| :-------------------------- | :------------------------ |
+| `@default(false)`           | Standard-Boolescher Wert  |
+| `@default(now())`           | Aktuelles Datum           |
+| `@default(autoincrement())` | Inkrementelle Ganzzahl    |
+| `@default(uuid())`          | UUID-Identifikator        |
+
+### `@unique`
+
+Stellt sicher, dass der Wert des Feldes nicht wiederholt wird.
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	email String  @unique
+}
+```
+
+Dieses Attribut ist ideal für Felder wie E-Mail, Benutzername und externe Codes.
+
+## Modell-Decorators
+
+Zusätzlich zu den Attributen in einzelnen Feldern unterstützt Dinoco auch Decorators, die auf den gesamten Modellblock angewendet werden.
+
+| Decorator             | Verwendung                                  |
+| :-------------------- | :------------------------------------------ |
+| `@@ids([...])`        | Definiert einen zusammengesetzten Primärschlüssel |
+| `@@table_name("...")` | Ordnet den tatsächlichen Tabellennamen in der Datenbank zu |
+
+### `@@ids([...])`
+
+Verwenden Sie `@@ids`, wenn die Identität des Datensatzes von mehr als einem Feld abhängt.
+
+```dinoco
+model Membership {
+	userId Integer
+	teamId Integer
+	role   String
+
+	@@ids([userId, teamId])
+}
+```
+
+Dieses Format ist nützlich in assoziativen Tabellen und Szenarien, in denen die natürliche Eindeutigkeit bereits zusammengesetzt ist.
+
+### `@@table_name("...")`
+
+Verwenden Sie `@@table_name()`, wenn Sie einen benutzerfreundlicheren Modellnamen im Schema beibehalten, ihn aber einem anderen physischen Namen in der Datenbank zuordnen möchten.
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	email String  @unique
+
+	@@table_name("users")
+}
+```
+
+In diesem Fall:
+
+- Das Modell heißt im Schema und in der generierten API weiterhin `User`.
+- Die physische Tabelle in der Datenbank wird zu `users`.
+
+## Beispiel eines Benutzermodells
+
+```dinoco
+model User {
+	id        Integer  @id @default(autoincrement())
+	email     String   @unique
+	name      String?
+	active    Boolean  @default(true)
+	createdAt DateTime @default(now())
+}
+```
+
+Nach der Codegenerierung kann dieses Modell direkt mit der Dinoco-API verwendet werden.
+
+## Beispiel für die Benutzersuche mit der Dinoco-API
+
+### Einen einzelnen Datensatz suchen
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+### Mehrere Datensätze suchen
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|x| x.name.includes("Ana"))
+    .order_by(|x| x.id.asc())
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel für die Benutzererstellung mit der Dinoco-API
+
+```rust
+dinoco::insert_into::<User>()
+    .values(User {
+        id: 0,
+        email: "bia@dinoco.rs".to_string(),
+        name: Some("Bia".to_string()),
+        active: true,
+        createdAt: dinoco::Utc::now(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel für die Benutzeraktualisierung mit der Dinoco-API
+
+```rust
+dinoco::update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .values(User {
+        id: 1,
+        email: "bia@dinoco.rs".to_string(),
+        name: Some("Beatriz".to_string()),
+        active: true,
+        createdAt: dinoco::Utc::now(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+Wenn Sie atomare Updates in einem einzelnen Feld wünschen, ist der `find_and_update`-Workflow oft noch direkter:
+
+```rust
+let user = dinoco::find_and_update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .update(|x| x.name.set("Beatriz"))
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel für die Benutzerentfernung mit der Dinoco-API
+
+```rust
+dinoco::delete::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+Für Batch-Entfernungen:
+
+```rust
+dinoco::delete_many::<User>()
+    .cond(|x| x.active.eq(false))
+    .execute(&client)
+    .await?;
+```
+
+## Kurze Zusammenfassung
+
+| Konzept         | Beispiel               | Ziel                        |
+| :-------------- | :--------------------- | :-------------------------- |
+| Modell          | `model User { ... }`   | Eine Entität darstellen     |
+| Skalares Feld   | `email String`         | Einfachen Wert speichern    |
+| Optionales Feld | `name String?`         | Fehlen eines Wertes zulassen |
+| Listenfeld      | `tags String[]`        | Mehrere Werte speichern     |
+| ID              | `id Integer @id`       | Eindeutig identifizieren    |
+| Standard        | `@default(now())`      | Automatisch ausfüllen       |
+| Eindeutig       | `email String @unique` | Duplizität vermeiden        |
+
+## Wann ein neues Modell erstellt werden sollte
+
+Sie erstellen normalerweise ein neues `Modell`, wenn eine Entität Ihrer Anwendung Folgendes benötigt:
+
+- In der Datenbank gespeichert werden.
+- Eine eigene Identität haben.
+- Isoliert abgefragt werden.
+- Eigene Lese- und Schreibregeln haben.
+
+Häufige Beispiele:
+
+- `User`
+- `Post`
+- `Comment`
+- `Category`
+- `Order`
+- `Invoice`

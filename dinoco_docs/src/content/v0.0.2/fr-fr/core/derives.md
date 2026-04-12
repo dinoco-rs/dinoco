@@ -1,0 +1,142 @@
+# Dérives
+
+Aperçu des dérives et attributs centraux utilisés dans Dinoco.
+
+---
+
+## Que sont les dérives dans Dinoco
+
+Les dérives de Dinoco aident à lier vos structs Rust au comportement de l'ORM sans avoir à écrire toute l'implémentation manuellement.
+
+Les plus courants au quotidien sont :
+
+- `#[derive(Rowable)]`
+- `#[derive(Extend)]`
+- `#[insertable]`
+
+## Dérive Rowable
+
+Utilisez `Rowable` lorsque la struct représente directement un modèle qui sera lu et écrit par Dinoco.
+
+```rust
+#[derive(Debug, Clone, dinoco::Rowable)]
+struct User {
+    id: String,
+    email: String,
+    name: String,
+}
+```
+
+Cette dérive effectue la sérialisation de la ligne retournée par l'adaptateur vers la struct Rust.
+
+## Dérive Extend
+
+Utilisez `Extend` lorsque vous souhaitez une projection différente du modèle de base, généralement pour `select`, `include`, `count` ou des charges utiles enrichies.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: String,
+    name: String,
+}
+```
+
+Dans ce cas, la struct reste liée au modèle `User`, mais peut n'exposer que les champs nécessaires à ce flux.
+
+## Attribut #[insertable]
+
+Utilisez `#[insertable]` avec `Extend` lorsque `.values(...)` doit accepter de nouvelles relations ou des connexions existantes au sein de la charge utile elle-même.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+```
+
+Ainsi, Dinoco insère le parent puis traite automatiquement les éléments imbriqués.
+
+## Exemple avec Rowable
+
+```rust
+#[derive(Debug, Clone, dinoco::Rowable)]
+struct Team {
+    id: String,
+    name: String,
+}
+
+dinoco::insert_into::<Team>()
+    .values(Team {
+        id: "team-1".into(),
+        name: "Platform".into(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec Extend
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: String,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|user| user.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec #[insertable]
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_many::<Article>()
+    .values(vec![
+        ArticleWithLabels {
+            id: "article-11".into(),
+            title: "Connect Multiple".into(),
+            labels: vec![
+                ArticleConnection::Label("label-11".into()),
+                ArticleConnection::Label("label-12".into()),
+            ],
+        },
+        ArticleWithLabels {
+            id: "article-12".into(),
+            title: "Connect Batch".into(),
+            labels: vec![ArticleConnection::Label("label-10".into())],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Quand utiliser chacun
+
+- Utilisez `Rowable` pour le modèle principal généré ou les structs compatibles avec la lecture directe de ligne.
+- Utilisez `Extend` pour les projections, les comptages, les inclusions et les charges utiles spécialisées.
+- Utilisez `#[insertable]` lorsque `Extend` doit également servir de charge utile d'écriture avec imbrication.
+
+## Prochaines étapes
+
+- [**Traits**](/v0.0.2/core/traits) : consultez les traits implémentés par le modèle.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into) : insertion unique avec des charges utiles riches.
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.2/orm/insert-many) : insertion par lot avec des relations et des connexions imbriquées.

@@ -1,10 +1,8 @@
-import { useMemo } from 'react';
-
-import { type DocsLocale, useDocs } from './useDocs';
+import type { DocsLocale } from '../jsons/versions';
 
 const messages = {
 	'pt-br': {
-		description: 'Documentação oficial',
+		description: 'Documentacao oficial',
 		donate: 'Apoiar',
 		github: 'GitHub',
 		localeLabel: 'Idioma',
@@ -23,15 +21,15 @@ const messages = {
 			docs: 'Docs',
 			examples: 'Exemplos',
 			guides: 'Guias',
-			reference: 'Referência',
+			reference: 'Referencia',
 		},
 		themeDark: 'Modo escuro',
 		themeLight: 'Modo claro',
-		versionLabel: 'Versão',
-		constructionBadge: 'Em construção',
-		constructionTitle: 'Conteúdo em desenvolvimento',
-		constructionDescription: 'Esta seção da documentação ainda está em desenvolvimento. Volte em breve para conferir as novidades!',
-		inPageLabel: 'Nesta página',
+		versionLabel: 'Versao',
+		constructionBadge: 'Em construcao',
+		constructionTitle: 'Conteudo em desenvolvimento',
+		constructionDescription: 'Esta secao da documentacao ainda esta em desenvolvimento. Volte em breve para conferir as novidades!',
+		inPageLabel: 'Nesta pagina',
 	},
 	'en-us': {
 		description: 'Official documentation',
@@ -103,9 +101,9 @@ const messages = {
 		themeDark: 'ダークモード',
 		themeLight: 'ライトモード',
 		versionLabel: 'バージョン',
-		constructionBadge: '開発中',
-		constructionTitle: 'コンテンツは準備中です',
-		constructionDescription: 'このドキュメントセクションは現在作成中です。更新をお待ちください。',
+		constructionBadge: '作成中',
+		constructionTitle: 'コンテンツ作成中',
+		constructionDescription: 'このドキュメントセクションはまだ作成中です。近日中に更新されます。',
 		inPageLabel: 'このページ',
 	},
 	'ko-kr': {
@@ -135,7 +133,7 @@ const messages = {
 	},
 	'de-de': {
 		description: 'Offizielle Dokumentation',
-		donate: 'Unterstützen',
+		donate: 'Unterstuetzen',
 		github: 'GitHub',
 		localeLabel: 'Sprache',
 		locales: {
@@ -149,7 +147,7 @@ const messages = {
 			'zh-cn': 'zh-cn',
 			'fr-fr': 'fr-fr',
 		},
-		nav: { docs: 'Docs', examples: 'Beispiele', guides: 'Leitfäden', reference: 'Referenz' },
+		nav: { docs: 'Docs', examples: 'Beispiele', guides: 'Leitfaeden', reference: 'Referenz' },
 		themeDark: 'Dunkler Modus',
 		themeLight: 'Heller Modus',
 		versionLabel: 'Version',
@@ -180,7 +178,7 @@ const messages = {
 		versionLabel: 'Versione',
 		constructionBadge: 'In costruzione',
 		constructionTitle: 'Contenuto in sviluppo',
-		constructionDescription: 'Questa sezione della documentazione è ancora in sviluppo. Torna presto per gli aggiornamenti.',
+		constructionDescription: 'Questa sezione della documentazione e ancora in sviluppo. Torna presto per gli aggiornamenti.',
 		inPageLabel: 'In questa pagina',
 	},
 	'zh-cn': {
@@ -224,23 +222,17 @@ const messages = {
 			'zh-cn': 'zh-cn',
 			'fr-fr': 'fr-fr',
 		},
-		nav: { docs: 'Docs', examples: 'Exemples', guides: 'Guides', reference: 'Référence' },
+		nav: { docs: 'Docs', examples: 'Exemples', guides: 'Guides', reference: 'Reference' },
 		themeDark: 'Mode sombre',
 		themeLight: 'Mode clair',
 		versionLabel: 'Version',
 		constructionBadge: 'En cours',
 		constructionTitle: 'Contenu en cours',
-		constructionDescription: 'Cette section de la documentation est encore en cours de rédaction. Revenez bientôt.',
+		constructionDescription: 'Cette section de la documentation est encore en cours de redaction. Revenez bientot.',
 		inPageLabel: 'Sur cette page',
 	},
 } as const;
 
 export function getIntlMessages(locale: DocsLocale) {
 	return messages[locale];
-}
-
-export function useIntl() {
-	const locale = useDocs(state => state.locale);
-
-	return useMemo(() => getIntlMessages(locale), [locale]);
 }

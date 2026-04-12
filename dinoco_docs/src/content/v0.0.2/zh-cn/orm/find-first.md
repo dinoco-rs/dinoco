@@ -1,0 +1,142 @@
+# find_first
+
+用于最多获取一个记录。
+
+---
+
+## 您可以做什么
+
+- `.select::&lt;T&gt;()`: 将默认投影替换为自定义投影。
+- `.cond(...)`: 在查询中添加过滤器。
+- `.take(...)`: 限制要考虑的最大记录数量。
+- `.skip(...)`: 在选择第一个结果之前跳过记录。
+- `.order_by(...)`: 定义应首先考虑哪个记录。
+- `.includes(...)`: 随主项一起加载关系。
+- `.count(...)`: 计算投影中的关系计数器。
+- `.cache(...)`: 尝试首先在 Redis 中查找，如果键不存在才查询数据库。在缓存命中时，查询日志记录器会记录 `CACHE HIT key=...`。
+- `.cache_with_expiration(...)`: 执行相同的流程，但以秒为单位保存 TTL。
+- `.read_in_primary()`: 强制在主数据库中读取。
+- `.execute(&client)`: 执行查询并最多返回一个项。
+
+## 返回值
+
+如果没有 `select::&lt;T&gt;()`，返回值为：
+
+```rust
+DinocoResult<Option<M>>
+```
+
+如果使用 `select::&lt;T&gt;()`，返回值为：
+
+```rust
+DinocoResult<Option<T>>
+```
+
+## 基本示例
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## 带有 select 的示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserSummary>()
+    .cond(|w| w.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+## 带有关系的示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserWithPosts>()
+    .cond(|x| x.id.eq(1_i64))
+    .includes(|x| x.posts())
+    .execute(&client)
+    .await?;
+```
+
+## 带有排序的示例
+
+```rust
+let latest_user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .execute(&client)
+    .await?;
+```
+
+## 带有 worker 的示例
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.first-read", |job| async move {
+        println!("第一个用户已读取: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .enqueue("user.first-read")
+    .execute(&client)
+    .await?;
+```
+
+在 [**`queues`**](/v0.0.2/orm/queues) 中查看更多关于 worker 的信息。
+
+## 带有缓存的示例
+
+此方法仅在 schema 配置了 `redis` 时存在。
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## 带有缓存的示例
+
+此方法仅在 schema 配置了 `redis` 时存在。
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache_with_expiration("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## 下一步
+
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many): 查找多个记录。
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): 记录计数。

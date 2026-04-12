@@ -1,0 +1,157 @@
+# 入门
+
+要开始使用 Dinoco，您需要安装我们的 CLI，以便管理迁移和其他系统！
+
+```bash
+cargo install dinoco-cli
+```
+
+要创建 Dinoco 环境，请运行以下命令：
+
+```bash
+dinoco init
+```
+
+选择数据库和所有必要的配置后，将在项目根目录中创建 Dinoco 文件夹。
+
+此文件夹将包含：
+
+- **Migrations:** 您的数据库更改历史记录。
+- **Schema:** 数据结构的核心定义。
+- **Models:** 用于 Rust 代码的类型化表示。
+
+## 工作原理？
+
+### 1. 定义您的 Schema 和连接
+
+Dinoco Schema 定义了您的模型内容和数据库配置。
+
+```dinoco
+config {
+	database = "postgresql"
+	database_url = env("DATABASE_URL")
+	redis = {
+		url = env("REDIS_URL")
+	}
+}
+
+model User {
+	id    Integer     @id @default(autoincrement())
+	email String  @unique
+	name  String?
+
+	posts Post[]
+}
+
+model Post {
+	id        Integer     @id @default(autoincrement())
+	title     String
+	published Boolean @default(false)
+
+	author    User?   @relation(fields: [authorId], references: [id])
+	authorId  Integer?
+}
+```
+
+### 2. 创建迁移
+
+使用 --apply 生成迁移时，它将应用于数据库并自动生成模型！
+
+```bash
+dinoco migrate generate --apply
+```
+
+### 3. 使用 DinocoClient 查询
+
+```rust
+use dinoco::{DinocoClientConfig, DinocoQueryLogger, DinocoQueryLoggerOptions, Extend, find_many, insert_into};
+
+#[path = "../dinoco/mod.rs"]
+mod database;
+
+use database::*;
+use database::models::*;
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserWithRelation {
+    id: i64,
+    email: String,
+    posts: Vec<PostSimple>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+struct PostSimple {
+    title: String,
+    published: bool,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithPostInsert {
+    id: i64,
+    email: String,
+    name: Option<String>,
+    posts: Vec<Post>,
+}
+
+#[tokio::main]
+async fn main() -> dinoco::DinocoResult<()> {
+    let _ = dotenvy::dotenv();
+
+    let config = DinocoClientConfig::default()
+        .with_snowflake_node_id(7)
+        .with_query_logger(DinocoQueryLogger::stdout(DinocoQueryLoggerOptions::verbose()));
+
+    let client = database::create_connection(config).await?;
+
+    // 插入一个带有相关帖子的用户。
+    insert_into::<User>()
+        .values(UserWithPostInsert {
+            id: 0,
+            email: "bia@dinoco.rs".to_string(),
+            name: Some("Bia".to_string()),
+            posts: vec![Post { id: 0, title: "我的第一篇文章".to_string(), published: true, authorId: None }],
+        })
+        .execute(&client)
+        .await?;
+
+    // 查找所有用户及其帖子。
+    let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
+
+    let cached_users = find_many::<User>()
+        .select::<UserWithRelation>()
+        .includes(|x| x.posts())
+        .cache_with_expiration("users:with-posts", 30)
+        .execute(&client)
+        .await?;
+
+    let cached_direct = client.cache().get::<Vec<UserWithRelation>>("users:with-posts").await?;
+
+    println!("{users:#?}");
+    println!("{cached_users:#?}");
+    println!("{cached_direct:#?}");
+
+    // 结果：
+    // [
+    // 	UserWithRelation {
+    // 		email: "bia@dinoco.rs",
+    // 		posts: [
+    // 			Post {
+    // 				title: "我的第一篇文章",
+    // 				published: true,
+    // 			},
+    // 		],
+    // 	},
+    // ]
+
+    Ok(())
+}
+```
+
+## 下一步
+
+- [**Dinoco schema**](/v0.0.2/orm/introduction-dinoco): 更好地理解 Dinoco 的结构和目的。
+- [**find_many**](/v0.0.2/orm/find-many): 查看列表查询中的过滤器、包含和缓存。

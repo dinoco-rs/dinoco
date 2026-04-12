@@ -1,0 +1,142 @@
+# Derives
+
+Übersicht der zentralen Derives und Attribute, die in Dinoco verwendet werden.
+
+---
+
+## Was sind Derives in Dinoco
+
+Dinoco-Derives helfen dabei, Ihre Rust-Strukturen mit dem ORM-Verhalten zu verbinden, ohne die gesamte Implementierung manuell schreiben zu müssen.
+
+Die gängigsten im Alltag sind:
+
+- `#[derive(Rowable)]`
+- `#[derive(Extend)]`
+- `#[insertable]`
+
+## Derive Rowable
+
+Verwenden Sie `Rowable`, wenn die Struktur direkt ein Modell darstellt, das von Dinoco gelesen und geschrieben wird.
+
+```rust
+#[derive(Debug, Clone, dinoco::Rowable)]
+struct User {
+    id: String,
+    email: String,
+    name: String,
+}
+```
+
+Dieses Derive serialisiert die vom Adapter zurückgegebene Zeile in die Rust-Struktur.
+
+## Derive Extend
+
+Verwenden Sie `Extend`, wenn Sie eine andere Projektion als das Basismodell wünschen, normalerweise für `select`, `include`, `count` oder angereicherte Payloads.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: String,
+    name: String,
+}
+```
+
+In diesem Fall bleibt die Struktur mit dem `User`-Modell verbunden, kann aber nur die für diesen Fluss notwendigen Felder freilegen.
+
+## Attribut #[insertable]
+
+Verwenden Sie `#[insertable]` zusammen mit `Extend`, wenn `.values(...)` neue Beziehungen oder bestehende Verbindungen innerhalb der Payload akzeptieren muss.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+```
+
+Damit fügt Dinoco das übergeordnete Element ein und verarbeitet dann automatisch die verschachtelten Elemente.
+
+## Beispiel mit Rowable
+
+```rust
+#[derive(Debug, Clone, dinoco::Rowable)]
+struct Team {
+    id: String,
+    name: String,
+}
+
+dinoco::insert_into::<Team>()
+    .values(Team {
+        id: "team-1".into(),
+        name: "Platform".into(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Extend
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: String,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|user| user.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit #[insertable]
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_many::<Article>()
+    .values(vec![
+        ArticleWithLabels {
+            id: "article-11".into(),
+            title: "Connect Multiple".into(),
+            labels: vec![
+                ArticleConnection::Label("label-11".into()),
+                ArticleConnection::Label("label-12".into()),
+            ],
+        },
+        ArticleWithLabels {
+            id: "article-12".into(),
+            title: "Connect Batch".into(),
+            labels: vec![ArticleConnection::Label("label-10".into())],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Wann man welches verwendet
+
+- Verwenden Sie `Rowable` für das generierte Hauptmodell oder Strukturen, die mit direktem Zeilenlesen kompatibel sind.
+- Verwenden Sie `Extend` für Projektionen, Zählungen, Includes und spezialisierte Payloads.
+- Verwenden Sie `#[insertable]`, wenn `Extend` auch als Schreib-Payload mit Verschachtelung dienen soll.
+
+## Nächste Schritte
+
+- [**Traits**](/v0.0.2/core/traits): sehen Sie sich die vom Modell implementierten Traits an.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into): einzelne Einfügung mit reichhaltigen Payloads.
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.2/orm/insert-many): Batch-Einfügung mit verschachtelten Beziehungen und Verbindungen.

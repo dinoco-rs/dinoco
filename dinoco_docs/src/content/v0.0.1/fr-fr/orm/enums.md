@@ -1,0 +1,78 @@
+# Énumérations
+
+Les énumérations permettent de restreindre un champ à un ensemble fixe de valeurs connues dans le schéma Dinoco.
+
+Elles sont utiles lorsque la valeur doit être prévisible, validée et réutilisée entre les modèles.
+
+---
+
+## Qu'est-ce qu'une énumération
+
+Une `énumération` définit une liste fermée de valeurs possibles.
+
+```dinoco
+enum Role {
+	USER
+	ADMIN
+}
+```
+
+Dans ce cas, `Role` ne peut prendre que `USER` ou `ADMIN`.
+
+## Utilisation dans les modèles
+
+Une fois définie, l'énumération peut être utilisée comme type de champ dans n'importe quel modèle.
+
+```dinoco
+enum Role {
+	USER
+	ADMIN
+}
+
+model User {
+	id   Integer @id @default(autoincrement())
+	role Role    @default(USER)
+}
+```
+
+Ici :
+
+- `role` utilise l'énumération `Role`.
+- `@default(USER)` définit la valeur par défaut du champ.
+
+## Quand utiliser les énumérations
+
+Les énumérations sont utiles pour représenter des valeurs telles que :
+
+- Rôles d'utilisateur
+- Statuts de publication
+- Étapes de flux de travail
+- Situations de paiement
+
+Exemple :
+
+```dinoco
+enum PostStatus {
+	DRAFT
+	REVIEW
+	PUBLISHED
+	ARCHIVED
+}
+
+model Post {
+	id     Integer    @id @default(autoincrement())
+	title  String
+	status PostStatus @default(DRAFT)
+}
+```
+
+## Bonnes pratiques
+
+- Utilisez les énumérations lorsque les valeurs possibles sont connues et finies.
+- Préférez les noms en PascalCase pour l'énumération et les valeurs en UPPER_CASE.
+- Utilisez `@default(...)` lorsqu'il y a un état initial naturel.
+
+## Prochaines étapes
+
+- [**Relations**](/v0.0.1/orm/relations) : voir `@relation`, `onDelete`, `onUpdate` et les types de relations.
+- [**Modèles**](/v0.0.1/orm/models) : voir où les énumérations s'intègrent dans la définition des champs et le schéma principal.

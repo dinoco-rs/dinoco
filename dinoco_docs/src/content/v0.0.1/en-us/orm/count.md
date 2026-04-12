@@ -1,0 +1,54 @@
+# count
+
+Used to count records.
+
+---
+
+## What you can do
+
+- Filter with `.cond(...)`
+- Execute with `.execute(&client)`
+
+## Method description
+
+- `.cond(...)`: restricts which records are included in the count.
+- `.execute(&client)`: executes the count in the database.
+
+## Return
+
+The return of `count` is:
+
+```rust
+DinocoResult<usize>
+```
+
+## Basic example
+
+```rust
+let total = dinoco::count::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Example with boolean filter
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.active.eq(true))
+    .execute(&client)
+    .await?;
+```
+
+## Example with text filter
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.name.includes("Ana"))
+    .execute(&client)
+    .await?;
+```
+
+## Next steps
+
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): retrieves records in a list.
+- [**`find_first::&lt;M&gt;()`**](/v0.0.1/orm/find-first): retrieves a single record.

@@ -12,7 +12,7 @@
 						{
 							"shortName": "introduction-dinoco",
 							"name": "Introduction à Dinoco",
-							"mdxPath": "v0.0.2/pt-br/orm/introduction-to-dinoco.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/introduction-to-dinoco.md",
 							"inPage": [
 								"Introduction à Dinoco",
 								{
@@ -32,7 +32,7 @@
 						{
 							"shortName": "first-steps",
 							"name": "Premiers pas",
-							"mdxPath": "v0.0.2/pt-br/orm/first-steps.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/first-steps.md",
 							"inPage": [
 								"Premiers pas",
 								{
@@ -48,7 +48,7 @@
 						{
 							"shortName": "supported-databases",
 							"name": "Vue d'ensemble",
-							"mdxPath": "v0.0.2/pt-br/orm/supported-databases.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/supported-databases.md",
 							"inPage": [
 								"Vue d'ensemble",
 								{
@@ -77,7 +77,7 @@
 						{
 							"shortName": "configuration",
 							"name": "Configuration",
-							"mdxPath": "v0.0.2/pt-br/orm/configuration.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/configuration.md",
 							"inPage": [
 								"Configuration",
 								{
@@ -113,7 +113,7 @@
 						{
 							"shortName": "models",
 							"name": "Modèles",
-							"mdxPath": "v0.0.2/pt-br/orm/models.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/models.md",
 							"inPage": [
 								"Modèles",
 								{
@@ -177,7 +177,7 @@
 						{
 							"shortName": "enums",
 							"name": "Enums",
-							"mdxPath": "v0.0.2/pt-br/orm/enums.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/enums.md",
 							"inPage": [
 								"Enums",
 								{
@@ -205,7 +205,7 @@
 						{
 							"shortName": "relations",
 							"name": "Relations",
-							"mdxPath": "v0.0.2/pt-br/orm/relations.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/relations.md",
 							"inPage": [
 								"Relations",
 								{
@@ -266,7 +266,7 @@
 						{
 							"shortName": "derives",
 							"name": "Derives",
-							"mdxPath": "v0.0.2/pt-br/core/derives.mdx",
+							"contentPath": "v0.0.2/pt-br/core/derives.md",
 							"inPage": [
 								"Derives",
 								{
@@ -310,7 +310,7 @@
 						{
 							"shortName": "traits",
 							"name": "Traits",
-							"mdxPath": "v0.0.2/pt-br/core/traits.mdx",
+							"contentPath": "v0.0.2/pt-br/core/traits.md",
 							"inPage": [
 								"Traits",
 								{
@@ -367,7 +367,7 @@
 						{
 							"shortName": "find-many",
 							"name": "find_many",
-							"mdxPath": "v0.0.2/pt-br/orm/find-many.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/find-many.md",
 							"inPage": [
 								"find_many",
 								{
@@ -435,7 +435,7 @@
 						{
 							"shortName": "find-first",
 							"name": "find_first",
-							"mdxPath": "v0.0.2/pt-br/orm/find-first.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/find-first.md",
 							"inPage": [
 								"find_first",
 								{
@@ -479,7 +479,7 @@
 						{
 							"shortName": "find-and-update",
 							"name": "find_and_update",
-							"mdxPath": "v0.0.2/pt-br/orm/find-and-update.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/find-and-update.md",
 							"inPage": [
 								"find_and_update",
 								{
@@ -515,7 +515,7 @@
 						{
 							"shortName": "insert-into",
 							"name": "insert_into",
-							"mdxPath": "v0.0.2/pt-br/orm/insert-into.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/insert-into.md",
 							"inPage": [
 								"insert_into",
 								{
@@ -563,7 +563,7 @@
 						{
 							"shortName": "insert-many",
 							"name": "insert_many",
-							"mdxPath": "v0.0.2/pt-br/orm/insert-many.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/insert-many.md",
 							"inPage": [
 								"insert_many",
 								{
@@ -615,7 +615,7 @@
 						{
 							"shortName": "update",
 							"name": "update",
-							"mdxPath": "v0.0.2/pt-br/orm/update.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/update.md",
 							"inPage": [
 								"update",
 								{
@@ -655,7 +655,7 @@
 						{
 							"shortName": "update-many",
 							"name": "update_many",
-							"mdxPath": "v0.0.2/pt-br/orm/update-many.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/update-many.md",
 							"inPage": [
 								"update_many",
 								{
@@ -691,7 +691,7 @@
 						{
 							"shortName": "count",
 							"name": "count",
-							"mdxPath": "v0.0.2/pt-br/orm/count.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/count.md",
 							"inPage": [
 								"count",
 								{
@@ -727,7 +727,7 @@
 						{
 							"shortName": "delete",
 							"name": "delete",
-							"mdxPath": "v0.0.2/pt-br/orm/delete.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/delete.md",
 							"inPage": [
 								"delete",
 								{
@@ -755,7 +755,7 @@
 						{
 							"shortName": "delete-many",
 							"name": "delete_many",
-							"mdxPath": "v0.0.2/pt-br/orm/delete-many.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/delete-many.md",
 							"inPage": [
 								"delete_many",
 								{
@@ -783,7 +783,7 @@
 						{
 							"shortName": "cache-client",
 							"name": "cache",
-							"mdxPath": "v0.0.2/pt-br/orm/cache-client.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/cache-client.md",
 							"inPage": [
 								"cache",
 								{
@@ -835,7 +835,7 @@
 						{
 							"shortName": "queues",
 							"name": "workers",
-							"mdxPath": "v0.0.2/pt-br/orm/queues.mdx",
+							"contentPath": "v0.0.2/pt-br/orm/queues.md",
 							"inPage": [
 								"queues",
 								{
@@ -883,7 +883,7 @@
 						{
 							"shortName": "install",
 							"name": "Installation",
-							"mdxPath": "v0.0.2/pt-br/cli/install.mdx",
+							"contentPath": "v0.0.2/pt-br/cli/install.md",
 							"inPage": [
 								"Installation",
 								{
@@ -904,7 +904,7 @@
 						{
 							"shortName": "init",
 							"name": "Init",
-							"mdxPath": "v0.0.2/pt-br/cli/init.mdx",
+							"contentPath": "v0.0.2/pt-br/cli/init.md",
 							"inPage": [
 								"Comment utiliser ?",
 								{
@@ -924,7 +924,7 @@
 						{
 							"shortName": "database-reset",
 							"name": "Database reset",
-							"mdxPath": "v0.0.2/pt-br/cli/database-reset.mdx",
+							"contentPath": "v0.0.2/pt-br/cli/database-reset.md",
 							"inPage": [
 								"Comment utiliser ?",
 								{
@@ -944,7 +944,7 @@
 						{
 							"shortName": "migrate-generate",
 							"name": "Migrate generate",
-							"mdxPath": "v0.0.2/pt-br/cli/migrate-generate.mdx",
+							"contentPath": "v0.0.2/pt-br/cli/migrate-generate.md",
 							"inPage": [
 								"Comment utiliser ?",
 								{
@@ -972,7 +972,7 @@
 						{
 							"shortName": "migrate-run",
 							"name": "Migrate run",
-							"mdxPath": "v0.0.2/pt-br/cli/migrate-run.mdx",
+							"contentPath": "v0.0.2/pt-br/cli/migrate-run.md",
 							"inPage": [
 								"Comment utiliser ?",
 								{
@@ -992,7 +992,7 @@
 						{
 							"shortName": "migrate-rollback",
 							"name": "Migrate rollback",
-							"mdxPath": "v0.0.2/pt-br/cli/migrate-rollback.mdx",
+							"contentPath": "v0.0.2/pt-br/cli/migrate-rollback.md",
 							"inPage": [
 								"Comment utiliser ?",
 								{
@@ -1024,7 +1024,7 @@
 						{
 							"shortName": "models-generate",
 							"name": "Models generate",
-							"mdxPath": "v0.0.2/pt-br/cli/models-generate.mdx",
+							"contentPath": "v0.0.2/pt-br/cli/models-generate.md",
 							"inPage": [
 								"Comment utiliser ?",
 								{
@@ -1044,7 +1044,7 @@
 						{
 							"shortName": "schema-restore",
 							"name": "Schema restore",
-							"mdxPath": "v0.0.2/pt-br/cli/schema-restore.mdx",
+							"contentPath": "v0.0.2/pt-br/cli/schema-restore.md",
 							"inPage": [
 								"Comment utiliser ?",
 								{
@@ -1080,7 +1080,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Introduction",
-							"mdxPath": "v0.0.2/pt-br/supersonic/introduction.mdx",
+							"contentPath": "v0.0.2/pt-br/supersonic/introduction.md",
 							"inPage": ["Introduction"]
 						}
 					]
@@ -1098,7 +1098,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Introduction",
-							"mdxPath": "v0.0.2/pt-br/dinocodb/introduction.mdx",
+							"contentPath": "v0.0.2/pt-br/dinocodb/introduction.md",
 							"inPage": ["Introduction"]
 						}
 					]

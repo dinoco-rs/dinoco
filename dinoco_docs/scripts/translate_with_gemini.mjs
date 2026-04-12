@@ -143,12 +143,12 @@ async function collectJsonFiles(version, locales) {
 }
 
 async function collectContentFiles(version, locales) {
-	const baseDir = path.join(PROJECT_ROOT, 'public/content', version, SOURCE_LOCALE);
+	const baseDir = path.join(PROJECT_ROOT, 'src/content', version, SOURCE_LOCALE);
 	const files = [];
 	const entries = await fs.readdir(baseDir, { recursive: true, withFileTypes: true });
 
 	for (const entry of entries) {
-		if (!entry.isFile() || !entry.name.endsWith('.mdx')) {
+		if (!entry.isFile() || !entry.name.endsWith('.md')) {
 			continue;
 		}
 
@@ -157,7 +157,7 @@ async function collectContentFiles(version, locales) {
 
 		for (const locale of locales) {
 			files.push({
-				filePath: path.join(PROJECT_ROOT, 'public/content', version, locale, relativePath),
+				filePath: path.join(PROJECT_ROOT, 'src/content', version, locale, relativePath),
 				sourcePath,
 			});
 		}
@@ -177,7 +177,7 @@ function buildPrompt(filePath, sourcePath, locale, content) {
 		'- Preserve the exact file structure and syntax.',
 		'- Preserve keys, property names, paths, identifiers, imports, exports, code fences, code syntax, URLs, and code symbols.',
 		'- Translate only human-readable natural language text to the target language.',
-		'- Keep locale codes, shortName values, mdxPath values, type names, function names, Rust identifiers, Dinoco API identifiers, and command names unchanged.',
+		'- Keep locale codes, shortName values, contentPath values, type names, function names, Rust identifiers, Dinoco API identifiers, and command names unchanged.',
 		'- In JSON files, translate only string values meant for UI or documentation text.',
 		'- In MDX files, also translate human-readable comments inside code blocks.',
 		'- In MDX files, also translate human-readable string literals used as example content, labels, titles, messages, text, names, descriptions, comments, and sample values.',

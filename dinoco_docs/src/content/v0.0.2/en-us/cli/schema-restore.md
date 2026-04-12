@@ -1,0 +1,33 @@
+# How to use?
+
+The `dinoco schema restore` command restores the `schema.dinoco` file from a local migration.
+
+It is useful when you need to rebuild the schema from the saved history.
+
+---
+
+## What the command does
+
+This command:
+
+- Reads a local migration
+- Retrieves the saved metadata from that migration
+- Recreates the `schema.dinoco` file
+
+## Example of restoration from a specific migration
+
+```bash
+dinoco schema restore 20250410_create_users
+```
+
+## When to use
+
+Use this command when:
+
+- The `schema.dinoco` file was lost
+- You want to rebuild the local schema from history
+- You need to compare the schema saved in a specific migration
+
+## Next steps
+
+After restoration, you can review the schema and then generate or apply new migrations.

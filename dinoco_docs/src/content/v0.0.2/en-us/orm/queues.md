@@ -1,0 +1,151 @@
+# queues
+
+Dinoco's queue system allows publishing asynchronous events from `insert`, `find`, and `update`, storing only the necessary data in `Redis` to re-hydrate the record when the worker executes.
+
+## What you can do
+
+- Allow chaining of .enqueue(...), .enqueue_in(...) and .enqueue_at(...) on all client methods, except delete operations.
+- Process jobs with `workers().on::&lt;Model&gt;(... )`.
+- Load projections with relations in the worker using `workers().on_with_relation::&lt;Model, Projection&gt;(... )`.
+- Reload the latest data before the handler runs.
+- Automatically ignores jobs whose record no longer exists.
+
+## How it works
+
+When you use `enqueue`, Dinoco:
+
+1. Executes the main operation normally.
+2. Saves only the record's search criteria to the queue.
+3. In the worker, fetches the latest data from the database.
+4. Only then executes the handler.
+
+If the record no longer exists at the time of the fetch, the handler does not run, and the job is removed from the queue.
+
+## Enqueueing methods
+
+- `.enqueue(event)`: schedules for immediate execution.
+- `.enqueue_in(event, delay_ms)`: schedules with a delay in milliseconds.
+- `.enqueue_at(event, datetime_utc)`: schedules for a specific date in `chrono::DateTime&lt;Utc&gt;`.
+
+```rust
+use database::*;
+
+insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+
+insert_into::<User>()
+    .values(User { id: 2, name: "Ana".to_string() })
+    .enqueue_in("user.reminder", 30_000)
+    .execute(&client)
+    .await?;
+
+insert_into::<User>()
+    .values(User { id: 3, name: "Lia".to_string() })
+    .enqueue_at("user.scheduled", dinoco::Utc::now() + chrono::Duration::hours(1))
+    .execute(&client)
+    .await?;
+```
+
+## Worker
+
+Use `workers()` to register asynchronous handlers. The worker context exposes:
+
+- `data`: the re-hydrated record.
+- `client`: a copy of the `DinocoClient`.
+- `success()` or `remove()`: removes the job from the queue.
+- `fail()`: reschedules with the default retry.
+- `retry_in()` and `retry_at()`: same idea as `enqueue_in` and `enqueue_at`.
+- `.run().await?`: starts the worker in the background and returns immediately with a `JoinHandle`.
+
+When calling `run`, Dinoco creates a new `DinocoClient` exclusive for the workers, with its own connection pool. This way, the queue loop does not reuse the same pool as the main application.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("Processing {}", job.data.name); // Processing
+        job.success()
+    })
+    .run()
+    .await?;
+```
+
+If you need a projection with relations, use `on_with_relation`. Dinoco reloads the record and applies the include tree before the handler runs.
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on_with_relation::<User, UserWithPosts, _, _, _, _>(
+        "user.created",
+        |user| user.posts().select::<PostListItem>(),
+        |job| async move {
+            println!("{} has {} posts", job.data.name, job.data.posts.len()); // has posts
+            job.success()
+        },
+    )
+    .run()
+    .await?;
+```
+
+You can also work with lists:
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        for user in job.data {
+            println!("{}", user.name);
+        }
+
+        job.success()
+    })
+    .run()
+    .await?;
+```
+
+## Redis Configuration
+
+Queues use the `Redis` configured in `DinocoClientConfig::with_redis(...)`. For `enqueue_in` and `enqueue_at`, it is advisable to enable persistence, because scheduled jobs live in Redis until their execution time.
+
+Recommendation: use **AOF + RDB together**.
+
+```conf
+# Enable AOF
+appendonly yes
+
+# Fsync frequency
+appendfsync everysec
+
+# AOF file
+appendfilename "appendonly.aof"
+
+# --- SNAPSHOT (RDB) ---
+save 900 1
+save 300 10
+save 60 10000
+
+# --- SECURITY ---
+dir /data
+
+# --- PERFORMANCE ---
+no-appendfsync-on-rewrite yes
+```
+
+## Observations
+
+- `delete` and `delete_many` do not support `enqueue`.
+- The worker is fully asynchronous and uses `tokio` under the hood.
+- `run()` does not block the rest of the application: it starts the loop in the background.
+- `Option&lt;User&gt;` is accepted in the worker registration, but the handler only runs when there is a record to re-hydrate.
+
+## Next steps
+
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into)
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many)
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update)

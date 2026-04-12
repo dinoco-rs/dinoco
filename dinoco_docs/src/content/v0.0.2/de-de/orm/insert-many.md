@@ -1,0 +1,228 @@
+# insert_many
+
+Wird für die Batch-Einfügung verwendet.
+
+---
+
+## Was Sie tun können
+
+- `.values(Vec&lt;M&gt;)`: definiert die Datensätze, die im Batch eingefügt werden sollen.
+- `.returning::&lt;T&gt;()`: ändert den Rückgabewert in eine typisierte Liste der eingefügten Elemente.
+- `.execute(&client)`: führt die Batch-Operation aus.
+
+## Rückgabe
+
+Ohne `.returning::&lt;T&gt;()` ist der Rückgabewert:
+
+```rust
+DinocoResult<()>
+```
+
+Mit `.returning::&lt;T&gt;()` wird der Rückgabewert zu:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Einfaches Beispiel
+
+```rust
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: "u1".into(), email: "a@acme.com".into(), name: "A".into() },
+        User { id: "u2".into(), email: "b@acme.com".into(), name: "B".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Rückgabe
+
+```rust
+let created = dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
+        println!("Benutzer im Batch erstellt: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .enqueue("user.batch-created")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
+
+## Beispiel mit verschachtelten Beziehungen
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Team)]
+#[insertable]
+struct TeamWithMembers {
+    id: String,
+    name: String,
+    members: Vec<Member>,
+}
+
+dinoco::insert_many::<Team>()
+    .values(vec![
+        TeamWithMembers {
+            id: "team-11".into(),
+            name: "Data".into(),
+            members: vec![
+                Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+                Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+            ],
+        },
+        TeamWithMembers {
+            id: "team-12".into(),
+            name: "DX".into(),
+            members: vec![
+                Member { id: "member-13".into(), name: "Caio".into(), teamId: "legacy".into() },
+            ],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit verschachtelten Verbindungen
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_many::<Article>()
+    .values(vec![
+        ArticleWithLabels {
+            id: "article-11".into(),
+            title: "Connect Multiple".into(),
+            labels: vec![
+                ArticleConnection::Label("label-11".into()),
+                ArticleConnection::Label("label-12".into()),
+            ],
+        },
+        ArticleWithLabels {
+            id: "article-12".into(),
+            title: "Connect Batch".into(),
+            labels: vec![
+                ArticleConnection::Label("label-10".into()),
+            ],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit ArticleConnection
+
+Wenn die verknüpften Elemente bereits existieren, verwenden Sie das vom Codegen generierte Enum innerhalb des Payloads.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+let values = vec![
+    ArticleWithLabels {
+        id: "article-21".into(),
+        title: "Connect Multiple".into(),
+        labels: vec![
+            ArticleConnection::Label("label-11".into()),
+            ArticleConnection::Label("label-12".into()),
+        ],
+    },
+    ArticleWithLabels {
+        id: "article-22".into(),
+        title: "Connect Batch".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    },
+];
+
+dinoco::insert_many::<Article>()
+    .values(values)
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Extend #[insertable]
+
+`insert_many` kann auch reichhaltigere Payloads über `.values(...)` empfangen, wenn die Struktur mit `#[insertable]` markiert ist. Dies ist nützlich, um Eltern und ihre verschachtelten Beziehungen in einem einzigen rekursiven Fluss zu erstellen.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<Label>,
+}
+
+dinoco::insert_many::<Article>()
+    .values(vec![
+        ArticleWithLabels {
+            id: "article-11".into(),
+            title: "Connect Multiple".into(),
+            labels: vec![
+                Label { id: "label-11".into(), name: "orm".into() },
+                Label { id: "label-12".into(), name: "rust".into() },
+            ],
+        },
+        ArticleWithLabels {
+            id: "article-12".into(),
+            title: "Connect Batch".into(),
+            labels: vec![
+                Label { id: "label-10".into(), name: "backend".into() },
+            ],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Anmerkungen
+
+- `#[insertable]` in einer `Extend`-Struktur ermöglicht es `.values(...)`, neue Beziehungen rekursiv einzufügen.
+- Für Verbindungen mit bereits existierenden Datensätzen verwenden Sie das vom Codegen generierte Enum `ModelConnection`.
+- Neue Beziehungen können `Vec&lt;ModelRelacionado&gt;` oder andere `Extend`-Payloas verwenden, die mit `#[insertable]` markiert sind.
+- Bestehende Verbindungen funktionieren gut in Many-to-Many-Szenarien und auch in Flüssen, die vom generierten Modell unterstützt werden.
+
+## Nächste Schritte
+
+- [**Derives**](/v0.0.2/core/derives): verstehen Sie, wie Payloads mit `Extend` und `#[insertable]` erstellt werden.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into): einzelne Einfügung.
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update): Aktualisierung mit Filter.

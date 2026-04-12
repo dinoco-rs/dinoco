@@ -1,0 +1,41 @@
+# delete
+
+Wird verwendet, um mit einem expliziten Filter zu löschen.
+
+---
+
+## Was Sie tun können
+
+- `.cond(...)`: definiert, welcher Datensatz entfernt werden soll.
+- `.execute(&client)`: führt die Entfernung in der Datenbank aus.
+
+## Rückgabe
+
+Die Rückgabe von `delete` ist:
+
+```rust
+DinocoResult<()>
+```
+
+## Grundlegendes Beispiel
+
+```rust
+dinoco::delete::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit einem anderen Filter
+
+```rust
+dinoco::delete::<Session>()
+    .cond(|w| w.token.eq("session-1"))
+    .execute(&client)
+    .await?;
+```
+
+## Nächste Schritte
+
+- [**`delete_many::&lt;M&gt;()`**](/v0.0.1/orm/delete-many): Massenlöschung.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): Datensätze vor dem Entfernen validieren.

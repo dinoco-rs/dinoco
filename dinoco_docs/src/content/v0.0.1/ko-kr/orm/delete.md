@@ -1,0 +1,41 @@
+# 삭제
+
+명시적 필터를 사용하여 삭제하는 데 사용됩니다.
+
+---
+
+## 수행할 수 있는 작업
+
+- `.cond(...)`: 어떤 레코드를 제거할지 정의합니다.
+- `.execute(&client)`: 데이터베이스에서 제거를 실행합니다.
+
+## 반환
+
+`delete`의 반환 값은 다음과 같습니다:
+
+```rust
+DinocoResult<()>
+```
+
+## 기본 예시
+
+```rust
+dinoco::delete::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## 다른 필터를 사용한 예시
+
+```rust
+dinoco::delete::<Session>()
+    .cond(|w| w.token.eq("session-1"))
+    .execute(&client)
+    .await?;
+```
+
+## 다음 단계
+
+- [**`delete_many::&lt;M&gt;()`**](/v0.0.1/orm/delete-many): 일괄 제거.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): 제거하기 전에 레코드를 검증합니다.

@@ -141,7 +141,7 @@ function parseArgs(argv) {
 async function discoverVersionLocales(version) {
 	const discovered = new Set();
 	const jsonDir = path.join(PROJECT_ROOT, 'src/jsons/versions', version);
-	const contentDir = path.join(PROJECT_ROOT, 'public/content', version);
+	const contentDir = path.join(PROJECT_ROOT, 'src/content', version);
 
 	try {
 		const entries = await fs.readdir(jsonDir, { withFileTypes: true });
@@ -277,11 +277,11 @@ async function collectContentFiles(version, localePairs) {
 	const files = [];
 
 	for (const { sourceLocale, targetLocale } of localePairs) {
-		const baseDir = path.join(PROJECT_ROOT, 'public/content', version, sourceLocale);
+		const baseDir = path.join(PROJECT_ROOT, 'src/content', version, sourceLocale);
 		const entries = await fs.readdir(baseDir, { recursive: true, withFileTypes: true });
 
 		for (const entry of entries) {
-			if (!entry.isFile() || !entry.name.endsWith('.mdx')) {
+			if (!entry.isFile() || !entry.name.endsWith('.md')) {
 				continue;
 			}
 
@@ -289,7 +289,7 @@ async function collectContentFiles(version, localePairs) {
 			const relativePath = path.relative(baseDir, sourcePath);
 
 			files.push({
-				filePath: path.join(PROJECT_ROOT, 'public/content', version, targetLocale, relativePath),
+				filePath: path.join(PROJECT_ROOT, 'src/content', version, targetLocale, relativePath),
 				sourcePath,
 				sourceLocale,
 				targetLocale,
@@ -317,7 +317,7 @@ function buildPrompt({ filePath, sourcePath, sourceLocale, targetLocale, content
 		'- Preserve the exact file structure and syntax.',
 		'- Preserve keys, property names, paths, identifiers, imports, exports, code fences, code syntax, URLs, and code symbols.',
 		'- Rewrite only human-readable natural language text to the target language.',
-		'- Keep locale codes, shortName values, mdxPath values, route segments, type names, function names, Rust identifiers, Dinoco API identifiers, and command names unchanged.',
+		'- Keep locale codes, shortName values, contentPath values, route segments, type names, function names, Rust identifiers, Dinoco API identifiers, and command names unchanged.',
 		'- In JSON files, rewrite only string values meant for UI or documentation text.',
 		'- In MDX files, also rewrite human-readable comments inside code blocks.',
 		'- In MDX files, also rewrite human-readable string literals used as example content, labels, titles, messages, text, names, descriptions, comments, and sample values.',

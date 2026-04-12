@@ -8,7 +8,7 @@ type RawDocsLocale = DocsLocale | 'pt';
 type DocsItemData = {
 	description: string;
 	inPage: DocsInPageItemData[];
-	mdxPath: string;
+	contentPath: string;
 	name: string;
 	shortName: string;
 	subItems?: DocsItemData[];

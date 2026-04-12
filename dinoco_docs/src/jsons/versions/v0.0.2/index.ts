@@ -20,7 +20,7 @@ type DocsInPageItemData =
 type DocsItemData = {
 	description?: string;
 	inPage: DocsInPageItemData[];
-	mdxPath: string;
+	contentPath: string;
 	name: string;
 	shortName: string;
 	subItems?: DocsItemData[];
@@ -121,7 +121,7 @@ function mergeItems(baseItems: DocsItemData[], localizedItems?: DocsItemData[]):
 			...baseItem,
 			description: localizedItem.description ?? baseItem.description,
 			inPage: mergeInPage(baseItem.inPage, localizedItem.inPage),
-			mdxPath: localizedItem.mdxPath,
+			contentPath: localizedItem.contentPath,
 			name: localizedItem.name,
 			subItems: mergeItems(baseItem.subItems ?? [], localizedItem.subItems),
 		};

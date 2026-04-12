@@ -1,13 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import clsx from 'clsx';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+
+import React from 'react';
+import { toJsxRuntime } from 'hast-util-to-jsx-runtime';
+import rehypeShiki from '@shikijs/rehype';
+import remarkGfm from 'remark-gfm';
+import remarkParse from 'remark-parse';
+import remarkRehype from 'remark-rehype';
+import { unified } from 'unified';
 import * as jsxRuntime from 'react/jsx-runtime';
 
-import type { MarkdownContentProps, MdxComponentProps, MdxCodeProps } from '../types';
+import CodeBlockPre from './markdown/CodeBlockPre';
 
-const shikiVariables = {
-	'--shiki-light-bg': '#fff',
-	'--shiki-dark-bg': '#101010',
-} as React.CSSProperties;
+import type { Root } from 'hast';
+import type { MarkdownCodeProps, MarkdownComponentProps, MarkdownContentProps } from '../types';
 
 const dinocoGrammar = {
 	$schema: 'https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json',
@@ -122,321 +128,215 @@ const dinocoGrammar = {
 	scopeName: 'source.dinoco',
 };
 
-function getNodeText(node: React.ReactNode): string {
-	if (typeof node === 'string' || typeof node === 'number') {
-		return String(node);
-	}
-	if (Array.isArray(node)) {
-		return node.map(getNodeText).join('');
-	}
-	if (React.isValidElement(node)) {
-		return getNodeText((node.props as { children?: React.ReactNode }).children);
-	}
-	return '';
-}
+const markdownComponents = {
+	h1: ({ children, className, id, ...props }: MarkdownComponentProps) => (
+		<h1 {...props} id={id} className={['mb-6 text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white', className].filter(Boolean).join(' ')}>
+			{children}
+		</h1>
+	),
+	h2: ({ children, className, id, ...props }: MarkdownComponentProps) => (
+		<h2 {...props} id={id} className={['mt-12 mb-6 scroll-mt-32 text-2xl font-bold tracking-tight text-slate-900 dark:text-white', className].filter(Boolean).join(' ')}>
+			{children}
+		</h2>
+	),
+	h3: ({ children, className, id, ...props }: MarkdownComponentProps) => (
+		<h3 {...props} id={id} className={['mt-8 mb-4 scroll-mt-32 text-xl font-semibold tracking-tight text-slate-900 dark:text-white', className].filter(Boolean).join(' ')}>
+			{children}
+		</h3>
+	),
+	p: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<p {...props} className={['mb-6 leading-7 text-slate-600 dark:text-slate-300', className].filter(Boolean).join(' ')}>
+			{children}
+		</p>
+	),
+	ul: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<ul {...props} className={['mb-6 list-disc space-y-2 pl-6 text-slate-600 marker:text-slate-400 dark:text-slate-300 dark:marker:text-[#242424]', className].filter(Boolean).join(' ')}>
+			{children}
+		</ul>
+	),
+	ol: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<ol {...props} className={['mb-6 list-decimal space-y-2 pl-6 text-slate-600 marker:text-slate-400 dark:text-slate-300 dark:marker:text-[#242424]', className].filter(Boolean).join(' ')}>
+			{children}
+		</ol>
+	),
+	li: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<li {...props} className={className}>
+			{children}
+		</li>
+	),
+	pre: CodeBlockPre,
+	code: ({ children, className, ...props }: MarkdownCodeProps) => {
+		if (className === undefined) {
+			return (
+				<code
+					{...props}
+					className="rounded-md border border-[#242424] bg-light-200 px-1.5 py-0.5 font-mono text-[0.875em] font-semibold text-dinoco-deep dark:bg-[#161616] dark:text-dinoco-cyan"
+				>
+					{children}
+				</code>
+			);
+		}
 
-function normalizeLanguageClassName(className?: string): string {
-	if (className === undefined) {
-		return 'txt';
-	}
-	const parts = className
-		.split(/\s+/)
-		.map(part => part.trim())
-		.filter(Boolean);
-	const languageClass = parts.find(part => part.startsWith('language-'));
-	if (languageClass !== undefined) {
-		return languageClass.replace('language-', '');
-	}
-	return parts.find(part => part !== 'hljs') ?? 'txt';
-}
-
-function getLanguageLabel(language: string): string {
-	if (language === 'bash' || language === 'shellscript' || language === 'sh') return 'Bash';
-	if (language === 'json') return 'JSON';
-	if (language === 'toml') return 'TOML';
-	if (language === 'sql') return 'SQL';
-	if (language === 'rust') return 'Rust';
-	if (language === 'dinoco') return 'Dinoco';
-
-	return language.toUpperCase();
-}
+		return (
+			<code {...props} className={className}>
+				{children}
+			</code>
+		);
+	},
+	blockquote: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<blockquote
+			{...props}
+			className={['mb-6 rounded-r-lg border-l-4 border-dinoco-brand bg-dinoco-brand/5 px-6 py-4 text-slate-700 dark:border-dinoco-cyan dark:bg-[#161616] dark:text-slate-300', className].filter(Boolean).join(' ')}
+		>
+			{children}
+		</blockquote>
+	),
+	table: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<div className="mb-6 overflow-x-auto rounded-xl border border-light-300 bg-white shadow-sm dark:border-[#242424] dark:bg-[#0c0c0c]">
+			<table {...props} className={['min-w-full border-collapse text-left text-sm text-slate-600 dark:text-slate-300', className].filter(Boolean).join(' ')}>
+				{children}
+			</table>
+		</div>
+	),
+	thead: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<thead {...props} className={['bg-light-100 dark:bg-[#111111]', className].filter(Boolean).join(' ')}>
+			{children}
+		</thead>
+	),
+	tbody: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<tbody {...props} className={className}>
+			{children}
+		</tbody>
+	),
+	tr: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<tr {...props} className={['border-t border-light-300 dark:border-[#242424]', className].filter(Boolean).join(' ')}>
+			{children}
+		</tr>
+	),
+	th: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<th {...props} className={['border-l border-light-300 px-4 py-3 font-semibold tracking-tight text-slate-900 first:border-l-0 dark:border-[#242424] dark:text-white', className].filter(Boolean).join(' ')}>
+			{children}
+		</th>
+	),
+	td: ({ children, className, ...props }: MarkdownComponentProps) => (
+		<td {...props} className={['border-l border-light-300 px-4 py-3 align-top first:border-l-0 dark:border-[#242424]', className].filter(Boolean).join(' ')}>
+			{children}
+		</td>
+	),
+	a: ({ children, className, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+		<a
+			{...props}
+			className={['cursor-pointer font-medium text-dinoco-brand underline decoration-dinoco-brand/30 underline-offset-4 hover:decoration-dinoco-brand dark:text-dinoco-cyan dark:decoration-dinoco-cyan/30 dark:hover:decoration-dinoco-cyan', className]
+				.filter(Boolean)
+				.join(' ')}
+		>
+			{children}
+		</a>
+	),
+};
 
 function toAnchorId(value: string): string {
 	return value.toLowerCase().split(' ').join('-');
 }
 
-function createHeading(level: 'h1' | 'h2' | 'h3', baseClassName: string) {
-	return function Heading({ children, className, ...props }: MdxComponentProps): React.JSX.Element {
-		const text = React.Children.toArray(children).join('').trim();
-		const id = text.length > 0 ? toAnchorId(text) : undefined;
-		return React.createElement(level, { ...props, id, className: clsx(baseClassName, className) }, children);
-	};
-}
-
-function normalizeMdxSource(source: string): string {
-	return source
-		.split('\n')
-		.filter(line => {
-			const trimmedLine = line.trim();
-
-			if (trimmedLine.startsWith('import ')) {
-				return false;
-			}
-
-			if (trimmedLine.startsWith('export const ')) {
-				return false;
-			}
-
-			return true;
-		})
-		.join('\n');
-}
-
-function MarkdownPre({ children, className, ...props }: MdxComponentProps): React.JSX.Element {
-	const [copied, setCopied] = useState(false);
-	const codeElement = React.Children.toArray(children)[0] as React.ReactElement<{
-		children?: React.ReactNode;
-		className?: string;
-	}>;
-	const language = normalizeLanguageClassName(codeElement?.props?.className);
-	const code = getNodeText(codeElement?.props?.children).trim();
-	const languageLabel = getLanguageLabel(language);
-
-	useEffect(() => {
-		if (!copied) {
-			return;
-		}
-
-		const timeout = window.setTimeout(() => setCopied(false), 2000);
-
-		return () => window.clearTimeout(timeout);
-	}, [copied]);
-
-	const handleCopy = async () => {
-		try {
-			await navigator.clipboard.writeText(code);
-			setCopied(true);
-		} catch {
-			setCopied(false);
-		}
-	};
-
-	return (
-		<div {...props} style={shikiVariables} className={clsx('mb-6 overflow-hidden rounded-xl border border-light-300 bg-light-50 shadow-sm dark:border-[#242424] dark:bg-[#0c0c0c]', className)}>
-			<div className="flex items-center justify-between border-b border-light-300 bg-light-100 px-4 py-2.5 dark:border-[#242424] dark:bg-[#050505]">
-				<p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">{languageLabel}</p>
-
-				<button
-					type="button"
-					onClick={() => handleCopy()}
-					className={clsx(
-						'cursor-pointer rounded-md border border-light-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-dinoco-brand/50 hover:text-dinoco-brand dark:border-[#242424] dark:bg-[#161616] dark:text-slate-300 dark:hover:border-dinoco-cyan/50 dark:hover:text-dinoco-cyan',
-						copied && 'border-dinoco-cyan text-dinoco-cyan dark:border-dinoco-cyan dark:text-dinoco-cyan',
-					)}
-					aria-label={copied ? 'Código copiado' : 'Copiar código'}
-				>
-					{copied ? 'Copiado' : 'Copiar'}
-				</button>
-			</div>
-
-			<pre className="overflow-x-auto p-4 text-[0.875rem]">{children}</pre>
-		</div>
-	);
-}
-
-const MarkdownContent: React.FC<MarkdownContentProps> = ({ mdxPath }) => {
-	const [content, setContent] = useState<React.ComponentType<{ components?: Record<string, React.ElementType> }> | null>(null);
-	const [hasError, setHasError] = useState(false);
-	const mdxComponents = {
-		h1: createHeading('h1', 'mb-6 text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white'),
-		h2: createHeading('h2', 'mt-12 mb-6 scroll-mt-32 text-2xl font-bold tracking-tight text-slate-900 dark:text-white'),
-		h3: createHeading('h3', 'mt-8 mb-4 scroll-mt-32 text-xl font-semibold tracking-tight text-slate-900 dark:text-white'),
-		p: ({ children, className, ...props }: MdxComponentProps) => (
-			<p {...props} className={clsx('mb-6 leading-7 text-slate-600 dark:text-slate-300', className)}>
-				{children}
-			</p>
-		),
-		ul: ({ children, className, ...props }: MdxComponentProps) => (
-			<ul {...props} className={clsx('mb-6 list-disc space-y-2 pl-6 text-slate-600 marker:text-slate-400 dark:text-slate-300 dark:marker:text-[#242424]', className)}>
-				{children}
-			</ul>
-		),
-		li: ({ children, className, ...props }: MdxComponentProps) => (
-			<li {...props} className={className}>
-				{children}
-			</li>
-		),
-		pre: MarkdownPre,
-		code: ({ children, className, ...props }: MdxCodeProps) => {
-			if (className === undefined) {
-				return (
-					<code
-						{...props}
-						className="rounded-md bg-light-200 px-1.5 py-0.5 font-mono text-[0.875em] font-semibold text-dinoco-deep dark:bg-[#161616] dark:text-dinoco-cyan border dark:border-[#242424]"
-					>
-						{children}
-					</code>
-				);
-			}
-			return (
-				<code {...props} className={className}>
-					{children}
-				</code>
-			);
-		},
-		blockquote: ({ children, className, ...props }: MdxComponentProps) => (
-			<blockquote
-				{...props}
-				className={clsx('mb-6 border-l-4 border-dinoco-brand bg-dinoco-brand/5 px-6 py-4 text-slate-700 dark:border-dinoco-cyan dark:bg-[#161616] dark:text-slate-300 rounded-r-lg', className)}
-			>
-				{children}
-			</blockquote>
-		),
-		table: ({ children, className, ...props }: MdxComponentProps) => (
-			<div className="mb-6 overflow-x-auto rounded-xl border border-light-300 bg-white shadow-sm dark:border-[#242424] dark:bg-[#0c0c0c]">
-				<table {...props} className={clsx('min-w-full border-collapse text-left text-sm text-slate-600 dark:text-slate-300', className)}>
-					{children}
-				</table>
-			</div>
-		),
-		thead: ({ children, className, ...props }: MdxComponentProps) => (
-			<thead {...props} className={clsx('bg-light-100 dark:bg-[#111111]', className)}>
-				{children}
-			</thead>
-		),
-		tbody: ({ children, className, ...props }: MdxComponentProps) => (
-			<tbody {...props} className={className}>
-				{children}
-			</tbody>
-		),
-		tr: ({ children, className, ...props }: MdxComponentProps) => (
-			<tr {...props} className={clsx('border-t border-light-300 dark:border-[#242424]', className)}>
-				{children}
-			</tr>
-		),
-		th: ({ children, className, ...props }: MdxComponentProps) => (
-			<th
-				{...props}
-				className={clsx(
-					'border-l border-light-300 px-4 py-3 font-semibold tracking-tight text-slate-900 first:border-l-0 dark:border-[#242424] dark:text-white',
-					className,
-				)}
-			>
-				{children}
-			</th>
-		),
-		td: ({ children, className, ...props }: MdxComponentProps) => (
-			<td
-				{...props}
-				className={clsx('border-l border-light-300 px-4 py-3 align-top first:border-l-0 dark:border-[#242424]', className)}
-			>
-				{children}
-			</td>
-		),
-		a: ({ children, className, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-			<a
-				{...props}
-				className={clsx(
-					'cursor-pointer font-medium text-dinoco-brand underline decoration-dinoco-brand/30 underline-offset-4 hover:decoration-dinoco-brand dark:text-dinoco-cyan dark:decoration-dinoco-cyan/30 dark:hover:decoration-dinoco-cyan',
-					className,
-				)}
-			>
-				{children}
-			</a>
-		),
-	};
-
-	useEffect(() => {
-		let isMounted = true;
-
-		setContent(null);
-		setHasError(false);
-
-		void (async () => {
-			try {
-				const [{ evaluate }, { default: remarkGfm }, { default: rehypeShiki }] = await Promise.all([
-					import('@mdx-js/mdx'),
-					import('remark-gfm'),
-					import('@shikijs/rehype'),
-				]);
-				const response = await fetch(`/content/${mdxPath}`);
-
-				if (!response.ok) {
-					throw new Error(`Failed to load MDX: ${response.status}`);
-				}
-
-				const source = await response.text();
-				const normalizedSource = normalizeMdxSource(source);
-				const evaluated = await evaluate(normalizedSource, {
-					...jsxRuntime,
-					baseUrl: window.location.href,
-					rehypePlugins: [
-						[
-							rehypeShiki,
-							{
-								addLanguageClass: true,
-								defaultLanguage: 'txt',
-								fallbackLanguage: 'txt',
-								langs: [
-									'bash',
-									'rust',
-									{
-										...dinocoGrammar,
-										displayName: 'Dinoco',
-										name: 'dinoco',
-									},
-								],
-								themes: {
-									dark: 'github-dark',
-									light: 'github-light',
-								},
-							},
-						],
-					],
-					remarkPlugins: [remarkGfm],
-				});
-
-				if (!isMounted) {
-					return;
-				}
-
-				setContent(() => evaluated.default);
-			} catch {
-				if (!isMounted) {
-					return;
-				}
-
-				setHasError(true);
-			}
-		})();
-
-		return () => {
-			isMounted = false;
-		};
-	}, [mdxPath]);
-
-	if (hasError) {
-		return (
-			<div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-				Failed to load this document.
-			</div>
-		);
+function visitHeadings(node: unknown): void {
+	if (typeof node !== 'object' || node === null || !('type' in node)) {
+		return;
 	}
 
-	return (
-		<div className="w-full">
-			{content === null ? (
-				<div className="space-y-4 py-8">
-					<div className="h-10 w-2/3 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
-					<div className="h-5 w-full animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
-					<div className="h-5 w-5/6 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
-					<div className="h-5 w-4/6 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
-				</div>
-			) : (
-				React.createElement(content, { components: mdxComponents })
-			)}
-		</div>
-	);
+	const typedNode = node as {
+		children?: unknown[];
+		properties?: Record<string, unknown>;
+		tagName?: string;
+		type: string;
+		value?: string;
+	};
+
+	if (typedNode.type === 'element' && ['h1', 'h2', 'h3'].includes(typedNode.tagName ?? '')) {
+		const text = extractText(typedNode.children ?? []);
+
+		if (text.length > 0) {
+			typedNode.properties = {
+				...(typedNode.properties ?? {}),
+				id: toAnchorId(text),
+			};
+		}
+	}
+
+	for (const child of typedNode.children ?? []) {
+		visitHeadings(child);
+	}
+}
+
+function extractText(children: unknown[]): string {
+	return children
+		.map(child => {
+			if (typeof child !== 'object' || child === null || !('type' in child)) {
+				return '';
+			}
+
+			const typedChild = child as {
+				children?: unknown[];
+				type: string;
+				value?: string;
+			};
+
+			if (typedChild.type === 'text') {
+				return typedChild.value ?? '';
+			}
+
+			return extractText(typedChild.children ?? []);
+		})
+		.join('')
+		.trim();
+}
+
+async function readMarkdownFile(contentPath: string): Promise<string> {
+	const filePath = path.join(process.cwd(), 'src', 'content', contentPath);
+
+	return fs.readFile(filePath, 'utf8');
+}
+
+const MarkdownContent = async ({ contentPath }: MarkdownContentProps): Promise<React.JSX.Element> => {
+	const source = await readMarkdownFile(contentPath);
+	const processor = unified()
+		.use(remarkParse)
+		.use(remarkGfm)
+		.use(remarkRehype)
+		.use(rehypeShiki, {
+			addLanguageClass: true,
+			defaultLanguage: 'txt',
+			fallbackLanguage: 'txt',
+			langs: [
+				'bash',
+				'rust',
+				{
+					...dinocoGrammar,
+					displayName: 'Dinoco',
+					name: 'dinoco',
+				},
+			],
+			themes: {
+				dark: 'github-dark',
+				light: 'github-light',
+			},
+		});
+	const markdownTree = processor.parse(source);
+	const hastTree = (await processor.run(markdownTree, {
+		path: contentPath,
+		value: source,
+	})) as Root;
+
+	visitHeadings(hastTree);
+
+	const content = toJsxRuntime(hastTree, {
+		Fragment: jsxRuntime.Fragment,
+		components: markdownComponents,
+		jsx: jsxRuntime.jsx,
+		jsxs: jsxRuntime.jsxs,
+	});
+
+	return <div className="w-full">{content}</div>;
 };
 
 export default MarkdownContent;

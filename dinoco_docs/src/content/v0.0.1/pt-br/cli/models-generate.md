@@ -1,0 +1,27 @@
+# Como usar?
+
+O comando `dinoco models generate` gera os modelos Rust a partir da última migração armazenada no banco de dados.
+
+É usado para manter o código gerado alinhado com a estrutura do esquema já aplicada.
+
+---
+
+## O que o comando faz
+
+Este comando:
+
+- Lê a última migração disponível
+- Reconstrói os modelos Rust gerados
+- Atualiza os artefatos usados pela API tipada do Dinoco
+
+## Quando usar
+
+Use este comando quando:
+
+- Você já aplicou migrações e deseja regenerar o código
+- Você precisa atualizar os modelos após alterações estruturais
+- Você deseja garantir que o cliente tipado reflita o estado mais recente
+
+## Próximos passos
+
+Após a geração, você pode agora usar os modelos em seu código Rust.

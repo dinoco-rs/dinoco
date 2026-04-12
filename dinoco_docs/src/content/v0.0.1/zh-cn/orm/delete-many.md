@@ -1,0 +1,44 @@
+# delete_many
+
+用于删除满足一个或多个条件的多个记录。
+
+---
+
+## 您可以做什么
+
+- `.cond(...)`: 添加批量删除的过滤器。
+- `.execute(&client)`: 执行删除匹配记录的操作。
+
+## 返回值
+
+`delete_many` 的返回值是：
+
+```rust
+DinocoResult<()>
+```
+
+## 基本示例
+
+这仅删除满足条件的记录。
+
+```rust
+dinoco::delete_many::<Session>()
+    .cond(|w| w.expiresAt.lt(dinoco::Utc::now()))
+    .execute(&client)
+    .await?;
+```
+
+## 无过滤器示例
+
+这将删除表中的所有数据。
+
+```rust
+dinoco::delete_many::<TaskAssignees>()
+    .execute(&client)
+    .await?;
+```
+
+## 下一步
+
+- [**`delete::&lt;M&gt;()`**](/v0.0.1/orm/delete): 带显式过滤器的精确删除。
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): 批量删除前列出。

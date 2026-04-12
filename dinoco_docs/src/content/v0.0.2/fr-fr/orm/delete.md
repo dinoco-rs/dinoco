@@ -1,0 +1,41 @@
+# delete
+
+Utilisé pour supprimer avec un filtre explicite.
+
+---
+
+## Ce que vous pouvez faire
+
+- `.cond(...)`: définit quel enregistrement sera supprimé.
+- `.execute(&client)`: exécute la suppression dans la base de données.
+
+## Retour
+
+Le retour de `delete` est :
+
+```rust
+DinocoResult<()>
+```
+
+## Exemple de base
+
+```rust
+dinoco::delete::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec un autre filtre
+
+```rust
+dinoco::delete::<Session>()
+    .cond(|w| w.token.eq("session-1"))
+    .execute(&client)
+    .await?;
+```
+
+## Prochaines étapes
+
+- [**`delete_many::&lt;M&gt;()`**](/v0.0.1/orm/delete-many): suppression par lot.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): valider les enregistrements avant de les supprimer.

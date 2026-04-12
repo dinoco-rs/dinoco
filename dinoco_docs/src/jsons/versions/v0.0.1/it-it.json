@@ -12,7 +12,7 @@
 						{
 							"shortName": "introduction-dinoco",
 							"name": "Introduzione a Dinoco",
-							"mdxPath": "v0.0.1/pt-br/orm/introduction-to-dinoco.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/introduction-to-dinoco.md",
 							"inPage": [
 								"Introduzione a Dinoco",
 								{
@@ -32,7 +32,7 @@
 						{
 							"shortName": "first-steps",
 							"name": "Primi passi",
-							"mdxPath": "v0.0.1/pt-br/orm/first-steps.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/first-steps.md",
 							"inPage": [
 								"Primi passi",
 								{
@@ -52,7 +52,7 @@
 						{
 							"shortName": "supported-databases",
 							"name": "Panoramica",
-							"mdxPath": "v0.0.1/pt-br/orm/supported-databases.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/supported-databases.md",
 							"inPage": [
 								"Panoramica",
 								{
@@ -83,7 +83,7 @@
 						{
 							"shortName": "models",
 							"name": "Modelli",
-							"mdxPath": "v0.0.1/pt-br/orm/models.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/models.md",
 							"inPage": [
 								"Modelli",
 								{
@@ -162,7 +162,7 @@
 						{
 							"shortName": "enums",
 							"name": "Enums",
-							"mdxPath": "v0.0.1/pt-br/orm/enums.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/enums.md",
 							"inPage": [
 								"Enums",
 								{
@@ -190,7 +190,7 @@
 						{
 							"shortName": "relations",
 							"name": "Relazioni",
-							"mdxPath": "v0.0.1/pt-br/orm/relations.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/relations.md",
 							"inPage": [
 								"Relazioni",
 								{
@@ -251,7 +251,7 @@
 						{
 							"shortName": "find-many",
 							"name": "find_many",
-							"mdxPath": "v0.0.1/pt-br/orm/find-many.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/find-many.md",
 							"inPage": [
 								"find_many",
 								{
@@ -311,7 +311,7 @@
 						{
 							"shortName": "find-first",
 							"name": "find_first",
-							"mdxPath": "v0.0.1/pt-br/orm/find-first.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/find-first.md",
 							"inPage": [
 								"find_first",
 								{
@@ -351,7 +351,7 @@
 						{
 							"shortName": "find-and-update",
 							"name": "find_and_update",
-							"mdxPath": "v0.0.1/pt-br/orm/find-and-update.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/find-and-update.md",
 							"inPage": [
 								"find_and_update",
 								{
@@ -387,7 +387,7 @@
 						{
 							"shortName": "insert-into",
 							"name": "insert_into",
-							"mdxPath": "v0.0.1/pt-br/orm/insert-into.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/insert-into.md",
 							"inPage": [
 								"insert_into",
 								{
@@ -427,7 +427,7 @@
 						{
 							"shortName": "insert-many",
 							"name": "insert_many",
-							"mdxPath": "v0.0.1/pt-br/orm/insert-many.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/insert-many.md",
 							"inPage": [
 								"insert_many",
 								{
@@ -475,7 +475,7 @@
 						{
 							"shortName": "update",
 							"name": "update",
-							"mdxPath": "v0.0.1/pt-br/orm/update.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/update.md",
 							"inPage": [
 								"update",
 								{
@@ -511,7 +511,7 @@
 						{
 							"shortName": "update-many",
 							"name": "update_many",
-							"mdxPath": "v0.0.1/pt-br/orm/update-many.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/update-many.md",
 							"inPage": [
 								"update_many",
 								{
@@ -543,7 +543,7 @@
 						{
 							"shortName": "delete",
 							"name": "delete",
-							"mdxPath": "v0.0.1/pt-br/orm/delete.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/delete.md",
 							"inPage": [
 								"delete",
 								{
@@ -571,7 +571,7 @@
 						{
 							"shortName": "delete-many",
 							"name": "delete_many",
-							"mdxPath": "v0.0.1/pt-br/orm/delete-many.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/delete-many.md",
 							"inPage": [
 								"delete_many",
 								{
@@ -599,7 +599,7 @@
 						{
 							"shortName": "count",
 							"name": "count",
-							"mdxPath": "v0.0.1/pt-br/orm/count.mdx",
+							"contentPath": "v0.0.1/pt-br/orm/count.md",
 							"inPage": [
 								"count",
 								{
@@ -647,7 +647,7 @@
 						{
 							"shortName": "install",
 							"name": "Installazione",
-							"mdxPath": "v0.0.1/pt-br/cli/install.mdx",
+							"contentPath": "v0.0.1/pt-br/cli/install.md",
 							"inPage": [
 								"Installazione",
 								{
@@ -668,7 +668,7 @@
 						{
 							"shortName": "init",
 							"name": "Init",
-							"mdxPath": "v0.0.1/pt-br/cli/init.mdx",
+							"contentPath": "v0.0.1/pt-br/cli/init.md",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -688,7 +688,7 @@
 						{
 							"shortName": "database-reset",
 							"name": "Database reset",
-							"mdxPath": "v0.0.1/pt-br/cli/database-reset.mdx",
+							"contentPath": "v0.0.1/pt-br/cli/database-reset.md",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -708,7 +708,7 @@
 						{
 							"shortName": "migrate-generate",
 							"name": "Migrate generate",
-							"mdxPath": "v0.0.1/pt-br/cli/migrate-generate.mdx",
+							"contentPath": "v0.0.1/pt-br/cli/migrate-generate.md",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -738,7 +738,7 @@
 						{
 							"shortName": "migrate-run",
 							"name": "Migrate run",
-							"mdxPath": "v0.0.1/pt-br/cli/migrate-run.mdx",
+							"contentPath": "v0.0.1/pt-br/cli/migrate-run.md",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -758,7 +758,7 @@
 						{
 							"shortName": "migrate-rollback",
 							"name": "Migrate rollback",
-							"mdxPath": "v0.0.1/pt-br/cli/migrate-rollback.mdx",
+							"contentPath": "v0.0.1/pt-br/cli/migrate-rollback.md",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -790,7 +790,7 @@
 						{
 							"shortName": "models-generate",
 							"name": "Models generate",
-							"mdxPath": "v0.0.1/pt-br/cli/models-generate.mdx",
+							"contentPath": "v0.0.1/pt-br/cli/models-generate.md",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -810,7 +810,7 @@
 						{
 							"shortName": "schema-restore",
 							"name": "Schema restore",
-							"mdxPath": "v0.0.1/pt-br/cli/schema-restore.mdx",
+							"contentPath": "v0.0.1/pt-br/cli/schema-restore.md",
 							"inPage": [
 								"Come si usa?",
 								{
@@ -846,7 +846,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Introduzione",
-							"mdxPath": "v0.0.1/pt-br/supersonic/introduction.mdx",
+							"contentPath": "v0.0.1/pt-br/supersonic/introduction.md",
 							"inPage": [
 								"Introduzione"
 							]
@@ -866,7 +866,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Introduzione",
-							"mdxPath": "v0.0.1/pt-br/dinocodb/introduction.mdx",
+							"contentPath": "v0.0.1/pt-br/dinocodb/introduction.md",
 							"inPage": [
 								"Introduzione"
 							]

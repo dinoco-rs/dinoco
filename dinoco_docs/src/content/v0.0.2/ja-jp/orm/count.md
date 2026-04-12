@@ -1,0 +1,54 @@
+# count
+
+レコードをカウントするために使用されます。
+
+---
+
+## できること
+
+- `.cond(...)` でフィルタリングする
+- `.execute(&client)` で実行する
+
+## メソッドの説明
+
+- `.cond(...)`: カウントに含めるレコードを制限します。
+- `.execute(&client)`: データベースでカウントを実行します。
+
+## 戻り値
+
+`count` の戻り値は次のとおりです。
+
+```rust
+DinocoResult<usize>
+```
+
+## 基本的な例
+
+```rust
+let total = dinoco::count::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## ブールフィルターの例
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.active.eq(true))
+    .execute(&client)
+    .await?;
+```
+
+## テキストフィルターの例
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.name.includes("Ana"))
+    .execute(&client)
+    .await?;
+```
+
+## 次のステップ
+
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): レコードをリストとして取得します。
+- [**`find_first::&lt;M&gt;()`**](/v0.0.1/orm/find-first): 単一のレコードを取得します。

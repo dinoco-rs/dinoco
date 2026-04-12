@@ -1,0 +1,143 @@
+# find_first
+
+Used to fetch at most one record.
+
+---
+
+## What you can do
+
+- `.select::&lt;T&gt;()`: swaps the default projection for a custom projection.
+- `.cond(...)`: adds filters to the search.
+- `.take(...)`: limits the maximum number of records considered.
+- `.skip(...)`: skips records before selecting the first result.
+- `.order_by(...)`: defines which record should be considered first.
+- `.includes(...)`: loads relations along with the main item.
+- `.count(...)`: calculates relation counters in the projection.
+- `.cache(...)`: tries to fetch from Redis first and only queries the database if the key does not exist. On cache hit, the query logger logs `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: does the same flow, but saves with TTL in seconds.
+- `.read_in_primary()`: forces reading from the primary database.
+- `.execute(&client)`: executes the query and returns at most one item.
+
+## Return
+
+Without `select::&lt;T&gt;()`, the return is:
+
+```rust
+DinocoResult<Option<M>>
+```
+
+With `select::&lt;T&gt;()`, the return becomes:
+
+```rust
+DinocoResult<Option<T>>
+```
+
+## Basic example
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## Example with select
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserSummary>()
+    .cond(|w| w.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+## Example with relation
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserWithPosts>()
+    .cond(|x| x.id.eq(1_i64))
+    .includes(|x| x.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Example with ordering
+
+```rust
+let latest_user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .execute(&client)
+    .await?;
+```
+
+## Example with worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.first-read", |job| async move {
+        // First user read:
+        println!("First user read: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+let user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .enqueue("user.first-read")
+    .execute(&client)
+    .await?;
+```
+
+See more about workers in [**`queues`**](/v0.0.2/orm/queues).
+
+## Example with cache
+
+This method only exists when the schema has `redis` configured.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## Example with cache
+
+This method only exists when the schema has `redis` configured.
+
+```rust
+use database::*;
+
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .cache_with_expiration("users:1")
+    .execute(&client)
+    .await?;
+```
+
+## Next steps
+
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many): fetches multiple records.
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): record count.

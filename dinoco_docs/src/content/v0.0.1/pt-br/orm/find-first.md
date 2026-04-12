@@ -1,0 +1,104 @@
+# find_first
+
+Usado para buscar no máximo um registro.
+
+---
+
+## O que você pode fazer
+
+Ele expõe os mesmos métodos de `find_many`:
+
+- `select`
+- `cond`
+- `take`
+- `skip`
+- `order_by`
+- `includes`
+- `count`
+- `read_in_primary`
+- `execute`
+
+## Descrição dos métodos
+
+- `.select::&lt;T&gt;()`: troca a projeção padrão por uma projeção customizada.
+- `.cond(...)`: adiciona filtros na busca.
+- `.take(...)`: limita a quantidade máxima de registros considerados.
+- `.skip(...)`: pula registros antes de selecionar o primeiro resultado.
+- `.order_by(...)`: define qual registro deve ser considerado primeiro.
+- `.includes(...)`: carrega relações junto com o item principal.
+- `.count(...)`: calcula contadores de relações na projeção.
+- `.read_in_primary()`: força a leitura no banco principal.
+- `.execute(&client)`: executa a consulta e retorna no máximo um item.
+
+## Retorno
+
+Sem `select::&lt;T&gt;()`, o retorno é:
+
+```rust
+DinocoResult<Option<M>>
+```
+
+Com `select::&lt;T&gt;()`, o retorno passa a ser:
+
+```rust
+DinocoResult<Option<T>>
+```
+
+## Exemplo básico
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com select
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserSummary>()
+    .cond(|w| w.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com relação
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserWithPosts>()
+    .cond(|x| x.id.eq(1_i64))
+    .includes(|x| x.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com ordenação
+
+```rust
+let latest_user = dinoco::find_first::<User>()
+    .order_by(|x| x.id.desc())
+    .execute(&client)
+    .await?;
+```
+
+## Próximos passos
+
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): busca múltiplos registros.
+- [**`count::&lt;M&gt;()`**](/v0.0.1/orm/count): contagem de registros.

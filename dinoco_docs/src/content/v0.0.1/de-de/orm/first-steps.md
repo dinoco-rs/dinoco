@@ -1,0 +1,128 @@
+# Erste Schritte
+
+Um Dinoco zu verwenden, müssen Sie unsere CLI installieren, damit Sie Migrationen und andere Systeme verwalten können!
+
+```bash
+cargo install dinoco-cli
+```
+
+Um die Dinoco-Umgebung zu erstellen, führen wir den folgenden Befehl aus:
+
+```bash
+dinoco init
+```
+
+Nachdem Sie die Datenbank und alle notwendigen Konfigurationen ausgewählt haben, wird der Ordner `dinoco` im Stammverzeichnis Ihres Projekts erstellt.
+
+Dieser Ordner enthält:
+
+- **Migrations:** Der Änderungsverlauf Ihrer Datenbank.
+- **Schema:** Die zentrale Definition Ihrer Datenstruktur.
+- **Models:** Die typisierten Repräsentationen zur Verwendung in Ihrem Rust-Code.
+
+## Wie funktioniert es?
+
+### 1. Definieren Sie Ihr Schema und Ihre Verbindung
+
+Das Dinoco-Schema definiert den Inhalt Ihrer Modelle und Datenbankkonfigurationen.
+
+```dinoco
+config {
+	database = "postgresql"
+	database_url = env("DATABASE_URL")
+}
+
+model User {
+	id    Integer     @id @default(autoincrement())
+	email String  @unique
+	name  String?
+
+	posts Post[]
+}
+
+model Post {
+	id        Integer     @id @default(autoincrement())
+	title     String
+	published Boolean @default(false)
+
+	author    User?   @relation(fields: [authorId], references: [id])
+	authorId  Integer?
+}
+```
+
+### 2. Erstellen Sie die Migration
+
+Wenn Sie die Migration mit `--apply` generieren, wird sie auf die Datenbank angewendet und die Modelle werden automatisch generiert!
+
+```bash
+dinoco migrate generate --apply
+```
+
+### 3. Abfrage mit DinocoClient
+
+```rust
+use dinoco::{DinocoClientConfig, DinocoQueryLogger, DinocoQueryLoggerOptions, Extend, find_many, insert_into};
+
+#[path = "../dinoco/mod.rs"]
+mod database;
+
+use database::models::*;
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserWithRelation {
+    id: i64,
+    email: String,
+    posts: Vec<PostSimple>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+struct PostSimple {
+    title: String,
+    published: bool,
+}
+
+#[tokio::main]
+async fn main() -> dinoco::DinocoResult<()> {
+    let _ = dotenvy::dotenv();
+
+    let config = DinocoClientConfig::default()
+        .with_snowflake_node_id(7)
+        .with_query_logger(DinocoQueryLogger::stdout(DinocoQueryLoggerOptions::verbose()));
+
+    let client = database::create_connection(config).await?;
+
+    // Fügen Sie einen Benutzer mit einem zugehörigen Beitrag ein.
+    insert_into::<User>()
+        .values(User { id: 0, email: "bia@dinoco.rs".to_string(), name: Some("Bia".to_string()) })
+        .with_relation(Post { id: 0, title: "Mein erster Beitrag".to_string(), published: true, authorId: None })
+        .execute(&client)
+        .await?;
+
+    // Suchen Sie alle Benutzer mit ihren Beiträgen.
+    let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
+
+    println!("{users:#?}");
+
+    // Ergebnis:
+    // [
+    // 	UserWithRelation {
+    // 		email: "bia@dinoco.rs",
+    // 		posts: [
+    // 			Post {
+    // 				title: "Mein erster Beitrag",
+    // 				published: true,
+    // 			},
+    // 		],
+    // 	},
+    // ]
+
+    Ok(())
+}
+```
+
+## Nächste Schritte
+
+- [**Dinoco-Schema**](/v0.0.1/orm/introduction-dinoco): Verstehen Sie die Struktur und den Zweck von Dinoco besser.
+- [**Dinoco-Client**](/v0.0.1/orm/first-steps): Überprüfen Sie diesen vollständigen Client-Workflow.

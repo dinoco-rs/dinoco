@@ -1,0 +1,209 @@
+# insert_into
+
+Utilisé pour insérer un enregistrement.
+
+---
+
+## Ce que vous pouvez faire
+
+- `.values(item)`: définit l'enregistrement qui sera inséré.
+- `.returning::&lt;T&gt;()`: modifie le retour pour une projection typée de l'élément inséré.
+- `.execute(&client)`: exécute l'écriture dans la base de données.
+
+## Exemple avec Extend #[insertable]
+
+Utilisez `#[insertable]` avec `#[derive(Extend)]` lorsque vous souhaitez que `.values(...)` accepte une charge utile plus riche avec de nouvelles relations et des connexions existantes. Dinoco insère d'abord le parent, puis traite tout de manière récursive.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    published: bool,
+    authorId: i64,
+    comments: Vec<Comment>,
+}
+
+dinoco::insert_into::<User>()
+    .values(UserWithPosts {
+        id: 1,
+        name: "Ana".to_string(),
+        posts: vec![
+            PostWithComments {
+                id: 10,
+                title: "Insertion récursive".to_string(),
+                published: true,
+                authorId: 0,
+                comments: vec![Comment { id: 100, text: "premier".to_string(), flagged: false, postId: 0 }],
+            },
+        ],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec relation imbriquée
+
+Utilisez une charge utile `Extend` avec `#[insertable]` pour créer le parent et également créer l'élément lié dans le même flux.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+    id: String,
+    username: String,
+    role: Role,
+    profile: Option<Profile>,
+}
+
+dinoco::insert_into::<User>()
+    .values(UserWithProfile {
+        id: "user-1".to_string(),
+        username: "bia".to_string(),
+        role: Role::USER,
+        profile: Some(Profile {
+            id: "profile-1".to_string(),
+            bio: Some("Ingénieure en logiciel".to_string()),
+            userId: String::new(),
+        }),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec connexion imbriquée
+
+Lorsque la relation pointe vers des enregistrements déjà existants, le codegen génère un enum comme `ArticleConnection` à utiliser dans la charge utile.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-10".into(),
+        title: "Connecter Existant".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec ArticleConnection
+
+C'est le format le plus courant pour la connexion d'enregistrements existants dans les relations plusieurs-à-plusieurs.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+let value = ArticleWithLabels {
+    id: "article-20".into(),
+    title: "Connecter Existant".into(),
+    labels: vec![
+        ArticleConnection::Label("label-10".into()),
+        ArticleConnection::Label("label-11".into()),
+    ],
+};
+
+dinoco::insert_into::<Article>()
+    .values(value)
+    .execute(&client)
+    .await?;
+```
+
+## Retour
+
+Sans `.returning::&lt;T&gt;()`, le retour est :
+
+```rust
+DinocoResult<()>
+```
+
+Avec `.returning::&lt;T&gt;()`, le retour devient :
+
+```rust
+DinocoResult<T>
+```
+
+## Exemple simple
+
+```rust
+dinoco::insert_into::<User>()
+    .values(User {
+        id: "usr_1".to_string(),
+        email: "ana@acme.com".to_string(),
+        name: "Ana".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec retour typé
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let created = dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .returning::<UserSummary>()
+    .execute(&client)
+    .await?;
+```
+
+## Exemple avec worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.created", |job| async move {
+        println!("Utilisateur créé : {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .enqueue("user.created")
+    .execute(&client)
+    .await?;
+```
+
+Voir plus sur les workers dans [**`queues`**](/v0.0.2/orm/queues).
+
+## Prochaines étapes
+
+- [**Derives**](/v0.0.2/core/derives): comprenez quand utiliser `Rowable`, `Extend` et `#[insertable]`.
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.2/orm/insert-many): insertion par lot.
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update): mise à jour d'enregistrements.

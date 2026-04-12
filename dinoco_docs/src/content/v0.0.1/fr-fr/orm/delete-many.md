@@ -1,0 +1,44 @@
+# delete_many
+
+Utilisé pour supprimer plusieurs enregistrements avec une ou plusieurs conditions.
+
+---
+
+## Ce que vous pouvez faire
+
+- `.cond(...)`: ajoute des filtres pour la suppression par lot.
+- `.execute(&client)`: exécute la suppression des enregistrements correspondants.
+
+## Retour
+
+Le retour de `delete_many` est :
+
+```rust
+DinocoResult<()>
+```
+
+## Exemple de base
+
+Ceci supprime uniquement les enregistrements qui remplissent la condition.
+
+```rust
+dinoco::delete_many::<Session>()
+    .cond(|w| w.expiresAt.lt(dinoco::Utc::now()))
+    .execute(&client)
+    .await?;
+```
+
+## Exemple sans filtre
+
+Ceci supprime toutes les données de la table.
+
+```rust
+dinoco::delete_many::<TaskAssignees>()
+    .execute(&client)
+    .await?;
+```
+
+## Prochaines étapes
+
+- [**`delete::&lt;M&gt;()`**](/v0.0.1/orm/delete): suppression ponctuelle avec filtre explicite.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): lister avant de supprimer par lot.

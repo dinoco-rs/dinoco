@@ -1,0 +1,94 @@
+# update_many
+
+Used to update multiple records at once.
+
+---
+
+## What you can do
+
+- `.cond(...)`: restricts which records can be updated.
+- `.values(Vec&lt;M&gt;)`: defines the items used in the batch update.
+- `.returning::&lt;T&gt;()`: returns the updated records as a typed list.
+- `.execute(&client)`: executes the batch update.
+
+## Return
+
+Without `.returning::&lt;T&gt;()`, the return is:
+
+```rust
+DinocoResult<()>
+```
+
+With `.returning::&lt;T&gt;()`, the return becomes:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Basic example
+
+```rust
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 1, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 2, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Example with return
+
+```rust
+let updated = dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana Batch".to_string() },
+        User { id: 3, name: "Caio Batch".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Example with filter
+
+```rust
+dinoco::update_many::<User>()
+    .cond(|x| x.active.eq(true))
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Example with worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        println!("Users updated: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .enqueue("user.batch-updated")
+    .execute(&client)
+    .await?;
+```
+
+See more about workers in [**`queues`**](/v0.0.2/orm/queues).
+
+## Next steps
+
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): traditional update with condition.
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): atomic update on a single record.

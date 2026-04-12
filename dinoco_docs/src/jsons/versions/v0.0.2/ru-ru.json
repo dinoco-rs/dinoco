@@ -12,7 +12,7 @@
 						{
 							"shortName": "introduction-dinoco",
 							"name": "Введение в Dinoco",
-							"mdxPath": "v0.0.2/ru-ru/orm/introduction-to-dinoco.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/introduction-to-dinoco.md",
 							"inPage": [
 								"Введение в Dinoco",
 								{
@@ -32,7 +32,7 @@
 						{
 							"shortName": "first-steps",
 							"name": "Первые шаги",
-							"mdxPath": "v0.0.2/ru-ru/orm/first-steps.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/first-steps.md",
 							"inPage": [
 								"Первые шаги",
 								{
@@ -48,7 +48,7 @@
 						{
 							"shortName": "supported-databases",
 							"name": "Обзор",
-							"mdxPath": "v0.0.2/ru-ru/orm/supported-databases.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/supported-databases.md",
 							"inPage": [
 								"Обзор",
 								{
@@ -77,7 +77,7 @@
 						{
 							"shortName": "configuration",
 							"name": "Конфигурация",
-							"mdxPath": "v0.0.2/ru-ru/orm/configuration.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/configuration.md",
 							"inPage": [
 								"Конфигурация",
 								{
@@ -113,7 +113,7 @@
 						{
 							"shortName": "models",
 							"name": "Модели",
-							"mdxPath": "v0.0.2/ru-ru/orm/models.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/models.md",
 							"inPage": [
 								"Модели",
 								{
@@ -177,7 +177,7 @@
 						{
 							"shortName": "enums",
 							"name": "Перечисления",
-							"mdxPath": "v0.0.2/ru-ru/orm/enums.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/enums.md",
 							"inPage": [
 								"Перечисления",
 								{
@@ -205,7 +205,7 @@
 						{
 							"shortName": "relations",
 							"name": "Отношения",
-							"mdxPath": "v0.0.2/ru-ru/orm/relations.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/relations.md",
 							"inPage": [
 								"Отношения",
 								{
@@ -266,7 +266,7 @@
 						{
 							"shortName": "derives",
 							"name": "Derives",
-							"mdxPath": "v0.0.2/ru-ru/core/derives.mdx",
+							"contentPath": "v0.0.2/ru-ru/core/derives.md",
 							"inPage": [
 								"Derives",
 								{
@@ -310,7 +310,7 @@
 						{
 							"shortName": "traits",
 							"name": "Трейты",
-							"mdxPath": "v0.0.2/ru-ru/core/traits.mdx",
+							"contentPath": "v0.0.2/ru-ru/core/traits.md",
 							"inPage": [
 								"Трейты",
 								{
@@ -367,7 +367,7 @@
 						{
 							"shortName": "find-many",
 							"name": "find_many",
-							"mdxPath": "v0.0.2/ru-ru/orm/find-many.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/find-many.md",
 							"inPage": [
 								"find_many",
 								{
@@ -437,7 +437,7 @@
 						{
 							"shortName": "find-first",
 							"name": "find_first",
-							"mdxPath": "v0.0.2/ru-ru/orm/find-first.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/find-first.md",
 							"inPage": [
 								"find_first",
 								{
@@ -482,7 +482,7 @@
 						{
 							"shortName": "find-and-update",
 							"name": "find_and_update",
-							"mdxPath": "v0.0.2/ru-ru/orm/find-and-update.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/find-and-update.md",
 							"inPage": [
 								"find_and_update",
 								{
@@ -519,7 +519,7 @@
 						{
 							"shortName": "insert-into",
 							"name": "insert_into",
-							"mdxPath": "v0.0.2/ru-ru/orm/insert-into.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/insert-into.md",
 							"inPage": [
 								"insert_into",
 								{
@@ -568,7 +568,7 @@
 						{
 							"shortName": "insert-many",
 							"name": "insert_many",
-							"mdxPath": "v0.0.2/ru-ru/orm/insert-many.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/insert-many.md",
 							"inPage": [
 								"insert_many",
 								{
@@ -620,7 +620,7 @@
 						{
 							"shortName": "update",
 							"name": "update",
-							"mdxPath": "v0.0.2/ru-ru/orm/update.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/update.md",
 							"inPage": [
 								"update",
 								{
@@ -660,7 +660,7 @@
 						{
 							"shortName": "update-many",
 							"name": "update_many",
-							"mdxPath": "v0.0.2/ru-ru/orm/update-many.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/update-many.md",
 							"inPage": [
 								"update_many",
 								{
@@ -696,7 +696,7 @@
 						{
 							"shortName": "count",
 							"name": "count",
-							"mdxPath": "v0.0.2/ru-ru/orm/count.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/count.md",
 							"inPage": [
 								"count",
 								{
@@ -732,7 +732,7 @@
 						{
 							"shortName": "delete",
 							"name": "delete",
-							"mdxPath": "v0.0.2/ru-ru/orm/delete.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/delete.md",
 							"inPage": [
 								"delete",
 								{
@@ -760,7 +760,7 @@
 						{
 							"shortName": "delete-many",
 							"name": "delete_many",
-							"mdxPath": "v0.0.2/ru-ru/orm/delete-many.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/delete-many.md",
 							"inPage": [
 								"delete_many",
 								{
@@ -788,7 +788,7 @@
 						{
 							"shortName": "cache-client",
 							"name": "cache",
-							"mdxPath": "v0.0.2/ru-ru/orm/cache-client.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/cache-client.md",
 							"inPage": [
 								"cache",
 								{
@@ -840,7 +840,7 @@
 						{
 							"shortName": "queues",
 							"name": "workers",
-							"mdxPath": "v0.0.2/ru-ru/orm/queues.mdx",
+							"contentPath": "v0.0.2/ru-ru/orm/queues.md",
 							"inPage": [
 								"queues",
 								{
@@ -888,7 +888,7 @@
 						{
 							"shortName": "install",
 							"name": "Установка",
-							"mdxPath": "v0.0.2/ru-ru/cli/install.mdx",
+							"contentPath": "v0.0.2/ru-ru/cli/install.md",
 							"inPage": [
 								"Установка",
 								{
@@ -909,7 +909,7 @@
 						{
 							"shortName": "init",
 							"name": "Init",
-							"mdxPath": "v0.0.2/ru-ru/cli/init.mdx",
+							"contentPath": "v0.0.2/ru-ru/cli/init.md",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -929,7 +929,7 @@
 						{
 							"shortName": "database-reset",
 							"name": "Database reset",
-							"mdxPath": "v0.0.2/ru-ru/cli/database-reset.mdx",
+							"contentPath": "v0.0.2/ru-ru/cli/database-reset.md",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -949,7 +949,7 @@
 						{
 							"shortName": "migrate-generate",
 							"name": "Migrate generate",
-							"mdxPath": "v0.0.2/ru-ru/cli/migrate-generate.mdx",
+							"contentPath": "v0.0.2/ru-ru/cli/migrate-generate.md",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -977,7 +977,7 @@
 						{
 							"shortName": "migrate-run",
 							"name": "Migrate run",
-							"mdxPath": "v0.0.2/ru-ru/cli/migrate-run.mdx",
+							"contentPath": "v0.0.2/ru-ru/cli/migrate-run.md",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -997,7 +997,7 @@
 						{
 							"shortName": "migrate-rollback",
 							"name": "Migrate rollback",
-							"mdxPath": "v0.0.2/ru-ru/cli/migrate-rollback.mdx",
+							"contentPath": "v0.0.2/ru-ru/cli/migrate-rollback.md",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -1029,7 +1029,7 @@
 						{
 							"shortName": "models-generate",
 							"name": "Models generate",
-							"mdxPath": "v0.0.2/ru-ru/cli/models-generate.mdx",
+							"contentPath": "v0.0.2/ru-ru/cli/models-generate.md",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -1049,7 +1049,7 @@
 						{
 							"shortName": "schema-restore",
 							"name": "Schema restore",
-							"mdxPath": "v0.0.2/ru-ru/cli/schema-restore.mdx",
+							"contentPath": "v0.0.2/ru-ru/cli/schema-restore.md",
 							"inPage": [
 								"Как использовать?",
 								{
@@ -1085,7 +1085,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Введение",
-							"mdxPath": "v0.0.2/ru-ru/supersonic/introduction.mdx",
+							"contentPath": "v0.0.2/ru-ru/supersonic/introduction.md",
 							"inPage": ["Введение"]
 						}
 					]
@@ -1103,7 +1103,7 @@
 						{
 							"shortName": "introduction",
 							"name": "Введение",
-							"mdxPath": "v0.0.2/ru-ru/dinocodb/introduction.mdx",
+							"contentPath": "v0.0.2/ru-ru/dinocodb/introduction.md",
 							"inPage": ["Введение"]
 						}
 					]

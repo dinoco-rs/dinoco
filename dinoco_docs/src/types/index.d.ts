@@ -6,7 +6,6 @@ export type DocsSidebarProps = {
 	currentItem: DocsItem;
 	locale: DocsLocale;
 	currentVersionName: string;
-	groups: DocsGroup[];
 	sections: DocsSection[];
 	isOpen: boolean;
 	onClose: () => void;
@@ -26,14 +25,14 @@ export type DropdownItemProps = {
 };
 
 export type MarkdownContentProps = {
-	mdxPath: string;
+	contentPath: string;
 };
 
-export type MdxComponentProps = React.HTMLAttributes<HTMLElement> & {
+export type MarkdownComponentProps = React.HTMLAttributes<HTMLElement> & {
 	children?: React.ReactNode;
 };
 
-export type MdxCodeProps = React.HTMLAttributes<HTMLElement> & {
+export type MarkdownCodeProps = React.HTMLAttributes<HTMLElement> & {
 	children?: React.ReactNode;
 	className?: string;
 };

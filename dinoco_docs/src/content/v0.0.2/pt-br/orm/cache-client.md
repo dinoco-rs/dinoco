@@ -1,0 +1,109 @@
+# cache
+
+`client.cache()` expõe acesso direto ao Redis configurado no `DinocoClient`, sem depender dos helpers de cache acoplados em `find_first` e `find_many`.
+
+## O que você pode fazer
+
+- Ler uma chave com `.get::&lt;T&gt;(...)`
+- Salvar uma chave com `.set(...)`
+- Salvar com expiração usando `.set_with_ttl(...)`
+- Remover uma chave com `.delete(...)`
+
+## Quando usar
+
+Use `client.cache()` quando você quiser:
+
+- montar cache manual
+- invalidar chaves depois de operações de escrita
+- compartilhar cargas úteis entre várias consultas
+- guardar estruturas prontas para leitura rápida
+
+## Como funciona
+
+O método usa o Redis configurado no `DinocoClientConfig::with_redis(...)`.
+
+Se o client não tiver Redis configurado, a operação retorna erro.
+
+## Métodos disponíveis
+
+- `.get::&lt;T&gt;(key)`: busca e desserializa o valor como `T`
+- `.set(key, &value)`: serializa e salva sem TTL
+- `.set_with_ttl(key, &value, ttl_seconds)`: serializa e salva com expiração em segundos
+- `.delete(key)`: remove a chave
+
+## Exemplo básico
+
+```rust
+use database::*;
+
+let cache = client.cache();
+
+cache.set("users:count", &42_i64).await?;
+
+let count = cache.get::<i64>("users:count").await?;
+
+println!("{count:?}");
+```
+
+## Exemplo com lista tipada
+
+```rust
+use database::*;
+
+let users = vec![
+    User { id: 1, name: "Matheus".to_string() },
+    User { id: 2, name: "Ana".to_string() },
+];
+
+client.cache().set("users:list", &users).await?;
+
+let cached = client.cache().get::<Vec<User>>("users:list").await?;
+```
+
+## Exemplo com TTL
+
+```rust
+use database::*;
+
+client.cache().set_with_ttl("users:top-10", &vec![1, 2, 3], 60).await?;
+```
+
+## Exemplo de invalidação
+
+```rust
+use database::*;
+
+dinoco::update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .values(User { id: 1, name: "Novo nome".to_string() })
+    .execute(&client)
+    .await?;
+
+client.cache().delete("users:1").await?;
+client.cache().delete("users:list").await?;
+```
+
+## Tipos suportados
+
+Os valores são serializados em JSON, então o tipo precisa ser compatível com `serde`.
+
+Exemplos comuns:
+
+- `Vec&lt;User&gt;`
+- `Option&lt;User&gt;`
+- `String`
+- `bool`
+- `i64`
+- structs serializáveis
+
+## Observações
+
+- `client.cache()` é cache manual; ele não executa consulta no banco.
+- Para cache integrado em consulta, use `find_first().cache(...)` e `find_many().cache(...)`.
+- Você pode chamar `client.cache()` quantas vezes quiser; ele só cria um wrapper leve.
+
+## Próximos passos
+
+- [**`find_first::&lt;M&gt;()`**](/v0.0.2/orm/find-first)
+- [**`find_many::&lt;M&gt;()`**](/v0.0.2/orm/find-many)
+- [**`queues`**](/v0.0.2/orm/queues)

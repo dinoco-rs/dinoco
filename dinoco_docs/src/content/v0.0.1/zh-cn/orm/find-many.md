@@ -1,0 +1,194 @@
+# find_many
+
+用于获取记录列表。
+
+---
+
+## 您可以做什么
+
+- 使用 `.select::&lt;T&gt;()` 选择投影
+- 使用 `.cond(...)` 过滤
+- 使用 `.take(...)` 限制
+- 使用 `.skip(...)` 分页
+- 使用 `.order_by(...)` 排序
+- 使用 `.includes(...)` 加载关联
+- 使用 `.count(...)` 计数关联
+- 使用 `.read_in_primary()` 强制从主数据库读取
+- 使用 `.execute(&client)` 执行
+
+## 方法说明
+
+- `.select::&lt;T&gt;()`: 将模型的默认投影替换为自定义投影。
+- `.cond(...)`: 向查询添加过滤条件。
+- `.take(...)`: 限制返回的记录数量。
+- `.skip(...)`: 在返回结果之前跳过一定数量的记录。
+- `.order_by(...)`: 定义查询的排序方式。
+- `.includes(...)`: 与主记录一起加载关联。
+- `.count(...)`: 计算关联计数器并填充 `posts_count` 等字段。
+- `.read_in_primary()`: 强制从主数据库读取，不使用副本。
+- `.execute(&client)`: 在数据库中执行查询。
+
+## 返回值
+
+如果没有 `select::&lt;T&gt;()`，返回值为：
+
+```rust
+DinocoResult<Vec<M>>
+```
+
+如果有 `select::&lt;T&gt;()`，返回值为：
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## 基本示例
+
+```rust
+let users = dinoco::find_many::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## 带过滤的示例
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|w| w.email.eq("ana@acme.com"))
+    .execute(&client)
+    .await?;
+```
+
+## 带分页和排序的示例
+
+```rust
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .skip(20)
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## 自定义选择示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserListItem {
+    id: i64,
+    name: String,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserListItem>()
+    .execute(&client)
+    .await?;
+```
+
+## 简单关联示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## 带过滤的关联示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPublishedPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPublishedPosts>()
+    .includes(|i| i.posts().cond(|w| w.published.eq(true)))
+    .execute(&client)
+    .await?;
+```
+
+## 嵌套关联示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Comment)]
+struct CommentListItem {
+    id: i64,
+    text: String,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    comments: Vec<CommentListItem>,
+    comments_count: usize,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| {
+        i.posts()
+            .includes(|post| post.comments().take(3))
+            .count(|post| post.comments())
+    })
+    .execute(&client)
+    .await?;
+```
+
+## 关联计数示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## 从主数据库读取的示例
+
+```rust
+let users = dinoco::find_many::<User>()
+    .read_in_primary()
+    .take(5)
+    .execute(&client)
+    .await?;
+```
+
+## 下一步
+
+- [**`find_first::&lt;M&gt;()`**](/v0.0.1/orm/find-first): 用于最多获取一条记录的版本。
+- [**`count::&lt;M&gt;()`**](/v0.0.1/orm/count): 带过滤的记录计数。

@@ -1,0 +1,350 @@
+# モデル
+
+モデルは、Dinocoスキーマにおけるアプリケーションの中心的なエンティティを定義します。各モデルは通常、データベース内のテーブルを表し、コード生成、型付きクエリ、およびDinoco APIとの操作の基盤として機能します。
+
+---
+
+## モデルが表すもの
+
+モデルは以下を記述します。
+
+- エンティティの名前。
+- データベースに保存されるフィールド。
+- どのフィールドが必須またはオプションであるか。
+- どのフィールドが一意または識別子であるか。
+- これらのデータがコード生成とAPIによってどのように使用されるか。
+
+例:
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	email String  @unique
+	name  String?
+}
+```
+
+この例では:
+
+- `User` はモデルです。
+- `id`、`email`、`name` はスカラフィールドです。
+- `id` は主識別子です。
+- `email` には一意性制約があります。
+
+## 完全な例
+
+モデルを含むシンプルなスキーマは通常、次のようになります。
+
+```dinoco
+config {
+	database = "postgresql"
+	database_url = env("DATABASE_URL")
+}
+
+model User {
+	id        Integer  @id @default(autoincrement())
+	email     String   @unique
+	name      String?
+	active    Boolean  @default(true)
+	createdAt DateTime @default(now())
+}
+
+model Post {
+	id        Integer  @id @default(autoincrement())
+	title     String
+	content   String?
+	published Boolean  @default(false)
+	createdAt DateTime @default(now())
+}
+```
+
+## フィールドの構造
+
+モデルの各フィールドは以下で構成されます。
+
+- 名前
+- 型
+- オプションの修飾子
+- オプションの属性
+
+例:
+
+```dinoco
+email String @unique
+```
+
+この行では:
+
+- `email` はフィールド名です。
+- `String` は型です。
+- `@unique` は属性です。
+
+## フィールドの型
+
+フィールドは、テキスト、数値、ブール値、日付など、スキーマの基本値を表すことができます。
+
+### スカラフィールド
+
+これらは、テキスト、数値、ブール値、日付などの直接的な値を格納するフィールドです。
+
+```dinoco
+model Product {
+	id          Integer  @id @default(autoincrement())
+	name        String
+	description String?
+	price       Float
+	active      Boolean  @default(true)
+	createdAt   DateTime @default(now())
+}
+```
+
+## 型修飾子
+
+Dinocoは主に2つの修飾子をサポートしています。
+
+| 修飾子 | 意味          | 例              |
+| :---------- | :------------ | :-------------- |
+| `?`         | オプションフィールド | `name String?`  |
+| `[]`        | リスト        | `tags String[]` |
+
+### オプションフィールド
+
+```dinoco
+model User {
+	id   Integer @id @default(autoincrement())
+	name String?
+}
+```
+
+`name`は、データベースと生成されたレイヤーに応じて、nullまたは欠落している場合があります。
+
+### リストフィールド
+
+```dinoco
+model Article {
+	id   Integer  @id @default(autoincrement())
+	tags String[]
+}
+```
+
+この形式は、データベースとフローがこの種の構造をサポートしている場合に、値のリストを表します。
+
+## 最も一般的な属性
+
+属性は、フィールドとモデルの動作を変更します。
+
+| 属性        | 用途                  |
+| :-------------- | :-------------------- |
+| `@id`           | 主識別子を定義する    |
+| `@default(...)` | デフォルト値を定義する |
+| `@unique`       | 一意性を保証する      |
+
+### `@id`
+
+レコードを一意に識別するフィールドを定義します。
+
+```dinoco
+id Integer @id @default(autoincrement())
+```
+
+生成されたAPIが安全に動作できるように、すべてのモデルには明確な識別子が必要です。
+
+### `@default(...)`
+
+フィールドのデフォルト値を定義します。
+
+```dinoco
+active    Boolean  @default(true)
+createdAt DateTime @default(now())
+id        Integer  @default(autoincrement())
+```
+
+一般的な関数と値:
+
+| 例                        | 用途            |
+| :-------------------------- | :-------------- |
+| `@default(false)`           | デフォルトのブール値 |
+| `@default(now())`           | 現在の日付      |
+| `@default(autoincrement())` | 増分整数        |
+| `@default(uuid())`          | UUID識別子      |
+
+### `@unique`
+
+フィールドの値が重複しないことを保証します。
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	email String  @unique
+}
+```
+
+この属性は、メールアドレス、ユーザー名、外部コードなどのフィールドに最適です。
+
+## モデルデコレータ
+
+個々のフィールドの属性に加えて、Dinocoはモデルブロック全体に適用されるデコレータもサポートしています。
+
+| デコレータ             | 用途                                   |
+| :-------------------- | :------------------------------------- |
+| `@@ids([...])`        | 複合主キーを定義する                   |
+| `@@table_name("...")` | データベース内の実際のテーブル名をマッピングする |
+
+### `@@ids([...])`
+
+レコードの識別が複数のフィールドに依存する場合に `@@ids` を使用します。
+
+```dinoco
+model Membership {
+	userId Integer
+	teamId Integer
+	role   String
+
+	@@ids([userId, teamId])
+}
+```
+
+この形式は、関連テーブルや、自然な一意性がすでに複合されているシナリオで役立ちます。
+
+### `@@table_name("...")`
+
+スキーマ内でよりわかりやすいモデル名を維持しつつ、データベース内の別の物理名にマッピングしたい場合に `@@table_name()` を使用します。
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	email String  @unique
+
+	@@table_name("users")
+}
+```
+
+この場合:
+
+- モデルはスキーマと生成されたAPIでは `User` という名前のままです。
+- データベース内の物理テーブルは `users` になります。
+
+## ユーザーモデルの例
+
+```dinoco
+model User {
+	id        Integer  @id @default(autoincrement())
+	email     String   @unique
+	name      String?
+	active    Boolean  @default(true)
+	createdAt DateTime @default(now())
+}
+```
+
+コード生成後、このモデルはDinoco APIで直接使用できます。
+
+## Dinoco APIを使用したユーザー検索の例
+
+### 単一レコードの検索
+
+```rust
+let user = dinoco::find_first::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+### 複数レコードの検索
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|x| x.name.includes("Ana"))
+    .order_by(|x| x.id.asc())
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## Dinoco APIを使用したユーザー作成の例
+
+```rust
+dinoco::insert_into::<User>()
+    .values(User {
+        id: 0,
+        email: "bia@dinoco.rs".to_string(),
+        name: Some("Bia".to_string()),
+        active: true,
+        createdAt: dinoco::Utc::now(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Dinoco APIを使用したユーザー更新の例
+
+```rust
+dinoco::update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .values(User {
+        id: 1,
+        email: "bia@dinoco.rs".to_string(),
+        name: Some("Beatriz".to_string()),
+        active: true,
+        createdAt: dinoco::Utc::now(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+単一フィールドでアトミックな更新を行いたい場合、`find_and_update` フローはさらに直接的です。
+
+```rust
+let user = dinoco::find_and_update::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .update(|x| x.name.set("Beatriz"))
+    .execute(&client)
+    .await?;
+```
+
+## Dinoco APIを使用したユーザー削除の例
+
+```rust
+dinoco::delete::<User>()
+    .cond(|x| x.id.eq(1_i64))
+    .execute(&client)
+    .await?;
+```
+
+一括削除の場合:
+
+```rust
+dinoco::delete_many::<User>()
+    .cond(|x| x.active.eq(false))
+    .execute(&client)
+    .await?;
+```
+
+## クイックサマリー
+
+| 概念       | 例                     | 目的            |
+| :------------- | :--------------------- | :-------------- |
+| Model          | `model User { ... }`   | エンティティを表す |
+| スカラフィールド  | `email String`         | 単純な値を格納する |
+| オプションフィールド | `name String?`         | 値の欠落を許可する |
+| リストフィールド | `tags String[]`        | 複数の値を格納する |
+| ID             | `id Integer @id`       | 一意に識別する   |
+| Default        | `@default(now())`      | 自動的に入力する |
+| Unique         | `email String @unique` | 重複を避ける    |
+
+## 新しいモデルを作成するタイミング
+
+アプリケーションのエンティティが以下のいずれかを必要とする場合、通常、新しいモデルを作成します。
+
+- データベースに永続化されること。
+- 独自の識別子を持つこと。
+- 単独でクエリされること。
+- 独自の読み取りおよび書き込みルールを持つこと。
+
+一般的な例:
+
+- `User`
+- `Post`
+- `Comment`
+- `Category`
+- `Order`
+- `Invoice`

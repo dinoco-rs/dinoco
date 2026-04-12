@@ -1,6 +1,5 @@
 import React from 'react';
-
-import { Link } from 'tuono-router';
+import Link from 'next/link';
 
 import { clsx } from 'clsx';
 import { FiArrowLeft, FiArrowRight } from 'react-icons/fi';

@@ -1,0 +1,118 @@
+# update
+
+Usado para atualizar registros filtrados.
+
+---
+
+## O que você pode fazer
+
+- `.cond(...)`: define quais registros serão atualizados.
+- `.values(item)`: informa os novos valores do registro.
+- `.connect(...)`: cria vínculos de relação suportados para escrita.
+- `.disconnect(...)`: remove vínculos de relação suportados para escrita.
+- `.returning::&lt;T&gt;()`: retorna os registros atualizados em uma projeção tipada.
+- `.execute(&client)`: executa a atualização no banco.
+
+## Retorno
+
+Sem `.returning::&lt;T&gt;()`, o retorno é:
+
+```rust
+DinocoResult<()>
+```
+
+Com `.returning::&lt;T&gt;()`, o retorno passa a ser:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+Observação:
+
+- `update().returning()` não suporta relation writes com `.connect(...)` ou `.disconnect(...)`.
+
+## Exemplo de update de campos
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "Novo Nome".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com connect(...)
+
+Usado para conectar relações suportadas para escrita, normalmente Many to Many.
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .connect(|r| r.roles().slug.eq("admin"))
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com disconnect(...)
+
+Usado para desconectar relações.
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .disconnect(|r| r.roles().slug.eq("guest"))
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("Usuário atualizado: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "Novo Nome".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
+
+## Filtros disponíveis em connect e disconnect
+
+- `eq`
+- `neq`
+- `gt`
+- `gte`
+- `lt`
+- `lte`
+- `in_values`
+- `not_in_values`
+- `is_null`
+- `is_not_null`
+- `includes`
+- `starts_with`
+- `ends_with`
+
+## Próximos passos
+
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): atualização em lote.
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): update atômico com retorno.

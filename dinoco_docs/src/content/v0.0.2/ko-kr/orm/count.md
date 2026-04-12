@@ -1,0 +1,54 @@
+# count
+
+레코드를 세는 데 사용됩니다.
+
+---
+
+## 수행할 수 있는 작업
+
+- `.cond(...)`로 필터링
+- `.execute(&client)`로 실행
+
+## 메서드 설명
+
+- `.cond(...)`: 계수에 포함될 레코드를 제한합니다.
+- `.execute(&client)`: 데이터베이스에서 계수를 실행합니다.
+
+## 반환
+
+`count`의 반환 값은 다음과 같습니다:
+
+```rust
+DinocoResult<usize>
+```
+
+## 기본 예시
+
+```rust
+let total = dinoco::count::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## 부울 필터 예시
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.active.eq(true))
+    .execute(&client)
+    .await?;
+```
+
+## 텍스트 필터 예시
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.name.includes("Ana"))
+    .execute(&client)
+    .await?;
+```
+
+## 다음 단계
+
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): 목록에서 레코드를 검색합니다.
+- [**`find_first::&lt;M&gt;()`**](/v0.0.1/orm/find-first): 단일 레코드를 검색합니다.

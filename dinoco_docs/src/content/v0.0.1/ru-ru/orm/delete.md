@@ -1,0 +1,41 @@
+# delete
+
+Используется для удаления с явным фильтром.
+
+---
+
+## Что вы можете сделать
+
+- `.cond(...)`: определяет, какая запись будет удалена.
+- `.execute(&client)`: выполняет удаление в базе данных.
+
+## Возвращаемое значение
+
+Возвращаемое значение `delete`:
+
+```rust
+DinocoResult<()>
+```
+
+## Базовый пример
+
+```rust
+dinoco::delete::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## Пример с другим фильтром
+
+```rust
+dinoco::delete::<Session>()
+    .cond(|w| w.token.eq("session-1"))
+    .execute(&client)
+    .await?;
+```
+
+## Следующие шаги
+
+- [**`delete_many::&lt;M&gt;()`**](/v0.0.1/orm/delete-many): пакетное удаление.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): проверка записей перед удалением.

@@ -1,14 +1,24 @@
+'use client';
+
 import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'tuono-router';
 
 import DocsContentNavigation from './DocsContentNavigation';
 import DocsSidebar from './DocsSidebar';
 import Header from './Header';
-import MarkdownContent from './MarkdownContent';
 import OutdatedVersionNotice from './OutdatedVersionNotice';
-import { useIntl } from '../hooks/useIntl';
-import { type DocsInPageItemData, getAdjacentDocsItems, getLatestVersionName, getLatestVersionPath, isLatestVersion, parseDocsPath, resolveDocsPath } from '../jsons/versions';
-import { type DocsConsumer, useDocs } from '../hooks/useDocs';
+import { getIntlMessages } from '../hooks/useIntl';
+import { type DocsInPageItemData, getAdjacentDocsItems, getLatestVersionName, getLatestVersionPath, isLatestVersion, parseDocsPath } from '../jsons/versions';
+
+import type { DocsLocale, ResolvedDocsPath } from '../jsons/versions';
+import type { DocsTheme } from '../lib/docs-preferences';
+
+type DocsPageProps = {
+	children: React.ReactNode;
+	initialLocale: DocsLocale;
+	initialTheme: DocsTheme;
+	pathname: string;
+	resolved: ResolvedDocsPath;
+};
 
 function toAnchorId(value: string): string {
 	return value.toLowerCase().split(' ').join('-');
@@ -99,45 +109,25 @@ function renderInPageItems(items: DocsInPageItemData[], activeAnchorId: string |
 	});
 }
 
-const DocsPage: React.FC = () => {
-	const locale = useDocs(state => state.locale);
-
-	const setConsumer = useDocs(state => state.setConsumer);
-	const setVersion = useDocs(state => state.setVersion);
-	const intl = useIntl();
-	const router = useRouter();
-
+const DocsPage = ({ children, initialLocale, initialTheme, pathname, resolved }: DocsPageProps): React.JSX.Element => {
+	const intl = getIntlMessages(initialLocale);
 	const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 	const [activeAnchorId, setActiveAnchorId] = useState<string>();
 	const [articleElement, setArticleElement] = useState<HTMLElement | null>(null);
 
-	const routeParams = useMemo(() => parseDocsPath(router.pathname), [router.pathname]);
-
-	const resolved = useMemo(() => {
-		return resolveDocsPath({
-			versionName: routeParams.versionName,
-			groupShortName: routeParams.groupShortName,
-			itemShortName: routeParams.itemShortName,
-			subItemShortName: routeParams.subItemShortName,
-			locale,
-		});
-	}, [locale, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName, routeParams.versionName]);
-
-	const navigation = useMemo(() => {
-		if (resolved === undefined) {
-			return {};
-		}
-
-		return getAdjacentDocsItems({
-			versionName: resolved.version.name,
-			groupShortName: resolved.group.shortName,
-			sections: resolved.sections,
-			currentItemShortName: resolved.item.shortName,
-		});
-	}, [resolved]);
-
+	const routeParams = useMemo(() => parseDocsPath(pathname), [pathname]);
+	const navigation = useMemo(
+		() =>
+			getAdjacentDocsItems({
+				versionName: resolved.version.name,
+				groupShortName: resolved.group.shortName,
+				sections: resolved.sections,
+				currentItemShortName: resolved.item.shortName,
+			}),
+		[resolved],
+	);
 	const outdatedNotice = useMemo(() => {
-		if (resolved === undefined || isLatestVersion(resolved.version.name)) {
+		if (isLatestVersion(resolved.version.name)) {
 			return undefined;
 		}
 
@@ -148,44 +138,13 @@ const DocsPage: React.FC = () => {
 				groupShortName: routeParams.groupShortName,
 				itemShortName: routeParams.itemShortName,
 				subItemShortName: routeParams.subItemShortName,
-				locale,
+				locale: initialLocale,
 			}),
 		};
-	}, [locale, resolved, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName]);
-
-	const inPageAnchorIds = useMemo(() => {
-		if (resolved === undefined) {
-			return [];
-		}
-
-		return flattenInPageItems(resolved.item.inPage).map(toAnchorId);
-	}, [resolved]);
-
-	const activeInPagePathIds = useMemo(() => {
-		return new Set(findActiveInPagePath(resolved?.item.inPage ?? [], activeAnchorId));
-	}, [activeAnchorId, resolved]);
-
-	const contentKey = useMemo(() => {
-		if (resolved === undefined) {
-			return locale;
-		}
-
-		return `${locale}:${resolved.path}:${resolved.item.mdxPath}`;
-	}, [locale, resolved]);
-
-	useEffect(() => {
-		if (resolved === undefined) {
-			return;
-		}
-
-		if (resolved.path !== router.pathname) {
-			router.replace(resolved.path);
-			return;
-		}
-
-		setVersion(resolved.version.name);
-		setConsumer(resolved.group.shortName as DocsConsumer);
-	}, [resolved, router, setConsumer, setVersion]);
+	}, [initialLocale, resolved.version.name, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName]);
+	const inPageAnchorIds = useMemo(() => flattenInPageItems(resolved.item.inPage).map(toAnchorId), [resolved.item.inPage]);
+	const activeInPagePathIds = useMemo(() => new Set(findActiveInPagePath(resolved.item.inPage, activeAnchorId)), [activeAnchorId, resolved.item.inPage]);
+	const contentKey = useMemo(() => `${initialLocale}:${resolved.path}:${resolved.item.contentPath}`, [initialLocale, resolved.path, resolved.item.contentPath]);
 
 	useEffect(() => {
 		setIsSidebarOpen(false);
@@ -193,20 +152,12 @@ const DocsPage: React.FC = () => {
 	}, [contentKey]);
 
 	useEffect(() => {
-		if (resolved === undefined) {
-			document.title = 'Dinoco';
-			return;
-		}
-
 		document.title = `${resolved.item.documentTitle} | Dinoco`;
-	}, [resolved]);
+	}, [resolved.item.documentTitle]);
 
 	useEffect(() => {
-		if (isSidebarOpen) {
-			document.body.style.overflow = 'hidden';
-		} else {
-			document.body.style.overflow = 'unset';
-		}
+		document.body.style.overflow = isSidebarOpen ? 'hidden' : 'unset';
+
 		return () => {
 			document.body.style.overflow = 'unset';
 		};
@@ -224,13 +175,15 @@ const DocsPage: React.FC = () => {
 		const syncActiveAnchor = () => {
 			const headingElements = Array.from(articleElement.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]')).filter(element => validAnchorIds.has(element.id));
 
-			if (headingElements.length === 0) return;
+			if (headingElements.length === 0) {
+				return;
+			}
 
 			const isAtBottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 20;
 
 			if (isAtBottom) {
 				const lastHeadingId = headingElements[headingElements.length - 1].id;
-				setActiveAnchorId(prev => (prev !== lastHeadingId ? lastHeadingId : prev));
+				setActiveAnchorId(previous => (previous !== lastHeadingId ? lastHeadingId : previous));
 				return;
 			}
 
@@ -239,13 +192,11 @@ const DocsPage: React.FC = () => {
 			const nextActiveAnchorId = passedHeadings[passedHeadings.length - 1]?.id ?? headingElements[0]?.id;
 
 			if (nextActiveAnchorId !== undefined) {
-				setActiveAnchorId(prev => (prev !== nextActiveAnchorId ? nextActiveAnchorId : prev));
+				setActiveAnchorId(previous => (previous !== nextActiveAnchorId ? nextActiveAnchorId : previous));
 			}
 		};
 
-		const observer = new MutationObserver(() => {
-			syncActiveAnchor();
-		});
+		const observer = new MutationObserver(syncActiveAnchor);
 		observer.observe(articleElement, { childList: true, subtree: true });
 
 		if (window.location.hash) {
@@ -255,7 +206,10 @@ const DocsPage: React.FC = () => {
 		syncActiveAnchor();
 
 		const scheduleSync = () => {
-			if (frameId !== 0) return;
+			if (frameId !== 0) {
+				return;
+			}
+
 			frameId = window.requestAnimationFrame(() => {
 				frameId = 0;
 				syncActiveAnchor();
@@ -264,10 +218,12 @@ const DocsPage: React.FC = () => {
 
 		const handleHashChange = () => {
 			const hash = window.location.hash.slice(1);
+
 			if (hash.length > 0) {
 				setActiveAnchorId(hash);
 				return;
 			}
+
 			syncActiveAnchor();
 		};
 
@@ -276,7 +232,10 @@ const DocsPage: React.FC = () => {
 		window.addEventListener('hashchange', handleHashChange);
 
 		return () => {
-			if (frameId !== 0) window.cancelAnimationFrame(frameId);
+			if (frameId !== 0) {
+				window.cancelAnimationFrame(frameId);
+			}
+
 			window.removeEventListener('scroll', scheduleSync);
 			window.removeEventListener('resize', scheduleSync);
 			window.removeEventListener('hashchange', handleHashChange);
@@ -284,28 +243,23 @@ const DocsPage: React.FC = () => {
 		};
 	}, [articleElement, inPageAnchorIds]);
 
-	if (resolved === undefined) {
-		return null;
-	}
-
 	return (
 		<div className="flex min-h-screen flex-col bg-light-50 font-montserrat transition-colors duration-300 dark:bg-[#050505]">
-			<Header onMenuToggle={() => setIsSidebarOpen(true)} />
+			<Header initialLocale={initialLocale} initialTheme={initialTheme} pathname={pathname} resolved={resolved} onMenuToggle={() => setIsSidebarOpen(true)} />
 
 			<div className="mx-auto flex w-full max-w-[100%] flex-1 items-start px-4 sm:px-6 md:px-8">
 				<DocsSidebar
 					key={`sidebar:${contentKey}`}
 					currentGroup={resolved.group}
 					currentItem={resolved.item}
-					locale={locale}
+					locale={initialLocale}
 					currentVersionName={resolved.version.name}
-					groups={resolved.version.groups}
 					sections={resolved.sections}
 					isOpen={isSidebarOpen}
 					onClose={() => setIsSidebarOpen(false)}
 				/>
 
-				<main className="min-w-0 flex-1 pt-8 pb-24 lg:px-8 xl:px-12">
+				<main className="min-w-0 flex-1 pb-24 pt-8 lg:px-8 xl:px-12">
 					<div className="mb-6 flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
 						<span className="text-dinoco-brand dark:text-dinoco-cyan">{resolved.version.name}</span>
 						<span>/</span>
@@ -314,27 +268,28 @@ const DocsPage: React.FC = () => {
 						<span className="text-slate-900 dark:text-slate-200">{resolved.item.name}</span>
 					</div>
 
-					{outdatedNotice && (
-						<OutdatedVersionNotice currentVersionName={outdatedNotice.currentVersionName} latestVersionName={outdatedNotice.latestVersionName} latestPath={outdatedNotice.latestPath} />
-					)}
+					{outdatedNotice ? (
+						<OutdatedVersionNotice
+							currentVersionName={outdatedNotice.currentVersionName}
+							latestVersionName={outdatedNotice.latestVersionName}
+							latestPath={outdatedNotice.latestPath}
+						/>
+					) : null}
 
 					<article key={contentKey} ref={setArticleElement} className="prose prose-slate max-w-none dark:prose-invert">
-						<MarkdownContent mdxPath={resolved.item.mdxPath} />
+						{children}
 					</article>
 
 					<DocsContentNavigation previous={navigation.previous} next={navigation.next} />
 				</main>
 
-				<aside className="hidden w-64 shrink-0 pt-8 pb-24 xl:block sticky top-24">
+				<aside className="sticky top-24 hidden w-64 shrink-0 pb-24 pt-8 xl:block">
 					<div className="max-h-[calc(100vh-7rem)] overflow-y-auto">
-						<p className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-900 dark:text-white">{intl.inPageLabel || 'Nesta Página'}</p>
-
+						<p className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-900 dark:text-white">{intl.inPageLabel}</p>
 						<nav className="flex flex-col space-y-2 border-l border-light-200 dark:border-[#242424]">{renderInPageItems(resolved.item.inPage, activeAnchorId, activeInPagePathIds)}</nav>
 					</div>
 				</aside>
 			</div>
-
-			{/* <DocsFooter /> */}
 		</div>
 	);
 };
