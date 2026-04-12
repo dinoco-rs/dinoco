@@ -141,7 +141,7 @@ function parseArgs(argv) {
 async function discoverVersionLocales(version) {
 	const discovered = new Set();
 	const jsonDir = path.join(PROJECT_ROOT, 'src/jsons/versions', version);
-	const contentDir = path.join(PROJECT_ROOT, 'src/content', version);
+	const contentDir = path.join(PROJECT_ROOT, 'public/content', version);
 
 	try {
 		const entries = await fs.readdir(jsonDir, { withFileTypes: true });
@@ -277,7 +277,7 @@ async function collectContentFiles(version, localePairs) {
 	const files = [];
 
 	for (const { sourceLocale, targetLocale } of localePairs) {
-		const baseDir = path.join(PROJECT_ROOT, 'src/content', version, sourceLocale);
+		const baseDir = path.join(PROJECT_ROOT, 'public/content', version, sourceLocale);
 		const entries = await fs.readdir(baseDir, { recursive: true, withFileTypes: true });
 
 		for (const entry of entries) {
@@ -289,7 +289,7 @@ async function collectContentFiles(version, localePairs) {
 			const relativePath = path.relative(baseDir, sourcePath);
 
 			files.push({
-				filePath: path.join(PROJECT_ROOT, 'src/content', version, targetLocale, relativePath),
+				filePath: path.join(PROJECT_ROOT, 'public/content', version, targetLocale, relativePath),
 				sourcePath,
 				sourceLocale,
 				targetLocale,

@@ -143,7 +143,7 @@ async function collectJsonFiles(version, locales) {
 }
 
 async function collectContentFiles(version, locales) {
-	const baseDir = path.join(PROJECT_ROOT, 'src/content', version, SOURCE_LOCALE);
+	const baseDir = path.join(PROJECT_ROOT, 'public/content', version, SOURCE_LOCALE);
 	const files = [];
 	const entries = await fs.readdir(baseDir, { recursive: true, withFileTypes: true });
 
@@ -157,7 +157,7 @@ async function collectContentFiles(version, locales) {
 
 		for (const locale of locales) {
 			files.push({
-				filePath: path.join(PROJECT_ROOT, 'src/content', version, locale, relativePath),
+				filePath: path.join(PROJECT_ROOT, 'public/content', version, locale, relativePath),
 				sourcePath,
 			});
 		}

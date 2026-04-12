@@ -112,6 +112,7 @@ const DocsPage: React.FC = () => {
 	const [articleElement, setArticleElement] = useState<HTMLElement | null>(null);
 
 	const routeParams = useMemo(() => parseDocsPath(router.pathname), [router.pathname]);
+
 	const resolved = useMemo(() => {
 		return resolveDocsPath({
 			versionName: routeParams.versionName,
@@ -121,6 +122,7 @@ const DocsPage: React.FC = () => {
 			locale,
 		});
 	}, [locale, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName, routeParams.versionName]);
+
 	const navigation = useMemo(() => {
 		if (resolved === undefined) {
 			return {};
@@ -133,6 +135,7 @@ const DocsPage: React.FC = () => {
 			currentItemShortName: resolved.item.shortName,
 		});
 	}, [resolved]);
+
 	const outdatedNotice = useMemo(() => {
 		if (resolved === undefined || isLatestVersion(resolved.version.name)) {
 			return undefined;
@@ -149,6 +152,7 @@ const DocsPage: React.FC = () => {
 			}),
 		};
 	}, [locale, resolved, routeParams.groupShortName, routeParams.itemShortName, routeParams.subItemShortName]);
+
 	const inPageAnchorIds = useMemo(() => {
 		if (resolved === undefined) {
 			return [];
@@ -156,9 +160,11 @@ const DocsPage: React.FC = () => {
 
 		return flattenInPageItems(resolved.item.inPage).map(toAnchorId);
 	}, [resolved]);
+
 	const activeInPagePathIds = useMemo(() => {
 		return new Set(findActiveInPagePath(resolved?.item.inPage ?? [], activeAnchorId));
 	}, [activeAnchorId, resolved]);
+
 	const contentKey = useMemo(() => {
 		if (resolved === undefined) {
 			return locale;
@@ -313,7 +319,7 @@ const DocsPage: React.FC = () => {
 					)}
 
 					<article key={contentKey} ref={setArticleElement} className="prose prose-slate max-w-none dark:prose-invert">
-						<MarkdownContent component={resolved.item.component} />
+						<MarkdownContent mdxPath={resolved.item.mdxPath} />
 					</article>
 
 					<DocsContentNavigation previous={navigation.previous} next={navigation.next} />

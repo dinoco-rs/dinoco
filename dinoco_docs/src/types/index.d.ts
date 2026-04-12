@@ -26,7 +26,7 @@ export type DropdownItemProps = {
 };
 
 export type MarkdownContentProps = {
-	component: React.ComponentType<{ components?: Record<string, React.ElementType> }> | React.LazyExoticComponent<React.ComponentType<{ components?: Record<string, React.ElementType> }>>;
+	mdxPath: string;
 };
 
 export type MdxComponentProps = React.HTMLAttributes<HTMLElement> & {

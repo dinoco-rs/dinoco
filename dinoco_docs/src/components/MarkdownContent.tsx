@@ -1,11 +1,126 @@
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import clsx from 'clsx';
+import * as jsxRuntime from 'react/jsx-runtime';
+
 import type { MarkdownContentProps, MdxComponentProps, MdxCodeProps } from '../types';
 
 const shikiVariables = {
 	'--shiki-light-bg': '#fff',
 	'--shiki-dark-bg': '#101010',
 } as React.CSSProperties;
+
+const dinocoGrammar = {
+	$schema: 'https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json',
+	name: 'Dinoco',
+	patterns: [
+		{ include: '#comments' },
+		{ include: '#strings' },
+		{ include: '#model_declaration' },
+		{ include: '#config_declaration' },
+		{ include: '#enum_declaration' },
+		{ include: '#primitive_fields' },
+		{ include: '#custom_fields' },
+		{ include: '#model_decorators' },
+		{ include: '#decorators' },
+		{ include: '#named_parameters' },
+		{ include: '#functions' },
+		{ include: '#constants' },
+	],
+	repository: {
+		comments: { match: '#.*$', name: 'comment.line.number-sign.dinoco' },
+		strings: { begin: '"', end: '"', name: 'string.quoted.double.dinoco' },
+		model_declaration: {
+			match: '^\\s*(model)(\\s+([A-Za-z][a-zA-Z0-9_]*))?',
+			captures: {
+				1: { name: 'keyword.control.model.dinoco' },
+				2: { name: 'entity.name.type.class.dinoco' },
+			},
+		},
+		enum_declaration: {
+			match: '^\\s*(enum)(\\s+([A-Za-z][a-zA-Z_]*))?',
+			captures: {
+				1: { name: 'keyword.control.enum.dinoco' },
+				2: { name: 'entity.name.type.class.dinoco' },
+			},
+		},
+		config_declaration: { match: '^\\s*(config)\\b', name: 'keyword.control.config.dinoco' },
+		primitive_fields: {
+			match: '^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+(String|Integer|Boolean|Json|Float|Date|DateTime)\\b(\\[\\]|\\?)?',
+			captures: {
+				1: { name: 'variable.other.property.dinoco' },
+				2: { name: 'support.type.primitive.dinoco' },
+				3: { name: 'keyword.operator.modifier.dinoco' },
+			},
+		},
+		custom_fields: {
+			match: '^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s+([A-Za-z][a-zA-Z0-9_]*)\\b(\\[\\]|\\?)?',
+			captures: {
+				1: { name: 'variable.other.property.dinoco' },
+				2: { name: 'constant.language.dinoco' },
+				3: { name: 'keyword.operator.modifier.dinoco' },
+			},
+		},
+		model_decorators: {
+			patterns: [
+				{
+					begin: '(@@)(ids)(\\s*\\()',
+					beginCaptures: {
+						1: { name: 'punctuation.definition.decorator.dinoco' },
+						2: { name: 'entity.name.function.decorator.dinoco' },
+						3: { name: 'punctuation.section.group.begin.dinoco' },
+					},
+					end: '(\\))',
+					endCaptures: {
+						1: { name: 'punctuation.section.group.end.dinoco' },
+					},
+					patterns: [
+						{ match: '(\\[|\\]|,)', name: 'punctuation.separator.array.dinoco' },
+						{ match: '\\b([A-Za-z_][A-Za-z0-9_]*)\\b', name: 'constant.language.dinoco' },
+					],
+				},
+				{
+					begin: '(@@)(table_name)(\\s*\\()',
+					beginCaptures: {
+						1: { name: 'punctuation.definition.decorator.dinoco' },
+						2: { name: 'entity.name.function.decorator.dinoco' },
+						3: { name: 'punctuation.section.group.begin.dinoco' },
+					},
+					end: '(\\))',
+					endCaptures: {
+						1: { name: 'punctuation.section.group.end.dinoco' },
+					},
+					patterns: [{ include: '#strings' }],
+				},
+				{
+					match: '(@@)([a-zA-Z_][a-zA-Z0-9_]*)',
+					captures: {
+						1: { name: 'punctuation.definition.decorator.dinoco' },
+						2: { name: 'entity.name.function.decorator.dinoco' },
+					},
+				},
+			],
+		},
+		decorators: {
+			match: '(@)([a-zA-Z_][a-zA-Z0-9_]*)',
+			captures: {
+				1: { name: 'punctuation.definition.decorator.dinoco' },
+				2: { name: 'entity.name.function.decorator.dinoco' },
+			},
+		},
+		named_parameters: { match: '\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=:)', name: 'variable.parameter' },
+		functions: { match: '\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()', name: 'support.function.dinoco' },
+		constants: {
+			patterns: [
+				{ match: '\\b(Cascade|SetNull|SetDefault)\\b', name: 'constant.language' },
+				{ match: '\\b(true|false)\\b', name: 'constant.language.boolean' },
+				{ match: '\\b\\d+(\\.\\d+)?\\b', name: 'constant.numeric' },
+				{ match: ':\\s*\\[([a-zA-Z0-9_]+)\\]', captures: { 1: { name: 'constant.language' } } },
+				{ match: '\\((\\w+)\\)', captures: { 1: { name: 'constant.language' } } },
+			],
+		},
+	},
+	scopeName: 'source.dinoco',
+};
 
 function getNodeText(node: React.ReactNode): string {
 	if (typeof node === 'string' || typeof node === 'number') {
@@ -56,6 +171,25 @@ function createHeading(level: 'h1' | 'h2' | 'h3', baseClassName: string) {
 		const id = text.length > 0 ? toAnchorId(text) : undefined;
 		return React.createElement(level, { ...props, id, className: clsx(baseClassName, className) }, children);
 	};
+}
+
+function normalizeMdxSource(source: string): string {
+	return source
+		.split('\n')
+		.filter(line => {
+			const trimmedLine = line.trim();
+
+			if (trimmedLine.startsWith('import ')) {
+				return false;
+			}
+
+			if (trimmedLine.startsWith('export const ')) {
+				return false;
+			}
+
+			return true;
+		})
+		.join('\n');
 }
 
 function MarkdownPre({ children, className, ...props }: MdxComponentProps): React.JSX.Element {
@@ -110,7 +244,9 @@ function MarkdownPre({ children, className, ...props }: MdxComponentProps): Reac
 	);
 }
 
-const MarkdownContent: React.FC<MarkdownContentProps> = ({ component: Content }) => {
+const MarkdownContent: React.FC<MarkdownContentProps> = ({ mdxPath }) => {
+	const [content, setContent] = useState<React.ComponentType<{ components?: Record<string, React.ElementType> }> | null>(null);
+	const [hasError, setHasError] = useState(false);
 	const mdxComponents = {
 		h1: createHeading('h1', 'mb-6 text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white'),
 		h2: createHeading('h2', 'mt-12 mb-6 scroll-mt-32 text-2xl font-bold tracking-tight text-slate-900 dark:text-white'),
@@ -210,20 +346,95 @@ const MarkdownContent: React.FC<MarkdownContentProps> = ({ component: Content })
 		),
 	};
 
+	useEffect(() => {
+		let isMounted = true;
+
+		setContent(null);
+		setHasError(false);
+
+		void (async () => {
+			try {
+				const [{ evaluate }, { default: remarkGfm }, { default: rehypeShiki }] = await Promise.all([
+					import('@mdx-js/mdx'),
+					import('remark-gfm'),
+					import('@shikijs/rehype'),
+				]);
+				const response = await fetch(`/content/${mdxPath}`);
+
+				if (!response.ok) {
+					throw new Error(`Failed to load MDX: ${response.status}`);
+				}
+
+				const source = await response.text();
+				const normalizedSource = normalizeMdxSource(source);
+				const evaluated = await evaluate(normalizedSource, {
+					...jsxRuntime,
+					baseUrl: window.location.href,
+					rehypePlugins: [
+						[
+							rehypeShiki,
+							{
+								addLanguageClass: true,
+								defaultLanguage: 'txt',
+								fallbackLanguage: 'txt',
+								langs: [
+									'bash',
+									'rust',
+									{
+										...dinocoGrammar,
+										displayName: 'Dinoco',
+										name: 'dinoco',
+									},
+								],
+								themes: {
+									dark: 'github-dark',
+									light: 'github-light',
+								},
+							},
+						],
+					],
+					remarkPlugins: [remarkGfm],
+				});
+
+				if (!isMounted) {
+					return;
+				}
+
+				setContent(() => evaluated.default);
+			} catch {
+				if (!isMounted) {
+					return;
+				}
+
+				setHasError(true);
+			}
+		})();
+
+		return () => {
+			isMounted = false;
+		};
+	}, [mdxPath]);
+
+	if (hasError) {
+		return (
+			<div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+				Failed to load this document.
+			</div>
+		);
+	}
+
 	return (
 		<div className="w-full">
-			<Suspense
-				fallback={
-					<div className="space-y-4 py-8">
-						<div className="h-10 w-2/3 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
-						<div className="h-5 w-full animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
-						<div className="h-5 w-5/6 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
-						<div className="h-5 w-4/6 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
-					</div>
-				}
-			>
-				<Content components={mdxComponents} />
-			</Suspense>
+			{content === null ? (
+				<div className="space-y-4 py-8">
+					<div className="h-10 w-2/3 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
+					<div className="h-5 w-full animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
+					<div className="h-5 w-5/6 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
+					<div className="h-5 w-4/6 animate-pulse rounded-lg bg-light-200 dark:bg-[#161616]" />
+				</div>
+			) : (
+				React.createElement(content, { components: mdxComponents })
+			)}
 		</div>
 	);
 };

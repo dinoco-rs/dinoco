@@ -91,8 +91,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 			setVersionOpen(false);
 			setMobileConsumerOpen(false);
 		};
-		document.addEventListener('mousedown', handlePointerDown);
-		return () => document.removeEventListener('mousedown', handlePointerDown);
+
+		document && document.addEventListener('mousedown', handlePointerDown);
+		return () => document && document.removeEventListener('mousedown', handlePointerDown);
 	}, []);
 
 	const closeOtherMenus = (menu: 'locale' | 'version' | 'mobileConsumer') => {
@@ -343,13 +344,13 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 						onClick={() => closeOtherMenus('mobileConsumer')}
 						className="flex w-full cursor-pointer items-center justify-between rounded-md border border-light-300 bg-light-100 px-4 py-2.5 text-sm font-semibold transition-colors dark:border-[#242424] dark:bg-[#161616] dark:text-white"
 					>
-						<div className="flex items-center gap-2 text-slate-600">
+						<div className="flex items-center gap-2 text-slate-300">
 							<CurrentConsumerIcon />
 
 							<span>{currentConsumerLabel}</span>
 						</div>
 
-						<FiChevronDown size={16} className={clsx('text-slate-500 transition-transform duration-200', mobileConsumerOpen && 'rotate-180')} />
+						<FiChevronDown size={16} className={clsx('text-slate-300 transition-transform duration-200', mobileConsumerOpen && 'rotate-180')} />
 					</button>
 
 					{mobileConsumerOpen && (

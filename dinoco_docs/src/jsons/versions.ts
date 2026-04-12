@@ -1,17 +1,9 @@
-import React from 'react';
-
 import v0_0_2 from './versions/v0.0.2';
 import v0_0_1 from './versions/v0.0.1';
 
 export type DocsLocale = 'pt-br' | 'en-us' | 'ru-ru' | 'ja-jp' | 'ko-kr' | 'de-de' | 'it-it' | 'zh-cn' | 'fr-fr';
 export const SUPPORTED_LOCALES: DocsLocale[] = ['pt-br', 'en-us', 'ru-ru', 'ja-jp', 'ko-kr', 'de-de', 'it-it', 'zh-cn', 'fr-fr'];
 type RawDocsLocale = DocsLocale | 'pt';
-
-type MdxModule = {
-	default: React.ComponentType<{ components?: Record<string, React.ElementType> }>;
-};
-
-type MdxImport = () => Promise<MdxModule>;
 
 type DocsItemData = {
 	description: string;
@@ -49,7 +41,6 @@ type DocsVersionData = {
 };
 
 export type DocsItem = Omit<DocsItemData, 'subItems'> & {
-	component: React.ComponentType<{ components?: Record<string, React.ElementType> }> | React.LazyExoticComponent<React.ComponentType<{ components?: Record<string, React.ElementType> }>>;
 	documentTitle: string;
 	subItems?: DocsItem[];
 };
@@ -73,22 +64,11 @@ export type DocsVersion = Omit<DocsVersionData, 'groups'> & {
 	groups: DocsGroup[];
 };
 
-const mdxModules = import.meta.glob('../content/**/*.mdx') as Record<string, MdxImport>;
-
-function getMdxComponent(path: string) {
-	const importer = mdxModules[`../content/${path}`];
-
-	if (importer === undefined) {
-		return () => null;
-	}
-
-	return React.lazy(importer);
-}
+const REMOVED_GROUP_SHORT_NAMES = new Set(['supersonic', 'dinocodb']);
 
 function mapItem(item: DocsItemData): DocsItem {
 	return {
 		...item,
-		component: getMdxComponent(item.mdxPath),
 		documentTitle: item.name,
 		subItems: item.subItems?.map(mapItem),
 	};
@@ -121,18 +101,20 @@ const versionsData: DocsVersionData[] = [v0_0_2 as DocsVersionData, v0_0_1 as Do
 export const versions: DocsVersion[] = versionsData.map(version => ({
 	...version,
 	description: normalizeLocalizedRecord(version.description),
-	groups: version.groups.map(group => ({
-		...group,
-		languages: Object.fromEntries(
-			Object.entries(normalizeLocalizedRecord(group.languages)).map(([locale, sections]) => [
-				locale,
-				(sections ?? []).map(section => ({
-					...section,
-					items: section.items.map(mapItem),
-				})),
-			]),
-		) as Partial<Record<DocsLocale, DocsSection[]>>,
-	})),
+	groups: version.groups
+		.filter(group => !REMOVED_GROUP_SHORT_NAMES.has(group.shortName))
+		.map(group => ({
+			...group,
+			languages: Object.fromEntries(
+				Object.entries(normalizeLocalizedRecord(group.languages)).map(([locale, sections]) => [
+					locale,
+					(sections ?? []).map(section => ({
+						...section,
+						items: section.items.map(mapItem),
+					})),
+				]),
+			) as Partial<Record<DocsLocale, DocsSection[]>>,
+		})),
 }));
 
 export type ResolvedDocsPath = {
@@ -228,8 +210,6 @@ export function getLocalizedSections(group: DocsGroup, locale: DocsLocale): Docs
 
 export function getGroupByShortName(versionName: string, locale: DocsLocale, groupShortName?: string): DocsGroup | undefined {
 	const groups = getGroupsForVersion(versionName, locale);
-
-	console.log(groups);
 
 	if (groupShortName === undefined) {
 		return groups[0];
