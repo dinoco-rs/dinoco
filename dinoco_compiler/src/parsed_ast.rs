@@ -49,6 +49,10 @@ pub struct ParsedTable {
     pub name: String,
     pub database_name: String,
     pub primary_key_fields: Vec<String>,
+    #[serde(default)]
+    pub unique_field_sets: Vec<Vec<String>>,
+    #[serde(default)]
+    pub index_field_sets: Vec<Vec<String>>,
     pub fields: Vec<ParsedField>,
 }
 

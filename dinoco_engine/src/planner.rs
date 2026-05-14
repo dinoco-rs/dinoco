@@ -1,7 +1,8 @@
+use std::collections::{HashMap, HashSet};
+
 use dinoco_compiler::{
     ParsedField, ParsedFieldDefault, ParsedFieldType, ParsedRelation, ParsedSchema, ParsedTable, ReferentialAction,
 };
-use std::collections::{HashMap, HashSet};
 
 use crate::{MigrationPlan, MigrationStep, SafetyLevel, is_destructive_cast};
 
@@ -73,9 +74,56 @@ fn diff_primary_key(
     steps
 }
 
+fn explicit_index_name(table_name: &str, columns: &[String], is_unique: bool) -> String {
+    let suffix = columns.join("_");
+
+    if is_unique { format!("uq_{}_{}", table_name, suffix) } else { format!("idx_{}_{}", table_name, suffix) }
+}
+
+fn diff_table_indexes(old_table: &ParsedTable, new_table: &ParsedTable) -> Vec<MigrationStep> {
+    let old_unique = old_table.unique_field_sets.iter().map(|columns| (true, columns.clone())).collect::<Vec<_>>();
+    let old_indexes = old_table.index_field_sets.iter().map(|columns| (false, columns.clone())).collect::<Vec<_>>();
+    let new_unique = new_table.unique_field_sets.iter().map(|columns| (true, columns.clone())).collect::<Vec<_>>();
+    let new_indexes = new_table.index_field_sets.iter().map(|columns| (false, columns.clone())).collect::<Vec<_>>();
+
+    let old_all = old_unique.into_iter().chain(old_indexes).collect::<Vec<_>>();
+    let new_all = new_unique.into_iter().chain(new_indexes).collect::<Vec<_>>();
+    let old_signatures = old_all
+        .iter()
+        .map(|(is_unique, columns)| ((*is_unique, columns.join("|")), columns.clone()))
+        .collect::<HashMap<_, _>>();
+    let new_signatures = new_all
+        .iter()
+        .map(|(is_unique, columns)| ((*is_unique, columns.join("|")), columns.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut steps = Vec::new();
+
+    for ((is_unique, _), columns) in &old_signatures {
+        if !new_signatures.contains_key(&(*is_unique, columns.join("|"))) {
+            steps.push(MigrationStep::DropIndex {
+                table_name: old_table.database_name.clone(),
+                index_name: explicit_index_name(&old_table.database_name, columns, *is_unique),
+            });
+        }
+    }
+
+    for ((is_unique, _), columns) in &new_signatures {
+        if !old_signatures.contains_key(&(*is_unique, columns.join("|"))) {
+            steps.push(MigrationStep::CreateIndex {
+                table_name: new_table.database_name.clone(),
+                columns: columns.clone(),
+                index_name: explicit_index_name(&new_table.database_name, columns, *is_unique),
+                is_unique: *is_unique,
+            });
+        }
+    }
+
+    steps
+}
+
 pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSchema) -> MigrationPlan {
-    let old_schema =
-        old_schema.clone().unwrap_or(ParsedSchema { config: new_schema.config.clone(), enums: vec![], tables: vec![] });
+    let fallback_old_schema = ParsedSchema { config: new_schema.config.clone(), enums: Vec::new(), tables: Vec::new() };
+    let old_schema = old_schema.as_ref().unwrap_or(&fallback_old_schema);
 
     let mut safety_alerts = Vec::new();
 
@@ -83,6 +131,7 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
     let mut alter_enum_steps = Vec::new();
     let mut drop_enum_steps = Vec::new();
     let mut drop_fk_steps = Vec::new();
+    let mut drop_index_steps = Vec::new();
     let mut drop_table_steps = Vec::new();
     let mut create_table_steps = Vec::new();
     let mut add_column_steps = Vec::new();
@@ -148,6 +197,13 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
             }
 
             primary_key_steps.extend(diff_primary_key(old_table, new_table, &mut safety_alerts));
+            for step in diff_table_indexes(old_table, new_table) {
+                match step {
+                    MigrationStep::DropIndex { .. } => drop_index_steps.push(step),
+                    MigrationStep::CreateIndex { .. } => create_index_steps.push(step),
+                    _ => {}
+                }
+            }
 
             for step in diff_columns(old_table, new_table, &mut safety_alerts) {
                 match step {
@@ -214,9 +270,8 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
         }
     }
 
-    for name in old_map.keys() {
+    for (name, old_table) in &old_map {
         if !new_map.contains_key(name) {
-            let old_table = old_map.get(name).unwrap();
             safety_alerts.push(SafetyLevel::Destructive(format!(
                 "Dropping table '{}'. All records will be permanently deleted.",
                 old_table.database_name
@@ -230,6 +285,7 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
 
     final_steps.extend(create_enum_steps);
     final_steps.extend(drop_fk_steps);
+    final_steps.extend(drop_index_steps);
     final_steps.extend(drop_table_steps);
     final_steps.extend(alter_enum_steps);
     final_steps.extend(create_table_steps);
@@ -389,10 +445,12 @@ fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut V
 pub fn extract_relations(
     old_table: Option<&ParsedTable>,
     new_table: &ParsedTable,
-    all_tables: &Vec<ParsedTable>,
+    all_tables: &[ParsedTable],
 ) -> (Vec<MigrationStep>, Vec<ParsedTable>) {
     let mut fk_steps = Vec::new();
     let mut join_tables = Vec::new();
+    let tables_by_name: HashMap<&str, &ParsedTable> =
+        all_tables.iter().map(|table| (table.name.as_str(), table)).collect();
 
     let mut processed_m2m = HashSet::new();
 
@@ -423,9 +481,8 @@ pub fn extract_relations(
                     fk_steps.push(MigrationStep::AddForeignKey {
                         table_name: new_table.database_name.clone(),
                         columns: local_cols.clone(),
-                        referenced_table: all_tables
-                            .iter()
-                            .find(|table| table.name == ref_table)
+                        referenced_table: tables_by_name
+                            .get(ref_table.as_str())
                             .map(|table| table.database_name.clone())
                             .unwrap_or(ref_table),
                         referenced_columns: ref_cols.clone(),
@@ -457,13 +514,12 @@ pub fn extract_relations(
                     }
 
                     let t1_clean = new_table.database_name.replace("\"", "").to_lowercase();
-                    let t2_clean = all_tables
-                        .iter()
-                        .find(|table| table.name == target_table_name)
+                    let t2_clean = tables_by_name
+                        .get(target_table_name.as_str())
                         .map(|table| table.database_name.replace("\"", "").to_lowercase())
                         .unwrap_or_else(|| target_table_name.replace("\"", "").to_lowercase());
 
-                    let target_table = all_tables.iter().find(|t| t.name == target_table_name);
+                    let target_table = tables_by_name.get(target_table_name.as_str()).copied();
                     let current_primary_keys = new_table.primary_key_fields.clone();
                     let target_primary_keys =
                         target_table.map(|table| table.primary_key_fields.clone()).unwrap_or_default();
@@ -528,6 +584,8 @@ pub fn extract_relations(
                             .chain(target_join_columns.iter())
                             .cloned()
                             .collect(),
+                        unique_field_sets: Vec::new(),
+                        index_field_sets: Vec::new(),
                         fields: join_fields,
                     };
 
@@ -550,14 +608,12 @@ pub fn extract_relations(
                     fk_steps.push(MigrationStep::AddForeignKey {
                         table_name: safe_rel_name.clone(),
                         columns: target_join_columns.clone(),
-                        referenced_table: all_tables
-                            .iter()
-                            .find(|table| table.name == target_table_name)
+                        referenced_table: tables_by_name
+                            .get(target_table_name.as_str())
                             .map(|table| table.database_name.clone())
                             .unwrap_or(target_table_name.clone()),
-                        referenced_columns: all_tables
-                            .iter()
-                            .find(|table| table.name == target_table_name)
+                        referenced_columns: tables_by_name
+                            .get(target_table_name.as_str())
                             .map(|table| table.primary_key_fields.clone())
                             .unwrap_or_else(|| vec!["id".to_string()]),
                         on_delete: Some(ReferentialAction::Cascade),

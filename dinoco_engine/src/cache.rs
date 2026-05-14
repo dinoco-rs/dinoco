@@ -1,6 +1,5 @@
-use redis::AsyncCommands;
-use redis::ToRedisArgs;
 use redis::aio::ConnectionManager;
+use redis::{AsyncCommands, ToRedisArgs};
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;

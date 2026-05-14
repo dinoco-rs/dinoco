@@ -71,6 +71,8 @@ pub struct Table<'a> {
     pub mapped_name_span: Option<Span<'a>>,
     pub primary_key_fields: Vec<String>,
     pub primary_key_fields_span: Option<Span<'a>>,
+    pub unique_field_sets: Vec<Vec<String>>,
+    pub index_field_sets: Vec<Vec<String>>,
     pub fields: Vec<Field<'a>>,
     pub span: Span<'a>,
 

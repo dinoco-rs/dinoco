@@ -1,4 +1,5 @@
 use crate::FormatterConfig;
+
 use crate::utils::get_capped_newlines;
 
 use dinoco_compiler::Enum;

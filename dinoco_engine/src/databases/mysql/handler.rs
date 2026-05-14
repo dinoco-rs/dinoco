@@ -110,7 +110,8 @@ impl DinocoAdapterHandler for MySqlAdapter {
             FROM information_schema.STATISTICS
             WHERE TABLE_SCHEMA = DATABASE()
               AND TABLE_NAME != '_dinoco_migrations'
-              AND INDEX_NAME != 'PRIMARY';
+              AND INDEX_NAME != 'PRIMARY'
+            ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;
         ";
 
         self.query_as::<DatabaseIndex>(query, &[]).await

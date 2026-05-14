@@ -167,6 +167,8 @@ pub(crate) fn collect_join_tables(schema: &ParsedSchema) -> Vec<JoinTableData> {
                     name: join_table_name.clone(),
                     database_name: join_table_name.clone(),
                     primary_key_fields: vec![current_join_column.clone(), target_join_column.clone()],
+                    unique_field_sets: Vec::new(),
+                    index_field_sets: Vec::new(),
                     fields: vec![
                         ParsedField {
                             name: current_join_column,

@@ -2,32 +2,33 @@ import React from 'react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
 import { FiAlertTriangle, FiArrowRight } from 'react-icons/fi';
+import { getIntlMessages } from '../hooks/useIntl';
+import { DocsLocale } from '../jsons/versions';
 
 type OutdatedVersionNoticeProps = {
 	currentVersionName: string;
 	latestPath: string;
 	latestVersionName: string;
+	locale: DocsLocale;
 };
 
-const OutdatedVersionNotice: React.FC<OutdatedVersionNoticeProps> = ({ currentVersionName, latestPath, latestVersionName }) => {
+const OutdatedVersionNotice: React.FC<OutdatedVersionNoticeProps> = ({ locale, currentVersionName, latestPath, latestVersionName }) => {
+	const { versionOld, versionNew, goto } = getIntlMessages(locale);
+
 	return (
 		<div
 			role="alert"
 			className={clsx(
 				'mb-8 flex flex-col gap-4 rounded-2xl px-5 py-4',
-
 				'border border-amber-200 bg-amber-50 text-amber-950',
-
 				'dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100',
-
 				'md:flex-row md:items-center md:justify-between',
 			)}
 		>
 			<div className="flex items-start gap-3 md:items-center">
 				<FiAlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 md:mt-0" aria-hidden="true" />
 				<p className="text-sm font-medium leading-relaxed">
-					Você está consultando a documentação da versão antiga <strong className="font-bold">{currentVersionName}</strong>. A versão mais recente é a{' '}
-					<strong className="font-bold">{latestVersionName}</strong>.
+					{versionOld} <strong className="font-bold">{currentVersionName}</strong>. {versionNew} <strong className="font-bold">{latestVersionName}</strong>.
 				</p>
 			</div>
 
@@ -43,7 +44,7 @@ const OutdatedVersionNotice: React.FC<OutdatedVersionNoticeProps> = ({ currentVe
 					'dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-50 dark:hover:bg-amber-900/70',
 				)}
 			>
-				Ir para {latestVersionName}
+				{goto} {latestVersionName}
 				<FiArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
 			</Link>
 		</div>

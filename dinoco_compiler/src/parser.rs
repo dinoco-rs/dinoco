@@ -65,6 +65,8 @@ fn parse_model_decorator<'a>(
     mapped_name_span: &mut Option<pest::Span<'a>>,
     primary_key_fields: &mut Vec<String>,
     primary_key_fields_span: &mut Option<pest::Span<'a>>,
+    unique_field_sets: &mut Vec<Vec<String>>,
+    index_field_sets: &mut Vec<Vec<String>>,
 ) -> DinocoCompilerResult<()> {
     let decorator_span = token.as_span();
     let mut attr_name = String::new();
@@ -141,6 +143,70 @@ fn parse_model_decorator<'a>(
 
             *mapped_name = Some(value[1..value.len() - 1].to_string());
             *mapped_name_span = Some(decorator_span);
+
+            Ok(())
+        }
+        ("uniques", false) => Err(format_span_error(
+            "@@uniques requires an array argument e.g: @@uniques([fieldA, fieldB])".to_string(),
+            decorator_span,
+        )),
+        ("uniques", true) => {
+            let Some(value) = param_value else {
+                return Err(format_span_error(
+                    "@@uniques requires an array argument e.g: @@uniques([fieldA, fieldB])".to_string(),
+                    decorator_span,
+                ));
+            };
+
+            if !value.trim().starts_with('[') || !value.trim().ends_with(']') {
+                return Err(format_span_error(
+                    "@@uniques expects an array of field names e.g: @@uniques([fieldA, fieldB])".to_string(),
+                    decorator_span,
+                ));
+            }
+
+            let fields = parse_decorator_array(&value);
+
+            if fields.is_empty() {
+                return Err(format_span_error(
+                    "@@uniques must contain at least one field.".to_string(),
+                    decorator_span,
+                ));
+            }
+
+            unique_field_sets.push(fields);
+
+            Ok(())
+        }
+        ("indexes", false) => Err(format_span_error(
+            "@@indexes requires an array argument e.g: @@indexes([fieldA, fieldB])".to_string(),
+            decorator_span,
+        )),
+        ("indexes", true) => {
+            let Some(value) = param_value else {
+                return Err(format_span_error(
+                    "@@indexes requires an array argument e.g: @@indexes([fieldA, fieldB])".to_string(),
+                    decorator_span,
+                ));
+            };
+
+            if !value.trim().starts_with('[') || !value.trim().ends_with(']') {
+                return Err(format_span_error(
+                    "@@indexes expects an array of field names e.g: @@indexes([fieldA, fieldB])".to_string(),
+                    decorator_span,
+                ));
+            }
+
+            let fields = parse_decorator_array(&value);
+
+            if fields.is_empty() {
+                return Err(format_span_error(
+                    "@@indexes must contain at least one field.".to_string(),
+                    decorator_span,
+                ));
+            }
+
+            index_field_sets.push(fields);
 
             Ok(())
         }
@@ -327,6 +393,8 @@ fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoCompi
     let mut mapped_name_span = None;
     let mut primary_key_fields = Vec::new();
     let mut primary_key_fields_span = None;
+    let mut unique_field_sets = Vec::new();
+    let mut index_field_sets = Vec::new();
     let mut fields = vec![];
 
     let mut comments = vec![];
@@ -356,6 +424,8 @@ fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoCompi
                 &mut mapped_name_span,
                 &mut primary_key_fields,
                 &mut primary_key_fields_span,
+                &mut unique_field_sets,
+                &mut index_field_sets,
             )?,
             Rule::field => fields.push(parse_field(pair, i)?),
             _ => {}
@@ -370,6 +440,8 @@ fn parse_table<'a>(table_record: Pair<'a, Rule>, position: usize) -> DinocoCompi
         mapped_name_span,
         primary_key_fields,
         primary_key_fields_span,
+        unique_field_sets,
+        index_field_sets,
         fields,
         span,
         comments,
@@ -558,7 +630,9 @@ pub fn parse_schema<'a>(raw_input: &'a str) -> DinocoCompilerResult<Schema<'a>> 
 
                     Rule::function => "a function call (e.g., env(\"...\"))",
                     Rule::decorator => "a decorator (e.g., @id or @default(...))",
-                    Rule::model_decorator => "a model decorator (e.g., @@ids([...]) or @@table_name(\"...\"))",
+                    Rule::model_decorator => {
+                        "a model decorator (e.g., @@ids([...]), @@uniques([...]), @@indexes([...]) or @@table_name(\"...\"))"
+                    }
                     Rule::param => "a valid parameter (string, number, boolean, or function)",
                     Rule::field_type => "a field type (e.g., String, Int, or a Model name)",
                     Rule::field => "a field declaration (e.g., name String @id)",

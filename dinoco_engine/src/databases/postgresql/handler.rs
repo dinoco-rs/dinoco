@@ -117,13 +117,15 @@ impl DinocoAdapterHandler for PostgresAdapter {
             FROM pg_class t
             JOIN pg_index ix ON t.oid = ix.indrelid
             JOIN pg_class i ON i.oid = ix.indexrelid
-            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+            JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS idx(attnum, ord) ON true
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = idx.attnum
             JOIN pg_namespace n ON n.oid = t.relnamespace
             WHERE t.relkind = 'r'
               AND n.nspname = 'public'
               AND t.relname != '_dinoco_migrations'
+              AND idx.attnum > 0
               AND NOT ix.indisprimary
-            ORDER BY t.relname, i.relname, a.attnum;
+            ORDER BY t.relname, i.relname, idx.ord;
         ";
 
         self.query_as::<DatabaseIndex>(query, &[]).await

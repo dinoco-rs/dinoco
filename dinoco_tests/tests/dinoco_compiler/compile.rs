@@ -97,6 +97,33 @@ model Membership {
 }
 
 #[test]
+fn compile_parses_uniques_and_indexes_decorators() {
+    let raw = r#"
+config {
+    database = "postgresql"
+    database_url = "postgresql://primary"
+}
+
+model Post {
+    id Integer @id
+    slug String
+    locale String
+    title String
+    authorId Integer
+
+    @@uniques([slug, locale])
+    @@indexes([title, authorId])
+}
+"#;
+
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let table = &parsed.tables[0];
+
+    assert_eq!(table.unique_field_sets, vec![vec!["slug".to_string(), "locale".to_string()]]);
+    assert_eq!(table.index_field_sets, vec![vec!["title".to_string(), "authorId".to_string()]]);
+}
+
+#[test]
 fn compile_parses_redis_config_with_url() {
     let raw = r#"
 config {

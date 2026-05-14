@@ -273,6 +273,7 @@ const DocsPage = ({ children, initialLocale, initialTheme, pathname, resolved }:
 							currentVersionName={outdatedNotice.currentVersionName}
 							latestVersionName={outdatedNotice.latestVersionName}
 							latestPath={outdatedNotice.latestPath}
+							locale={initialLocale}
 						/>
 					) : null}
 

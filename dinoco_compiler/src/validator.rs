@@ -28,6 +28,47 @@ fn table_primary_key_fields<'a>(table: &'a Table<'a>) -> Vec<&'a str> {
     }
 }
 
+fn normalize_model_field_sets<'a>(
+    table: &'a Table<'a>,
+    field_sets: &[Vec<String>],
+    decorator: &str,
+) -> DinocoCompilerResult<Vec<Vec<String>>> {
+    let mut normalized = Vec::new();
+    let mut seen_sets = HashSet::new();
+
+    for field_set in field_sets {
+        if field_set.is_empty() {
+            return Err(format_span_error(format!("@@{decorator} must contain at least one field."), table.span));
+        }
+
+        let mut seen_fields = HashSet::new();
+
+        for field_name in field_set {
+            if !table.fields.iter().any(|field| field.name == *field_name) {
+                return Err(format_span_error(
+                    format!("Field '{}' was not found in model '{}'.", field_name, table.name),
+                    table.span,
+                ));
+            }
+
+            if !seen_fields.insert(field_name.clone()) {
+                return Err(format_span_error(
+                    format!("Field '{}' is duplicated in @@{}([...]).", field_name, decorator),
+                    table.span,
+                ));
+            }
+        }
+
+        let signature = field_set.join("|");
+
+        if seen_sets.insert(signature) {
+            normalized.push(field_set.clone());
+        }
+    }
+
+    Ok(normalized)
+}
+
 fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerResult<ParsedConfig> {
     if configs.is_empty() {
         return Err(format_span_error("Your schema must define a 'config { ... }' block.".to_string(), schema_span));
@@ -515,6 +556,8 @@ fn validate_tables<'a>(
             name: table.name.clone(),
             database_name,
             primary_key_fields: declared_primary_key_fields.iter().map(|field| (*field).to_string()).collect(),
+            unique_field_sets: normalize_model_field_sets(table, &table.unique_field_sets, "uniques")?,
+            index_field_sets: normalize_model_field_sets(table, &table.index_field_sets, "indexes")?,
             fields: parsed_fields,
         })
     }

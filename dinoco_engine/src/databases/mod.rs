@@ -1,12 +1,14 @@
 mod mysql;
 mod postgresql;
 mod sqlite;
+mod universal;
 
 use dinoco_derives::Rowable;
 
 pub use mysql::*;
 pub use postgresql::*;
 pub use sqlite::*;
+pub use universal::*;
 
 pub struct DatabaseParsedTable {
     pub name: String,

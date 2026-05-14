@@ -1,5 +1,6 @@
 <p align="center">
-	<img src="./dinoco_docs/public/logo.png" alt="Dinoco logo" width="220" />
+	<img src="./dinoco_docs/public/logo.png#gh-dark-mode-only" alt="Dinoco logo" width="220" />
+	<img src="./dinoco_docs/public/logo.png#gh-light-mode-only" alt="Dinoco logo" width="220" style="filter: invert(1);" />
 </p>
 
 <h1 align="center">Dinoco</h1>
@@ -18,15 +19,11 @@
 
 This repository brings together the project's core crates, the CLI, the documentation, and the VS Code extension. **Dinoco** is focused on delivering a smooth, safe, and modern ORM experience for the Rust ecosystem.
 
-## 💖 Support the Project and Get Exclusive Access
+## 💖 Support the Project
 
 **Dinoco** is and will always be open source, but ongoing development takes time, coffee, and a lot of dedication.
 
-To push the Rust ecosystem even further, we are building the **Official Dinoco Infrastructure** — a complete ecosystem to power your applications.
-
-🎁 **Special Reward:** As a thank you, everyone who supports the project with **any amount** will join the _Early Adopters_ group and receive **guaranteed access to our infrastructure** as soon as it is ready.
-
-Be part of this journey, help accelerate the development of the best ORM for Rust, and secure your spot:
+Be part of this journey, help accelerate the development of the best ORM for Rust.
 
 <a href="https://www.buymeacoffee.com/theuszastro" target="_blank">
 	<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px; width: 217px;" />
@@ -45,7 +42,7 @@ Add Dinoco to your `Cargo.toml` dependencies:
 
 ```toml
 [dependencies]
-dinoco = "0.0.1"
+dinoco = "0.0.3"
 ```
 
 ## 📄 License

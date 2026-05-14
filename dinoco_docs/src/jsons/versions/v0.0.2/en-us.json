@@ -890,7 +890,6 @@
 							"name": "Installation",
 							"contentPath": "v0.0.2/en-us/cli/install.md",
 							"inPage": [
-								"Installation",
 								{
 									"title": "Installation",
 									"items": []
