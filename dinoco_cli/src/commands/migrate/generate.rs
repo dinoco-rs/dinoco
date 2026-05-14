@@ -10,8 +10,8 @@ use inquire::{Confirm, Text};
 use dinoco_codegen::generate_models;
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
 use dinoco_engine::{
-    DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoError, DinocoResult, MigrationExecutor,
-    MySqlAdapter, PostgresAdapter, SafetyLevel, SqliteAdapter, calculate_diff,
+    DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoError, DinocoResult, MigrationExecutor, SafetyLevel,
+    UniversalAdapter, calculate_diff,
 };
 
 use crate::utils::{env_prompt_bool, env_prompt_string};
@@ -87,29 +87,25 @@ pub async fn generate_migrate(apply: bool) -> DinocoResult<()> {
 
     pb.set_message(format!("Connecting to {:?}...", database));
 
-    match database {
-        Database::Postgresql => {
-            execute_migrate::<PostgresAdapter>(&pb, &source, parsed, current_state, url, apply).await?
-        }
-        Database::Mysql => execute_migrate::<MySqlAdapter>(&pb, &source, parsed, current_state, url, apply).await?,
-        Database::Sqlite => execute_migrate::<SqliteAdapter>(&pb, &source, parsed, current_state, url, apply).await?,
-    }
+    execute_migrate(&pb, &source, parsed, current_state, url, apply).await?;
 
     Ok(())
 }
 
-async fn execute_migrate<T>(
+async fn execute_migrate(
     pb: &ProgressBar,
     _schema_source: &str,
     parsed_schema: ParsedSchema,
     current_state: Option<ParsedSchema>,
     database_url: String,
     apply: bool,
-) -> DinocoResult<()>
-where
-    T: DinocoAdapter + DinocoAdapterHandler + MigrationExecutor,
-{
-    let adapter = T::connect(database_url.clone(), DinocoClientConfig::default()).await?;
+) -> DinocoResult<()> {
+    let adapter = UniversalAdapter::connect_for_database(
+        &parsed_schema.config.database,
+        database_url.clone(),
+        DinocoClientConfig::default(),
+    )
+    .await?;
 
     pb.set_message("Calculating schema diff...");
 

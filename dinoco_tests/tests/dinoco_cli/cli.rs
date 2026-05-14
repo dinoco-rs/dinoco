@@ -1,9 +1,13 @@
+use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use dinoco_engine::{DinocoAdapterHandler, DinocoClient, DinocoClientConfig, SqliteAdapter};
+use dinoco_engine::{
+    DinocoAdapter, DinocoAdapterHandler, DinocoClient, DinocoClientConfig, DinocoError, MySqlAdapter, PostgresAdapter,
+    SqliteAdapter,
+};
 use uuid::Uuid;
 
 const INITIAL_SCHEMA: &str = r#"
@@ -243,8 +247,339 @@ fn rollback_command_reports_temporary_unavailability() {
     assert!(output.contains("Rollback is temporarily unavailable"));
 }
 
+#[tokio::test]
+async fn database_introspect_generates_schema_from_sqlite() {
+    let project = TestDir::new();
+    let database_path = project.path().join("introspect.sqlite");
+    let database_url = format!("file:{}", database_path.display());
+    let client = DinocoClient::<SqliteAdapter>::new(database_url.clone(), vec![], DinocoClientConfig::default())
+        .await
+        .expect("sqlite client should connect");
+
+    client
+        .primary()
+        .execute_script(
+            r#"
+            CREATE TABLE User (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+                role TEXT NOT NULL CHECK (role IN ('ADMIN', 'MEMBER'))
+            );
+
+            INSERT INTO User (email, is_active, role) VALUES
+                ('first@dinoco.dev', 1, 'ADMIN'),
+                ('second@dinoco.dev', 0, 'MEMBER');
+        "#,
+        )
+        .await
+        .expect("schema should be created");
+
+    let output = run_cli(project.path(), ["database", "introspect"], &[("DATABASE_URL", database_url.as_str())]);
+    let schema = fs::read_to_string(project.path().join("dinoco/schema.dinoco")).expect("schema should be generated");
+
+    assert!(output.contains("Database introspection completed"), "unexpected introspect output:\n{output}");
+    assert!(schema.contains("database = \"sqlite\""), "unexpected schema:\n{schema}");
+    assert!(schema.contains("database_url = env(\"DATABASE_URL\")"), "unexpected schema:\n{schema}");
+    assert!(schema.contains("model User"), "unexpected schema:\n{schema}");
+    assert!(
+        schema.lines().any(|line| line.contains("id") && line.contains("Integer") && line.contains("@id")),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        schema.lines().any(|line| line.contains("email") && line.contains("String") && line.contains("@unique")),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        schema.lines().any(|line| line.contains("is_active") && line.contains("Boolean")),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(schema.contains("enum UserRole"), "unexpected schema:\n{schema}");
+    assert!(
+        schema.lines().any(|line| line.contains("role") && line.contains("UserRole")),
+        "unexpected schema:\n{schema}"
+    );
+}
+
+#[tokio::test]
+async fn database_introspect_generates_complex_schema_for_postgres() {
+    let project = TestDir::new();
+    let database_url = postgres_url();
+    let prefix = format!("introspect_pg_{}", Uuid::now_v7().simple());
+
+    let adapter = match PostgresAdapter::connect(database_url.clone(), DinocoClientConfig::default()).await {
+        Ok(adapter) => adapter,
+        Err(err) if should_skip_external_adapter_test(&err) => {
+            eprintln!("skipping postgres introspect test: {err}");
+            return;
+        }
+        Err(err) => panic!("postgres adapter should connect: {err}"),
+    };
+
+    if !setup_postgres_complex_schema(&adapter, &prefix).await {
+        return;
+    }
+
+    let output = run_cli(project.path(), ["database", "introspect"], &[("DATABASE_URL", database_url.as_str())]);
+    let schema = fs::read_to_string(project.path().join("dinoco/schema.dinoco")).expect("schema should be generated");
+
+    assert!(output.contains("Database introspection completed"), "unexpected introspect output:\n{output}");
+    assert!(
+        schema.contains(&format!("model {}", to_model_name(&format!("{prefix}_user")))),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        schema.contains(&format!("model {}", to_model_name(&format!("{prefix}_post")))),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        schema.contains(&format!("model {}", to_model_name(&format!("{prefix}_tag")))),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        schema.lines().any(|line| line.contains("is_active") && line.contains("Boolean")),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(schema.contains("@relation("), "unexpected schema:\n{schema}");
+    assert!(schema.contains("references: [id]"), "unexpected schema:\n{schema}");
+    assert!(schema.contains("@@uniques([slug, locale])"), "unexpected schema:\n{schema}");
+    assert!(schema.contains("@@indexes([title, author_id])"), "unexpected schema:\n{schema}");
+}
+
+#[tokio::test]
+async fn database_introspect_generates_complex_schema_for_mysql() {
+    let project = TestDir::new();
+    let database_url = mysql_url();
+    let prefix = format!("introspect_my_{}", Uuid::now_v7().simple());
+
+    let adapter = match MySqlAdapter::connect(database_url.clone(), DinocoClientConfig::default()).await {
+        Ok(adapter) => adapter,
+        Err(err) if should_skip_external_adapter_test(&err) => {
+            eprintln!("skipping mysql introspect test: {err}");
+            return;
+        }
+        Err(err) => panic!("mysql adapter should connect: {err}"),
+    };
+
+    if !setup_mysql_complex_schema(&adapter, &prefix).await {
+        return;
+    }
+
+    let output = run_cli(project.path(), ["database", "introspect"], &[("DATABASE_URL", database_url.as_str())]);
+    let schema = fs::read_to_string(project.path().join("dinoco/schema.dinoco")).expect("schema should be generated");
+
+    assert!(output.contains("Database introspection completed"), "unexpected introspect output:\n{output}");
+    assert!(
+        schema.contains(&format!("model {}", to_model_name(&format!("{prefix}_user")))),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        schema.contains(&format!("model {}", to_model_name(&format!("{prefix}_post")))),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        schema.contains(&format!("model {}", to_model_name(&format!("{prefix}_tag")))),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        schema.lines().any(|line| line.contains("is_active") && line.contains("Boolean")),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(schema.contains("@relation("), "unexpected schema:\n{schema}");
+    assert!(schema.contains("references: [id]"), "unexpected schema:\n{schema}");
+    assert!(schema.contains("@@uniques([slug, locale])"), "unexpected schema:\n{schema}");
+    assert!(schema.contains("@@indexes([title, author_id])"), "unexpected schema:\n{schema}");
+}
+
 fn binary_path() -> &'static str {
     env!("CARGO_BIN_EXE_dinoco_cli")
+}
+
+fn postgres_url() -> String {
+    env::var("DINOCO_POSTGRES_DATABASE_URL")
+        .or_else(|_| env::var("POSTGRES_DATABASE_URL"))
+        .or_else(|_| env::var("DATABASE_URL"))
+        .unwrap_or_else(|_| "postgres://postgres:root@localhost:5432/dinoco".to_string())
+}
+
+fn mysql_url() -> String {
+    env::var("DINOCO_MYSQL_DATABASE_URL")
+        .or_else(|_| env::var("MYSQL_DATABASE_URL"))
+        .or_else(|_| env::var("DATABASE_URL"))
+        .unwrap_or_else(|_| "mysql://root:root@localhost:3306/dinoco".to_string())
+}
+
+fn should_skip_external_adapter_test(error: &DinocoError) -> bool {
+    match error {
+        DinocoError::ConnectionError(_) => true,
+        DinocoError::MySql(mysql_error) => mysql_error.to_string().contains("Operation not permitted"),
+        DinocoError::Postgres(postgres_error) => postgres_error.to_string().contains("error connecting to server"),
+        _ => false,
+    }
+}
+
+fn to_model_name(table_name: &str) -> String {
+    let mut result = String::new();
+
+    for piece in
+        table_name.chars().map(|ch| if ch.is_alphanumeric() { ch } else { ' ' }).collect::<String>().split_whitespace()
+    {
+        let mut chars = piece.chars();
+
+        if let Some(first) = chars.next() {
+            result.push(first.to_ascii_uppercase());
+
+            for ch in chars {
+                result.push(ch.to_ascii_lowercase());
+            }
+        }
+    }
+
+    result
+}
+
+async fn setup_postgres_complex_schema(adapter: &PostgresAdapter, prefix: &str) -> bool {
+    let user = format!("{prefix}_user");
+    let post = format!("{prefix}_post");
+    let tag = format!("{prefix}_tag");
+    let join = format!("{prefix}_post_tag");
+    let status_enum = format!("{prefix}_status_enum");
+
+    let sql = format!(
+        r#"
+        DROP TABLE IF EXISTS "{join}" CASCADE;
+        DROP TABLE IF EXISTS "{post}" CASCADE;
+        DROP TABLE IF EXISTS "{tag}" CASCADE;
+        DROP TABLE IF EXISTS "{user}" CASCADE;
+        DROP TYPE IF EXISTS "{status_enum}";
+
+        CREATE TYPE "{status_enum}" AS ENUM ('ACTIVE', 'INACTIVE');
+
+        CREATE TABLE "{user}" (
+            id BIGSERIAL PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            manager_id BIGINT UNIQUE,
+            is_active SMALLINT NOT NULL,
+            status "{status_enum}" NOT NULL
+        );
+
+        ALTER TABLE "{user}"
+            ADD CONSTRAINT "{prefix}_user_manager_fk"
+            FOREIGN KEY (manager_id) REFERENCES "{user}" (id);
+
+        CREATE TABLE "{post}" (
+            id BIGSERIAL PRIMARY KEY,
+            author_id BIGINT NOT NULL,
+            title TEXT NOT NULL,
+            slug TEXT NOT NULL,
+            locale TEXT NOT NULL,
+            CONSTRAINT "{prefix}_post_slug_locale_uk" UNIQUE (slug, locale)
+        );
+
+        ALTER TABLE "{post}"
+            ADD CONSTRAINT "{prefix}_post_author_fk"
+            FOREIGN KEY (author_id) REFERENCES "{user}" (id);
+
+        CREATE INDEX "{prefix}_post_title_author_idx" ON "{post}" (title, author_id);
+
+        CREATE TABLE "{tag}" (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE "{join}" (
+            post_id BIGINT NOT NULL,
+            tag_id BIGINT NOT NULL,
+            PRIMARY KEY (post_id, tag_id)
+        );
+
+        ALTER TABLE "{join}"
+            ADD CONSTRAINT "{prefix}_join_post_fk"
+            FOREIGN KEY (post_id) REFERENCES "{post}" (id);
+        ALTER TABLE "{join}"
+            ADD CONSTRAINT "{prefix}_join_tag_fk"
+            FOREIGN KEY (tag_id) REFERENCES "{tag}" (id);
+
+        INSERT INTO "{user}" (email, manager_id, is_active, status) VALUES
+            ('chief-{prefix}@dinoco.dev', NULL, 1, 'ACTIVE'),
+            ('dev-{prefix}@dinoco.dev', 1, 0, 'INACTIVE');
+    "#
+    );
+
+    if let Err(err) = adapter.execute_script(&sql).await {
+        if should_skip_external_adapter_test(&err) {
+            eprintln!("skipping postgres introspect schema setup: {err}");
+            return false;
+        }
+
+        panic!("postgres schema setup should work: {err}");
+    }
+
+    true
+}
+
+async fn setup_mysql_complex_schema(adapter: &MySqlAdapter, prefix: &str) -> bool {
+    let user = format!("{prefix}_user");
+    let post = format!("{prefix}_post");
+    let tag = format!("{prefix}_tag");
+    let join = format!("{prefix}_post_tag");
+
+    let sql = format!(
+        r#"
+        DROP TABLE IF EXISTS `{join}`;
+        DROP TABLE IF EXISTS `{post}`;
+        DROP TABLE IF EXISTS `{tag}`;
+        DROP TABLE IF EXISTS `{user}`;
+
+        CREATE TABLE `{user}` (
+            id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            manager_id BIGINT NULL UNIQUE,
+            is_active TINYINT(1) NOT NULL,
+            status ENUM('ACTIVE', 'INACTIVE') NOT NULL,
+            CONSTRAINT `{prefix}_user_manager_fk` FOREIGN KEY (manager_id) REFERENCES `{user}` (id)
+        );
+
+        CREATE TABLE `{post}` (
+            id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            author_id BIGINT NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            slug VARCHAR(255) NOT NULL,
+            locale VARCHAR(32) NOT NULL,
+            UNIQUE KEY `{prefix}_post_slug_locale_uk` (slug, locale),
+            CONSTRAINT `{prefix}_post_author_fk` FOREIGN KEY (author_id) REFERENCES `{user}` (id),
+            INDEX `{prefix}_post_title_author_idx` (title, author_id)
+        );
+
+        CREATE TABLE `{tag}` (
+            id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE
+        );
+
+        CREATE TABLE `{join}` (
+            post_id BIGINT NOT NULL,
+            tag_id BIGINT NOT NULL,
+            PRIMARY KEY (post_id, tag_id),
+            CONSTRAINT `{prefix}_join_post_fk` FOREIGN KEY (post_id) REFERENCES `{post}` (id),
+            CONSTRAINT `{prefix}_join_tag_fk` FOREIGN KEY (tag_id) REFERENCES `{tag}` (id)
+        );
+
+        INSERT INTO `{user}` (email, manager_id, is_active, status) VALUES
+            ('chief-{prefix}@dinoco.dev', NULL, 1, 'ACTIVE'),
+            ('dev-{prefix}@dinoco.dev', 1, 0, 'INACTIVE');
+    "#
+    );
+
+    if let Err(err) = adapter.execute_script(&sql).await {
+        if should_skip_external_adapter_test(&err) {
+            eprintln!("skipping mysql introspect schema setup: {err}");
+            return false;
+        }
+
+        panic!("mysql schema setup should work: {err}");
+    }
+
+    true
 }
 
 fn latest_migration_name(root: &Path) -> String {

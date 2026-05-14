@@ -1,6 +1,7 @@
 use dinoco_compiler::{Config as AstConfig, ConfigValue};
 
 use crate::FormatterConfig;
+
 use crate::utils::get_capped_newlines;
 
 pub fn format_config(ast_config: &AstConfig, config: &FormatterConfig) -> String {

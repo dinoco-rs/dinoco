@@ -1,0 +1,37 @@
+# Wie wird es verwendet?
+
+Der Befehl `dinoco database reset` setzt die konfigurierte Datenbank zurück.
+
+Es ist nützlich in der Entwicklung, wenn Sie den aktuellen Zustand der Datenbank vollständig bereinigen möchten.
+
+---
+
+## Was der Befehl tut
+
+Beim Ausführen dieses Befehls versucht die CLI, Objekte aus der aktuellen Datenbank zu entfernen und einen sauberen Zustand für die konfigurierte Umgebung neu zu erstellen.
+
+Dieser Ablauf ist besonders nützlich für:
+
+- Eine lokale Umgebung von Grund auf neu starten
+- Testdaten bereinigen
+- Inkonsistente Umgebungen während der Entwicklung korrigieren
+
+## Vorsichtsmaßnahmen
+
+- Dieser Befehl ist destruktiv für die konfigurierte Datenbank.
+- Mit Vorsicht außerhalb einer lokalen Umgebung verwenden.
+- Stellen Sie immer sicher, dass die Verbindungs-URL auf die richtige Datenbank verweist.
+
+## Nächste Schritte
+
+Nach dem Zurücksetzen führen Sie normalerweise aus:
+
+```bash
+dinoco migrate run
+```
+
+oder:
+
+```bash
+dinoco migrate generate --apply
+```

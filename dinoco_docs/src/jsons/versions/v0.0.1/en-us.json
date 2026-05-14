@@ -37,11 +37,7 @@
 								"First steps",
 								{
 									"title": "How does it work?",
-									"items": [
-										"1. Define your schema and connection",
-										"2. Create the migration",
-										"3. Query with DinocoClient"
-									]
+									"items": ["1. Define your schema and connection", "2. Create the migration", "3. Query with DinocoClient"]
 								},
 								{
 									"title": "Next steps",
@@ -61,9 +57,7 @@
 								},
 								{
 									"title": "Connection configuration",
-									"items": [
-										"SQLite"
-									]
+									"items": ["SQLite"]
 								},
 								{
 									"title": "PostgreSQL or MySQL",
@@ -100,31 +94,19 @@
 								},
 								{
 									"title": "Field types",
-									"items": [
-										"Scalar fields"
-									]
+									"items": ["Scalar fields"]
 								},
 								{
 									"title": "Type modifiers",
-									"items": [
-										"Optional field",
-										"List field"
-									]
+									"items": ["Optional field", "List field"]
 								},
 								{
 									"title": "Most common attributes",
-									"items": [
-										"`@id`",
-										"`@default(...)`",
-										"`@unique`"
-									]
+									"items": ["`@id`", "`@default(...)`", "`@unique`"]
 								},
 								{
 									"title": "Model decorators",
-									"items": [
-										"`@@ids([...])`",
-										"`@@table_name(\"...\")`"
-									]
+									"items": ["`@@ids([...])`", "`@@table_name(\"...\")`"]
 								},
 								{
 									"title": "User model example",
@@ -132,10 +114,7 @@
 								},
 								{
 									"title": "Example of searching users with the Dinoco API",
-									"items": [
-										"Find a single record",
-										"Find multiple records"
-									]
+									"items": ["Find a single record", "Find multiple records"]
 								},
 								{
 									"title": "Example of user creation with the Dinoco API",
@@ -649,7 +628,6 @@
 							"name": "Installation",
 							"contentPath": "v0.0.1/en-us/cli/install.md",
 							"inPage": [
-								"Installation",
 								{
 									"title": "Installation",
 									"items": []
@@ -717,9 +695,7 @@
 								},
 								{
 									"title": "Parameters",
-									"items": [
-										"--apply"
-									]
+									"items": ["--apply"]
 								},
 								{
 									"title": "Example of use without applying",
@@ -847,9 +823,7 @@
 							"shortName": "introduction",
 							"name": "Introduction",
 							"contentPath": "v0.0.1/en-us/supersonic/introduction.md",
-							"inPage": [
-								"Introduction"
-							]
+							"inPage": ["Introduction"]
 						}
 					]
 				}
@@ -867,9 +841,7 @@
 							"shortName": "introduction",
 							"name": "Introduction",
 							"contentPath": "v0.0.1/en-us/dinocodb/introduction.md",
-							"inPage": [
-								"Introduction"
-							]
+							"inPage": ["Introduction"]
 						}
 					]
 				}

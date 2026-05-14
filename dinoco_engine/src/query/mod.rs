@@ -12,9 +12,10 @@ pub use insert::*;
 pub use select::*;
 pub use update::*;
 
-use crate::{AdapterDialect, DinocoValue};
 use std::collections::HashSet;
 use std::fmt::Write;
+
+use crate::{AdapterDialect, DinocoValue};
 
 pub trait QueryBuilder: AdapterDialect {
     fn build_select(&self, stmt: &SelectStatement) -> Query {
@@ -149,7 +150,7 @@ pub trait QueryBuilder: AdapterDialect {
 
     fn build_insert(&self, stmt: &InsertStatement) -> Query {
         let mut sql = String::with_capacity(256);
-        let mut params = Vec::new();
+        let mut params = Vec::with_capacity(stmt.rows.iter().map(Vec::len).sum());
 
         let _ = write!(sql, "INSERT INTO {} (", self.identifier(&stmt.table));
 
@@ -242,13 +243,13 @@ pub trait QueryBuilder: AdapterDialect {
             return (sql, params);
         }
 
-        let mut columns = Vec::new();
+        let mut columns: Vec<&str> = Vec::new();
         let mut seen_columns = HashSet::new();
 
         for batch in &stmt.batches {
             for (column, _) in &batch.values {
                 if seen_columns.insert(column.as_str()) {
-                    columns.push(column.clone());
+                    columns.push(column.as_str());
                 }
             }
         }

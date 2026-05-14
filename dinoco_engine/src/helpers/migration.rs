@@ -251,6 +251,8 @@ pub fn render_sqlite_rebuild_table_sql_with_copy_mappings<D: AdapterDialect>(
             name: temp_table_name.clone(),
             database_name: temp_table_name.clone(),
             primary_key_fields: table.primary_key_fields.clone(),
+            unique_field_sets: table.unique_field_sets.clone(),
+            index_field_sets: table.index_field_sets.clone(),
             fields: table.fields.clone(),
         },
         dialect,

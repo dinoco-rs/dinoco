@@ -1,0 +1,142 @@
+# 派生
+
+Dinoco 中使用的派生和核心属性概述。
+
+---
+
+## Dinoco 中的派生是什么
+
+Dinoco 派生有助于将您的 Rust 结构体与 ORM 行为连接起来，而无需手动编写所有实现。
+
+日常生活中最常见的是：
+
+- `#[derive(Rowable)]`
+- `#[derive(Extend)]`
+- `#[insertable]`
+
+## Rowable 派生
+
+当结构体直接表示将由 Dinoco 读取和写入的模型时，请使用 `Rowable`。
+
+```rust
+#[derive(Debug, Clone, dinoco::Rowable)]
+struct User {
+    id: String,
+    email: String,
+    name: String,
+}
+```
+
+此派生将适配器返回的行序列化为 Rust 结构体。
+
+## Extend 派生
+
+当您想要与基础模型不同的投影时，请使用 `Extend`，通常用于 `select`、`include`、`count` 或富载荷。
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: String,
+    name: String,
+}
+```
+
+在这种情况下，结构体仍然与 `User` 模型关联，但只能暴露该流程所需的字段。
+
+## #[insertable] 属性
+
+当 `.values(...)` 需要接受载荷内的新关系或现有连接时，请将 `#[insertable]` 与 `Extend` 一起使用。
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+```
+
+这样，Dinoco 会插入父级，然后自动处理嵌套项。
+
+## Rowable 示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Rowable)]
+struct Team {
+    id: String,
+    name: String,
+}
+
+dinoco::insert_into::<Team>()
+    .values(Team {
+        id: "team-1".into(),
+        name: "Platform".into(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Extend 示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: String,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|user| user.posts())
+    .execute(&client)
+    .await?;
+```
+
+## #[insertable] 示例
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_many::<Article>()
+    .values(vec![
+        ArticleWithLabels {
+            id: "article-11".into(),
+            title: "Connect Multiple".into(),
+            labels: vec![
+                ArticleConnection::Label("label-11".into()),
+                ArticleConnection::Label("label-12".into()),
+            ],
+        },
+        ArticleWithLabels {
+            id: "article-12".into(),
+            title: "Connect Batch".into(),
+            labels: vec![ArticleConnection::Label("label-10".into())],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## 何时使用
+
+- 对于生成的主模型或与直接行读取兼容的结构体，请使用 `Rowable`。
+- 对于投影、计数、包含和专门的载荷，请使用 `Extend`。
+- 当 `Extend` 也用作带有嵌套的写入载荷时，请使用 `#[insertable]`。
+
+## 下一步
+
+- [**Traits**](/v0.0.2/core/traits)：查看模型实现的 trait。
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into)：带有富载荷的单次插入。
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.2/orm/insert-many)：带有嵌套关系和连接的批量插入。

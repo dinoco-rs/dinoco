@@ -1,0 +1,44 @@
+# delete_many
+
+Used to delete multiple records with one or more conditions.
+
+---
+
+## What you can do
+
+- `.cond(...)`: adds filters for batch deletion.
+- `.execute(&client)`: executes the deletion of matching records.
+
+## Return
+
+The return of `delete_many` is:
+
+```rust
+DinocoResult<()>
+```
+
+## Basic example
+
+This deletes only the records that meet the condition.
+
+```rust
+dinoco::delete_many::<Session>()
+    .cond(|w| w.expiresAt.lt(dinoco::Utc::now()))
+    .execute(&client)
+    .await?;
+```
+
+## Example without filter
+
+This deletes all data from the table.
+
+```rust
+dinoco::delete_many::<TaskAssignees>()
+    .execute(&client)
+    .await?;
+```
+
+## Next steps
+
+- [**`delete::&lt;M&gt;()`**](/v0.0.1/orm/delete): specific deletion with explicit filter.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): list before batch deletion.

@@ -1,12 +1,11 @@
-use std::env;
-use std::fs;
 use std::path::Path;
+use std::{env, fs};
 
 use colored::Colorize;
 
 use dinoco_codegen::generate_models;
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
-use dinoco_engine::{DinocoAdapter, DinocoClientConfig, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter};
+use dinoco_engine::{DinocoClientConfig, DinocoResult, UniversalAdapter};
 
 use crate::{get_last_migration, local_migration_names, read_migration_schema};
 
@@ -47,20 +46,17 @@ pub async fn generate_models_from_latest_migration() -> DinocoResult<()> {
         None => return Ok(()),
     };
 
-    match database {
-        Database::Postgresql => generate_models_from_database_state::<PostgresAdapter>(url, parsed.clone()).await?,
-        Database::Mysql => generate_models_from_database_state::<MySqlAdapter>(url, parsed.clone()).await?,
-        Database::Sqlite => generate_models_from_database_state::<SqliteAdapter>(url, parsed).await?,
-    }
+    generate_models_from_database_state(&database, url, parsed).await?;
 
     Ok(())
 }
 
-async fn generate_models_from_database_state<T>(database_url: String, fallback_schema: ParsedSchema) -> DinocoResult<()>
-where
-    T: DinocoAdapter,
-{
-    let adapter = T::connect(database_url, DinocoClientConfig::default()).await?;
+async fn generate_models_from_database_state(
+    database: &Database,
+    database_url: String,
+    fallback_schema: ParsedSchema,
+) -> DinocoResult<()> {
+    let adapter = UniversalAdapter::connect_for_database(database, database_url, DinocoClientConfig::default()).await?;
     let last_migration = get_last_migration(&adapter).await?;
 
     let Some(migration) = last_migration else {

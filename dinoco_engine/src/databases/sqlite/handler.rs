@@ -112,7 +112,8 @@ impl DinocoAdapterHandler for SqliteAdapter {
             WHERE m.type = 'table' 
               AND m.name != '_dinoco_migrations'
               -- Ignora índices gerados automaticamente para as Primary Keys
-              AND il.origin != 'pk';
+              AND il.origin != 'pk'
+            ORDER BY m.name, il.name, ii.seqno;
         ";
 
         self.query_as::<DatabaseIndex>(query, &[]).await

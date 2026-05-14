@@ -1,0 +1,44 @@
+# delete_many
+
+Utilizzato per eliminare più record con una o più condizioni.
+
+---
+
+## Cosa puoi fare
+
+- `.cond(...)`: aggiunge filtri per la rimozione in blocco.
+- `.execute(&client)`: esegue la rimozione dei record corrispondenti.
+
+## Ritorno
+
+Il ritorno di `delete_many` è:
+
+```rust
+DinocoResult<()>
+```
+
+## Esempio base
+
+Questo elimina solo i record che soddisfano la condizione.
+
+```rust
+dinoco::delete_many::<Session>()
+    .cond(|w| w.expiresAt.lt(dinoco::Utc::now()))
+    .execute(&client)
+    .await?;
+```
+
+## Esempio senza filtro
+
+Questo elimina tutti i dati dalla tabella.
+
+```rust
+dinoco::delete_many::<TaskAssignees>()
+    .execute(&client)
+    .await?;
+```
+
+## Prossimi passi
+
+- [**`delete::&lt;M&gt;()`**](/v0.0.1/orm/delete): rimozione puntuale con filtro esplicito.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): elencare prima di rimuovere in blocco.

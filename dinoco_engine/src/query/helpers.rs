@@ -1,5 +1,6 @@
-use crate::{AdapterDialect, BinaryOperator, DinocoValue, Expression};
 use std::fmt::Write;
+
+use crate::{AdapterDialect, BinaryOperator, DinocoValue, Expression};
 
 pub fn push_joined<I, T, F>(buf: &mut String, iter: I, sep: &str, mut f: F)
 where
@@ -95,6 +96,8 @@ pub fn render_expression_into<D: AdapterDialect + ?Sized>(
                 return;
             }
 
+            params.reserve(values.len());
+
             buf.push('(');
 
             render_expression_into(dialect, expr, params, buf);
@@ -116,6 +119,8 @@ pub fn render_expression_into<D: AdapterDialect + ?Sized>(
                 return;
             }
 
+            params.reserve(values.len());
+
             buf.push('(');
 
             render_expression_into(dialect, expr, params, buf);
@@ -131,6 +136,12 @@ pub fn render_expression_into<D: AdapterDialect + ?Sized>(
             buf.push_str("))");
         }
         Expression::And(expressions) => {
+            if expressions.is_empty() {
+                buf.push_str("(1 = 1)");
+
+                return;
+            }
+
             buf.push('(');
 
             render_condition_group_into(dialect, expressions, params, " AND ", buf);
@@ -138,6 +149,12 @@ pub fn render_expression_into<D: AdapterDialect + ?Sized>(
             buf.push(')');
         }
         Expression::Or(expressions) => {
+            if expressions.is_empty() {
+                buf.push_str("(1 = 0)");
+
+                return;
+            }
+
             buf.push('(');
 
             render_condition_group_into(dialect, expressions, params, " OR ", buf);

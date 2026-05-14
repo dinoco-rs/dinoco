@@ -100,6 +100,18 @@ fn render_table_attributes(table: &dinoco_compiler::ParsedTable) -> Vec<String> 
         attributes.push(format!("@@ids([{}])", table.primary_key_fields.join(", ")));
     }
 
+    for unique_set in &table.unique_field_sets {
+        if !unique_set.is_empty() {
+            attributes.push(format!("@@uniques([{}])", unique_set.join(", ")));
+        }
+    }
+
+    for index_set in &table.index_field_sets {
+        if !index_set.is_empty() {
+            attributes.push(format!("@@indexes([{}])", index_set.join(", ")));
+        }
+    }
+
     attributes
 }
 

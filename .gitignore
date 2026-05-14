@@ -2,7 +2,6 @@
 
 .env
 
-dinoco/src/main.rs
 dinoco/dinoco
 dinoco_*/dinoco
 

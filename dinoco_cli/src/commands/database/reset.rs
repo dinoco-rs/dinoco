@@ -7,11 +7,9 @@ use colored::*;
 use indicatif::ProgressBar;
 use inquire::Confirm;
 
-use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig};
+use dinoco_compiler::{ConnectionUrl, ParsedConfig};
 use dinoco_compiler::{compile, render_error};
-use dinoco_engine::{
-    DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoResult, MySqlAdapter, PostgresAdapter, SqliteAdapter,
-};
+use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoResult, UniversalAdapter};
 
 use crate::utils::env_prompt_bool;
 
@@ -85,40 +83,16 @@ pub async fn reset_database() -> DinocoResult<()> {
 
     pb.set_message(format!("Connecting to {:?}...", db_type));
 
-    match db_type {
-        Database::Postgresql => match PostgresAdapter::connect(url, DinocoClientConfig::default()).await {
-            Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-                execute_reset(adapter, &pb).await?;
-            }
-            Err(err) => {
-                pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
-                println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
-            }
-        },
-        Database::Mysql => match MySqlAdapter::connect(url, DinocoClientConfig::default()).await {
-            Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-                execute_reset(adapter, &pb).await?;
-            }
-            Err(err) => {
-                pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
-                println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
-            }
-        },
-        Database::Sqlite => match SqliteAdapter::connect(url, DinocoClientConfig::default()).await {
-            Ok(adapter) => {
-                pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
-                execute_reset(adapter, &pb).await?;
-            }
-            Err(err) => {
-                pb.finish_and_clear();
-                println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
-                println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
-            }
-        },
+    match UniversalAdapter::connect_for_database(&db_type, url, DinocoClientConfig::default()).await {
+        Ok(adapter) => {
+            pb.suspend(|| println!("{} {}", "✔".green().bold(), "Connected to database.".white()));
+            execute_reset(adapter, &pb).await?;
+        }
+        Err(err) => {
+            pb.finish_and_clear();
+            println!("\n{} {}\n", "✖".red().bold(), "Database connection failed.".bold());
+            println!("  {} {}", "Reason:".yellow().bold(), err.to_string().white());
+        }
     }
 
     Ok(())

@@ -37,11 +37,7 @@
 								"Erste Schritte",
 								{
 									"title": "Wie funktioniert es?",
-									"items": [
-										"1. Definieren Sie Ihr Schema und Ihre Verbindung",
-										"2. Erstellen Sie die Migration",
-										"3. Abfrage mit DinocoClient"
-									]
+									"items": ["1. Definieren Sie Ihr Schema und Ihre Verbindung", "2. Erstellen Sie die Migration", "3. Abfrage mit DinocoClient"]
 								},
 								{
 									"title": "Nächste Schritte",
@@ -61,9 +57,7 @@
 								},
 								{
 									"title": "Verbindungskonfiguration",
-									"items": [
-										"SQLite"
-									]
+									"items": ["SQLite"]
 								},
 								{
 									"title": "PostgreSQL oder MySQL",
@@ -100,31 +94,19 @@
 								},
 								{
 									"title": "Feldtypen",
-									"items": [
-										"Skalare Felder"
-									]
+									"items": ["Skalare Felder"]
 								},
 								{
 									"title": "Typmodifikatoren",
-									"items": [
-										"Optionales Feld",
-										"Listenfeld"
-									]
+									"items": ["Optionales Feld", "Listenfeld"]
 								},
 								{
 									"title": "Häufigste Attribute",
-									"items": [
-										"`@id`",
-										"`@default(...)`",
-										"`@unique`"
-									]
+									"items": ["`@id`", "`@default(...)`", "`@unique`"]
 								},
 								{
 									"title": "Model-Dekoratoren",
-									"items": [
-										"`@@ids([...])`",
-										"`@@table_name(\"...\")`"
-									]
+									"items": ["`@@ids([...])`", "`@@table_name(\"...\")`"]
 								},
 								{
 									"title": "Beispiel eines Benutzermodells",
@@ -132,10 +114,7 @@
 								},
 								{
 									"title": "Beispiel für die Benutzersuche mit der Dinoco-API",
-									"items": [
-										"Einen einzelnen Datensatz suchen",
-										"Mehrere Datensätze suchen"
-									]
+									"items": ["Einen einzelnen Datensatz suchen", "Mehrere Datensätze suchen"]
 								},
 								{
 									"title": "Beispiel für die Benutzererstellung mit der Dinoco-API",
@@ -649,7 +628,6 @@
 							"name": "Installation",
 							"contentPath": "v0.0.1/de-de/cli/install.md",
 							"inPage": [
-								"Installation",
 								{
 									"title": "Installation",
 									"items": []
@@ -717,9 +695,7 @@
 								},
 								{
 									"title": "Parameter",
-									"items": [
-										"--apply"
-									]
+									"items": ["--apply"]
 								},
 								{
 									"title": "Anwendungsbeispiel ohne Anwendung",
@@ -847,9 +823,7 @@
 							"shortName": "introduction",
 							"name": "Einführung",
 							"contentPath": "v0.0.1/de-de/supersonic/introduction.md",
-							"inPage": [
-								"Einführung"
-							]
+							"inPage": ["Einführung"]
 						}
 					]
 				}
@@ -867,9 +841,7 @@
 							"shortName": "introduction",
 							"name": "Einführung",
 							"contentPath": "v0.0.1/de-de/dinocodb/introduction.md",
-							"inPage": [
-								"Einführung"
-							]
+							"inPage": ["Einführung"]
 						}
 					]
 				}

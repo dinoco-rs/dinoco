@@ -64,12 +64,16 @@ pub fn migration_schema(prefix: &str) -> ParsedSchema {
                 name: teams_table.clone(),
                 database_name: teams_table,
                 primary_key_fields: vec!["id".to_string()],
+                unique_field_sets: Vec::new(),
+                index_field_sets: Vec::new(),
                 fields: vec![integer_field("id", true), string_field("name", false, false)],
             },
             ParsedTable {
                 name: users_table.clone(),
                 database_name: users_table,
                 primary_key_fields: vec!["id".to_string()],
+                unique_field_sets: Vec::new(),
+                index_field_sets: Vec::new(),
                 fields: vec![
                     integer_field("id", true),
                     string_field("email", false, true),
@@ -170,6 +174,8 @@ pub fn alter_enum_schema(prefix: &str) -> ParsedSchema {
             name: users_table.clone(),
             database_name: users_table,
             primary_key_fields: vec!["id".to_string()],
+            unique_field_sets: Vec::new(),
+            index_field_sets: Vec::new(),
             fields: vec![
                 integer_field("id", true),
                 ParsedField {

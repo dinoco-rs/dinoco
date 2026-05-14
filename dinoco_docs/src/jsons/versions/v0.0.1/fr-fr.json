@@ -37,11 +37,7 @@
 								"Premiers pas",
 								{
 									"title": "Comment ça marche ?",
-									"items": [
-										"1. Définissez votre schéma et votre connexion",
-										"2. Créez la migration",
-										"3. Requête avec DinocoClient"
-									]
+									"items": ["1. Définissez votre schéma et votre connexion", "2. Créez la migration", "3. Requête avec DinocoClient"]
 								},
 								{
 									"title": "Prochaines étapes",
@@ -61,9 +57,7 @@
 								},
 								{
 									"title": "Configuration de la connexion",
-									"items": [
-										"SQLite"
-									]
+									"items": ["SQLite"]
 								},
 								{
 									"title": "PostgreSQL ou MySQL",
@@ -100,31 +94,19 @@
 								},
 								{
 									"title": "Types de champs",
-									"items": [
-										"Champs scalaires"
-									]
+									"items": ["Champs scalaires"]
 								},
 								{
 									"title": "Modificateurs de type",
-									"items": [
-										"Champ optionnel",
-										"Champ en liste"
-									]
+									"items": ["Champ optionnel", "Champ en liste"]
 								},
 								{
 									"title": "Attributs les plus courants",
-									"items": [
-										"`@id`",
-										"`@default(...)`",
-										"`@unique`"
-									]
+									"items": ["`@id`", "`@default(...)`", "`@unique`"]
 								},
 								{
 									"title": "Décorateurs de modèle",
-									"items": [
-										"`@@ids([...])`",
-										"`@@table_name(\"...\")`"
-									]
+									"items": ["`@@ids([...])`", "`@@table_name(\"...\")`"]
 								},
 								{
 									"title": "Exemple de modèle d'utilisateur",
@@ -132,10 +114,7 @@
 								},
 								{
 									"title": "Exemple de recherche d'utilisateurs avec l'API Dinoco",
-									"items": [
-										"Rechercher un seul enregistrement",
-										"Rechercher plusieurs enregistrements"
-									]
+									"items": ["Rechercher un seul enregistrement", "Rechercher plusieurs enregistrements"]
 								},
 								{
 									"title": "Exemple de création d'utilisateur avec l'API Dinoco",
@@ -649,7 +628,6 @@
 							"name": "Installation",
 							"contentPath": "v0.0.1/fr-fr/cli/install.md",
 							"inPage": [
-								"Installation",
 								{
 									"title": "Installation",
 									"items": []
@@ -717,9 +695,7 @@
 								},
 								{
 									"title": "Paramètres",
-									"items": [
-										"--apply"
-									]
+									"items": ["--apply"]
 								},
 								{
 									"title": "Exemple d'utilisation sans appliquer",
@@ -847,9 +823,7 @@
 							"shortName": "introduction",
 							"name": "Introduction",
 							"contentPath": "v0.0.1/fr-fr/supersonic/introduction.md",
-							"inPage": [
-								"Introduction"
-							]
+							"inPage": ["Introduction"]
 						}
 					]
 				}
@@ -867,9 +841,7 @@
 							"shortName": "introduction",
 							"name": "Introduction",
 							"contentPath": "v0.0.1/fr-fr/dinocodb/introduction.md",
-							"inPage": [
-								"Introduction"
-							]
+							"inPage": ["Introduction"]
 						}
 					]
 				}
