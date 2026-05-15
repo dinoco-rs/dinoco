@@ -6,10 +6,17 @@ use dinoco::{count, delete, delete_many, find_first, find_many, insert_into, ins
 use common::{User, UserSummary};
 
 fn main() {
+    let user_insert = User { id: 1, name: "Matheus".to_string() };
+    let user_update = User { id: 1, name: "Updated".to_string() };
+    let user_batch_a = User { id: 2, name: "Ana".to_string() };
+    let user_batch_b = User { id: 3, name: "Caio".to_string() };
+
     let _ = insert_into::<User>().values(User { id: 1, name: "Matheus".to_string() }).returning::<UserSummary>();
+    let _ = insert_into::<User>().values(&user_insert).returning::<UserSummary>();
     let _ = insert_many::<User>()
         .values(vec![User { id: 2, name: "Ana".to_string() }, User { id: 3, name: "Caio".to_string() }])
         .returning::<User>();
+    let _ = insert_many::<User>().values(vec![&user_batch_a, &user_batch_b]).returning::<User>();
 
     let _ = find_first::<User>().select::<UserSummary>().cond(|x| x.id.eq(1_i64));
     let _ = find_many::<User>()
@@ -26,9 +33,11 @@ fn main() {
         .cond(|x| x.id.eq(1_i64))
         .values(User { id: 1, name: "Updated".to_string() })
         .returning::<UserSummary>();
+    let _ = update::<User>().cond(|x| x.id.eq(1_i64)).values(&user_update).returning::<UserSummary>();
     let _ = update_many::<User>()
         .values(vec![User { id: 2, name: "Ana Batch".to_string() }, User { id: 3, name: "Caio Batch".to_string() }])
         .returning::<User>();
+    let _ = update_many::<User>().values(vec![&user_batch_a, &user_batch_b]).returning::<User>();
 
     let _ = delete::<User>().cond(|x| x.id.eq(1_i64));
     let _ = delete_many::<User>().cond(|x| x.name.starts_with("A"));

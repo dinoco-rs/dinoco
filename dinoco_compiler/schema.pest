@@ -24,7 +24,7 @@ field_optional = { "?" }
 ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 inner_string = @{ (!"\"" ~ ANY)* }
 
-number_literal = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+number_literal = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 string_literal = ${ "\"" ~ inner_string ~ "\"" }
 boolean_literal = { "true" | "false" }
 

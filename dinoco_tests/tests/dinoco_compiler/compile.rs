@@ -1,4 +1,4 @@
-use dinoco_compiler::{compile, render_error};
+use dinoco_compiler::{ParsedFieldDefault, compile, render_error};
 
 const VALID_SCHEMA: &str = r#"
 config {
@@ -26,6 +26,41 @@ fn compile_parses_valid_schema() {
     assert_eq!(parsed.enums.len(), 1);
     assert_eq!(parsed.tables[0].name, "User");
     assert_eq!(parsed.tables[0].fields[1].name, "email");
+}
+
+#[test]
+fn compile_parses_negative_integer_and_float_defaults() {
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = "file:dev.db"
+}
+
+model Metric {
+    id Integer @id
+    min Integer @default(-10)
+    ratio Float @default(-10.20)
+    growth Float @default(10.20)
+}
+"#;
+
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let table = &parsed.tables[0];
+    let min = table.fields.iter().find(|field| field.name == "min").expect("min field should exist");
+    let ratio = table.fields.iter().find(|field| field.name == "ratio").expect("ratio field should exist");
+    let growth = table.fields.iter().find(|field| field.name == "growth").expect("growth field should exist");
+
+    assert_eq!(min.default_value, ParsedFieldDefault::Integer(-10));
+
+    match &ratio.default_value {
+        ParsedFieldDefault::Float(value) => assert!((*value - (-10.20_f64)).abs() < f64::EPSILON),
+        other => panic!("expected float default for ratio, got: {other:?}"),
+    }
+
+    match &growth.default_value {
+        ParsedFieldDefault::Float(value) => assert!((*value - 10.20_f64).abs() < f64::EPSILON),
+        other => panic!("expected float default for growth, got: {other:?}"),
+    }
 }
 
 #[test]

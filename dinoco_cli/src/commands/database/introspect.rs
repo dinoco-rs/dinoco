@@ -13,6 +13,7 @@ use dinoco_compiler::{
 use dinoco_codegen::dinoco::render_schema;
 use dinoco_formatter::format_from_raw;
 
+use crate::utils::normalize_sqlite_database_url;
 use dinoco_engine::{AdapterDialect, DinocoAdapter, DinocoAdapterHandler, DinocoGenericRow, DinocoRow};
 use dinoco_engine::{
     DatabaseColumn, DatabaseForeignKey, DatabaseIndex, DinocoClientConfig, DinocoResult, DinocoValue, UniversalAdapter,
@@ -88,7 +89,7 @@ fn resolve_introspection_context() -> DinocoResult<IntrospectContext> {
         let schema_source = fs::read_to_string("dinoco/schema.dinoco")?;
 
         if let Ok((_, parsed)) = compile(&schema_source) {
-            let resolved_url = resolve_connection_url(&parsed.config.database_url)?;
+            let resolved_url = resolve_connection_url(&parsed.config.database_url, &parsed.config.database)?;
 
             return Ok(IntrospectContext {
                 database: parsed.config.database,
@@ -110,19 +111,33 @@ fn resolve_introspection_context() -> DinocoResult<IntrospectContext> {
         )
     })?;
 
+    let is_sqlite = matches!(database, Database::Sqlite);
+
     Ok(IntrospectContext {
         database,
         database_url: ConnectionUrl::Env("DATABASE_URL".to_string()),
-        resolved_url: database_url,
+        resolved_url: if is_sqlite { normalize_sqlite_database_url(&database_url, "dinoco") } else { database_url },
     })
 }
 
-fn resolve_connection_url(connection_url: &ConnectionUrl) -> DinocoResult<String> {
+fn resolve_connection_url(connection_url: &ConnectionUrl, database: &Database) -> DinocoResult<String> {
     match connection_url {
-        ConnectionUrl::Literal(value) => Ok(value.clone()),
-        ConnectionUrl::Env(var_name) => env::var(var_name).map_err(|_| {
-            dinoco_engine::DinocoError::ParseError(format!("Missing environment variable '{}'.", var_name))
+        ConnectionUrl::Literal(value) => Ok(if matches!(database, Database::Sqlite) {
+            normalize_sqlite_database_url(value, "dinoco")
+        } else {
+            value.clone()
         }),
+        ConnectionUrl::Env(var_name) => env::var(var_name)
+            .map(|value| {
+                if matches!(database, Database::Sqlite) {
+                    normalize_sqlite_database_url(&value, "dinoco")
+                } else {
+                    value
+                }
+            })
+            .map_err(|_| {
+                dinoco_engine::DinocoError::ParseError(format!("Missing environment variable '{}'.", var_name))
+            }),
     }
 }
 

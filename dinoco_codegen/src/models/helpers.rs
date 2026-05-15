@@ -189,7 +189,7 @@ pub(crate) fn default_value_expr(field: &ParsedField, enum_names: &[String]) -> 
         ParsedFieldDefault::Function(function) => match function {
             FunctionCall::Uuid => "dinoco::Uuid::new()".to_string(),
             FunctionCall::Snowflake => "dinoco::Snowflake::new()".to_string(),
-            FunctionCall::AutoIncrement => "dinoco::AutoIncrement::new()".to_string(),
+            FunctionCall::AutoIncrement => "0".to_string(),
             FunctionCall::Now => match field.field_type {
                 ParsedFieldType::Date => "dinoco::Utc::now().date_naive()".to_string(),
                 _ => "dinoco::Utc::now()".to_string(),
@@ -284,13 +284,10 @@ fn default_expr_by_type(field: &ParsedField, enum_names: &[String]) -> String {
     }
 }
 
-fn generated_id_wrapper_type(field: &ParsedField) -> Option<&'static str> {
+pub(crate) fn generated_id_wrapper_type(field: &ParsedField) -> Option<&'static str> {
     match (&field.field_type, &field.default_value) {
         (ParsedFieldType::String, ParsedFieldDefault::Function(FunctionCall::Uuid)) => Some("dinoco::Uuid"),
         (ParsedFieldType::Integer, ParsedFieldDefault::Function(FunctionCall::Snowflake)) => Some("dinoco::Snowflake"),
-        (ParsedFieldType::Integer, ParsedFieldDefault::Function(FunctionCall::AutoIncrement)) => {
-            Some("dinoco::AutoIncrement")
-        }
         _ => None,
     }
 }

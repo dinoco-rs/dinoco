@@ -7,8 +7,9 @@ use dinoco_compiler::{
 };
 
 use super::helpers::{
-    can_derive_default_for_model, default_value_expr, filter_type, relation_fields, relation_target,
-    rust_scalar_base_type, rust_scalar_type, scalar_fields, singularize, to_pascal_case, to_snake_case,
+    can_derive_default_for_model, default_value_expr, filter_type, generated_id_wrapper_type, relation_fields,
+    relation_target, rust_scalar_base_type, rust_scalar_type, scalar_fields, singularize, to_pascal_case,
+    to_snake_case,
 };
 use super::relations::{RelationCardinality, collect_join_tables, resolve_relation};
 use super::render_dinoco::render_dinoco_module;
@@ -74,9 +75,95 @@ pub fn generate_models(schema: ParsedSchema) {
     .unwrap();
 }
 
+fn relation_wrapper_overrides<'a>(table: &'a ParsedTable, schema: &'a ParsedSchema) -> BTreeMap<String, &'static str> {
+    let mut overrides = BTreeMap::new();
+
+    for relation_field in relation_fields(&table.fields) {
+        let ParsedFieldType::Relation(target_name) = &relation_field.field_type else {
+            continue;
+        };
+        let Some(target_table) = schema.tables.iter().find(|candidate| candidate.name == *target_name) else {
+            continue;
+        };
+
+        let (local_fields, remote_fields) = match &relation_field.relation {
+            ParsedRelation::ManyToOne(_, local_fields, remote_fields, _, _)
+            | ParsedRelation::OneToOneOwner(_, local_fields, remote_fields, _, _) => (local_fields, remote_fields),
+            _ => continue,
+        };
+
+        for (local_field_name, remote_field_name) in local_fields.iter().zip(remote_fields.iter()) {
+            let Some(local_field) = table.fields.iter().find(|candidate| candidate.name == *local_field_name) else {
+                continue;
+            };
+            let Some(remote_field) = target_table.fields.iter().find(|candidate| candidate.name == *remote_field_name)
+            else {
+                continue;
+            };
+            let Some(wrapper_type) = generated_id_wrapper_type(remote_field) else {
+                continue;
+            };
+
+            overrides.insert(local_field.name.clone(), wrapper_type);
+        }
+    }
+
+    overrides
+}
+
+fn scalar_type_with_wrapper_override(
+    field: &ParsedField,
+    enum_names: &[String],
+    wrapper_overrides: &BTreeMap<String, &'static str>,
+) -> String {
+    if let Some(wrapper_type) = wrapper_overrides.get(&field.name) {
+        if field.is_optional {
+            return format!("Option<{wrapper_type}>");
+        }
+
+        if field.is_list {
+            return format!("Vec<{wrapper_type}>");
+        }
+
+        return (*wrapper_type).to_string();
+    }
+
+    rust_scalar_type(field, enum_names)
+}
+
+fn scalar_base_type_with_wrapper_override(
+    field: &ParsedField,
+    enum_names: &[String],
+    wrapper_overrides: &BTreeMap<String, &'static str>,
+) -> String {
+    wrapper_overrides
+        .get(&field.name)
+        .map(|wrapper_type| (*wrapper_type).to_string())
+        .unwrap_or_else(|| rust_scalar_base_type(field, enum_names))
+}
+
+fn default_value_expr_with_wrapper_override(
+    field: &ParsedField,
+    enum_names: &[String],
+    wrapper_overrides: &BTreeMap<String, &'static str>,
+) -> String {
+    if field.is_optional || field.is_list {
+        return default_value_expr(field, enum_names);
+    }
+
+    if matches!(field.default_value, ParsedFieldDefault::NotDefined)
+        && let Some(wrapper_type) = wrapper_overrides.get(&field.name)
+    {
+        return format!("{wrapper_type}::default()");
+    }
+
+    default_value_expr(field, enum_names)
+}
+
 fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, enum_names: &[String]) -> String {
     let name = model_name;
     let fields = &table.fields;
+    let wrapper_overrides = relation_wrapper_overrides(table, schema);
     let scalar_fields = scalar_fields(fields);
     let insert_fields = scalar_fields
         .iter()
@@ -143,7 +230,11 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     output.push_str(&format!("pub struct {} {{\n", name));
 
     for field in &scalar_fields {
-        output.push_str(&format!("    pub {}: {},\n", field.name, rust_scalar_type(field, enum_names)));
+        output.push_str(&format!(
+            "    pub {}: {},\n",
+            field.name,
+            scalar_type_with_wrapper_override(field, enum_names, &wrapper_overrides)
+        ));
     }
 
     output.push_str("}\n\n");
@@ -158,7 +249,11 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
         output.push_str("        Self {\n");
 
         for field in &scalar_fields {
-            output.push_str(&format!("            {}: {},\n", field.name, default_value_expr(field, enum_names)));
+            output.push_str(&format!(
+                "            {}: {},\n",
+                field.name,
+                default_value_expr_with_wrapper_override(field, enum_names, &wrapper_overrides)
+            ));
         }
 
         output.push_str("        }\n");
@@ -464,15 +559,25 @@ fn render_relation_mutations(_table: &ParsedTable, _schema: &ParsedSchema) -> St
 
 fn render_relation_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String {
     let mut output = String::new();
+    let current_wrapper_overrides = relation_wrapper_overrides(table, schema);
 
     for field in relation_fields(&table.fields) {
         let Some(relation) = resolve_relation(table, field, schema) else {
             continue;
         };
+        let ParsedFieldType::Relation(target_name) = &field.field_type else {
+            continue;
+        };
+        let Some(target_table) = schema.tables.iter().find(|candidate| candidate.name == *target_name) else {
+            continue;
+        };
+        let target_wrapper_overrides = relation_wrapper_overrides(target_table, schema);
 
         let loader_name = format!("__dinoco_load_{}", field.name);
-        let local_key_ty = rust_scalar_base_type(relation.local_key_field, &[]);
-        let remote_key_ty = rust_scalar_base_type(relation.remote_key_field, &[]);
+        let local_key_ty =
+            scalar_base_type_with_wrapper_override(relation.local_key_field, &[], &current_wrapper_overrides);
+        let remote_key_ty =
+            scalar_base_type_with_wrapper_override(relation.remote_key_field, &[], &target_wrapper_overrides);
         let target_model = relation_target(field);
         let remote_key_ident = &relation.remote_key_field.name;
         let statement_table = &relation.target_table_name;
@@ -523,15 +628,25 @@ fn render_relation_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String
 
 fn render_relation_count_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String {
     let mut output = String::new();
+    let current_wrapper_overrides = relation_wrapper_overrides(table, schema);
 
     for field in relation_fields(&table.fields) {
         let Some(relation) = resolve_relation(table, field, schema) else {
             continue;
         };
+        let ParsedFieldType::Relation(target_name) = &field.field_type else {
+            continue;
+        };
+        let Some(target_table) = schema.tables.iter().find(|candidate| candidate.name == *target_name) else {
+            continue;
+        };
+        let target_wrapper_overrides = relation_wrapper_overrides(target_table, schema);
 
         let loader_name = format!("__dinoco_count_{}", field.name);
-        let local_key_ty = rust_scalar_base_type(relation.local_key_field, &[]);
-        let remote_key_ty = rust_scalar_base_type(relation.remote_key_field, &[]);
+        let local_key_ty =
+            scalar_base_type_with_wrapper_override(relation.local_key_field, &[], &current_wrapper_overrides);
+        let remote_key_ty =
+            scalar_base_type_with_wrapper_override(relation.remote_key_field, &[], &target_wrapper_overrides);
         let remote_key_ident = &relation.remote_key_field.name;
         let statement_table = &relation.target_table_name;
 
@@ -625,12 +740,12 @@ fn render_insert_relations(table: &ParsedTable, schema: &ParsedSchema) -> String
                 output.push_str(&format!("    fn bind_relation(&self, item: &mut {}) {{\n", target_model));
                 if relation.remote_key_field.is_optional {
                     output.push_str(&format!(
-                        "        item.{} = Some(self.{}.clone());\n",
+                        "        item.{} = Some(self.{}.clone().into());\n",
                         relation.remote_key_field.name, relation.local_key_field.name
                     ));
                 } else {
                     output.push_str(&format!(
-                        "        item.{} = self.{}.clone();\n",
+                        "        item.{} = self.{}.clone().into();\n",
                         relation.remote_key_field.name, relation.local_key_field.name
                     ));
                 }
@@ -713,8 +828,10 @@ fn render_connection_payloads(table: &ParsedTable, schema: &ParsedSchema, enum_n
         else {
             continue;
         };
+        let target_wrapper_overrides = relation_wrapper_overrides(target_table, schema);
+        let key_type = scalar_type_with_wrapper_override(key_field, enum_names, &target_wrapper_overrides);
 
-        variants.push((field, relation, variant_name, key_field));
+        variants.push((field, relation, variant_name, key_field, key_type));
     }
 
     if variants.is_empty() {
@@ -728,8 +845,8 @@ fn render_connection_payloads(table: &ParsedTable, schema: &ParsedSchema, enum_n
     output.push_str("#[serde(crate = \"dinoco::serde\")]\n");
     output.push_str(&format!("pub enum {} {{\n", enum_name));
 
-    for (_field, _relation, variant_name, key_field) in &variants {
-        output.push_str(&format!("    {}({}),\n", variant_name, filter_type(key_field, enum_names)));
+    for (_field, _relation, variant_name, _key_field, key_type) in &variants {
+        output.push_str(&format!("    {}({}),\n", variant_name, key_type));
     }
 
     output.push_str("}\n\n");
@@ -740,7 +857,7 @@ fn render_connection_payloads(table: &ParsedTable, schema: &ParsedSchema, enum_n
     ));
     output.push_str("        match self {\n");
 
-    for (_field, relation, variant_name, key_field) in &variants {
+    for (_field, relation, variant_name, key_field, _key_type) in &variants {
         match relation.cardinality {
             RelationCardinality::ManyToMany { .. } => {
                 output.push_str(&format!("            Self::{}(_) => Vec::new(),\n", variant_name));
@@ -775,7 +892,7 @@ fn render_connection_payloads(table: &ParsedTable, schema: &ParsedSchema, enum_n
     ));
     output.push_str("        match self {\n");
 
-    for (_field, relation, variant_name, _key_field) in &variants {
+    for (_field, relation, variant_name, _key_field, _key_type) in &variants {
         match relation.cardinality {
             RelationCardinality::ManyToMany {
                 ref join_table_name,

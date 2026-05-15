@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression};
 
 use crate::{
-    IntoOwnedValue, Projection, UpdateModel, UpdatePayload, execute_update_many, execute_update_many_returning,
+    IntoUpdatePayloadOwned, Projection, UpdateModel, UpdatePayload, execute_update_many, execute_update_many_returning,
     queue::{QueueDispatch, dispatch_update_lookup, enqueue_many_conditions},
 };
 
@@ -49,9 +49,9 @@ where
     pub fn values<N, I>(self, items: Vec<I>) -> UpdateMany<M, N>
     where
         N: UpdatePayload<M>,
-        I: IntoOwnedValue<N>,
+        I: IntoUpdatePayloadOwned<M, N>,
     {
-        let items = items.into_iter().map(IntoOwnedValue::into_owned_value).collect::<Vec<_>>();
+        let items = items.into_iter().map(IntoUpdatePayloadOwned::into_update_payload_owned).collect::<Vec<_>>();
 
         UpdateMany { conditions: self.conditions, items, queue: self.queue, marker: PhantomData }
     }

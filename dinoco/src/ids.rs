@@ -136,50 +136,6 @@ impl TryFrom<DinocoValue> for Snowflake {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
-#[serde(transparent)]
-pub struct AutoIncrement(i64);
-
-impl AutoIncrement {
-    pub fn new() -> Self {
-        Self(0)
-    }
-
-    pub fn as_i64(&self) -> i64 {
-        self.0
-    }
-
-    pub fn into_inner(self) -> i64 {
-        self.0
-    }
-}
-
-impl fmt::Display for AutoIncrement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<i64> for AutoIncrement {
-    fn from(value: i64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<AutoIncrement> for i64 {
-    fn from(value: AutoIncrement) -> Self {
-        value.0
-    }
-}
-
-impl TryFrom<DinocoValue> for AutoIncrement {
-    type Error = crate::DinocoError;
-
-    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
-        Ok(Self(i64::try_from(value)?))
-    }
-}
-
 pub fn uuid_v7() -> uuid::Uuid {
     uuid::Uuid::now_v7()
 }

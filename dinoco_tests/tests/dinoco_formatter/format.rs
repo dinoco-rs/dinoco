@@ -38,3 +38,20 @@ config {
 
     assert_eq!(once, twice);
 }
+
+#[test]
+fn formatter_aligns_fields_only_within_contiguous_blocks() {
+    let raw = r#"
+model User {
+id Integer @id
+veryLongField String
+
+short Integer @id
+}
+"#;
+
+    let formatted = format_from_raw(raw).expect("formatter should succeed");
+
+    assert!(formatted.contains("    short  Integer  @id"));
+    assert!(!formatted.contains("    short          Integer  @id"));
+}

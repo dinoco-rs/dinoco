@@ -1,0 +1,233 @@
+# find_many
+
+Usado para buscar uma lista de registros.
+
+---
+
+## O que você pode fazer
+
+- `.select::&lt;T&gt;()`: troca a projeção padrão do model por uma projeção customizada.
+- `.cond(...)`: adiciona condições de filtro na query.
+- `.take(...)`: limita a quantidade de registros retornados.
+- `.skip(...)`: pula uma quantidade de registros antes de retornar o resultado.
+- `.order_by(...)`: define a ordenação da consulta.
+- `.includes(...)`: carrega relações junto com os registros principais.
+- `.count(...)`: calcula contadores de relações e preenche campos como `posts_count`.
+- `.cache(...)`: consulta primeiro no Redis usando a chave informada; em cache miss executa a query, salva e retorna o resultado. Em cache hit, o query logger registra `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: mesmo comportamento do cache padrão, mas grava com TTL em segundos.
+- `.read_in_primary()`: força a leitura no banco principal, sem usar réplica.
+- `.execute(&client)`: executa a consulta no banco.
+
+## Retorno
+
+Sem `select::&lt;T&gt;()`, o retorno é:
+
+```rust
+DinocoResult<Vec<M>>
+```
+
+Com `select::&lt;T&gt;()`, o retorno passa a ser:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Exemplo básico
+
+```rust
+let users = dinoco::find_many::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com filtro
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|w| w.email.eq("ana@acme.com"))
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com paginação e ordenação
+
+```rust
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .skip(20)
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo de select personalizado
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserListItem {
+    id: i64,
+    name: String,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserListItem>()
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com include simples
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com include filtrado
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPublishedPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPublishedPosts>()
+    .includes(|i| i.posts().cond(|w| w.published.eq(true)))
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com include aninhado
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Comment)]
+struct CommentListItem {
+    id: i64,
+    text: String,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    comments: Vec<CommentListItem>,
+    comments_count: usize,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| {
+        i.posts()
+            .includes(|post| post.comments().take(3))
+            .count(|post| post.comments())
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com count de relação
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo lendo no banco principal
+
+```rust
+let users = dinoco::find_many::<User>()
+    .read_in_primary()
+    .take(5)
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("Lote lido com {} usuários", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+Veja mais sobre workers em [**`queues`**](/v0.0.2/orm/queues).
+
+## Exemplo com cache
+
+Esse método só é gerado quando o `config {}` do schema tiver `redis`.
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com cache e expiração
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
+## Próximos passos
+
+- [**`find_first::&lt;M&gt;()`**](/v0.0.2/orm/find-first): versão para buscar no máximo um registro.
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): contagem de registros com filtro.

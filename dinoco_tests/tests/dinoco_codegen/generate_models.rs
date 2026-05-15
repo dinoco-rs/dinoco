@@ -75,7 +75,9 @@ model Post {
     assert!(model_file.contains("id: dinoco::Uuid::new()"));
     assert!(model_file.contains("impl Model for Post"));
     assert!(dinoco_module.contains("create_connection(config: DinocoClientConfig)"));
-    assert!(dinoco_module.contains("DinocoClient::<SqliteAdapter>::new(std::env::var(\"DATABASE_URL\")"));
+    assert!(dinoco_module.contains("fn __dinoco_sqlite_base_url(url: String) -> String"));
+    assert!(dinoco_module.contains("let database_url = __dinoco_sqlite_base_url(std::env::var(\"DATABASE_URL\")"));
+    assert!(dinoco_module.contains("DinocoClient::<SqliteAdapter>::new(database_url, vec![], config).await"));
 }
 
 #[test]
@@ -215,7 +217,7 @@ model User {
 
     assert!(user_file.contains("Deserialize, Rowable, Default)]"));
     assert!(!user_file.contains("impl Default for User {"));
-    assert!(user_file.contains("pub id: dinoco::AutoIncrement"));
+    assert!(user_file.contains("pub id: i64"));
     assert!(user_file.contains("#[derive(Default)]\npub struct UserInclude {}"));
     assert!(user_file.contains("#[derive(Default)]\npub struct UserRelations {}"));
     assert!(!user_file.contains("impl Default for UserInclude {"));
@@ -253,6 +255,56 @@ model Event {
     assert!(event_file.contains("pub sequence: dinoco::Snowflake"));
     assert!(event_file.contains("id: dinoco::Uuid::new()"));
     assert!(event_file.contains("sequence: dinoco::Snowflake::new()"));
+}
+
+#[test]
+fn generate_models_propagates_uuid_and_snowflake_wrappers_in_relations() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model User {
+    id String @id @default(uuid())
+    name String
+    posts Post[]
+}
+
+model Post {
+    id String @id @default(uuid())
+    title String
+    authorId String
+    author User @relation(fields: [authorId], references: [id])
+    tags Tag[] @relation(name: "PostTags")
+}
+
+model Tag {
+    id Integer @id @default(snowflake())
+    name String
+    posts Post[] @relation(name: "PostTags")
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let user_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/user.rs")).expect("generated user model should exist");
+    let post_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/post.rs")).expect("generated post model should exist");
+    let join_file = fs::read_to_string(temp_dir.path().join("dinoco/models/post_tags.rs"))
+        .expect("generated join model should exist");
+
+    assert!(post_file.contains("pub authorId: dinoco::Uuid"));
+    assert!(post_file.contains("pub enum PostConnection"));
+    assert!(post_file.contains("Tag(dinoco::Snowflake)"));
+    assert!(user_file.contains("item.authorId = self.id.clone().into();"));
+    assert!(join_file.contains("pub post_id: dinoco::Uuid"));
+    assert!(join_file.contains("pub tag_id: dinoco::Snowflake"));
 }
 
 #[test]

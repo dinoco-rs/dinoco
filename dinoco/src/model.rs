@@ -102,6 +102,34 @@ where
     }
 }
 
+pub trait IntoInsertPayloadOwned<M, N>
+where
+    M: InsertModel,
+    N: InsertPayload<M>,
+{
+    fn into_insert_payload_owned(self) -> N;
+}
+
+impl<M, N> IntoInsertPayloadOwned<M, N> for N
+where
+    M: InsertModel,
+    N: InsertPayload<M>,
+{
+    fn into_insert_payload_owned(self) -> N {
+        self
+    }
+}
+
+impl<M, N> IntoInsertPayloadOwned<M, N> for &N
+where
+    M: InsertModel,
+    N: InsertPayload<M> + Clone,
+{
+    fn into_insert_payload_owned(self) -> N {
+        self.clone()
+    }
+}
+
 pub trait UpdateModel: Model {
     fn update_columns() -> &'static [&'static str];
     fn into_update_row(self) -> Vec<DinocoValue>;
@@ -134,6 +162,34 @@ where
 
     fn validate_update(&self) -> dinoco_engine::DinocoResult<()> {
         UpdateModel::validate_update(self)
+    }
+}
+
+pub trait IntoUpdatePayloadOwned<M, N>
+where
+    M: UpdateModel,
+    N: UpdatePayload<M>,
+{
+    fn into_update_payload_owned(self) -> N;
+}
+
+impl<M, N> IntoUpdatePayloadOwned<M, N> for N
+where
+    M: UpdateModel,
+    N: UpdatePayload<M>,
+{
+    fn into_update_payload_owned(self) -> N {
+        self
+    }
+}
+
+impl<M, N> IntoUpdatePayloadOwned<M, N> for &N
+where
+    M: UpdateModel,
+    N: UpdatePayload<M> + Clone,
+{
+    fn into_update_payload_owned(self) -> N {
+        self.clone()
     }
 }
 
@@ -340,12 +396,6 @@ impl IntoDinocoValue for crate::Snowflake {
     }
 }
 
-impl IntoDinocoValue for crate::AutoIncrement {
-    fn into_dinoco_value(self) -> DinocoValue {
-        DinocoValue::from(self.into_inner())
-    }
-}
-
 impl<T> ScalarFieldValue<T> for T
 where
     T: IntoDinocoValue,
@@ -380,18 +430,6 @@ impl ScalarFieldValue<i64> for crate::Snowflake {
 }
 
 impl ScalarFieldValue<i64> for &crate::Snowflake {
-    fn into_scalar_field_value(self) -> DinocoValue {
-        DinocoValue::from(self.as_i64())
-    }
-}
-
-impl ScalarFieldValue<i64> for crate::AutoIncrement {
-    fn into_scalar_field_value(self) -> DinocoValue {
-        self.into_dinoco_value()
-    }
-}
-
-impl ScalarFieldValue<i64> for &crate::AutoIncrement {
     fn into_scalar_field_value(self) -> DinocoValue {
         DinocoValue::from(self.as_i64())
     }

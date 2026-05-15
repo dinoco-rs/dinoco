@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use dashmap::DashMap;
 
 use tower_lsp::jsonrpc::Result as LspResult;
@@ -59,7 +61,14 @@ impl LanguageServer for LspServer {
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
 
-                    trigger_characters: Some(vec!["@".to_string(), " ".to_string()]),
+                    trigger_characters: Some(vec![
+                        "@".to_string(),
+                        " ".to_string(),
+                        "(".to_string(),
+                        ",".to_string(),
+                        ":".to_string(),
+                        "[".to_string(),
+                    ]),
                     ..Default::default()
                 }),
                 document_formatting_provider: Some(OneOf::Left(true)),
@@ -129,60 +138,42 @@ impl LanguageServer for LspServer {
         let position = params.text_document_position.position;
 
         let doc_text = self.documents.get(&uri).map(|v| v.clone()).unwrap_or_default();
+        let (model_names, enum_names) = collect_schema_identifiers(&doc_text);
         let lines: Vec<&str> = doc_text.lines().collect();
 
-        let current_line = lines.get(position.line as usize).unwrap_or(&"");
-
-        let prefix_up_to_cursor = &current_line[..position.character as usize];
+        let current_line = lines.get(position.line as usize).copied().unwrap_or("");
+        let prefix_up_to_cursor = prefix_up_to_character(current_line, position.character);
         let last_word = prefix_up_to_cursor.split_whitespace().last().unwrap_or("");
-
         let mut completions = vec![];
 
-        if prefix_up_to_cursor.contains("@default(") && !prefix_up_to_cursor.ends_with(')') {
-            completions.extend(vec![
-                create_completion("autoincrement()", CompletionItemKind::FUNCTION, "Sequencial ID", "autoincrement()"),
-                create_completion("uuid()", CompletionItemKind::FUNCTION, "UUID v4", "uuid()"),
-                create_completion("snowflake()", CompletionItemKind::FUNCTION, "Snowflake ID", "snowflake()"),
-                create_completion("now()", CompletionItemKind::FUNCTION, "Current timestamp", "now()"),
-            ]);
+        if is_inside_default_arguments(prefix_up_to_cursor) {
+            completions.extend(default_value_completions());
+            return Ok(Some(CompletionResponse::Array(completions)));
+        }
+
+        if let Some(relation_fragment) = relation_argument_fragment(prefix_up_to_cursor) {
+            if is_relation_action_context(relation_fragment) {
+                completions.extend(relation_action_completions());
+            } else {
+                completions.extend(relation_argument_completions());
+            }
             return Ok(Some(CompletionResponse::Array(completions)));
         }
 
         if last_word.starts_with("@@") || prefix_up_to_cursor.ends_with("@@") {
-            completions.extend(vec![
-                create_snippet_completion("@@ids", CompletionItemKind::PROPERTY, "Composite primary key", "ids([$0])"),
-                create_snippet_completion(
-                    "@@table_name",
-                    CompletionItemKind::PROPERTY,
-                    "Custom table name",
-                    "table_name(\"$0\")",
-                ),
-            ]);
+            completions.extend(model_decorator_completions());
             return Ok(Some(CompletionResponse::Array(completions)));
         }
 
         if last_word.starts_with('@') || prefix_up_to_cursor.ends_with('@') {
-            completions.extend(vec![
-                create_completion("@id", CompletionItemKind::PROPERTY, "Primary Key", "id"),
-                create_completion("@unique", CompletionItemKind::PROPERTY, "Unique constraint", "unique"),
-                create_snippet_completion("@default", CompletionItemKind::FUNCTION, "Default value", "default($0)"),
-                create_snippet_completion(
-                    "@relation",
-                    CompletionItemKind::FUNCTION,
-                    "Relation definition",
-                    "relation(name: \"${1}\", fields: [${2}], references: [${3}])",
-                ),
-            ]);
+            completions.extend(field_decorator_completions());
+            completions.extend(model_decorator_completions());
             return Ok(Some(CompletionResponse::Array(completions)));
         }
 
-        if prefix_up_to_cursor.contains("onUpdate") || prefix_up_to_cursor.contains("onDelete") {
-            completions.extend(vec![
-                create_completion("Cascade", CompletionItemKind::ENUM_MEMBER, "Cascade action", "Cascade"),
-                create_completion("Restrict", CompletionItemKind::ENUM_MEMBER, "Restrict action", "Restrict"),
-                create_completion("SetNull", CompletionItemKind::ENUM_MEMBER, "Set to Null", "SetNull"),
-                create_completion("NoAction", CompletionItemKind::ENUM_MEMBER, "No action taken", "NoAction"),
-            ]);
+        if is_field_type_context(prefix_up_to_cursor) {
+            completions.extend(base_type_completions());
+            completions.extend(custom_type_completions(&model_names, &enum_names));
             return Ok(Some(CompletionResponse::Array(completions)));
         }
 
@@ -210,19 +201,241 @@ impl LanguageServer for LspServer {
                 ),
             ]);
         } else {
-            completions.extend(vec![
-                create_completion("String", CompletionItemKind::TYPE_PARAMETER, "String text type", "String"),
-                create_completion("Integer", CompletionItemKind::TYPE_PARAMETER, "Integer number type", "Integer"),
-                create_completion("Float", CompletionItemKind::TYPE_PARAMETER, "Floating point number", "Float"),
-                create_completion("Boolean", CompletionItemKind::TYPE_PARAMETER, "True or False type", "Boolean"),
-                create_completion("DateTime", CompletionItemKind::TYPE_PARAMETER, "Date and Time in UTC", "DateTime"),
-                create_completion("Date", CompletionItemKind::TYPE_PARAMETER, "Date without time", "Date"),
-                create_completion("Json", CompletionItemKind::TYPE_PARAMETER, "JSON object type", "Json"),
-            ]);
+            completions.extend(base_type_completions());
+            completions.extend(custom_type_completions(&model_names, &enum_names));
         }
 
         Ok(Some(CompletionResponse::Array(completions)))
     }
+}
+
+fn prefix_up_to_character(line: &str, character: u32) -> &str {
+    let requested = character as usize;
+    let mut current = 0usize;
+
+    for (index, _) in line.char_indices() {
+        if current == requested {
+            return &line[..index];
+        }
+
+        current += 1;
+    }
+
+    line
+}
+
+fn is_inside_default_arguments(prefix: &str) -> bool {
+    prefix.rfind("@default(").is_some_and(|index| !prefix[index..].contains(')'))
+}
+
+fn relation_argument_fragment(prefix: &str) -> Option<&str> {
+    let start = prefix.rfind("@relation(")?;
+    let fragment = &prefix[(start + "@relation(".len())..];
+
+    if fragment.contains(')') {
+        None
+    } else {
+        Some(fragment)
+    }
+}
+
+fn is_relation_action_context(fragment: &str) -> bool {
+    let segment = fragment.rsplit(',').next().unwrap_or(fragment).trim_start();
+    let is_on_delete = segment.strip_prefix("onDelete:").is_some_and(|value| value.trim().is_empty());
+    let is_on_update = segment.strip_prefix("onUpdate:").is_some_and(|value| value.trim().is_empty());
+
+    is_on_delete || is_on_update
+}
+
+fn is_field_type_context(prefix: &str) -> bool {
+    if prefix.contains('=') {
+        return false;
+    }
+
+    let without_comment = prefix.split('#').next().unwrap_or(prefix);
+    let trimmed_start = without_comment.trim_start();
+
+    if trimmed_start.is_empty()
+        || trimmed_start.starts_with('@')
+        || trimmed_start.starts_with("model ")
+        || trimmed_start.starts_with("enum ")
+        || trimmed_start.starts_with("config ")
+        || trimmed_start.starts_with("}")
+    {
+        return false;
+    }
+
+    let tokens = trimmed_start.split_whitespace().collect::<Vec<_>>();
+
+    match tokens.len() {
+        1 => without_comment.ends_with(' ') || without_comment.ends_with('\t'),
+        2 => !without_comment.contains('@') && !without_comment.ends_with(' ') && !without_comment.ends_with('\t'),
+        _ => false,
+    }
+}
+
+fn collect_schema_identifiers(doc_text: &str) -> (Vec<String>, Vec<String>) {
+    let mut model_names = BTreeSet::new();
+    let mut enum_names = BTreeSet::new();
+
+    if let Ok(schema) = compile_only_ast(doc_text) {
+        for table in schema.tables {
+            model_names.insert(table.name);
+        }
+
+        for item in schema.enums {
+            enum_names.insert(item.name);
+        }
+    }
+
+    collect_block_names_from_source(doc_text, "model ", &mut model_names);
+    collect_block_names_from_source(doc_text, "enum ", &mut enum_names);
+
+    (model_names.into_iter().collect(), enum_names.into_iter().collect())
+}
+
+fn collect_block_names_from_source(doc_text: &str, keyword: &str, output: &mut BTreeSet<String>) {
+    for line in doc_text.lines() {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix(keyword) else {
+            continue;
+        };
+
+        let rest = rest.trim_start();
+        let Some(identifier) = parse_identifier(rest) else {
+            continue;
+        };
+
+        output.insert(identifier);
+    }
+}
+
+fn parse_identifier(input: &str) -> Option<String> {
+    let identifier: String =
+        input.chars().take_while(|character| character.is_ascii_alphanumeric() || *character == '_').collect();
+
+    if identifier.is_empty() {
+        None
+    } else {
+        Some(identifier)
+    }
+}
+
+fn default_value_completions() -> Vec<CompletionItem> {
+    vec![
+        create_completion(
+            "autoincrement()",
+            CompletionItemKind::FUNCTION,
+            "Auto increment integer ID",
+            "autoincrement()",
+        ),
+        create_completion("uuid()", CompletionItemKind::FUNCTION, "UUID v7 string ID", "uuid()"),
+        create_completion("snowflake()", CompletionItemKind::FUNCTION, "Snowflake integer ID", "snowflake()"),
+        create_completion("now()", CompletionItemKind::FUNCTION, "Current UTC timestamp", "now()"),
+    ]
+}
+
+fn relation_argument_completions() -> Vec<CompletionItem> {
+    vec![
+        create_snippet_completion("name", CompletionItemKind::PROPERTY, "Relation name", "name: \"${1:RelationName}\""),
+        create_snippet_completion("fields", CompletionItemKind::PROPERTY, "Local fields", "fields: [${1:fieldId}]"),
+        create_snippet_completion(
+            "references",
+            CompletionItemKind::PROPERTY,
+            "Referenced fields",
+            "references: [${1:id}]",
+        ),
+        create_snippet_completion(
+            "onDelete",
+            CompletionItemKind::PROPERTY,
+            "Action on delete",
+            "onDelete: ${1:Cascade}",
+        ),
+        create_snippet_completion(
+            "onUpdate",
+            CompletionItemKind::PROPERTY,
+            "Action on update",
+            "onUpdate: ${1:Cascade}",
+        ),
+    ]
+}
+
+fn relation_action_completions() -> Vec<CompletionItem> {
+    vec![
+        create_completion("Cascade", CompletionItemKind::ENUM_MEMBER, "Cascade action", "Cascade"),
+        create_completion("Restrict", CompletionItemKind::ENUM_MEMBER, "Restrict action", "Restrict"),
+        create_completion("SetNull", CompletionItemKind::ENUM_MEMBER, "Set field to null", "SetNull"),
+        create_completion("NoAction", CompletionItemKind::ENUM_MEMBER, "No action taken", "NoAction"),
+    ]
+}
+
+fn field_decorator_completions() -> Vec<CompletionItem> {
+    vec![
+        create_completion("@id", CompletionItemKind::PROPERTY, "Primary key", "id"),
+        create_completion("@unique", CompletionItemKind::PROPERTY, "Unique constraint", "unique"),
+        create_snippet_completion("@default", CompletionItemKind::FUNCTION, "Default value", "default(${1:uuid()})"),
+        create_snippet_completion(
+            "@relation",
+            CompletionItemKind::FUNCTION,
+            "Relation definition",
+            "relation(name: \"${1}\", fields: [${2}], references: [${3}], onDelete: ${4:Cascade}, onUpdate: ${5:Cascade})",
+        ),
+    ]
+}
+
+fn model_decorator_completions() -> Vec<CompletionItem> {
+    vec![
+        create_snippet_completion(
+            "@@ids",
+            CompletionItemKind::PROPERTY,
+            "Composite primary key",
+            "ids([${1:fieldA}, ${2:fieldB}])",
+        ),
+        create_snippet_completion(
+            "@@uniques",
+            CompletionItemKind::PROPERTY,
+            "Composite unique key",
+            "uniques([${1:fieldA}, ${2:fieldB}])",
+        ),
+        create_snippet_completion(
+            "@@indexes",
+            CompletionItemKind::PROPERTY,
+            "Composite index",
+            "indexes([${1:fieldA}, ${2:fieldB}])",
+        ),
+        create_snippet_completion(
+            "@@table_name",
+            CompletionItemKind::PROPERTY,
+            "Custom table name",
+            "table_name(\"${1:table_name}\")",
+        ),
+    ]
+}
+
+fn base_type_completions() -> Vec<CompletionItem> {
+    vec![
+        create_completion("String", CompletionItemKind::TYPE_PARAMETER, "String text type", "String"),
+        create_completion("Integer", CompletionItemKind::TYPE_PARAMETER, "Integer number type", "Integer"),
+        create_completion("Float", CompletionItemKind::TYPE_PARAMETER, "Floating point number", "Float"),
+        create_completion("Boolean", CompletionItemKind::TYPE_PARAMETER, "True or false type", "Boolean"),
+        create_completion("DateTime", CompletionItemKind::TYPE_PARAMETER, "Date and time in UTC", "DateTime"),
+        create_completion("Date", CompletionItemKind::TYPE_PARAMETER, "Date without time", "Date"),
+        create_completion("Json", CompletionItemKind::TYPE_PARAMETER, "JSON object type", "Json"),
+    ]
+}
+
+fn custom_type_completions(model_names: &[String], enum_names: &[String]) -> Vec<CompletionItem> {
+    let mut completions = Vec::new();
+
+    for model_name in model_names {
+        completions.push(create_completion(model_name, CompletionItemKind::CLASS, "Model type", model_name));
+    }
+
+    for enum_name in enum_names {
+        completions.push(create_completion(enum_name, CompletionItemKind::ENUM, "Enum type", enum_name));
+    }
+
+    completions
 }
 
 fn create_completion(label: &str, kind: CompletionItemKind, detail: &str, insert_text: &str) -> CompletionItem {

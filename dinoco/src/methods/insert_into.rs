@@ -6,7 +6,7 @@ use dinoco_engine::{DinocoAdapter, DinocoClient};
 
 use crate::execution::execute_reload_by_identity;
 use crate::{
-    InsertConnection, InsertModel, InsertPayload, InsertRelation, IntoOwnedValue, Projection,
+    InsertConnection, InsertModel, InsertPayload, InsertRelation, IntoInsertPayloadOwned, Projection,
     execute_connection_updates, execute_insert, execute_insert_payload_returning, execute_insert_relation_links,
     execute_insert_returning,
     queue::{QueueDispatch, dispatch_insert_lookup, enqueue_many_conditions, enqueue_single_conditions},
@@ -67,9 +67,9 @@ where
     pub fn values<N, I>(self, item: I) -> Insert<M, N>
     where
         N: InsertPayload<M>,
-        I: IntoOwnedValue<N>,
+        I: IntoInsertPayloadOwned<M, N>,
     {
-        Insert { item: Some(item.into_owned_value()), queue: self.queue, marker: PhantomData }
+        Insert { item: Some(item.into_insert_payload_owned()), queue: self.queue, marker: PhantomData }
     }
 
     pub fn returning<S>(self) -> InsertReturning<M, V, S>

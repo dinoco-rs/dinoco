@@ -14,6 +14,7 @@ use dinoco_engine::{
     UniversalAdapter, calculate_diff,
 };
 
+use crate::utils::normalize_sqlite_database_url;
 use crate::utils::{env_prompt_bool, env_prompt_string};
 use crate::{
     create_migration_table, mark_migration_applied, read_latest_local_schema, to_snake_case, write_migration_schema,
@@ -202,6 +203,8 @@ fn resolve_database_url(config: &ParsedConfig, pb: &ProgressBar) -> Option<(Stri
         },
         ConnectionUrl::Literal(url) => url.clone(),
     };
+
+    let url = if matches!(database, Database::Sqlite) { normalize_sqlite_database_url(&url, "dinoco") } else { url };
 
     Some((url, database.clone()))
 }

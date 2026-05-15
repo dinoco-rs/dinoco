@@ -178,7 +178,7 @@ pub(crate) fn collect_join_tables(schema: &ParsedSchema) -> Vec<JoinTableData> {
                             is_unique: false,
                             is_list: false,
                             relation: ParsedRelation::NotDefined,
-                            default_value: ParsedFieldDefault::NotDefined,
+                            default_value: join_wrapper_default(current_primary_key_field),
                         },
                         ParsedField {
                             name: target_join_column,
@@ -188,7 +188,7 @@ pub(crate) fn collect_join_tables(schema: &ParsedSchema) -> Vec<JoinTableData> {
                             is_unique: false,
                             is_list: false,
                             relation: ParsedRelation::NotDefined,
-                            default_value: ParsedFieldDefault::NotDefined,
+                            default_value: join_wrapper_default(target_primary_key_field),
                         },
                     ],
                 },
@@ -197,6 +197,16 @@ pub(crate) fn collect_join_tables(schema: &ParsedSchema) -> Vec<JoinTableData> {
     }
 
     join_tables
+}
+
+fn join_wrapper_default(field: &ParsedField) -> ParsedFieldDefault {
+    match &field.default_value {
+        ParsedFieldDefault::Function(function @ dinoco_compiler::FunctionCall::Uuid)
+        | ParsedFieldDefault::Function(function @ dinoco_compiler::FunctionCall::Snowflake) => {
+            ParsedFieldDefault::Function(function.clone())
+        }
+        _ => ParsedFieldDefault::NotDefined,
+    }
 }
 
 fn many_to_many_join_data(

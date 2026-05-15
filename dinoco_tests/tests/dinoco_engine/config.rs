@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dinoco_engine::{
-    DinocoClientConfig, DinocoQueryLog, DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions,
+    DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions,
     DinocoRedisConfig, DinocoValue, SqliteAdapter, current_snowflake_node_id,
 };
 
@@ -101,4 +101,23 @@ async fn config_initializes_snowflake_node_id() {
     .expect("sqlite client should initialize runtime");
 
     assert_eq!(current_snowflake_node_id(), Some(1));
+}
+
+#[tokio::test]
+async fn sqlite_requires_file_url_prefix() {
+    let result =
+        dinoco_engine::DinocoClient::<SqliteAdapter>::new("dev.db".to_string(), vec![], DinocoClientConfig::default())
+            .await;
+
+    let error = match result {
+        Ok(_) => panic!("sqlite connection without file: prefix should fail"),
+        Err(error) => error,
+    };
+
+    match error {
+        DinocoError::ConnectionError(message) => {
+            assert!(message.contains("file:path"), "unexpected error: {message}");
+        }
+        other => panic!("unexpected error variant: {other:?}"),
+    }
 }

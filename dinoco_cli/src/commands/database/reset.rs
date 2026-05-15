@@ -12,6 +12,7 @@ use dinoco_compiler::{compile, render_error};
 use dinoco_engine::{DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoResult, UniversalAdapter};
 
 use crate::utils::env_prompt_bool;
+use crate::utils::normalize_sqlite_database_url;
 
 pub async fn reset_database() -> DinocoResult<()> {
     let schema_path = "dinoco/schema.dinoco";
@@ -76,6 +77,12 @@ pub async fn reset_database() -> DinocoResult<()> {
                 }
             },
             ConnectionUrl::Literal(url) => url.clone(),
+        };
+
+        let url = if matches!(database, dinoco_compiler::Database::Sqlite) {
+            normalize_sqlite_database_url(&url, "dinoco")
+        } else {
+            url
         };
 
         (url, database.clone())

@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoError, DinocoResult};
 
 use crate::{
-    InsertConnection, InsertModel, InsertPayload, InsertRelation, IntoOwnedValue, Projection,
+    InsertConnection, InsertModel, InsertPayload, InsertRelation, IntoInsertPayloadOwned, Projection,
     execute_insert_payload_returning,
     execution::execute_reload_many_by_identity,
     queue::{QueueDispatch, dispatch_insert_lookup, enqueue_many_conditions},
@@ -103,9 +103,9 @@ where
     pub fn values<N, I>(self, items: Vec<I>) -> InsertMany<M, N>
     where
         N: InsertPayload<M>,
-        I: IntoOwnedValue<N>,
+        I: IntoInsertPayloadOwned<M, N>,
     {
-        let items = items.into_iter().map(IntoOwnedValue::into_owned_value).collect::<Vec<_>>();
+        let items = items.into_iter().map(IntoInsertPayloadOwned::into_insert_payload_owned).collect::<Vec<_>>();
 
         InsertMany { items, queue: self.queue, marker: PhantomData }
     }

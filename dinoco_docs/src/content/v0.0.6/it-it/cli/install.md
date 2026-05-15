@@ -1,0 +1,15 @@
+# Instalação
+
+Instale a CLI para iniciar projetos, gerar artefatos e validar o ambiente local.
+
+## Instalação
+
+```bash
+cargo install dinoco
+```
+
+## Configuração
+
+- Ajuste as variáveis de ambiente.
+- Defina o provedor de banco de dados.
+- Gere os arquivos iniciais do workspace.

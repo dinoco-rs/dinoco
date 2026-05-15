@@ -36,7 +36,7 @@ pub use execution::{
 pub use fields::{
     FieldUpdate, RelationField, RelationMutationWhere, RelationQuery, RelationScalarField, ScalarField, UpdateField,
 };
-pub use ids::{AutoIncrement, Snowflake, Uuid, snowflake, uuid_v7};
+pub use ids::{Snowflake, Uuid, snowflake, uuid_v7};
 pub use methods::{
     Count, Delete, DeleteMany, FindAndUpdate, FindFirst, FindMany, Insert, InsertMany, IntoTransactionAction,
     TransactionAction, TransactionActionExt, Transactions, Update, UpdateMany, count, delete, delete_many,
@@ -45,7 +45,8 @@ pub use methods::{
 pub use model::{
     ConnectionUpdatePlan, FindAndUpdateModel, IncludeApplier, IncludeLoaderFuture, InsertConnection,
     InsertConnectionPayload, InsertModel, InsertNested, InsertPayload, InsertRelation, IntoCountNode, IntoDinocoValue,
-    IntoIncludeNode, IntoOwnedValue, Model, Projection, RelationLinkPlan, RelationMutationModel,
-    RelationMutationTarget, RelationWriteAction, RelationWritePlan, ScalarFieldValue, UpdateModel, UpdatePayload,
+    IntoIncludeNode, IntoInsertPayloadOwned, IntoOwnedValue, IntoUpdatePayloadOwned, Model, Projection,
+    RelationLinkPlan, RelationMutationModel, RelationMutationTarget, RelationWriteAction, RelationWritePlan,
+    ScalarFieldValue, UpdateModel, UpdatePayload,
 };
 pub use queue::{QueueWorkerContext, QueueWorkers};

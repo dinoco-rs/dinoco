@@ -1,0 +1,153 @@
+# Traits
+
+Visão geral das traits centrais que os models e payloads usam no Dinoco.
+
+---
+
+## O que são traits no Dinoco
+
+As traits definem o comportamento base do ORM: como um model expõe metadados, como ele projeta colunas, como insere, como atualiza e como payloads aninhados são processados.
+
+Nos models gerados pelo codegen, a maior parte disso já vem implementada automaticamente.
+
+## Trait Model
+
+`Model` define os metadados básicos do model, como `Include`, `Where` e o nome da tabela.
+
+```rust
+impl dinoco::Model for User {
+    type Include = UserInclude;
+    type Where = UserWhere;
+
+    fn table_name() -> &'static str {
+        "users"
+    }
+}
+```
+
+## Trait Projection
+
+`Projection` define como uma struct lê colunas de um model e quais colunas ela precisa carregar.
+
+```rust
+impl dinoco::Projection<User> for UserSummary {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+```
+
+Ela é muito usada com `select::&lt;T&gt;()`, `include` e structs derivadas com `Extend`.
+
+## Trait InsertModel
+
+`InsertModel` descreve como o Dinoco deve montar uma linha de insert para o model.
+
+```rust
+impl dinoco::InsertModel for User {
+    fn insert_columns() -> &'static [&'static str] {
+        &["id", "email", "name"]
+    }
+}
+```
+
+Nos models gerados, essa trait já vem pronta.
+
+## Trait UpdateModel
+
+`UpdateModel` descreve os campos que podem ser enviados em update e como identificar o registro a ser alterado.
+
+```rust
+impl dinoco::UpdateModel for User {
+    fn update_columns() -> &'static [&'static str] {
+        &["email", "name"]
+    }
+}
+```
+
+## Trait InsertPayload
+
+`InsertPayload` permite que `.values(...)` aceite algo diferente do model cru, separando o payload em:
+
+- model base a ser inserido
+- conteúdo aninhado que será processado depois
+
+É essa trait que o `#[insertable]` passa a implementar automaticamente.
+
+## Trait InsertConnectionPayload
+
+`InsertConnectionPayload` é usada quando o payload aninhado representa conexões com registros já existentes.
+
+Ela é o encaixe usado pelos enums gerados pelo codegen, como `ArticleConnection`.
+
+```rust
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
+```
+
+## Traits implementadas pelo model
+
+Em um model gerado pelo Dinoco, o mais comum é você já receber implementações de:
+
+- `Model`
+- `Projection`
+- `InsertModel`
+- `UpdateModel`
+- `FindAndUpdateModel`
+- `RelationMutationModel`
+
+Dependendo das relações do schema, o model também pode receber:
+
+- `InsertRelation&lt;T&gt;`
+- `InsertConnection&lt;T&gt;`
+
+## Exemplo com traits e derive juntos
+
+Na prática, o fluxo mais comum é:
+
+- `Rowable` para leitura da row
+- `Extend` para projeções ou payloads enriquecidos
+- `#[insertable]` para inserts aninhados
+- traits como `Model`, `Projection` e `InsertModel` geradas automaticamente pelo codegen
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-30".into(),
+        title: "Core Example".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Quando usar cada trait
+
+- Use `Model` para identificar tabela, `Where` e `Include`.
+- Use `Projection` quando a struct precisa ser carregada por `select`.
+- Use `InsertModel` e `UpdateModel` para entender o caminho de escrita do ORM.
+- Use `InsertPayload` quando estiver trabalhando com payloads aninhados.
+- Use `InsertConnectionPayload` quando o payload aninhado conecta registros existentes.
+
+## Próximos passos
+
+- [**Derives**](/v0.0.2/core/derives): veja os derives e atributos usados junto dessas traits.
+- [**Relações**](/v0.0.2/orm/relations): veja como isso se conecta ao sistema de relações.

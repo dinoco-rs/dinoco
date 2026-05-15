@@ -7,6 +7,7 @@ use dinoco_codegen::generate_models;
 use dinoco_compiler::{ConnectionUrl, Database, ParsedConfig, ParsedSchema, compile, render_error};
 use dinoco_engine::{DinocoClientConfig, DinocoResult, UniversalAdapter};
 
+use crate::utils::normalize_sqlite_database_url;
 use crate::{get_last_migration, local_migration_names, read_migration_schema};
 
 pub async fn generate_models_from_latest_migration() -> DinocoResult<()> {
@@ -117,6 +118,8 @@ fn resolve_database_url(config: &ParsedConfig) -> Option<(String, Database)> {
         },
         ConnectionUrl::Literal(url) => url.clone(),
     };
+
+    let url = if matches!(database, Database::Sqlite) { normalize_sqlite_database_url(&url, "dinoco") } else { url };
 
     Some((url, database.clone()))
 }

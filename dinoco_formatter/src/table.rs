@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::FormatterConfig;
 use crate::utils::{format_newlines, get_capped_newlines};
 
@@ -9,7 +11,7 @@ pub fn format_table(table: &Table, config: &FormatterConfig) -> String {
 
     out.push_str(&format!("model {} {{\n", table.name));
 
-    let (max_name_len, max_type_len) = get_max_widths(table);
+    let grouped_widths = get_grouped_widths(table);
 
     for position in 0..table.total_fields {
         if let Some((_, span)) = table.comments.iter().find(|x| x.0 == position) {
@@ -30,6 +32,8 @@ pub fn format_table(table: &Table, config: &FormatterConfig) -> String {
 
         if let Some(field) = table.fields.iter().find(|x| x.position == position) {
             let type_str = get_full_type_string(field);
+            let (max_name_len, max_type_len) =
+                grouped_widths.get(&field.position).copied().unwrap_or((field.name.len(), type_str.len()));
 
             let name_padded = format!("{:<width$}", field.name, width = max_name_len);
             let type_padded = format!("{:<width$}", type_str, width = max_type_len);
@@ -67,16 +71,32 @@ pub fn format_table(table: &Table, config: &FormatterConfig) -> String {
     out
 }
 
-fn get_max_widths(table: &Table) -> (usize, usize) {
-    let mut max_name_len = 0;
-    let mut max_type_len = 0;
+fn get_grouped_widths(table: &Table) -> HashMap<usize, (usize, usize)> {
+    let mut grouped_widths = HashMap::new();
+    let mut ordered_fields = table.fields.iter().collect::<Vec<_>>();
 
-    for field in &table.fields {
-        max_name_len = max_name_len.max(field.name.len());
-        max_type_len = max_type_len.max(get_full_type_string(field).len());
+    ordered_fields.sort_by_key(|field| field.position);
+
+    let mut group = Vec::new();
+
+    for (index, field) in ordered_fields.iter().enumerate() {
+        group.push(*field);
+
+        let closes_group = field.newlines > 1 || index + 1 == ordered_fields.len();
+
+        if closes_group {
+            let max_name_len = group.iter().map(|item| item.name.len()).max().unwrap_or_default();
+            let max_type_len = group.iter().map(|item| get_full_type_string(item).len()).max().unwrap_or_default();
+
+            for grouped_field in &group {
+                grouped_widths.insert(grouped_field.position, (max_name_len, max_type_len));
+            }
+
+            group.clear();
+        }
     }
 
-    (max_name_len, max_type_len)
+    grouped_widths
 }
 
 fn get_next_info(table: &Table, current_pos: usize) -> Option<(usize, bool)> {

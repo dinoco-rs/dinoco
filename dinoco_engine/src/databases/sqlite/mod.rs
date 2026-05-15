@@ -41,6 +41,12 @@ impl DinocoAdapter for SqliteAdapter {
     }
 
     async fn connect(url: String, config: DinocoClientConfig) -> DinocoResult<Self> {
+        if !url.starts_with("file:") {
+            return Err(DinocoError::ConnectionError(
+                "Invalid sqlite connection URL. Expected format: file:path".to_string(),
+            ));
+        }
+
         let cfg = Config::new(&url);
         let pool = cfg.create_pool(Runtime::Tokio1).map_err(DinocoError::from)?;
 

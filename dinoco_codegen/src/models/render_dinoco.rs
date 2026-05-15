@@ -11,6 +11,12 @@ const GENERATED_FILE_BANNER: &str = "// ========================================
 // ==============================================================\n\n";
 const GENERATED_FILE_LINTS: &str = "#![allow(dead_code)]\n#![allow(non_camel_case_types)]\n#![allow(non_snake_case)]\n#![allow(non_upper_case_globals)]\n#![allow(unused_imports)]\n#![allow(unused_variables)]\n\n";
 
+fn render_sqlite_url_base_resolver() -> String {
+    String::from(
+        "fn __dinoco_sqlite_base_url(url: String) -> String {\n    fn is_windows_absolute(path: &str) -> bool {\n        let bytes = path.as_bytes();\n\n        bytes.len() > 2\n            && bytes[1] == b':'\n            && (bytes[2] == b'/' || bytes[2] == b'\\\\')\n            && bytes[0].is_ascii_alphabetic()\n    }\n\n    if !url.starts_with(\"file:\") {\n        return url;\n    }\n\n    let raw = &url[\"file:\".len()..];\n\n    if raw.is_empty()\n        || raw == \":memory:\"\n        || raw.starts_with('/')\n        || raw.starts_with(\"//\")\n        || is_windows_absolute(raw)\n    {\n        return url;\n    }\n\n    let (path_part, suffix) = match raw.split_once('?') {\n        Some((path, query)) => (path, format!(\"?{}\", query)),\n        None => (raw, String::new()),\n    };\n\n    if path_part == \":memory:\"\n        || path_part.starts_with(\"dinoco/\")\n        || path_part.starts_with(\"./dinoco/\")\n    {\n        return url;\n    }\n\n    let normalized_relative = path_part.strip_prefix(\"./\").unwrap_or(path_part);\n    let normalized_path = std::path::Path::new(\"dinoco\").join(normalized_relative);\n    let normalized_path = normalized_path.to_string_lossy().replace('\\\\', \"/\");\n\n    format!(\"file:{}{}\", normalized_path, suffix)\n}\n",
+    )
+}
+
 fn render_cache_client_extension() -> String {
     String::from(
         "pub trait DinocoClientCacheExt<A>\nwhere\n    A: dinoco::DinocoAdapter,\n{\n    fn cache(&self) -> dinoco::DinocoCache<'_, A>;\n}\n\nimpl<A> DinocoClientCacheExt<A> for dinoco::DinocoClient<A>\nwhere\n    A: dinoco::DinocoAdapter,\n{\n    fn cache(&self) -> dinoco::DinocoCache<'_, A> {\n        dinoco::DinocoCache::new(self)\n    }\n}\n",
@@ -115,6 +121,11 @@ pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
         "{GENERATED_FILE_BANNER}{GENERATED_FILE_LINTS}use dinoco::{{DinocoClient, DinocoClientConfig, DinocoResult, QueueWorkers, {adapter}}};\n\npub mod models;\npub use models::*;\n\n"
     );
 
+    if matches!(schema.config.database, Database::Sqlite) {
+        output.push_str(&render_sqlite_url_base_resolver());
+        output.push('\n');
+    }
+
     if has_redis {
         output.push_str(&render_cache_client_extension());
         output.push('\n');
@@ -156,10 +167,20 @@ pub(crate) fn render_dinoco_module(schema: &ParsedSchema) -> String {
         output.push_str(");\n");
     }
 
+    if matches!(schema.config.database, Database::Sqlite) {
+        output.push_str("    let database_url = __dinoco_sqlite_base_url(");
+        output.push_str(&database_url);
+        output.push_str(");\n");
+    }
+
     output.push_str("    DinocoClient::<");
     output.push_str(adapter);
     output.push_str(">::new(");
-    output.push_str(&database_url);
+    if matches!(schema.config.database, Database::Sqlite) {
+        output.push_str("database_url");
+    } else {
+        output.push_str(&database_url);
+    }
     output.push_str(", ");
     output.push_str(&read_replicas);
     output.push_str(", config).await\n}\n");

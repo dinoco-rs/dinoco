@@ -5,8 +5,8 @@ use chrono::{DateTime, Utc};
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression, UpdateStatement};
 
 use crate::{
-    IntoOwnedValue, Projection, RelationMutationModel, RelationMutationTarget, RelationWriteAction, RelationWritePlan,
-    UpdateModel, UpdatePayload, execute_relation_writes, execute_update, execute_update_returning,
+    IntoUpdatePayloadOwned, Projection, RelationMutationModel, RelationMutationTarget, RelationWriteAction,
+    RelationWritePlan, UpdateModel, UpdatePayload, execute_relation_writes, execute_update, execute_update_returning,
     queue::{QueueDispatch, dispatch_update_lookup, enqueue_many_conditions, enqueue_single_conditions},
 };
 
@@ -52,12 +52,12 @@ where
     pub fn values<N, I>(self, item: I) -> Update<M, N>
     where
         N: UpdatePayload<M>,
-        I: IntoOwnedValue<N>,
+        I: IntoUpdatePayloadOwned<M, N>,
     {
         Update {
             conditions: self.conditions,
             relation_writes: self.relation_writes,
-            item: Some(item.into_owned_value()),
+            item: Some(item.into_update_payload_owned()),
             queue: self.queue,
             marker: PhantomData,
         }
