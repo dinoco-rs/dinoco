@@ -4,7 +4,7 @@ use dinoco_engine::{
     DinocoAdapter, DinocoClient, DinocoError, DinocoResult, QueryBuilder, SelectStatement, UpdateStatement,
 };
 
-use crate::{FieldUpdate, FindAndUpdateModel, Projection, ReadMode, UpdateModel};
+use crate::{FieldUpdate, FindAndUpdateModel, Projection, ReadMode, UpdateModel, UpdatePayload};
 
 use super::lookup::query_first_id;
 use super::read::execute_first;
@@ -25,13 +25,14 @@ where
     }
 }
 
-pub fn execute_update_many<'a, M, A>(
-    items: Vec<M>,
+pub fn execute_update_many<'a, M, V, A>(
+    items: Vec<V>,
     conditions: Vec<dinoco_engine::Expression>,
     client: &'a DinocoClient<A>,
 ) -> impl Future<Output = DinocoResult<()>> + 'a
 where
     M: UpdateModel + 'a,
+    V: UpdatePayload<M> + 'a,
     A: DinocoAdapter,
 {
     async move {
@@ -64,13 +65,14 @@ where
     }
 }
 
-pub fn execute_update_returning<'a, M, S, A>(
+pub fn execute_update_returning<'a, M, V, S, A>(
     conditions: Vec<dinoco_engine::Expression>,
-    item: M,
+    item: V,
     client: &'a DinocoClient<A>,
 ) -> impl Future<Output = DinocoResult<Vec<S>>> + 'a
 where
     M: UpdateModel + Projection<M> + 'a,
+    V: UpdatePayload<M> + 'a,
     S: Projection<M> + 'a,
     A: DinocoAdapter,
 {
@@ -104,20 +106,21 @@ where
     }
 }
 
-pub fn execute_update_many_returning<'a, M, S, A>(
-    items: Vec<M>,
+pub fn execute_update_many_returning<'a, M, V, S, A>(
+    items: Vec<V>,
     conditions: Vec<dinoco_engine::Expression>,
     client: &'a DinocoClient<A>,
 ) -> impl Future<Output = DinocoResult<Vec<S>>> + 'a
 where
     M: UpdateModel + 'a,
+    V: UpdatePayload<M> + 'a,
     S: Projection<M> + 'a,
     A: DinocoAdapter,
 {
     async move {
-        let identity_conditions = items.iter().map(UpdateModel::update_identity_conditions).collect::<Vec<_>>();
+        let identity_conditions = items.iter().map(UpdatePayload::update_identity_conditions).collect::<Vec<_>>();
 
-        execute_update_many::<M, A>(items, conditions, client).await?;
+        execute_update_many::<M, V, A>(items, conditions, client).await?;
         load_many_by_conditions::<M, S, A>(identity_conditions, client).await
     }
 }

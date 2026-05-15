@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 use dinoco_compiler::ParsedSchema;
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::{
     ColumnDefinition, DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex, DatabaseParsedTable,
@@ -127,4 +129,11 @@ pub trait MigrationExecutor {
 
         sqls
     }
+}
+
+pub trait DinocoTransactionAdapter: DinocoAdapter {
+    fn with_transaction<'a, T, F>(&'a self, operation: F) -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>>
+    where
+        T: Send + 'a,
+        F: FnOnce() -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>> + Send + 'a;
 }

@@ -1,0 +1,54 @@
+# count
+
+Usado para contar registros.
+
+---
+
+## O que você pode fazer
+
+- Filtrar com `.cond(...)`
+- Executar com `.execute(&client)`
+
+## Descrição dos métodos
+
+- `.cond(...)`: restringe quais registros são incluídos na contagem.
+- `.execute(&client)`: executa a contagem no banco de dados.
+
+## Retorno
+
+O retorno de `count` é:
+
+```rust
+DinocoResult<usize>
+```
+
+## Exemplo básico
+
+```rust
+let total = dinoco::count::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com filtro booleano
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.active.eq(true))
+    .execute(&client)
+    .await?;
+```
+
+## Exemplo com filtro de texto
+
+```rust
+let total = dinoco::count::<User>()
+    .cond(|w| w.name.includes("Ana"))
+    .execute(&client)
+    .await?;
+```
+
+## Próximos passos
+
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): recupera registros em uma lista.
+- [**`find_first::&lt;M&gt;()`**](/v0.0.1/orm/find-first): recupera um único registro.

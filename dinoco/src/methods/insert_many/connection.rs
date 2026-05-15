@@ -30,10 +30,10 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a crate::DinocoClient<A>,
-    ) -> impl std::future::Future<Output = DinocoResult<()>> + 'a
+    ) -> impl std::future::Future<Output = DinocoResult<()>> + Send + 'a
     where
-        M: 'a,
-        R: 'a,
+        M: Send + Sync + 'a,
+        R: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -88,10 +88,10 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a crate::DinocoClient<A>,
-    ) -> impl std::future::Future<Output = DinocoResult<()>> + 'a
+    ) -> impl std::future::Future<Output = DinocoResult<()>> + Send + 'a
     where
-        M: 'a,
-        R: 'a,
+        M: Send + Sync + 'a,
+        R: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -132,11 +132,11 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a crate::DinocoClient<A>,
-    ) -> impl std::future::Future<Output = DinocoResult<Vec<S>>> + 'a
+    ) -> impl std::future::Future<Output = DinocoResult<Vec<S>>> + Send + 'a
     where
-        M: 'a,
-        R: 'a,
-        S: 'a,
+        M: Send + Sync + 'a,
+        R: Send + Sync + 'a,
+        S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -186,11 +186,11 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a crate::DinocoClient<A>,
-    ) -> impl std::future::Future<Output = DinocoResult<Vec<S>>> + 'a
+    ) -> impl std::future::Future<Output = DinocoResult<Vec<S>>> + Send + 'a
     where
-        M: 'a,
-        R: 'a,
-        S: 'a,
+        M: Send + Sync + 'a,
+        R: Send + Sync + 'a,
+        S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {

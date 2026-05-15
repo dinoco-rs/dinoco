@@ -149,6 +149,18 @@ fn get_model_decorators(table: &Table) -> Vec<String> {
         decorators.push(format!("@@ids([{}])", table.primary_key_fields.join(", ")));
     }
 
+    for unique_set in &table.unique_field_sets {
+        if !unique_set.is_empty() {
+            decorators.push(format!("@@uniques([{}])", unique_set.join(", ")));
+        }
+    }
+
+    for index_set in &table.index_field_sets {
+        if !index_set.is_empty() {
+            decorators.push(format!("@@indexes([{}])", index_set.join(", ")));
+        }
+    }
+
     decorators
 }
 

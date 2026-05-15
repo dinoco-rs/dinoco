@@ -35,10 +35,16 @@ where
         self
     }
 
+    pub fn read_in_primary(mut self) -> Self {
+        self.read_mode = ReadMode::Primary;
+
+        self
+    }
+
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<usize>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<usize>> + Send + 'a
     where
         A: DinocoAdapter,
     {

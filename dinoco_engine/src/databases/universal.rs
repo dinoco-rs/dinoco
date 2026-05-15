@@ -1,10 +1,13 @@
 use async_trait::async_trait;
 use dinoco_compiler::Database;
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::{
     AdapterDialect, ColumnDefinition, DatabaseColumn, DatabaseEnumRaw, DatabaseForeignKey, DatabaseIndex,
     DatabaseParsedTable, DinocoAdapter, DinocoAdapterHandler, DinocoClientConfig, DinocoError, DinocoResult, DinocoRow,
-    DinocoValue, ExecutionResult, MigrationExecutor, MigrationStep, MySqlAdapter, PostgresAdapter, SqliteAdapter,
+    DinocoTransactionAdapter, DinocoValue, ExecutionResult, MigrationExecutor, MigrationStep, MySqlAdapter,
+    PostgresAdapter, SqliteAdapter,
 };
 
 #[derive(Clone)]
@@ -344,6 +347,20 @@ impl MigrationExecutor for UniversalAdapter {
             Self::Sqlite(adapter) => {
                 <SqliteAdapter as MigrationExecutor>::build_migration(adapter, steps, schema, reverse)
             }
+        }
+    }
+}
+
+impl DinocoTransactionAdapter for UniversalAdapter {
+    fn with_transaction<'a, T, F>(&'a self, operation: F) -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>>
+    where
+        T: Send + 'a,
+        F: FnOnce() -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>> + Send + 'a,
+    {
+        match self {
+            Self::Mysql(adapter) => adapter.with_transaction(operation),
+            Self::Postgresql(adapter) => adapter.with_transaction(operation),
+            Self::Sqlite(adapter) => adapter.with_transaction(operation),
         }
     }
 }

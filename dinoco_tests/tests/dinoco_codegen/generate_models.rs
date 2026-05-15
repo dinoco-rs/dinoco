@@ -69,8 +69,10 @@ model Post {
         model_file.contains("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize, Rowable)]")
     );
     assert!(model_file.contains("#[serde(crate = \"dinoco::serde\")]"));
+    assert!(model_file.contains("pub id: dinoco::Uuid"));
     assert!(model_file.contains("fn validate_insert(&self) -> dinoco::DinocoResult<()>"));
     assert!(model_file.contains("Field 'Post.name' is required for insert and cannot be empty"));
+    assert!(model_file.contains("id: dinoco::Uuid::new()"));
     assert!(model_file.contains("impl Model for Post"));
     assert!(dinoco_module.contains("create_connection(config: DinocoClientConfig)"));
     assert!(dinoco_module.contains("DinocoClient::<SqliteAdapter>::new(std::env::var(\"DATABASE_URL\")"));
@@ -213,6 +215,7 @@ model User {
 
     assert!(user_file.contains("Deserialize, Rowable, Default)]"));
     assert!(!user_file.contains("impl Default for User {"));
+    assert!(user_file.contains("pub id: dinoco::AutoIncrement"));
     assert!(user_file.contains("#[derive(Default)]\npub struct UserInclude {}"));
     assert!(user_file.contains("#[derive(Default)]\npub struct UserRelations {}"));
     assert!(!user_file.contains("impl Default for UserInclude {"));
@@ -221,6 +224,35 @@ model User {
     assert!(enums_file.contains("PartialEq, Eq, Default, dinoco::serde::Serialize"));
     assert!(enums_file.contains("#[default]\n    #[serde(rename = \"USER\")]"));
     assert!(!enums_file.contains("impl Default for Role {"));
+}
+
+#[test]
+fn generate_models_uses_snowflake_wrapper_type_when_default_is_snowflake() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Event {
+    id String @id @default(uuid())
+    sequence Integer @default(snowflake())
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let event_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/event.rs")).expect("generated event model should exist");
+
+    assert!(event_file.contains("pub id: dinoco::Uuid"));
+    assert!(event_file.contains("pub sequence: dinoco::Snowflake"));
+    assert!(event_file.contains("id: dinoco::Uuid::new()"));
+    assert!(event_file.contains("sequence: dinoco::Snowflake::new()"));
 }
 
 #[test]

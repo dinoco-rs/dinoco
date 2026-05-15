@@ -136,7 +136,7 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<Vec<S>>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<Vec<S>>> + Send + 'a
     where
         A: DinocoAdapter,
     {

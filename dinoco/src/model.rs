@@ -69,7 +69,7 @@ where
         self,
         parent: &'a M,
         client: &'a dinoco_engine::DinocoClient<A>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a>>
     where
         A: dinoco_engine::DinocoAdapter;
 }
@@ -83,12 +83,57 @@ where
     fn split_insert_payload(self) -> (M, Self::Nested);
 }
 
+pub trait IntoOwnedValue<T> {
+    fn into_owned_value(self) -> T;
+}
+
+impl<T> IntoOwnedValue<T> for T {
+    fn into_owned_value(self) -> T {
+        self
+    }
+}
+
+impl<T> IntoOwnedValue<T> for &T
+where
+    T: Clone,
+{
+    fn into_owned_value(self) -> T {
+        self.clone()
+    }
+}
+
 pub trait UpdateModel: Model {
     fn update_columns() -> &'static [&'static str];
     fn into_update_row(self) -> Vec<DinocoValue>;
     fn update_identity_conditions(&self) -> Vec<Expression>;
     fn validate_update(&self) -> dinoco_engine::DinocoResult<()> {
         Ok(())
+    }
+}
+
+pub trait UpdatePayload<M>
+where
+    M: UpdateModel,
+{
+    fn into_update_row(self) -> Vec<DinocoValue>;
+    fn update_identity_conditions(&self) -> Vec<Expression>;
+    fn validate_update(&self) -> dinoco_engine::DinocoResult<()>;
+}
+
+impl<M> UpdatePayload<M> for M
+where
+    M: UpdateModel,
+{
+    fn into_update_row(self) -> Vec<DinocoValue> {
+        UpdateModel::into_update_row(self)
+    }
+
+    fn update_identity_conditions(&self) -> Vec<Expression> {
+        UpdateModel::update_identity_conditions(self)
+    }
+
+    fn validate_update(&self) -> dinoco_engine::DinocoResult<()> {
+        UpdateModel::validate_update(self)
     }
 }
 
@@ -100,7 +145,7 @@ where
         self,
         _parent: &'a M,
         _client: &'a dinoco_engine::DinocoClient<A>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a>>
     where
         A: dinoco_engine::DinocoAdapter,
     {
@@ -283,6 +328,24 @@ impl IntoDinocoValue for chrono::NaiveDate {
     }
 }
 
+impl IntoDinocoValue for crate::Uuid {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::from(self.into_inner())
+    }
+}
+
+impl IntoDinocoValue for crate::Snowflake {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::from(self.into_inner())
+    }
+}
+
+impl IntoDinocoValue for crate::AutoIncrement {
+    fn into_dinoco_value(self) -> DinocoValue {
+        DinocoValue::from(self.into_inner())
+    }
+}
+
 impl<T> ScalarFieldValue<T> for T
 where
     T: IntoDinocoValue,
@@ -295,6 +358,42 @@ where
 impl ScalarFieldValue<String> for &str {
     fn into_scalar_field_value(self) -> DinocoValue {
         self.into_dinoco_value()
+    }
+}
+
+impl ScalarFieldValue<String> for crate::Uuid {
+    fn into_scalar_field_value(self) -> DinocoValue {
+        self.into_dinoco_value()
+    }
+}
+
+impl ScalarFieldValue<String> for &crate::Uuid {
+    fn into_scalar_field_value(self) -> DinocoValue {
+        DinocoValue::from(self.as_str().to_string())
+    }
+}
+
+impl ScalarFieldValue<i64> for crate::Snowflake {
+    fn into_scalar_field_value(self) -> DinocoValue {
+        self.into_dinoco_value()
+    }
+}
+
+impl ScalarFieldValue<i64> for &crate::Snowflake {
+    fn into_scalar_field_value(self) -> DinocoValue {
+        DinocoValue::from(self.as_i64())
+    }
+}
+
+impl ScalarFieldValue<i64> for crate::AutoIncrement {
+    fn into_scalar_field_value(self) -> DinocoValue {
+        self.into_dinoco_value()
+    }
+}
+
+impl ScalarFieldValue<i64> for &crate::AutoIncrement {
+    fn into_scalar_field_value(self) -> DinocoValue {
+        DinocoValue::from(self.as_i64())
     }
 }
 

@@ -5,7 +5,8 @@ use chrono::{DateTime, Utc};
 use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoError, DinocoResult};
 
 use crate::{
-    InsertConnection, InsertModel, InsertPayload, InsertRelation, Projection, execute_insert_payload_returning,
+    InsertConnection, InsertModel, InsertPayload, InsertRelation, IntoOwnedValue, Projection,
+    execute_insert_payload_returning,
     execution::execute_reload_many_by_identity,
     queue::{QueueDispatch, dispatch_insert_lookup, enqueue_many_conditions},
 };
@@ -99,10 +100,13 @@ where
     M: InsertModel,
     V: InsertPayload<M>,
 {
-    pub fn values<N>(self, items: Vec<N>) -> InsertMany<M, N>
+    pub fn values<N, I>(self, items: Vec<I>) -> InsertMany<M, N>
     where
         N: InsertPayload<M>,
+        I: IntoOwnedValue<N>,
     {
+        let items = items.into_iter().map(IntoOwnedValue::into_owned_value).collect::<Vec<_>>();
+
         InsertMany { items, queue: self.queue, marker: PhantomData }
     }
 
@@ -134,10 +138,14 @@ where
         self
     }
 
-    pub fn execute<'a, A>(self, client: &'a DinocoClient<A>) -> impl std::future::Future<Output = DinocoResult<()>> + 'a
+    pub fn execute<'a, A>(
+        self,
+        client: &'a DinocoClient<A>,
+    ) -> impl std::future::Future<Output = DinocoResult<()>> + Send + 'a
     where
-        M: Projection<M> + 'a,
-        V: 'a,
+        M: Projection<M> + Send + Sync + 'a,
+        V: Send + 'a,
+        <V as InsertPayload<M>>::Nested: Send + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -219,11 +227,12 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = DinocoResult<Vec<S>>> + 'a
+    ) -> impl std::future::Future<Output = DinocoResult<Vec<S>>> + Send + 'a
     where
-        M: Projection<M> + 'a,
-        V: 'a,
-        S: 'a,
+        M: Projection<M> + Send + Sync + 'a,
+        V: Send + 'a,
+        <V as InsertPayload<M>>::Nested: Send + 'a,
+        S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {

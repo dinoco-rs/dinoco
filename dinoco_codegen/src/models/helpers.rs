@@ -52,6 +52,10 @@ pub(crate) fn rust_scalar_type(field: &ParsedField, enum_names: &[String]) -> St
 }
 
 pub(crate) fn rust_scalar_base_type(field: &ParsedField, enum_names: &[String]) -> String {
+    if let Some(wrapper) = generated_id_wrapper_type(field) {
+        return wrapper.to_string();
+    }
+
     match &field.field_type {
         ParsedFieldType::String => "String".to_string(),
         ParsedFieldType::Boolean => "bool".to_string(),
@@ -183,9 +187,9 @@ pub(crate) fn default_value_expr(field: &ParsedField, enum_names: &[String]) -> 
         ParsedFieldDefault::Float(value) => value.to_string(),
         ParsedFieldDefault::EnumValue(value) => render_enum_expr(field, value, enum_names),
         ParsedFieldDefault::Function(function) => match function {
-            FunctionCall::Uuid => "dinoco::uuid_v7().to_string()".to_string(),
-            FunctionCall::Snowflake => "dinoco::snowflake()".to_string(),
-            FunctionCall::AutoIncrement => "0".to_string(),
+            FunctionCall::Uuid => "dinoco::Uuid::new()".to_string(),
+            FunctionCall::Snowflake => "dinoco::Snowflake::new()".to_string(),
+            FunctionCall::AutoIncrement => "dinoco::AutoIncrement::new()".to_string(),
             FunctionCall::Now => match field.field_type {
                 ParsedFieldType::Date => "dinoco::Utc::now().date_naive()".to_string(),
                 _ => "dinoco::Utc::now()".to_string(),
@@ -277,6 +281,17 @@ fn default_expr_by_type(field: &ParsedField, enum_names: &[String]) -> String {
             }
         }
         ParsedFieldType::Relation(_) => unreachable!(),
+    }
+}
+
+fn generated_id_wrapper_type(field: &ParsedField) -> Option<&'static str> {
+    match (&field.field_type, &field.default_value) {
+        (ParsedFieldType::String, ParsedFieldDefault::Function(FunctionCall::Uuid)) => Some("dinoco::Uuid"),
+        (ParsedFieldType::Integer, ParsedFieldDefault::Function(FunctionCall::Snowflake)) => Some("dinoco::Snowflake"),
+        (ParsedFieldType::Integer, ParsedFieldDefault::Function(FunctionCall::AutoIncrement)) => {
+            Some("dinoco::AutoIncrement")
+        }
+        _ => None,
     }
 }
 

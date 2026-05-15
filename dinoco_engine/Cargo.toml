@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_engine"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 license = "Apache-2.0"
 description = "Database adapters, query execution, and migration engine components for Dinoco."
@@ -31,4 +31,4 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
 dinoco_compiler = { path = "../dinoco_compiler", version = "0.0.3" }
-dinoco_derives = { path = "../dinoco_derives", version = "0.0.3" }
+dinoco_derives = { path = "../dinoco_derives", version = "0.0.4" }

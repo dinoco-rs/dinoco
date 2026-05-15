@@ -1,9 +1,12 @@
+use std::fmt;
+use std::ops::Deref;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dinoco_engine::current_snowflake_node_id;
+use serde::{Deserialize, Serialize};
 
-use crate::Uuid;
+use crate::DinocoValue;
 
 const DINOCO_SNOWFLAKE_EPOCH: i64 = 1_700_000_000_000;
 const MAX_NODE_ID: i64 = 0x3ff;
@@ -15,8 +18,170 @@ struct SnowflakeState {
     sequence: i64,
 }
 
-pub fn uuid_v7() -> Uuid {
-    Uuid::now_v7()
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+pub struct Uuid(String);
+
+impl Uuid {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::now_v7().to_string())
+    }
+
+    pub fn now_v7() -> Self {
+        Self::new()
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl fmt::Display for Uuid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Deref for Uuid {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsRef<str> for Uuid {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl From<String> for Uuid {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for Uuid {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<uuid::Uuid> for Uuid {
+    fn from(value: uuid::Uuid) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<Uuid> for String {
+    fn from(value: Uuid) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<DinocoValue> for Uuid {
+    type Error = crate::DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        Ok(Self(String::try_from(value)?))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+pub struct Snowflake(i64);
+
+impl Snowflake {
+    pub fn new() -> Self {
+        Self(snowflake())
+    }
+
+    pub fn as_i64(&self) -> i64 {
+        self.0
+    }
+
+    pub fn into_inner(self) -> i64 {
+        self.0
+    }
+}
+
+impl fmt::Display for Snowflake {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<i64> for Snowflake {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Snowflake> for i64 {
+    fn from(value: Snowflake) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<DinocoValue> for Snowflake {
+    type Error = crate::DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        Ok(Self(i64::try_from(value)?))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+pub struct AutoIncrement(i64);
+
+impl AutoIncrement {
+    pub fn new() -> Self {
+        Self(0)
+    }
+
+    pub fn as_i64(&self) -> i64 {
+        self.0
+    }
+
+    pub fn into_inner(self) -> i64 {
+        self.0
+    }
+}
+
+impl fmt::Display for AutoIncrement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<i64> for AutoIncrement {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<AutoIncrement> for i64 {
+    fn from(value: AutoIncrement) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<DinocoValue> for AutoIncrement {
+    type Error = crate::DinocoError;
+
+    fn try_from(value: DinocoValue) -> Result<Self, Self::Error> {
+        Ok(Self(i64::try_from(value)?))
+    }
+}
+
+pub fn uuid_v7() -> uuid::Uuid {
+    uuid::Uuid::now_v7()
 }
 
 pub fn snowflake() -> i64 {

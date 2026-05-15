@@ -246,7 +246,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     self,
                     parent: &'a #model,
                     client: &'a #crate_path::DinocoClient<A>,
-                ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = #crate_path::DinocoResult<()>> + 'a>>
+                ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = #crate_path::DinocoResult<()>> + ::std::marker::Send + 'a>>
                 where
                     A: #crate_path::DinocoAdapter,
                 {

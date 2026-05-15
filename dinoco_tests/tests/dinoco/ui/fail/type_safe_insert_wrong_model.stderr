@@ -1,10 +1,8 @@
 error[E0277]: the trait bound `Team: InsertPayload<User>` is not satisfied
- --> tests/dinoco/ui/fail/type_safe_insert_wrong_model.rs:9:42
+ --> tests/dinoco/ui/fail/type_safe_insert_wrong_model.rs:9:35
   |
 9 |     let _ = insert_into::<User>().values(Team { id: "team-1".to_string(), name: "Platform".to_string() });
-  |                                   ------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
-  |                                   |
-  |                                   required by a bound introduced by this call
+  |                                   ^^^^^^ unsatisfied trait bound
   |
 help: the trait `InsertPayload<User>` is not implemented for `Team`
  --> tests/dinoco/ui/fail/../common.rs
@@ -14,7 +12,7 @@ help: the trait `InsertPayload<User>` is not implemented for `Team`
 note: required by a bound in `Insert::<M, V>::values`
  --> $WORKSPACE/dinoco/src/methods/insert_into.rs
   |
-  |     pub fn values<N>(self, item: N) -> Insert<M, N>
+  |     pub fn values<N, I>(self, item: I) -> Insert<M, N>
   |            ------ required by a bound in this associated function
   |     where
   |         N: InsertPayload<M>,

@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 
+use std::future::Future;
+use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -11,7 +13,7 @@ use tokio_postgres::types::{IsNull, Json, ToSql, Type, private::BytesMut, to_sql
 
 use crate::{
     ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
-    DinocoRow, DinocoValue, ExecutionResult,
+    DinocoRow, DinocoTransactionAdapter, DinocoValue, ExecutionResult,
 };
 
 mod dialect;
@@ -22,6 +24,9 @@ mod row;
 pub use dialect::PostgresDialect;
 
 static POSTGRES_DIALECT: PostgresDialect = PostgresDialect;
+tokio::task_local! {
+    static POSTGRES_TX_CONNECTION: Arc<tokio::sync::Mutex<deadpool_postgres::Object>>;
+}
 
 #[derive(Clone)]
 pub struct PostgresAdapter {
@@ -49,19 +54,15 @@ impl DinocoAdapter for PostgresAdapter {
     }
 
     async fn execute_result(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<ExecutionResult> {
-        let pg_params: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p as _).collect();
-        let client = self.client.get().await.map_err(|e| DinocoError::from(e))?;
-        let started_at = Instant::now();
+        if let Ok(tx_connection) = POSTGRES_TX_CONNECTION.try_with(Clone::clone) {
+            let connection = tx_connection.lock().await;
 
-        let affected_rows = client.execute(query, &pg_params).await?;
-        self.query_logger.log(DinocoQueryLog {
-            adapter: "postgresql",
-            duration: started_at.elapsed(),
-            params: params.to_vec(),
-            query: query.to_string(),
-        });
+            return execute_result_with_connection(&connection, query, params, &self.query_logger).await;
+        }
 
-        Ok(ExecutionResult { affected_rows, last_insert_id: None })
+        let connection = self.client.get().await.map_err(|e| DinocoError::from(e))?;
+
+        execute_result_with_connection(&connection, query, params, &self.query_logger).await
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
@@ -86,26 +87,100 @@ impl DinocoAdapter for PostgresAdapter {
     }
 
     async fn query_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>> {
-        let pg_params: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p as _).collect();
-        let client = self.client.get().await.map_err(|e| DinocoError::from(e))?;
-        let started_at = Instant::now();
+        if let Ok(tx_connection) = POSTGRES_TX_CONNECTION.try_with(Clone::clone) {
+            let connection = tx_connection.lock().await;
 
-        let db_rows = client.query(query, &pg_params).await?;
-        let mut results = Vec::with_capacity(db_rows.len());
-
-        for db_row in db_rows {
-            results.push(T::from_row(&db_row)?);
+            return query_as_with_connection::<T>(&connection, query, params, &self.query_logger).await;
         }
 
-        self.query_logger.log(DinocoQueryLog {
-            adapter: "postgresql",
-            duration: started_at.elapsed(),
-            params: params.to_vec(),
-            query: query.to_string(),
-        });
+        let connection = self.client.get().await.map_err(|e| DinocoError::from(e))?;
 
-        Ok(results)
+        query_as_with_connection::<T>(&connection, query, params, &self.query_logger).await
     }
+}
+
+impl DinocoTransactionAdapter for PostgresAdapter {
+    fn with_transaction<'a, T, F>(&'a self, operation: F) -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>>
+    where
+        T: Send + 'a,
+        F: FnOnce() -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>> + Send + 'a,
+    {
+        Box::pin(async move {
+            if POSTGRES_TX_CONNECTION.try_with(|_| ()).is_ok() {
+                return operation().await;
+            }
+
+            let connection = self.client.get().await.map_err(|error| DinocoError::from(error))?;
+            let tx_connection = Arc::new(tokio::sync::Mutex::new(connection));
+
+            {
+                let connection = tx_connection.lock().await;
+                connection.batch_execute("BEGIN").await?;
+            }
+
+            let result = POSTGRES_TX_CONNECTION.scope(tx_connection.clone(), async move { operation().await }).await;
+
+            match result {
+                Ok(output) => {
+                    let connection = tx_connection.lock().await;
+                    connection.batch_execute("COMMIT").await?;
+
+                    Ok(output)
+                }
+                Err(error) => {
+                    let connection = tx_connection.lock().await;
+                    let _ = connection.batch_execute("ROLLBACK").await;
+
+                    Err(error)
+                }
+            }
+        })
+    }
+}
+
+async fn execute_result_with_connection(
+    connection: &deadpool_postgres::Object,
+    query: &str,
+    params: &[DinocoValue],
+    query_logger: &DinocoQueryLogger,
+) -> DinocoResult<ExecutionResult> {
+    let pg_params: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p as _).collect();
+    let started_at = Instant::now();
+    let affected_rows = connection.execute(query, &pg_params).await?;
+
+    query_logger.log(DinocoQueryLog {
+        adapter: "postgresql",
+        duration: started_at.elapsed(),
+        params: params.to_vec(),
+        query: query.to_string(),
+    });
+
+    Ok(ExecutionResult { affected_rows, last_insert_id: None })
+}
+
+async fn query_as_with_connection<T: DinocoRow>(
+    connection: &deadpool_postgres::Object,
+    query: &str,
+    params: &[DinocoValue],
+    query_logger: &DinocoQueryLogger,
+) -> DinocoResult<Vec<T>> {
+    let pg_params: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p as _).collect();
+    let started_at = Instant::now();
+    let db_rows = connection.query(query, &pg_params).await?;
+    let mut results = Vec::with_capacity(db_rows.len());
+
+    for db_row in db_rows {
+        results.push(T::from_row(&db_row)?);
+    }
+
+    query_logger.log(DinocoQueryLog {
+        adapter: "postgresql",
+        duration: started_at.elapsed(),
+        params: params.to_vec(),
+        query: query.to_string(),
+    });
+
+    Ok(results)
 }
 
 impl ToSql for DinocoValue {

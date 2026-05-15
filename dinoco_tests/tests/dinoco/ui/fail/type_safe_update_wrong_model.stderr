@@ -1,20 +1,19 @@
-error[E0308]: mismatched types
- --> tests/dinoco/ui/fail/type_safe_update_wrong_model.rs:9:37
+error[E0277]: the trait bound `Team: UpdatePayload<User>` is not satisfied
+ --> tests/dinoco/ui/fail/type_safe_update_wrong_model.rs:9:30
   |
 9 |     let _ = update::<User>().values(Team { id: "team-1".to_string(), name: "Platform".to_string() });
-  |                              ------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `User`, found `Team`
-  |                              |
-  |                              arguments to this method are incorrect
+  |                              ^^^^^^ unsatisfied trait bound
   |
-help: the return type of this call is `Team` due to the type of the argument passed
- --> tests/dinoco/ui/fail/type_safe_update_wrong_model.rs:9:13
+help: the trait `UpdatePayload<User>` is not implemented for `Team`
+ --> tests/dinoco/ui/fail/../common.rs
   |
-9 |     let _ = update::<User>().values(Team { id: "team-1".to_string(), name: "Platform".to_string() });
-  |             ^^^^^^^^^^^^^^^^^^^^^^^^---------------------------------------------------------------^
-  |                                     |
-  |                                     this argument influences the return type of `values`
-note: method defined here
+  | pub struct Team {
+  | ^^^^^^^^^^^^^^^
+note: required by a bound in `Update::<M, V>::values`
  --> $WORKSPACE/dinoco/src/methods/update.rs
   |
-  |     pub fn values(mut self, item: M) -> Self {
-  |            ^^^^^^
+  |     pub fn values<N, I>(self, item: I) -> Update<M, N>
+  |            ------ required by a bound in this associated function
+  |     where
+  |         N: UpdatePayload<M>,
+  |            ^^^^^^^^^^^^^^^^ required by this bound in `Update::<M, V>::values`

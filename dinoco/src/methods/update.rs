@@ -5,25 +5,25 @@ use chrono::{DateTime, Utc};
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression, UpdateStatement};
 
 use crate::{
-    Projection, RelationMutationModel, RelationMutationTarget, RelationWriteAction, RelationWritePlan, UpdateModel,
-    execute_relation_writes, execute_update, execute_update_returning,
+    IntoOwnedValue, Projection, RelationMutationModel, RelationMutationTarget, RelationWriteAction, RelationWritePlan,
+    UpdateModel, UpdatePayload, execute_relation_writes, execute_update, execute_update_returning,
     queue::{QueueDispatch, dispatch_update_lookup, enqueue_many_conditions, enqueue_single_conditions},
 };
 
 #[derive(Debug, Clone)]
-pub struct Update<M> {
+pub struct Update<M, V = M> {
     conditions: Vec<Expression>,
     relation_writes: Vec<(RelationWriteAction, RelationWritePlan)>,
-    item: Option<M>,
+    item: Option<V>,
     queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> M>,
 }
 
 #[derive(Debug, Clone)]
-pub struct UpdateReturning<M, S> {
+pub struct UpdateReturning<M, V = M, S = M> {
     conditions: Vec<Expression>,
     relation_writes: Vec<(RelationWriteAction, RelationWritePlan)>,
-    item: Option<M>,
+    item: Option<V>,
     queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> (M, S)>,
 }
@@ -35,9 +35,10 @@ where
     Update { conditions: Vec::new(), relation_writes: Vec::new(), item: None, queue: None, marker: PhantomData }
 }
 
-impl<M> Update<M>
+impl<M, V> Update<M, V>
 where
     M: UpdateModel,
+    V: UpdatePayload<M>,
 {
     pub fn cond<F>(mut self, closure: F) -> Self
     where
@@ -48,13 +49,21 @@ where
         self
     }
 
-    pub fn values(mut self, item: M) -> Self {
-        self.item = Some(item);
-
-        self
+    pub fn values<N, I>(self, item: I) -> Update<M, N>
+    where
+        N: UpdatePayload<M>,
+        I: IntoOwnedValue<N>,
+    {
+        Update {
+            conditions: self.conditions,
+            relation_writes: self.relation_writes,
+            item: Some(item.into_owned_value()),
+            queue: self.queue,
+            marker: PhantomData,
+        }
     }
 
-    pub fn returning<S>(self) -> UpdateReturning<M, S>
+    pub fn returning<S>(self) -> UpdateReturning<M, V, S>
     where
         M: Projection<M>,
         S: Projection<M>,
@@ -116,14 +125,15 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a
     where
-        M: 'a,
+        M: Send + Sync + 'a,
+        V: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
             let conditions = self.conditions;
-            let queue_lookup = self.item.as_ref().map(|item| dispatch_update_lookup(item, &conditions));
+            let queue_lookup = self.item.as_ref().map(|item| dispatch_update_lookup::<M, _>(item, &conditions));
 
             if let Some(item) = self.item {
                 item.validate_update()?;
@@ -153,9 +163,10 @@ where
     }
 }
 
-impl<M, S> UpdateReturning<M, S>
+impl<M, V, S> UpdateReturning<M, V, S>
 where
     M: UpdateModel + Projection<M>,
+    V: UpdatePayload<M>,
     S: Projection<M>,
 {
     #[doc(hidden)]
@@ -182,10 +193,11 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<Vec<S>>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<Vec<S>>> + Send + 'a
     where
-        M: 'a,
-        S: 'a,
+        M: Send + Sync + 'a,
+        V: Send + Sync + 'a,
+        S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -200,8 +212,8 @@ where
                     "update().returning() requires values(...) before execute().".to_string(),
                 )
             })?;
-            let queue_lookup = dispatch_update_lookup(&item, &self.conditions);
-            let result = execute_update_returning::<M, S, A>(self.conditions, item, client).await?;
+            let queue_lookup = dispatch_update_lookup::<M, _>(&item, &self.conditions);
+            let result = execute_update_returning::<M, V, S, A>(self.conditions, item, client).await?;
 
             if let Some(queue) = &self.queue {
                 enqueue_many_conditions(client, queue, vec![queue_lookup]).await?;

@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -13,12 +15,15 @@ mod row;
 
 use crate::{
     ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
-    DinocoRow, DinocoValue, ExecutionResult,
+    DinocoRow, DinocoTransactionAdapter, DinocoValue, ExecutionResult,
 };
 
 pub use dialect::SqliteDialect;
 
 static SQLITE_DIALECT: SqliteDialect = SqliteDialect;
+tokio::task_local! {
+    static SQLITE_TX_CONNECTION: Arc<tokio::sync::Mutex<deadpool_sqlite::Object>>;
+}
 
 #[derive(Clone)]
 pub struct SqliteAdapter {
@@ -43,33 +48,15 @@ impl DinocoAdapter for SqliteAdapter {
     }
 
     async fn execute_result(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<ExecutionResult> {
+        if let Ok(tx_conn) = SQLITE_TX_CONNECTION.try_with(Clone::clone) {
+            let conn = tx_conn.lock().await;
+
+            return execute_result_with_connection(&conn, query, params, &self.query_logger).await;
+        }
+
         let conn = self.pool.get().await.map_err(DinocoError::from)?;
-        let query_owned = query.to_string();
-        let params_owned = params.to_vec();
-        let logged_query = query.to_string();
-        let logged_params = params.to_vec();
-        let started_at = Instant::now();
 
-        let affected_rows = conn
-            .interact(move |conn| {
-                let params_refs: Vec<&dyn rusqlite::ToSql> =
-                    params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-
-                conn.execute(&query_owned, params_refs.as_slice())
-                    .map(|affected_rows| (affected_rows, conn.last_insert_rowid()))
-            })
-            .await
-            .map_err(DinocoError::from)?
-            .map_err(DinocoError::from)?;
-
-        self.query_logger.log(DinocoQueryLog {
-            adapter: "sqlite",
-            duration: started_at.elapsed(),
-            params: logged_params,
-            query: logged_query,
-        });
-
-        Ok(ExecutionResult { affected_rows: affected_rows.0 as u64, last_insert_id: Some(affected_rows.1) })
+        execute_result_with_connection(&conn, query, params, &self.query_logger).await
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
@@ -91,40 +78,135 @@ impl DinocoAdapter for SqliteAdapter {
         query: &str,
         params: &[DinocoValue],
     ) -> DinocoResult<Vec<T>> {
+        if let Ok(tx_conn) = SQLITE_TX_CONNECTION.try_with(Clone::clone) {
+            let conn = tx_conn.lock().await;
+
+            return query_as_with_connection::<T>(&conn, query, params, &self.query_logger).await;
+        }
+
         let conn = self.pool.get().await.map_err(DinocoError::from)?;
-        let query_owned = query.to_string();
-        let params_owned = params.to_vec();
-        let logged_query = query.to_string();
-        let logged_params = params.to_vec();
-        let started_at = Instant::now();
 
-        let results = conn
-            .interact(move |conn| -> DinocoResult<Vec<T>> {
-                let mut stmt = conn.prepare(&query_owned).map_err(DinocoError::from)?;
-                let params_refs: Vec<&dyn rusqlite::ToSql> =
-                    params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-
-                let mut rows = stmt.query(params_refs.as_slice()).map_err(DinocoError::from)?;
-                let mut results = Vec::new();
-
-                while let Some(row) = rows.next().map_err(DinocoError::from)? {
-                    results.push(T::from_row(row)?);
-                }
-
-                Ok(results)
-            })
-            .await
-            .map_err(DinocoError::from)??;
-
-        self.query_logger.log(DinocoQueryLog {
-            adapter: "sqlite",
-            duration: started_at.elapsed(),
-            params: logged_params,
-            query: logged_query,
-        });
-
-        Ok(results)
+        query_as_with_connection::<T>(&conn, query, params, &self.query_logger).await
     }
+}
+
+impl DinocoTransactionAdapter for SqliteAdapter {
+    fn with_transaction<'a, T, F>(&'a self, operation: F) -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>>
+    where
+        T: Send + 'a,
+        F: FnOnce() -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>> + Send + 'a,
+    {
+        Box::pin(async move {
+            if SQLITE_TX_CONNECTION.try_with(|_| ()).is_ok() {
+                return operation().await;
+            }
+
+            let connection = self.pool.get().await.map_err(DinocoError::from)?;
+            let tx_connection = Arc::new(tokio::sync::Mutex::new(connection));
+
+            {
+                let conn = tx_connection.lock().await;
+                conn.interact(|conn| conn.execute("BEGIN", []))
+                    .await
+                    .map_err(DinocoError::from)?
+                    .map_err(DinocoError::from)?;
+            }
+
+            let result = SQLITE_TX_CONNECTION.scope(tx_connection.clone(), async move { operation().await }).await;
+
+            match result {
+                Ok(output) => {
+                    let conn = tx_connection.lock().await;
+                    conn.interact(|conn| conn.execute("COMMIT", []))
+                        .await
+                        .map_err(DinocoError::from)?
+                        .map_err(DinocoError::from)?;
+
+                    Ok(output)
+                }
+                Err(error) => {
+                    let conn = tx_connection.lock().await;
+                    let _ = conn.interact(|conn| conn.execute("ROLLBACK", [])).await;
+
+                    Err(error)
+                }
+            }
+        })
+    }
+}
+
+async fn execute_result_with_connection(
+    conn: &deadpool_sqlite::Object,
+    query: &str,
+    params: &[DinocoValue],
+    query_logger: &DinocoQueryLogger,
+) -> DinocoResult<ExecutionResult> {
+    let query_owned = query.to_string();
+    let params_owned = params.to_vec();
+    let logged_query = query.to_string();
+    let logged_params = params.to_vec();
+    let started_at = Instant::now();
+
+    let affected_rows = conn
+        .interact(move |conn| {
+            let params_refs: Vec<&dyn rusqlite::ToSql> =
+                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+
+            conn.execute(&query_owned, params_refs.as_slice())
+                .map(|affected_rows| (affected_rows, conn.last_insert_rowid()))
+        })
+        .await
+        .map_err(DinocoError::from)?
+        .map_err(DinocoError::from)?;
+
+    query_logger.log(DinocoQueryLog {
+        adapter: "sqlite",
+        duration: started_at.elapsed(),
+        params: logged_params,
+        query: logged_query,
+    });
+
+    Ok(ExecutionResult { affected_rows: affected_rows.0 as u64, last_insert_id: Some(affected_rows.1) })
+}
+
+async fn query_as_with_connection<T: DinocoRow + Send + 'static>(
+    conn: &deadpool_sqlite::Object,
+    query: &str,
+    params: &[DinocoValue],
+    query_logger: &DinocoQueryLogger,
+) -> DinocoResult<Vec<T>> {
+    let query_owned = query.to_string();
+    let params_owned = params.to_vec();
+    let logged_query = query.to_string();
+    let logged_params = params.to_vec();
+    let started_at = Instant::now();
+
+    let results = conn
+        .interact(move |conn| -> DinocoResult<Vec<T>> {
+            let mut stmt = conn.prepare(&query_owned).map_err(DinocoError::from)?;
+            let params_refs: Vec<&dyn rusqlite::ToSql> =
+                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+
+            let mut rows = stmt.query(params_refs.as_slice()).map_err(DinocoError::from)?;
+            let mut results = Vec::new();
+
+            while let Some(row) = rows.next().map_err(DinocoError::from)? {
+                results.push(T::from_row(row)?);
+            }
+
+            Ok(results)
+        })
+        .await
+        .map_err(DinocoError::from)??;
+
+    query_logger.log(DinocoQueryLog {
+        adapter: "sqlite",
+        duration: started_at.elapsed(),
+        params: logged_params,
+        query: logged_query,
+    });
+
+    Ok(results)
 }
 
 impl rusqlite::ToSql for DinocoValue {

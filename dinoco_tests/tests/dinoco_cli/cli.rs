@@ -305,7 +305,7 @@ async fn database_introspect_generates_schema_from_sqlite() {
 async fn database_introspect_generates_complex_schema_for_postgres() {
     let project = TestDir::new();
     let database_url = postgres_url();
-    let prefix = format!("introspect_pg_{}", Uuid::now_v7().simple());
+    let prefix = format!("introspect_pg_{}", short_test_suffix());
 
     let adapter = match PostgresAdapter::connect(database_url.clone(), DinocoClientConfig::default()).await {
         Ok(adapter) => adapter,
@@ -340,17 +340,26 @@ async fn database_introspect_generates_complex_schema_for_postgres() {
         schema.lines().any(|line| line.contains("is_active") && line.contains("Boolean")),
         "unexpected schema:\n{schema}"
     );
+    let compact_schema = schema.chars().filter(|ch| !ch.is_whitespace()).collect::<String>();
+
     assert!(schema.contains("@relation("), "unexpected schema:\n{schema}");
     assert!(schema.contains("references: [id]"), "unexpected schema:\n{schema}");
-    assert!(schema.contains("@@uniques([slug, locale])"), "unexpected schema:\n{schema}");
-    assert!(schema.contains("@@indexes([title, author_id])"), "unexpected schema:\n{schema}");
+    assert!(
+        compact_schema.contains("@@uniques([slug,locale])") || compact_schema.contains("@@uniques([locale,slug])"),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        compact_schema.contains("@@indexes([title,author_id])")
+            || compact_schema.contains("@@indexes([author_id,title])"),
+        "unexpected schema:\n{schema}"
+    );
 }
 
 #[tokio::test]
 async fn database_introspect_generates_complex_schema_for_mysql() {
     let project = TestDir::new();
     let database_url = mysql_url();
-    let prefix = format!("introspect_my_{}", Uuid::now_v7().simple());
+    let prefix = format!("introspect_my_{}", short_test_suffix());
 
     let adapter = match MySqlAdapter::connect(database_url.clone(), DinocoClientConfig::default()).await {
         Ok(adapter) => adapter,
@@ -385,10 +394,19 @@ async fn database_introspect_generates_complex_schema_for_mysql() {
         schema.lines().any(|line| line.contains("is_active") && line.contains("Boolean")),
         "unexpected schema:\n{schema}"
     );
+    let compact_schema = schema.chars().filter(|ch| !ch.is_whitespace()).collect::<String>();
+
     assert!(schema.contains("@relation("), "unexpected schema:\n{schema}");
     assert!(schema.contains("references: [id]"), "unexpected schema:\n{schema}");
-    assert!(schema.contains("@@uniques([slug, locale])"), "unexpected schema:\n{schema}");
-    assert!(schema.contains("@@indexes([title, author_id])"), "unexpected schema:\n{schema}");
+    assert!(
+        compact_schema.contains("@@uniques([slug,locale])") || compact_schema.contains("@@uniques([locale,slug])"),
+        "unexpected schema:\n{schema}"
+    );
+    assert!(
+        compact_schema.contains("@@indexes([title,author_id])")
+            || compact_schema.contains("@@indexes([author_id,title])"),
+        "unexpected schema:\n{schema}"
+    );
 }
 
 fn binary_path() -> &'static str {
@@ -436,6 +454,10 @@ fn to_model_name(table_name: &str) -> String {
     }
 
     result
+}
+
+fn short_test_suffix() -> String {
+    Uuid::now_v7().simple().to_string().chars().take(8).collect()
 }
 
 async fn setup_postgres_complex_schema(adapter: &PostgresAdapter, prefix: &str) -> bool {

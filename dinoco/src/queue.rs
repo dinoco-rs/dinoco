@@ -428,9 +428,10 @@ where
     item.insert_identity_conditions()
 }
 
-pub(crate) fn dispatch_update_lookup<M>(item: &M, conditions: &[Expression]) -> Vec<Expression>
+pub(crate) fn dispatch_update_lookup<M, V>(item: &V, conditions: &[Expression]) -> Vec<Expression>
 where
     M: UpdateModel,
+    V: crate::UpdatePayload<M>,
 {
     let mut output = item.update_identity_conditions();
     output.extend(conditions.iter().cloned());

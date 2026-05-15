@@ -13,10 +13,10 @@ pub use dinoco_derives::{Extend, Rowable};
 pub use dinoco_engine::{
     AdapterDialect, DinocoAdapter, DinocoClient, DinocoClientConfig, DinocoError, DinocoGenericRow, DinocoQueryLog,
     DinocoQueryLogWriter, DinocoQueryLogger, DinocoQueryLoggerOptions, DinocoRedisConfig, DinocoResult, DinocoRow,
-    DinocoValue, Expression, MySqlAdapter, OrderDirection, PostgresAdapter, QueryBuilder, SelectStatement,
-    SqliteAdapter,
+    DinocoTransactionAdapter, DinocoValue, Expression, MySqlAdapter, OrderDirection, PostgresAdapter, QueryBuilder,
+    SelectStatement, SqliteAdapter,
 };
-pub use uuid::Uuid;
+pub use uuid::Uuid as RawUuid;
 
 pub use chrono::{DateTime as DateTimeUtc, NaiveDate, Utc};
 pub use futures;
@@ -36,15 +36,16 @@ pub use execution::{
 pub use fields::{
     FieldUpdate, RelationField, RelationMutationWhere, RelationQuery, RelationScalarField, ScalarField, UpdateField,
 };
-pub use ids::{snowflake, uuid_v7};
+pub use ids::{AutoIncrement, Snowflake, Uuid, snowflake, uuid_v7};
 pub use methods::{
-    Count, Delete, DeleteMany, FindAndUpdate, FindFirst, FindMany, Insert, InsertMany, Update, UpdateMany, count,
-    delete, delete_many, find_and_update, find_first, find_many, insert_into, insert_many, update, update_many,
+    Count, Delete, DeleteMany, FindAndUpdate, FindFirst, FindMany, Insert, InsertMany, IntoTransactionAction,
+    TransactionAction, TransactionActionExt, Transactions, Update, UpdateMany, count, delete, delete_many,
+    find_and_update, find_first, find_many, insert_into, insert_many, transactions, tx, update, update_many,
 };
 pub use model::{
     ConnectionUpdatePlan, FindAndUpdateModel, IncludeApplier, IncludeLoaderFuture, InsertConnection,
     InsertConnectionPayload, InsertModel, InsertNested, InsertPayload, InsertRelation, IntoCountNode, IntoDinocoValue,
-    IntoIncludeNode, Model, Projection, RelationLinkPlan, RelationMutationModel, RelationMutationTarget,
-    RelationWriteAction, RelationWritePlan, ScalarFieldValue, UpdateModel,
+    IntoIncludeNode, IntoOwnedValue, Model, Projection, RelationLinkPlan, RelationMutationModel,
+    RelationMutationTarget, RelationWriteAction, RelationWritePlan, ScalarFieldValue, UpdateModel, UpdatePayload,
 };
 pub use queue::{QueueWorkerContext, QueueWorkers};

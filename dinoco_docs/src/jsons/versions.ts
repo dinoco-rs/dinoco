@@ -1,3 +1,4 @@
+import v0_0_4 from './versions/v0.0.4';
 import v0_0_2 from './versions/v0.0.2';
 import v0_0_3 from './versions/v0.0.3';
 import v0_0_1 from './versions/v0.0.1';
@@ -97,7 +98,7 @@ function normalizeLocalizedRecord<T>(record: Partial<Record<RawDocsLocale, T>>):
 	) as Partial<Record<DocsLocale, T>>;
 }
 
-const versionsData: DocsVersionData[] = [v0_0_3 as DocsVersionData, v0_0_2 as DocsVersionData, v0_0_1 as DocsVersionData];
+const versionsData: DocsVersionData[] = [v0_0_4 as DocsVersionData, v0_0_3 as DocsVersionData, v0_0_2 as DocsVersionData, v0_0_1 as DocsVersionData];
 
 export const versions: DocsVersion[] = versionsData.map(version => ({
 	...version,

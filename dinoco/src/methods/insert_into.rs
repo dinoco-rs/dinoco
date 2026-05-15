@@ -6,8 +6,9 @@ use dinoco_engine::{DinocoAdapter, DinocoClient};
 
 use crate::execution::execute_reload_by_identity;
 use crate::{
-    InsertConnection, InsertModel, InsertPayload, InsertRelation, Projection, execute_connection_updates,
-    execute_insert, execute_insert_payload_returning, execute_insert_relation_links, execute_insert_returning,
+    InsertConnection, InsertModel, InsertPayload, InsertRelation, IntoOwnedValue, Projection,
+    execute_connection_updates, execute_insert, execute_insert_payload_returning, execute_insert_relation_links,
+    execute_insert_returning,
     queue::{QueueDispatch, dispatch_insert_lookup, enqueue_many_conditions, enqueue_single_conditions},
 };
 
@@ -63,11 +64,12 @@ where
     M: InsertModel,
     V: InsertPayload<M>,
 {
-    pub fn values<N>(self, item: N) -> Insert<M, N>
+    pub fn values<N, I>(self, item: I) -> Insert<M, N>
     where
         N: InsertPayload<M>,
+        I: IntoOwnedValue<N>,
     {
-        Insert { item: Some(item), queue: self.queue, marker: PhantomData }
+        Insert { item: Some(item.into_owned_value()), queue: self.queue, marker: PhantomData }
     }
 
     pub fn returning<S>(self) -> InsertReturning<M, V, S>
@@ -101,10 +103,11 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a
     where
-        M: Projection<M> + 'a,
-        V: 'a,
+        M: Projection<M> + Send + Sync + 'a,
+        V: Send + 'a,
+        <V as InsertPayload<M>>::Nested: Send + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -177,11 +180,12 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + Send + 'a
     where
-        M: Projection<M> + 'a,
-        V: 'a,
-        S: 'a,
+        M: Projection<M> + Send + Sync + 'a,
+        V: Send + 'a,
+        <V as InsertPayload<M>>::Nested: Send + 'a,
+        S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -218,10 +222,10 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a
     where
-        M: 'a,
-        R: 'a,
+        M: Send + Sync + 'a,
+        R: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -281,11 +285,11 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + Send + 'a
     where
-        M: 'a,
-        R: 'a,
-        S: 'a,
+        M: Send + Sync + 'a,
+        R: Send + Sync + 'a,
+        S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -352,10 +356,10 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a
     where
-        M: 'a,
-        R: 'a,
+        M: Send + Sync + 'a,
+        R: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
@@ -397,11 +401,11 @@ where
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
-    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + 'a
+    ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<S>> + Send + 'a
     where
-        M: 'a,
-        R: 'a,
-        S: 'a,
+        M: Send + Sync + 'a,
+        R: Send + Sync + 'a,
+        S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {

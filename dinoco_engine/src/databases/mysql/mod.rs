@@ -1,4 +1,6 @@
 use chrono::{Datelike, Timelike};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -7,7 +9,7 @@ use mysql_async::{Params::Positional, Pool, Row, Value, prelude::Queryable};
 
 use crate::{
     ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
-    DinocoRow, DinocoValue, ExecutionResult,
+    DinocoRow, DinocoTransactionAdapter, DinocoValue, ExecutionResult,
 };
 
 mod dialect;
@@ -18,6 +20,9 @@ mod row;
 pub use dialect::MySqlDialect;
 
 static MYSQL_DIALECT: MySqlDialect = MySqlDialect;
+tokio::task_local! {
+    static MYSQL_TX_CONNECTION: Arc<tokio::sync::Mutex<mysql_async::Conn>>;
+}
 
 #[derive(Clone)]
 pub struct MySqlAdapter {
@@ -39,23 +44,15 @@ impl DinocoAdapter for MySqlAdapter {
     }
 
     async fn execute_result(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<ExecutionResult> {
-        let logged_params = params.to_vec();
-        let params = Positional(logged_params.iter().cloned().map(Into::into).collect());
+        if let Ok(tx_connection) = MYSQL_TX_CONNECTION.try_with(Clone::clone) {
+            let mut connection = tx_connection.lock().await;
 
-        let mut conn = self.client.get_conn().await?;
-        let started_at = Instant::now();
+            return execute_result_with_connection(&mut connection, query, params, &self.query_logger).await;
+        }
 
-        conn.exec_drop(query, params).await?;
-        let affected_rows = conn.affected_rows();
-        let last_insert_id = conn.last_insert_id().map(|value| value as i64);
-        self.query_logger.log(DinocoQueryLog {
-            adapter: "mysql",
-            duration: started_at.elapsed(),
-            params: logged_params,
-            query: query.to_string(),
-        });
+        let mut connection = self.client.get_conn().await?;
 
-        Ok(ExecutionResult { affected_rows, last_insert_id })
+        execute_result_with_connection(&mut connection, query, params, &self.query_logger).await
     }
 
     async fn execute_script(&self, sql_content: &str) -> DinocoResult<()> {
@@ -73,27 +70,102 @@ impl DinocoAdapter for MySqlAdapter {
     }
 
     async fn query_as<T: DinocoRow>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>> {
-        let logged_params = params.to_vec();
-        let params = Positional(logged_params.iter().cloned().map(Into::into).collect());
-        let mut conn = self.client.get_conn().await?;
-        let started_at = Instant::now();
+        if let Ok(tx_connection) = MYSQL_TX_CONNECTION.try_with(Clone::clone) {
+            let mut connection = tx_connection.lock().await;
 
-        let db_rows: Vec<Row> = conn.exec(query, params).await?;
-        let mut results = Vec::with_capacity(db_rows.len());
-
-        for db_row in db_rows {
-            results.push(T::from_row(&db_row)?);
+            return query_as_with_connection::<T>(&mut connection, query, params, &self.query_logger).await;
         }
 
-        self.query_logger.log(DinocoQueryLog {
-            adapter: "mysql",
-            duration: started_at.elapsed(),
-            params: logged_params,
-            query: query.to_string(),
-        });
+        let mut connection = self.client.get_conn().await?;
 
-        Ok(results)
+        query_as_with_connection::<T>(&mut connection, query, params, &self.query_logger).await
     }
+}
+
+impl DinocoTransactionAdapter for MySqlAdapter {
+    fn with_transaction<'a, T, F>(&'a self, operation: F) -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>>
+    where
+        T: Send + 'a,
+        F: FnOnce() -> Pin<Box<dyn Future<Output = DinocoResult<T>> + Send + 'a>> + Send + 'a,
+    {
+        Box::pin(async move {
+            if MYSQL_TX_CONNECTION.try_with(|_| ()).is_ok() {
+                return operation().await;
+            }
+
+            let mut connection = self.client.get_conn().await?;
+            connection.query_drop("START TRANSACTION").await?;
+
+            let tx_connection = Arc::new(tokio::sync::Mutex::new(connection));
+            let result = MYSQL_TX_CONNECTION.scope(tx_connection.clone(), async move { operation().await }).await;
+
+            match result {
+                Ok(output) => {
+                    let mut connection = tx_connection.lock().await;
+                    connection.query_drop("COMMIT").await?;
+
+                    Ok(output)
+                }
+                Err(error) => {
+                    let mut connection = tx_connection.lock().await;
+                    let _ = connection.query_drop("ROLLBACK").await;
+
+                    Err(error)
+                }
+            }
+        })
+    }
+}
+
+async fn execute_result_with_connection(
+    connection: &mut mysql_async::Conn,
+    query: &str,
+    params: &[DinocoValue],
+    query_logger: &DinocoQueryLogger,
+) -> DinocoResult<ExecutionResult> {
+    let logged_params = params.to_vec();
+    let params = Positional(logged_params.iter().cloned().map(Into::into).collect());
+    let started_at = Instant::now();
+
+    connection.exec_drop(query, params).await?;
+    let affected_rows = connection.affected_rows();
+    let last_insert_id = connection.last_insert_id().map(|value| value as i64);
+
+    query_logger.log(DinocoQueryLog {
+        adapter: "mysql",
+        duration: started_at.elapsed(),
+        params: logged_params,
+        query: query.to_string(),
+    });
+
+    Ok(ExecutionResult { affected_rows, last_insert_id })
+}
+
+async fn query_as_with_connection<T: DinocoRow>(
+    connection: &mut mysql_async::Conn,
+    query: &str,
+    params: &[DinocoValue],
+    query_logger: &DinocoQueryLogger,
+) -> DinocoResult<Vec<T>> {
+    let logged_params = params.to_vec();
+    let params = Positional(logged_params.iter().cloned().map(Into::into).collect());
+    let started_at = Instant::now();
+
+    let db_rows: Vec<Row> = connection.exec(query, params).await?;
+    let mut results = Vec::with_capacity(db_rows.len());
+
+    for db_row in db_rows {
+        results.push(T::from_row(&db_row)?);
+    }
+
+    query_logger.log(DinocoQueryLog {
+        adapter: "mysql",
+        duration: started_at.elapsed(),
+        params: logged_params,
+        query: query.to_string(),
+    });
+
+    Ok(results)
 }
 
 impl From<DinocoValue> for Value {
