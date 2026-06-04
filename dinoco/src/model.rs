@@ -44,6 +44,17 @@ pub trait Projection<M: Model>: DinocoRow {
     }
 }
 
+pub trait ProjectionModel {
+    type Model: Model;
+}
+
+impl<M> ProjectionModel for M
+where
+    M: Model + Projection<M>,
+{
+    type Model = M;
+}
+
 pub trait InsertModel: Model {
     fn insert_columns() -> &'static [&'static str];
     fn into_insert_row(self) -> Vec<DinocoValue>;

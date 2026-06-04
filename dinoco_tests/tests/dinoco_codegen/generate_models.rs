@@ -471,6 +471,7 @@ model Tag {
         fs::read_to_string(temp_dir.path().join("dinoco/models/post.rs")).expect("generated post model should exist");
 
     assert!(user_file.contains("pub fn __dinoco_load_profile"));
+    assert!(user_file.contains("pub fn __dinoco_load_profile_by_primary_key"));
     assert!(user_file.contains("qualify_select_statement"));
     assert!(user_file.contains("LEFT JOIN"));
     assert!(user_file.contains("client.read_adapter(matches!(read_mode, dinoco::ReadMode::Primary))"));
@@ -503,6 +504,7 @@ model Tag {
     assert!(comment_file.contains("pub fn __dinoco_load_replies"));
     assert!(comment_file.contains("Expression::Column(\"parentId\".to_string())"));
     assert!(comment_file.contains("pub fn __dinoco_load_parent"));
+    assert!(comment_file.contains("pub fn __dinoco_load_parent_by_primary_key"));
     assert!(comment_file.contains("item_keys: Vec<Option<i64>>"));
     assert!(comment_file.contains("relation_key: i64"));
     assert!(comment_file.contains("Expression::Column(\"id\".to_string()).in_values"));

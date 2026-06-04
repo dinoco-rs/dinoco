@@ -1,17 +1,17 @@
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression};
 
-use crate::{FindMany, IntoCountNode, IntoIncludeNode, Model, OrderBy, Projection};
+use crate::{FindMany, IntoCountNode, IntoIncludeNode, Model, OrderBy, Projection, ProjectionModel};
 
 #[derive(Debug, Clone)]
 pub struct FindFirst<M, S = M> {
     pub inner: FindMany<M, S>,
 }
 
-pub fn find_first<M>() -> FindFirst<M>
+pub fn find_first<S>() -> FindFirst<S::Model, S>
 where
-    M: Model + Projection<M>,
+    S: ProjectionModel + Projection<S::Model>,
 {
-    FindFirst { inner: crate::find_many::<M>().take(1) }
+    FindFirst { inner: crate::find_many::<S>().take(1) }
 }
 
 impl<M, S> FindFirst<M, S>

@@ -31,6 +31,10 @@ struct PostListItem {
 
 fn main() {}
 
+fn _find_first_with_extend_projection_compiles() {
+    let _ = dinoco::find_first::<PostListItem>();
+}
+
 impl Projection<Post> for Post {
     fn columns() -> &'static [&'static str] {
         &["id", "name", "likes", "createdAt"]

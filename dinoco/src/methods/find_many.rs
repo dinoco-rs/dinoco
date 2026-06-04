@@ -5,7 +5,8 @@ use chrono::{DateTime, Utc};
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression, SelectStatement};
 
 use crate::{
-    CountNode, IncludeNode, IntoCountNode, IntoIncludeNode, Model, OrderBy, Projection, ReadMode, execute_many,
+    CountNode, IncludeNode, IntoCountNode, IntoIncludeNode, Model, OrderBy, Projection, ProjectionModel, ReadMode,
+    execute_many,
     queue::{QueueDispatch, enqueue_find_statement},
 };
 
@@ -19,12 +20,12 @@ pub struct FindMany<M, S = M> {
     marker: PhantomData<fn() -> (M, S)>,
 }
 
-pub fn find_many<M>() -> FindMany<M>
+pub fn find_many<S>() -> FindMany<S::Model, S>
 where
-    M: Model + Projection<M>,
+    S: ProjectionModel + Projection<S::Model>,
 {
     FindMany {
-        statement: SelectStatement::new().from(M::table_name()).select(M::columns()),
+        statement: SelectStatement::new().from(<S::Model as Model>::table_name()).select(S::columns()),
         includes: Vec::new(),
         counts: Vec::new(),
         read_mode: ReadMode::ReplicaPreferred,

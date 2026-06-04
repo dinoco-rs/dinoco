@@ -653,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -671,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_cli"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "bincode",
  "chrono",
@@ -691,14 +691,14 @@ dependencies = [
 
 [[package]]
 name = "dinoco_codegen"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "dinoco_compiler",
 ]
 
 [[package]]
 name = "dinoco_compiler"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "ariadne",
  "pest",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_derives"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_engine"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -739,14 +739,14 @@ dependencies = [
 
 [[package]]
 name = "dinoco_formatter"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "dinoco_compiler",
 ]
 
 [[package]]
 name = "dinoco_tests"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "bincode",
  "chrono",
@@ -775,7 +775,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_vscode"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "dashmap",
  "dinoco_compiler",

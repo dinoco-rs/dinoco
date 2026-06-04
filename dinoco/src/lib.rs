@@ -46,6 +46,7 @@ pub use model::{
     ConnectionUpdatePlan, FindAndUpdateModel, IncludeApplier, IncludeLoaderFuture, InsertConnection,
     InsertConnectionPayload, InsertModel, InsertNested, InsertPayload, InsertRelation, IntoCountNode, IntoDinocoValue,
     IntoIncludeNode, IntoInsertPayloadOwned, IntoOwnedValue, IntoUpdatePayloadOwned, Model, Projection,
+    ProjectionModel,
     RelationLinkPlan, RelationMutationModel, RelationMutationTarget, RelationWriteAction, RelationWritePlan,
     ScalarFieldValue, UpdateModel, UpdatePayload,
 };

@@ -143,31 +143,35 @@ pub fn derive(input: TokenStream) -> TokenStream {
             .filter_map(|field| {
                 let ident = field.ident.as_ref()?;
                 let loader = format_ident!("__dinoco_load_{}", ident);
-                let foreign_key_ident = format_ident!("{}Id", ident);
+                let loader_by_primary_key = format_ident!("__dinoco_load_{}_by_primary_key", ident);
                 let inner_ty = relation_inner_type(&field.ty)?;
-                let uses_foreign_key = fields
-                    .iter()
-                    .any(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident));
-                let key_getter = if uses_foreign_key {
-                    let foreign_key_field = fields
-                        .iter()
-                        .find(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident))?;
+                let relation_kind = relation_field_kind(&field.ty)?;
+                let (selected_loader, key_getter) =
+                    if let Some(foreign_key_field) = find_relation_foreign_key_field(fields, &ident.to_string()) {
+                        let foreign_key_ident = foreign_key_field.ident.as_ref()?;
+                        let key_getter = if extract_option_inner(&foreign_key_field.ty).is_some() {
+                            quote! { |item: &Self| item.#foreign_key_ident.clone() }
+                        } else {
+                            quote! { |item: &Self| ::core::option::Option::Some(item.#foreign_key_ident.clone()) }
+                        };
 
-                    if extract_option_inner(&foreign_key_field.ty).is_some() {
-                        quote! { |item: &Self| item.#foreign_key_ident.clone() }
+                        (loader.clone(), key_getter)
                     } else {
-                        quote! { |item: &Self| ::core::option::Option::Some(item.#foreign_key_ident.clone()) }
-                    }
-                } else {
-                    quote! { |item: &Self| ::core::option::Option::Some(item.id.clone()) }
-                };
+                        let selected_loader = match relation_kind {
+                            RelationFieldKind::Many => loader.clone(),
+                            RelationFieldKind::Optional => loader_by_primary_key,
+                        };
+                        let key_getter = quote! { |item: &Self| ::core::option::Option::Some(item.id.clone()) };
 
-                match relation_field_kind(&field.ty)? {
+                        (selected_loader, key_getter)
+                    };
+
+                match relation_kind {
                     RelationFieldKind::Many => Some(quote! {
                         stringify!(#ident) => {
                             let item_keys = items.iter().map(#key_getter).collect::<::std::vec::Vec<_>>();
 
-                            tasks.push(#model::#loader::<Self, #inner_ty, A>(
+                            tasks.push(#model::#selected_loader::<Self, #inner_ty, A>(
                                 item_keys,
                                 include,
                                 client,
@@ -181,7 +185,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         stringify!(#ident) => {
                             let item_keys = items.iter().map(#key_getter).collect::<::std::vec::Vec<_>>();
 
-                            tasks.push(#model::#loader::<Self, #inner_ty, A>(
+                            tasks.push(#model::#selected_loader::<Self, #inner_ty, A>(
                                 item_keys,
                                 include,
                                 client,
@@ -202,13 +206,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let loader = format_ident!("__dinoco_count_{}", relation_name);
         let relation_field_ident = format_ident!("{}", relation_name);
         let relation_name_literal = relation_name.clone();
-        let foreign_key_ident = format_ident!("{}Id", relation_field_ident);
-        let uses_foreign_key =
-            fields.iter().any(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident));
-        let key_getter = if uses_foreign_key {
-            let foreign_key_field = fields
-                .iter()
-                .find(|candidate| candidate.ident.as_ref().is_some_and(|item| item == &foreign_key_ident))?;
+        let key_getter = if let Some(foreign_key_field) =
+            find_relation_foreign_key_field(fields, &relation_field_ident.to_string())
+        {
+            let foreign_key_ident = foreign_key_field.ident.as_ref()?;
 
             if extract_option_inner(&foreign_key_field.ty).is_some() {
                 quote! { |item: &Self| item.#foreign_key_ident.clone() }
@@ -297,6 +298,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
             #(#relation_field_validations)*
             #(#count_field_validations)*
         };
+
+        impl #crate_path::ProjectionModel for #name {
+            type Model = #model;
+        }
 
         impl #crate_path::Projection<#model> for #name {
             fn columns() -> &'static [&'static str] {
@@ -459,6 +464,33 @@ fn is_custom_type(ty: &syn::Type) -> bool {
     };
     let ident = segment.ident.to_string();
 
+    if is_known_scalar_type_ident(&ident) {
+        return false;
+    }
+
+    // Treat fully-qualified scalar types (e.g. `dinoco::Uuid`) as non-relation fields.
+    if let Some(first_segment) = type_path.path.segments.first()
+        && matches!(first_segment.ident.to_string().as_str(), "dinoco" | "chrono" | "serde_json")
+    {
+        return false;
+    }
+
+    // Heuristic for common scalar-like custom field names.
+    if ident.ends_with("Id")
+        || ident.ends_with("UUID")
+        || ident.ends_with("Uuid")
+        || ident.ends_with("Snowflake")
+        || ident.ends_with("Date")
+        || ident.ends_with("DateTime")
+        || ident.ends_with("Json")
+    {
+        return false;
+    }
+
+    if ident.chars().all(|ch| ch.is_uppercase() || ch == '_' || ch.is_ascii_digit()) {
+        return false;
+    }
+
     !matches!(
         ident.as_str(),
         "String"
@@ -480,6 +512,35 @@ fn is_custom_type(ty: &syn::Type) -> bool {
     )
 }
 
+fn is_known_scalar_type_ident(ident: &str) -> bool {
+    matches!(
+        ident,
+        "String"
+            | "bool"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "f32"
+            | "f64"
+            | "Uuid"
+            | "RawUuid"
+            | "Snowflake"
+            | "DateTimeUtc"
+            | "NaiveDate"
+            | "JsonValue"
+            | "Value"
+    )
+}
+
 fn is_connection_type(ty: &syn::Type) -> bool {
     let syn::Type::Path(type_path) = ty else {
         return false;
@@ -496,6 +557,24 @@ enum RelationFieldKind {
     Optional,
 }
 
+fn find_relation_foreign_key_field<'a>(
+    fields: &'a syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+    relation_name: &str,
+) -> Option<&'a syn::Field> {
+    let expected = normalized_field_name(&format!("{relation_name}id"));
+
+    fields.iter().find(|field| {
+        field
+            .ident
+            .as_ref()
+            .is_some_and(|ident| normalized_field_name(&ident.to_string()) == expected)
+    })
+}
+
+fn normalized_field_name(value: &str) -> String {
+    value.chars().filter(|ch| *ch != '_').flat_map(char::to_lowercase).collect()
+}
+
 fn extend_model(attrs: &[syn::Attribute]) -> syn::Result<syn::Path> {
     for attr in attrs {
         if attr.path().is_ident("extend") {
@@ -508,4 +587,68 @@ fn extend_model(attrs: &[syn::Attribute]) -> syn::Result<syn::Path> {
 
 fn has_insertable_attr(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attr| attr.path().is_ident("insertable"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RelationFieldKind, find_relation_foreign_key_field, relation_field_kind};
+    use syn::{Data, DeriveInput, Fields};
+
+    fn parse_fields(raw: &str) -> syn::punctuated::Punctuated<syn::Field, syn::token::Comma> {
+        let input = format!("struct Projection {{ {raw} }}");
+        let derive_input: DeriveInput = syn::parse_str(&input).expect("valid struct");
+        let Data::Struct(data) = derive_input.data else {
+            panic!("expected struct");
+        };
+        let Fields::Named(fields) = data.fields else {
+            panic!("expected named fields");
+        };
+
+        fields.named
+    }
+
+    #[test]
+    fn find_relation_foreign_key_field_accepts_camel_case() {
+        let fields = parse_fields("playerId: Option<String>, player: Option<Player>, id: String");
+        let field = find_relation_foreign_key_field(&fields, "player").expect("field should exist");
+
+        assert_eq!(field.ident.as_ref().expect("named field").to_string(), "playerId");
+    }
+
+    #[test]
+    fn find_relation_foreign_key_field_accepts_snake_case() {
+        let fields = parse_fields("player_id: Option<String>, player: Option<Player>, id: String");
+        let field = find_relation_foreign_key_field(&fields, "player").expect("field should exist");
+
+        assert_eq!(field.ident.as_ref().expect("named field").to_string(), "player_id");
+    }
+
+    #[test]
+    fn find_relation_foreign_key_field_accepts_flat_lowercase() {
+        let fields = parse_fields("playerid: Option<String>, player: Option<Player>, id: String");
+        let field = find_relation_foreign_key_field(&fields, "player").expect("field should exist");
+
+        assert_eq!(field.ident.as_ref().expect("named field").to_string(), "playerid");
+    }
+
+    #[test]
+    fn find_relation_foreign_key_field_rejects_unrelated_field() {
+        let fields = parse_fields("teamid: Option<String>, player: Option<Player>, id: String");
+
+        assert!(find_relation_foreign_key_field(&fields, "player").is_none());
+    }
+
+    #[test]
+    fn relation_field_kind_does_not_treat_optional_uuid_as_relation() {
+        let ty: syn::Type = syn::parse_str("Option<dinoco::Uuid>").expect("type should parse");
+
+        assert!(relation_field_kind(&ty).is_none());
+    }
+
+    #[test]
+    fn relation_field_kind_treats_optional_model_as_relation() {
+        let ty: syn::Type = syn::parse_str("Option<Player>").expect("type should parse");
+
+        assert!(matches!(relation_field_kind(&ty), Some(RelationFieldKind::Optional)));
+    }
 }
