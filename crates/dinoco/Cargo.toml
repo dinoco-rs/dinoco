@@ -4,3 +4,4 @@ version = "1.0.0"
 edition = "2024"
 
 [dependencies]
+dinoco_macros = { path = "../dinoco_macros" }

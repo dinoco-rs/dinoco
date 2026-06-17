@@ -1,3 +1,26 @@
-fn main() {
-    println!("Hello, world!");
+use dinoco_macros::dinoco_models;
+
+dinoco_models! {
+    #[dinoco(model_name = "player")]
+    pub struct Player {
+        #[dinoco(primary_key)]
+        pub id: String,
+
+        pub nickname: String,
+
+        #[dinoco(extra)]
+        pub logged: String,
+
+        #[dinoco(one_to_many, foreign_key = "player_id", references = "id")]
+        pub history: Vec<PlayerHistory>,
+    }
+
+    #[dinoco(model_name = "player_history")]
+    pub struct PlayerHistory {
+        #[dinoco(primary_key)]
+        pub id: String,
+
+        pub player_id: String,
+        pub action: String,
+    }
 }

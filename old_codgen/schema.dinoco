@@ -1,0 +1,175 @@
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum PlayerGender {
+    male
+    female
+}
+
+enum PlayerOffice {
+    developer
+    director
+    administrator
+    moderator
+    helper
+    youtuber
+    member
+}
+
+model Player {
+    id             String  @id @default(uuid())
+    nicknameColor  String  @default("#ffffff")
+    nickname       String
+    password       String
+
+    levelStepRemaining  Integer  @default(600) # tempo para ganhar um up
+    levelStep           Integer  @default(0) # Ups para level
+    level               Integer  @default(0) # 6 levelStep para players normais e 4 levelStep para vip
+
+    stars  Integer  @default(0) # Estrelas de procurado
+
+    sleep         Integer  @default(7200) # Sono
+    sleepPercent  Integer  @default(100) # Sono
+
+    health         Integer  @default(360) # Saúde
+    healthPercent  Integer  @default(100)
+
+    thirst         Integer  @default(2700) # SEDE
+    thirstPercent  Integer  @default(100)
+
+    hunger         Integer  @default(3600) # FOME
+    hungerPercent  Integer  @default(100)
+
+    email            String
+    emailVerified    Boolean  @default(false)
+    watchedTutorial  Boolean  @default(false)
+
+    x        Float
+    y        Float
+    z        Float
+    heading  Float
+
+    office  PlayerOffice
+    gender  PlayerGender
+
+    tokens    PlayerToken[]
+    resets    PlayerResetPassword[]
+    verifies  PlayerVerify[]
+
+    character      Character[]
+    outfits        CharacterOutfit[]
+    subscriptions  Subscription[]
+
+    createdAt  DateTime  @default(now())
+}
+
+model PlayerToken {
+    id         String   @id @default(uuid())
+    isExpired  Boolean  @default(false)
+
+    createdAt  DateTime  @default(now())
+
+    playerId  String?
+    player    Player?  @relation(fields: [playerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+}
+
+model PlayerVerify {
+    id  String  @id @default(uuid())
+
+    email  String
+    code   String
+
+    createdAt  DateTime  @default(now())
+
+    playerId  String?
+    player    Player?  @relation(fields: [playerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+}
+
+model PlayerResetPassword {
+    id         String    @id @default(uuid())
+    createdAt  DateTime  @default(now())
+
+    playerId  String?
+    player    Player?  @relation(fields: [playerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+}
+
+model Character {
+    id  String  @id @default(uuid())
+
+    father         Integer
+    mother         Integer
+    skinFather     Integer
+    skinMother     Integer
+    eyebrowsColor  Integer
+    lipstick       Integer
+    hair           Integer
+    hairColor      Integer
+    bodyHair       Integer
+    bodyHairColor  Integer
+    beard          Integer
+    beardColor     Integer
+    blush          Integer
+    makeup         Integer
+    complexion     Integer
+    sunDamage      Integer
+    fleckles       Integer
+    ageing         Integer
+    blemishes      Integer
+    bodyBlemishes  Integer
+    eyeColor       Integer
+
+    lips              Float
+    shapeMix          Float
+    skinMix           Float
+    eyeOpening        Float
+    eyebrows          Float
+    eyebrowsOpacity   Float
+    eyebrowHeight     Float
+    eyebrowDepth      Float
+    noseWidth         Float
+    noseHeight        Float
+    noseLength        Float
+    noseBridge        Float
+    noseTip           Float
+    noseCurvature     Float
+    jawWidth          Float
+    jawHeight         Float
+    chinLength        Float
+    chinPosition      Float
+    chinWidth         Float
+    chinShape         Float
+    cheeksHeight      Float
+    cheeksWidth       Float
+    cheekSize         Float
+    neckSize          Float
+    beardOpacity      Float
+    blemishesOpacity  Float
+
+    playerId  String?
+    player    Player?  @relation(fields: [playerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+}
+
+model CharacterOutfit {
+    id  String  @id @default(uuid())
+
+    component  Integer
+    drawable   Integer
+    texture    Integer
+
+    playerId  String?
+    player    Player?  @relation(fields: [playerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+}
+
+model Subscription {
+    id  String  @id @default(uuid())
+
+    color  String  @default("#ffd900")
+
+    endAt      DateTime
+    startedAt  DateTime
+
+    playerId  String?
+    player    Player?  @relation(fields: [playerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+}
