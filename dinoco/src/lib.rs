@@ -30,7 +30,8 @@ pub use execution::{
     execute_insert_connected_payload, execute_insert_connected_payloads, execute_insert_payload,
     execute_insert_payload_returning, execute_insert_related_payload, execute_insert_related_payloads,
     execute_insert_relation_links, execute_insert_returning, execute_many, execute_relation_writes, execute_update,
-    execute_update_many, execute_update_many_returning, execute_update_returning, qualify_expression,
+    execute_update_fields, execute_update_fields_returning, execute_update_many, execute_update_many_returning,
+    execute_update_returning, qualify_expression,
     qualify_query_column, qualify_select_statement,
 };
 pub use fields::{

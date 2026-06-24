@@ -5,10 +5,10 @@ export type DocsTheme = 'light' | 'dark';
 export const DOCS_LOCALE_COOKIE = 'docs-locale';
 export const DOCS_THEME_COOKIE = 'docs-theme';
 
-const SUPPORTED_LOCALES: DocsLocale[] = ['pt-br', 'en-us', 'ru-ru', 'ja-jp', 'ko-kr', 'de-de', 'it-it', 'zh-cn', 'fr-fr'];
+const SUPPORTED_LOCALES: DocsLocale[] = ['pt-br'];
 
 export function resolveDocsLocale(value?: string): DocsLocale {
-	return SUPPORTED_LOCALES.includes(value as DocsLocale) ? (value as DocsLocale) : 'en-us';
+	return SUPPORTED_LOCALES.includes(value as DocsLocale) ? (value as DocsLocale) : 'pt-br';
 }
 
 export function resolveDocsTheme(value?: string): DocsTheme {

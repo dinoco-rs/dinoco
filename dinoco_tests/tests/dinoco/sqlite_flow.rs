@@ -3,7 +3,7 @@ use std::env;
 use dinoco::{
     DinocoAdapter, DinocoClient, DinocoError, DinocoResult, DinocoValue, Extend, InsertConnection, InsertModel,
     InsertRelation, Model, Projection, RelationLinkPlan, RelationMutationModel, RelationMutationWhere,
-    RelationScalarField, RelationWritePlan, Rowable, ScalarField, UpdateModel, count, delete, delete_many, find_first,
+    RelationScalarField, RelationWritePlan, Rowable, ScalarField, UpdateField, UpdateModel, FindAndUpdateModel, count, delete, delete_many, find_first,
     find_many, insert_into, insert_many, update, update_many,
 };
 use uuid::Uuid;
@@ -24,6 +24,12 @@ struct UserWhere {
 }
 
 struct UserInclude {}
+
+struct UserUpdate {
+    name: UpdateField<String>,
+    email: UpdateField<String>,
+    active: UpdateField<bool>,
+}
 
 #[derive(Debug, Clone, Rowable)]
 struct Team {
@@ -413,20 +419,13 @@ async fn sqlite_crud_flow_and_delete_many_work() -> DinocoResult<()> {
 
     update::<User>()
         .cond(|x| x.id.eq(1_i64))
-        .values(User {
-            id: 1,
-            name: "Matheus Updated".to_string(),
-            email: "updated@dinoco.dev".to_string(),
-            active: true,
-        })
+        .update(|x| x.name.set("Matheus Updated"))
+        .update(|x| x.email.set("updated@dinoco.dev"))
         .execute(&client)
         .await?;
 
     update_many::<User>()
-        .values(vec![
-            User { id: 2, name: "Ana Batch".to_string(), email: "ana-batch@dinoco.dev".to_string(), active: true },
-            User { id: 3, name: "Caio Batch".to_string(), email: "caio-batch@dinoco.dev".to_string(), active: false },
-        ])
+        .update(|x| x.name.set("Ana Batch"))
         .execute(&client)
         .await?;
 
@@ -563,7 +562,7 @@ async fn relation_insert_with_autoincrement_binds_generated_foreign_keys() -> Di
     let created_team = insert_into::<AutoTeam>()
         .values(AutoTeam { id: 0, name: "Dinoco".to_string() })
         .with_relation(AutoMember { id: 0, name: "Matheus".to_string(), teamId: 0 })
-        .returning::<AutoTeam>()
+        .returning()
         .execute(&client)
         .await?;
 
@@ -576,7 +575,7 @@ async fn relation_insert_with_autoincrement_binds_generated_foreign_keys() -> Di
             AutoMember { id: 0, name: "Ana".to_string(), teamId: 0 },
             AutoMember { id: 0, name: "Caio".to_string(), teamId: 0 },
         ])
-        .returning::<AutoTeam>()
+        .returning()
         .execute(&client)
         .await?;
 
@@ -1240,6 +1239,14 @@ impl UpdateModel for User {
     }
 }
 
+impl FindAndUpdateModel for User {
+    type Update = UserUpdate;
+
+    fn primary_key_columns() -> &'static [&'static str] {
+        &["id"]
+    }
+}
+
 impl UpdateModel for Article {
     fn update_columns() -> &'static [&'static str] {
         &["title"]
@@ -1412,6 +1419,12 @@ impl Default for UserWhere {
 impl Default for UserInclude {
     fn default() -> Self {
         Self {}
+    }
+}
+
+impl Default for UserUpdate {
+    fn default() -> Self {
+        Self { name: UpdateField::new("name"), email: UpdateField::new("email"), active: UpdateField::new("active") }
     }
 }
 

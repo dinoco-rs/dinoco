@@ -213,7 +213,7 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     output.push_str(GENERATED_FILE_LINTS);
 
     output.push_str(
-        "use dinoco::{AdapterDialect, FindAndUpdateModel, InsertModel, IntoDinocoValue, Model, Projection, RelationField, RelationMutationModel, RelationMutationWhere, RelationScalarField, RelationWritePlan, Rowable, ScalarField, UpdateField, UpdateModel};\n",
+        "use dinoco::{AdapterDialect, Extend, FindAndUpdateModel, InsertModel, IntoDinocoValue, Model, Projection, RelationField, RelationMutationModel, RelationMutationWhere, RelationScalarField, RelationWritePlan, ScalarField, UpdateField, UpdateModel};\n",
     );
 
     if !relation_imports.is_empty() {
@@ -221,11 +221,12 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     }
 
     output.push('\n');
-    output.push_str("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize, Rowable");
+    output.push_str("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize, Extend");
     if can_derive_model_default {
         output.push_str(", Default");
     }
     output.push_str(")]\n");
+    output.push_str(&format!("#[extend({name})]\n"));
     output.push_str("#[serde(crate = \"dinoco::serde\")]\n");
     output.push_str(&format!("pub struct {} {{\n", name));
 
@@ -235,6 +236,17 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
             field.name,
             scalar_type_with_wrapper_override(field, enum_names, &wrapper_overrides)
         ));
+    }
+
+    for field in &relation_fields {
+        let relation_type = relation_target(field);
+        let relation_type = if field.is_list {
+            format!("Vec<{relation_type}>")
+        } else {
+            format!("Option<{relation_type}>")
+        };
+
+        output.push_str(&format!("    pub {}: {},\n", field.name, relation_type));
     }
 
     output.push_str("}\n\n");
@@ -254,6 +266,10 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
                 field.name,
                 default_value_expr_with_wrapper_override(field, enum_names, &wrapper_overrides)
             ));
+        }
+
+        for field in &relation_fields {
+            output.push_str(&format!("            {}: Default::default(),\n", field.name));
         }
 
         output.push_str("        }\n");
@@ -279,17 +295,6 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     output.push_str(&format!("pub struct {}Include {}\n\n", name, "{}"));
     output.push_str("#[derive(Default)]\n");
     output.push_str(&format!("pub struct {}Relations {}\n\n", name, "{}"));
-    output.push_str(&format!("impl Projection<{}> for {} {{\n", name, name));
-    output.push_str("    fn columns() -> &'static [&'static str] {\n");
-    output.push_str("        &[\n");
-
-    for field in &scalar_fields {
-        output.push_str(&format!("            \"{}\",\n", field.name));
-    }
-
-    output.push_str("        ]\n");
-    output.push_str("    }\n");
-    output.push_str("}\n\n");
     output.push_str(&format!("impl InsertModel for {} {{\n", name));
     output.push_str("    fn insert_columns() -> &'static [&'static str] {\n");
     output.push_str("        &[\n");

@@ -66,7 +66,7 @@ model Post {
 
     assert!(model_file.contains("pub struct Post"));
     assert!(
-        model_file.contains("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize, Rowable)]")
+        model_file.contains("#[derive(Debug, Clone, dinoco::serde::Serialize, dinoco::serde::Deserialize, Extend)]")
     );
     assert!(model_file.contains("#[serde(crate = \"dinoco::serde\")]"));
     assert!(model_file.contains("pub id: dinoco::Uuid"));
@@ -78,6 +78,45 @@ model Post {
     assert!(dinoco_module.contains("fn __dinoco_sqlite_base_url(url: String) -> String"));
     assert!(dinoco_module.contains("let database_url = __dinoco_sqlite_base_url(std::env::var(\"DATABASE_URL\")"));
     assert!(dinoco_module.contains("DinocoClient::<SqliteAdapter>::new(database_url, vec![], config).await"));
+}
+
+#[test]
+fn generate_models_embeds_relation_fields_in_models() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Account {
+    id String @id @default(uuid())
+    username String
+    devices Device[]
+}
+
+model Device {
+    id String @id @default(uuid())
+    account_id String?
+    account Account? @relation(fields: [account_id], references: [id])
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let account_file = fs::read_to_string(temp_dir.path().join("dinoco/models/account.rs"))
+        .expect("generated account model should exist");
+    let device_file = fs::read_to_string(temp_dir.path().join("dinoco/models/device.rs"))
+        .expect("generated device model should exist");
+
+    assert!(account_file.contains("#[extend(Account)]"));
+    assert!(account_file.contains("pub devices: Vec<super::device::Device>"));
+    assert!(device_file.contains("#[extend(Device)]"));
+    assert!(device_file.contains("pub account: Option<super::account::Account>"));
+    assert!(device_file.contains("account: Default::default()"));
 }
 
 #[test]
@@ -215,7 +254,7 @@ model User {
     let enums_file =
         fs::read_to_string(temp_dir.path().join("dinoco/models/enums.rs")).expect("generated enums file should exist");
 
-    assert!(user_file.contains("Deserialize, Rowable, Default)]"));
+    assert!(user_file.contains("Deserialize, Extend, Default)]"));
     assert!(!user_file.contains("impl Default for User {"));
     assert!(user_file.contains("pub id: i64"));
     assert!(user_file.contains("#[derive(Default)]\npub struct UserInclude {}"));
@@ -337,8 +376,8 @@ model User {
     let user_file =
         fs::read_to_string(temp_dir.path().join("dinoco/models/user.rs")).expect("generated user model should exist");
 
-    assert!(user_file.contains("Deserialize, Rowable)]"));
-    assert!(!user_file.contains("Deserialize, Rowable, Default)]"));
+    assert!(user_file.contains("Deserialize, Extend)]"));
+    assert!(!user_file.contains("Deserialize, Extend, Default)]"));
     assert!(user_file.contains("impl Default for User {"));
     assert!(user_file.contains("name: \"Dinoco\".to_string()"));
     assert!(user_file.contains("createdAt: dinoco::Utc::now()"));

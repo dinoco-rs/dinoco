@@ -211,10 +211,10 @@ async fn exercise_crud_flow<A: DinocoAdapter>(client: &DinocoClient<A>) -> Dinoc
     );
 
     let inserted_first =
-        insert_into::<Record>().values(first.clone()).returning::<RecordNameProjection>().execute(client).await?;
+        insert_into::<Record>().values(first.clone()).returning_as::<RecordNameProjection>().execute(client).await?;
     let inserted_many = insert_many::<Record>()
         .values(vec![second.clone(), third.clone()])
-        .returning::<Record>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -255,45 +255,18 @@ async fn exercise_crud_flow<A: DinocoAdapter>(client: &DinocoClient<A>) -> Dinoc
 
     let updated_single = update::<Record>()
         .cond(|x| x.id.eq(1_i64))
-        .values(record(
-            1,
-            "Matheus Updated",
-            "matheus-updated@dinoco.dev",
-            true,
-            9.75,
-            date(2026, 4, 10),
-            datetime(2026, 4, 10, 9, 15, 0),
-            Some("updated".to_string()),
-        ))
-        .returning::<RecordNameProjection>()
+        .update(|x| x.name.set("Matheus Updated"))
+        .update(|x| x.email.set("matheus-updated@dinoco.dev"))
+        .update(|x| x.score.set(9.75_f64))
+        .returning()
         .execute(client)
         .await?;
 
     let updated_many = update_many::<Record>()
-        .cond(|x| x.score.gte(7.5_f64))
-        .values(vec![
-            record(
-                2,
-                "Ana Batch",
-                "ana-batch@dinoco.dev",
-                true,
-                8.75,
-                date(2026, 4, 12),
-                datetime(2026, 4, 12, 11, 0, 0),
-                Some("batch".to_string()),
-            ),
-            record(
-                3,
-                "Caio Batch",
-                "caio-batch@dinoco.dev",
-                false,
-                8.0,
-                date(2026, 4, 13),
-                datetime(2026, 4, 13, 14, 20, 0),
-                None,
-            ),
-        ])
-        .returning::<RecordNameProjection>()
+        .cond(|x| x.id.gt(1_i64))
+        .update(|x| x.name.set("Batch"))
+        .update(|x| x.score.set(8.0_f64))
+        .returning()
         .execute(client)
         .await?;
 
@@ -301,8 +274,8 @@ async fn exercise_crud_flow<A: DinocoAdapter>(client: &DinocoClient<A>) -> Dinoc
     assert_eq!(updated_single[0].name, "Matheus Updated");
     assert!((updated_single[0].score - 9.75).abs() < f64::EPSILON);
     assert_eq!(updated_many.len(), 2);
-    assert_eq!(updated_many.iter().map(|item| item.name.as_str()).collect::<Vec<_>>(), vec!["Ana Batch", "Caio Batch"]);
-    assert!((updated_many[0].score - 8.75).abs() < f64::EPSILON);
+    assert_eq!(updated_many.iter().map(|item| item.name.as_str()).collect::<Vec<_>>(), vec!["Batch", "Batch"]);
+    assert!((updated_many[0].score - 8.0).abs() < f64::EPSILON);
     assert!((updated_many[1].score - 8.0).abs() < f64::EPSILON);
 
     let atomic_updated = find_and_update::<Record>()
@@ -317,12 +290,12 @@ async fn exercise_crud_flow<A: DinocoAdapter>(client: &DinocoClient<A>) -> Dinoc
 
     assert_eq!(updated[0].email, "matheus-updated@dinoco.dev");
     assert_eq!(atomic_updated.name, "Ana Atomic");
-    assert!((atomic_updated.score - 9.25).abs() < f64::EPSILON);
+    assert!((atomic_updated.score - 8.5).abs() < f64::EPSILON);
     assert_eq!(atomic_updated.id, 2);
     assert_eq!(updated[1].name, "Ana Atomic");
     assert_eq!(updated[1].note, None);
-    assert_eq!(updated[2].created_at, datetime(2026, 4, 13, 14, 20, 0));
-    assert_eq!(updated[2].note, None);
+    assert_eq!(updated[2].created_at, datetime(2026, 4, 3, 18, 45, 5));
+    assert_eq!(updated[2].note, Some("legacy".to_string()));
 
     let missing =
         find_and_update::<Record>().cond(|x| x.id.eq(999_i64)).update(|x| x.name.set("missing")).execute(client).await;

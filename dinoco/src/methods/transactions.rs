@@ -18,9 +18,9 @@ use super::insert_many::{
     InsertManyWithConnections, InsertManyWithConnectionsReturning, InsertManyWithRelation,
     InsertManyWithRelationReturning, InsertManyWithRelations, InsertManyWithRelationsReturning,
 };
-use super::update::{Update, UpdateReturning};
+use super::update::{HasCondition, Update, UpdateReturning};
 use super::update_many::{UpdateMany, UpdateManyReturning};
-use crate::{InsertPayload, Projection, UpdateModel, UpdatePayload};
+use crate::{InsertPayload, Projection, UpdateModel};
 
 type TransactionFuture<'a> = Pin<Box<dyn Future<Output = DinocoResult<()>> + Send + 'a>>;
 
@@ -447,22 +447,20 @@ where
     }
 }
 
-impl<A, M, V> IntoTransactionAction<A> for Update<M, V>
+impl<A, M> IntoTransactionAction<A> for Update<M, HasCondition>
 where
     A: DinocoAdapter + Send + Sync + 'static,
     M: UpdateModel + Send + Sync + 'static,
-    V: UpdatePayload<M> + Send + Sync + 'static,
 {
     fn into_transaction_action(self) -> TransactionAction<A> {
         TransactionAction::new(move |client| Box::pin(async move { self.execute(client).await }))
     }
 }
 
-impl<A, M, V, S> IntoTransactionAction<A> for UpdateReturning<M, V, S>
+impl<A, M, S> IntoTransactionAction<A> for UpdateReturning<M, S>
 where
     A: DinocoAdapter + Send + Sync + 'static,
     M: UpdateModel + Projection<M> + Send + Sync + 'static,
-    V: UpdatePayload<M> + Send + Sync + 'static,
     S: Projection<M> + Send + Sync + 'static,
 {
     fn into_transaction_action(self) -> TransactionAction<A> {
@@ -476,22 +474,20 @@ where
     }
 }
 
-impl<A, M, V> IntoTransactionAction<A> for UpdateMany<M, V>
+impl<A, M> IntoTransactionAction<A> for UpdateMany<M>
 where
     A: DinocoAdapter + Send + Sync + 'static,
     M: UpdateModel + Send + Sync + 'static,
-    V: UpdatePayload<M> + Send + Sync + 'static,
 {
     fn into_transaction_action(self) -> TransactionAction<A> {
         TransactionAction::new(move |client| Box::pin(async move { self.execute(client).await }))
     }
 }
 
-impl<A, M, V, S> IntoTransactionAction<A> for UpdateManyReturning<M, V, S>
+impl<A, M, S> IntoTransactionAction<A> for UpdateManyReturning<M, S>
 where
     A: DinocoAdapter + Send + Sync + 'static,
-    M: UpdateModel + Send + Sync + 'static,
-    V: UpdatePayload<M> + Send + Sync + 'static,
+    M: UpdateModel + Projection<M> + Send + Sync + 'static,
     S: Projection<M> + Send + Sync + 'static,
 {
     fn into_transaction_action(self) -> TransactionAction<A> {

@@ -1208,7 +1208,7 @@ where
     let created_team = insert_into::<Team>()
         .values(Team { id: "team-1".to_string(), name: "Dinoco".to_string() })
         .with_relation(Member { id: "member-1".to_string(), name: "Matheus".to_string(), teamId: String::new() })
-        .returning::<Team>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1221,7 +1221,7 @@ where
             Member { id: "member-2".to_string(), name: "Ana".to_string(), teamId: String::new() },
             Member { id: "member-3".to_string(), name: "Caio".to_string(), teamId: String::new() },
         ])
-        .returning::<Team>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1250,7 +1250,7 @@ where
     let created_team = insert_into::<AutoTeam>()
         .values(AutoTeam { id: 0, name: "Dinoco".to_string() })
         .with_relation(AutoMember { id: 0, name: "Matheus".to_string(), teamId: 0 })
-        .returning::<AutoTeam>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1263,7 +1263,7 @@ where
             AutoMember { id: 0, name: "Ana".to_string(), teamId: 0 },
             AutoMember { id: 0, name: "Caio".to_string(), teamId: 0 },
         ])
-        .returning::<AutoTeam>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1284,7 +1284,7 @@ where
     let created_article = insert_into::<Article>()
         .values(Article { id: "article-1".to_string(), title: "Dinoco Connect".to_string() })
         .with_relation(Label { id: "label-1".to_string(), name: "orm".to_string() })
-        .returning::<Article>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1297,7 +1297,7 @@ where
             Label { id: "label-2".to_string(), name: "rust".to_string() },
             Label { id: "label-3".to_string(), name: "mysql".to_string() },
         ])
-        .returning::<Article>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1333,7 +1333,7 @@ where
     let created_article = insert_into::<AutoArticle>()
         .values(AutoArticle { id: 0, title: "Dinoco Connect".to_string() })
         .with_relation(AutoLabel { id: 0, name: "orm".to_string() })
-        .returning::<AutoArticle>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1346,7 +1346,7 @@ where
             AutoLabel { id: 0, name: "rust".to_string() },
             AutoLabel { id: 0, name: "mysql".to_string() },
         ])
-        .returning::<AutoArticle>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1389,7 +1389,7 @@ where
             name: "Julia".to_string(),
             teamId: "legacy".to_string(),
         })
-        .returning::<Team>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1402,7 +1402,7 @@ where
             Member { id: "member-11".to_string(), name: "Rafa".to_string(), teamId: "legacy".to_string() },
             Member { id: "member-12".to_string(), name: "Bia".to_string(), teamId: "legacy".to_string() },
         ])
-        .returning::<Team>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1423,7 +1423,7 @@ where
     let connected_article = insert_into::<Article>()
         .values(Article { id: "article-10".to_string(), title: "Connect Existing".to_string() })
         .with_connection(Label { id: "label-10".to_string(), name: "backend".to_string() })
-        .returning::<Article>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1439,7 +1439,7 @@ where
             ],
             vec![Label { id: "label-10".to_string(), name: "backend".to_string() }],
         ])
-        .returning::<Article>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1483,7 +1483,7 @@ where
             title: "Single Connect Payload".to_string(),
             labels: vec![ArticleConnection::Label("label-40".to_string())],
         })
-        .returning::<Article>()
+        .returning()
         .execute(client)
         .await?;
 
@@ -1503,7 +1503,7 @@ where
                 labels: vec![ArticleConnection::Label("label-42".to_string())],
             },
         ])
-        .returning::<Article>()
+        .returning()
         .execute(client)
         .await?;
 

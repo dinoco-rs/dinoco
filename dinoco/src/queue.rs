@@ -15,7 +15,7 @@ use futures::FutureExt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{IncludeNode, IntoIncludeNode, Model, Projection, ReadMode, UpdateModel, execute_many};
+use crate::{IncludeNode, IntoIncludeNode, Model, Projection, ReadMode, execute_many};
 
 const DEFAULT_QUEUE_POLL_INTERVAL_MS: u64 = 1_000;
 const DEFAULT_QUEUE_RETRY_DELAY_MS: u64 = 5 * 60 * 1_000;
@@ -426,17 +426,6 @@ where
     M: crate::InsertModel,
 {
     item.insert_identity_conditions()
-}
-
-pub(crate) fn dispatch_update_lookup<M, V>(item: &V, conditions: &[Expression]) -> Vec<Expression>
-where
-    M: UpdateModel,
-    V: crate::UpdatePayload<M>,
-{
-    let mut output = item.update_identity_conditions();
-    output.extend(conditions.iter().cloned());
-
-    output
 }
 
 fn build_projection_statement<M, S>(mut statement: SelectStatement) -> SelectStatement

@@ -384,6 +384,27 @@ impl<T> RelationField<T> {
             marker: PhantomData,
         }
     }
+
+    /// Includes relations from the target model while loading this relation.
+    ///
+    /// The child projection is selected by the parent projection, while this
+    /// method keeps the common nested-include path concise:
+    /// `user.account().includes(|account| account.subscriptions())`.
+    pub fn includes<F, I>(self, closure: F) -> RelationQuery<T>
+    where
+        T: Model + Projection<T>,
+        F: FnOnce(T::Include) -> I,
+        I: IntoIncludeNode,
+    {
+        RelationQuery {
+            name: self.name,
+            statement: SelectStatement::new().from(T::table_name()),
+            includes: Vec::new(),
+            counts: Vec::new(),
+            marker: PhantomData,
+        }
+        .includes(closure)
+    }
 }
 
 impl<T> Copy for RelationField<T> {}

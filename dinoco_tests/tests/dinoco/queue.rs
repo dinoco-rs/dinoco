@@ -247,18 +247,18 @@ where
     }
 }
 
-trait UpdateQueueExt<M>
+trait UpdateQueueExt<M, Condition>
 where
     M: UpdateModel,
 {
-    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Update<M>;
+    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Update<M, Condition>;
 }
 
-impl<M> UpdateQueueExt<M> for Update<M>
+impl<M, Condition> UpdateQueueExt<M, Condition> for Update<M, Condition>
 where
     M: UpdateModel,
 {
-    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Update<M> {
+    fn enqueue_in(self, event: impl Into<String>, delay_ms: u64) -> Update<M, Condition> {
         self.__enqueue_in(event, delay_ms)
     }
 }
@@ -380,7 +380,7 @@ async fn enqueue_in_waits_until_delay_is_reached() -> DinocoResult<()> {
 
     update::<User>()
         .cond(|x| x.id.eq(3_i64))
-        .values(User { id: 3, name: "Depois".to_string() })
+        .update(|x| x.name.set("Depois"))
         .enqueue_in(event.clone(), 60)
         .execute(&client)
         .await?;
@@ -642,7 +642,7 @@ where
 
     update::<User>()
         .cond(|x| x.id.eq(13_i64))
-        .values(User { id: 13, name: "Depois".to_string() })
+        .update(|x| x.name.set("Depois"))
         .enqueue_in(event.clone(), 60)
         .execute(client)
         .await?;

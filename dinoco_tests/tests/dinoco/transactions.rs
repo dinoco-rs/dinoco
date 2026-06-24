@@ -1,5 +1,5 @@
 use dinoco::{
-    DinocoAdapter, DinocoClient, DinocoResult, DinocoTransactionAdapter, DinocoValue, Expression, InsertModel, Model,
+    DinocoAdapter, DinocoClient, DinocoResult, DinocoTransactionAdapter, DinocoValue, Expression, FindAndUpdateModel, InsertModel, Model,
     Projection, Rowable, ScalarField, UpdateField, UpdateModel, count, find_first, find_many, insert_into, insert_many,
     transactions, tx, update,
 };
@@ -69,6 +69,14 @@ impl UpdateModel for TxUser {
 
     fn update_identity_conditions(&self) -> Vec<Expression> {
         vec![Expression::Column("id".to_string()).eq(self.id)]
+    }
+}
+
+impl FindAndUpdateModel for TxUser {
+    type Update = TxUserUpdate;
+
+    fn primary_key_columns() -> &'static [&'static str] {
+        &["id"]
     }
 }
 
@@ -214,12 +222,11 @@ where
 {
     let first = TxUser { id: 1, email: "alice@dinoco.dev".to_string(), name: "Alice".to_string() };
     let second = TxUser { id: 2, email: "bruno@dinoco.dev".to_string(), name: "Bruno".to_string() };
-    let updated = TxUser { id: 1, email: "alice@dinoco.dev".to_string(), name: "Alice Updated".to_string() };
 
     let mut success_actions = Vec::<dinoco::TransactionAction<A>>::new();
     success_actions.push(tx(find_first::<TxUser>().cond(|w| w.id.eq(1_i64))));
     success_actions.push(tx(insert_many::<TxUser>().values::<TxUser, _>(vec![&first, &second])));
-    success_actions.push(tx(update::<TxUser>().cond(|w| w.id.eq(1_i64)).values::<TxUser, _>(&updated)));
+    success_actions.push(tx(update::<TxUser>().cond(|w| w.id.eq(1_i64)).update(|w| w.name.set("Alice Updated"))));
 
     transactions(success_actions).execute(client).await?;
 
@@ -233,12 +240,11 @@ where
         .expect("user must exist after successful transaction");
     assert_eq!(updated_user.name, "Alice Updated");
 
-    let rollback_user = TxUser { id: 1, email: "alice@dinoco.dev".to_string(), name: "Should Rollback".to_string() };
     let inserted_before_error = TxUser { id: 3, email: "caio@dinoco.dev".to_string(), name: "Caio".to_string() };
     let duplicate_email = TxUser { id: 4, email: "alice@dinoco.dev".to_string(), name: "Duplicated".to_string() };
 
     let mut rollback_actions = Vec::<dinoco::TransactionAction<A>>::new();
-    rollback_actions.push(tx(update::<TxUser>().cond(|w| w.id.eq(1_i64)).values::<TxUser, _>(&rollback_user)));
+    rollback_actions.push(tx(update::<TxUser>().cond(|w| w.id.eq(1_i64)).update(|w| w.name.set("Should Rollback"))));
     rollback_actions.push(tx(insert_into::<TxUser>().values::<TxUser, _>(&inserted_before_error)));
     rollback_actions.push(tx(insert_into::<TxUser>().values::<TxUser, _>(&duplicate_email)));
 

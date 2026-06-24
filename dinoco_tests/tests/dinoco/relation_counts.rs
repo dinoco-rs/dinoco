@@ -225,6 +225,41 @@ async fn find_many_and_find_first_can_count_relations() -> DinocoResult<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn find_many_and_find_first_support_direct_nested_includes() -> DinocoResult<()> {
+    let client = DinocoClient::<dinoco_engine::SqliteAdapter>::new(
+        sqlite_url("direct-nested-includes"),
+        vec![],
+        dinoco::DinocoClientConfig::default(),
+    )
+    .await?;
+
+    create_tables(&client).await?;
+    seed_tables(&client).await?;
+
+    let users = find_many::<User>()
+        .select::<UserListItem>()
+        .order_by(|user| user.id.asc())
+        .includes(|user| user.posts().includes(|post| post.comments()))
+        .execute(&client)
+        .await?;
+
+    assert_eq!(users[0].posts[0].comments.len(), 3);
+    assert_eq!(users[1].posts[0].comments.len(), 2);
+
+    let user = find_first::<User>()
+        .select::<UserListItem>()
+        .cond(|user| user.id.eq(1_i64))
+        .includes(|user| user.posts().includes(|post| post.comments()))
+        .execute(&client)
+        .await?
+        .expect("user should exist");
+
+    assert_eq!(user.posts[0].comments.len(), 3);
+
+    Ok(())
+}
+
 impl User {
     pub fn __dinoco_load_posts<'a, P, C, A>(
         item_keys: Vec<Option<i64>>,

@@ -25,6 +25,76 @@ where
     }
 }
 
+pub fn execute_update_fields<'a, M, A>(
+    conditions: Vec<dinoco_engine::Expression>,
+    updates: Vec<FieldUpdate>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<()>> + 'a
+where
+    M: UpdateModel + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        if updates.is_empty() {
+            return Err(DinocoError::ParseError("update() requires at least one update().".to_string()));
+        }
+
+        let mut statement = UpdateStatement::new().table(M::table_name());
+
+        for condition in conditions {
+            statement = statement.condition(condition);
+        }
+
+        for update in updates {
+            statement = apply_field_update(statement, update);
+        }
+
+        execute_update(statement, client).await.map(|_| ())
+    }
+}
+
+pub fn execute_update_fields_returning<'a, M, S, A>(
+    conditions: Vec<dinoco_engine::Expression>,
+    updates: Vec<FieldUpdate>,
+    client: &'a DinocoClient<A>,
+) -> impl Future<Output = DinocoResult<Vec<S>>> + 'a
+where
+    M: UpdateModel + Projection<M> + 'a,
+    S: Projection<M> + 'a,
+    A: DinocoAdapter,
+{
+    async move {
+        if updates.is_empty() {
+            return Err(DinocoError::ParseError("update() requires at least one update().".to_string()));
+        }
+
+        let mut before_statement = SelectStatement::new().from(M::table_name()).select(M::columns());
+
+        for condition in &conditions {
+            before_statement = before_statement.condition(condition.clone());
+        }
+
+        let matched =
+            super::read::execute_many::<M, M, A>(before_statement, &[], &[], ReadMode::Primary, client).await?;
+
+        execute_update_fields::<M, A>(conditions, updates, client).await?;
+
+        let identity_conditions = matched.iter().map(UpdateModel::update_identity_conditions).collect::<Vec<_>>();
+
+        load_many_by_conditions::<M, S, A>(identity_conditions, client).await
+    }
+}
+
+fn apply_field_update(statement: UpdateStatement, update: FieldUpdate) -> UpdateStatement {
+    match update.operation {
+        dinoco_engine::UpdateOperation::Set(value) => statement.set(update.column, value),
+        dinoco_engine::UpdateOperation::Increment(value) => statement.increment(update.column, value),
+        dinoco_engine::UpdateOperation::Decrement(value) => statement.decrement(update.column, value),
+        dinoco_engine::UpdateOperation::Multiply(value) => statement.multiply(update.column, value),
+        dinoco_engine::UpdateOperation::Division(value) => statement.division(update.column, value),
+    }
+}
+
 pub fn execute_update_many<'a, M, V, A>(
     items: Vec<V>,
     conditions: Vec<dinoco_engine::Expression>,
@@ -168,13 +238,7 @@ where
         }
 
         for update in updates {
-            statement = match update.operation {
-                dinoco_engine::UpdateOperation::Set(value) => statement.set(update.column, value),
-                dinoco_engine::UpdateOperation::Increment(value) => statement.increment(update.column, value),
-                dinoco_engine::UpdateOperation::Decrement(value) => statement.decrement(update.column, value),
-                dinoco_engine::UpdateOperation::Multiply(value) => statement.multiply(update.column, value),
-                dinoco_engine::UpdateOperation::Division(value) => statement.division(update.column, value),
-            };
+            statement = apply_field_update(statement, update);
         }
 
         let affected_rows = execute_update(statement, client).await?;

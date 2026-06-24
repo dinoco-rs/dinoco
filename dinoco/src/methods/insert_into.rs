@@ -72,7 +72,14 @@ where
         Insert { item: Some(item.into_insert_payload_owned()), queue: self.queue, marker: PhantomData }
     }
 
-    pub fn returning<S>(self) -> InsertReturning<M, V, S>
+    pub fn returning(self) -> InsertReturning<M, V, M>
+    where
+        M: Projection<M>,
+    {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> InsertReturning<M, V, S>
     where
         S: Projection<M>,
     {
@@ -212,7 +219,11 @@ where
     M: InsertModel + InsertRelation<R> + Projection<M> + Clone,
     R: InsertModel + Projection<R>,
 {
-    pub fn returning<S>(self) -> InsertWithRelationReturning<M, R, S>
+    pub fn returning(self) -> InsertWithRelationReturning<M, R, M> {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> InsertWithRelationReturning<M, R, S>
     where
         S: Projection<M>,
     {
@@ -346,7 +357,11 @@ impl<M, R> InsertWithConnection<M, R>
 where
     M: InsertModel + InsertConnection<R> + Projection<M>,
 {
-    pub fn returning<S>(self) -> InsertWithConnectionReturning<M, R, S>
+    pub fn returning(self) -> InsertWithConnectionReturning<M, R, M> {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> InsertWithConnectionReturning<M, R, S>
     where
         S: Projection<M>,
     {

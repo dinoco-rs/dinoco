@@ -16,7 +16,11 @@ impl<M, R> InsertManyWithConnections<M, R>
 where
     M: InsertModel + InsertConnection<R> + Projection<M>,
 {
-    pub fn returning<S>(self) -> InsertManyWithConnectionsReturning<M, R, S>
+    pub fn returning(self) -> InsertManyWithConnectionsReturning<M, R, M> {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> InsertManyWithConnectionsReturning<M, R, S>
     where
         S: Projection<M>,
     {
@@ -74,7 +78,11 @@ impl<M, R> InsertManyWithConnection<M, R>
 where
     M: InsertModel + InsertConnection<R> + Projection<M>,
 {
-    pub fn returning<S>(self) -> InsertManyWithConnectionReturning<M, R, S>
+    pub fn returning(self) -> InsertManyWithConnectionReturning<M, R, M> {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> InsertManyWithConnectionReturning<M, R, S>
     where
         S: Projection<M>,
     {

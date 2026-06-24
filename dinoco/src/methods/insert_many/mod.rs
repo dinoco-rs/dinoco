@@ -110,7 +110,14 @@ where
         InsertMany { items, queue: self.queue, marker: PhantomData }
     }
 
-    pub fn returning<S>(self) -> InsertManyReturning<M, V, S>
+    pub fn returning(self) -> InsertManyReturning<M, V, M>
+    where
+        M: Projection<M>,
+    {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> InsertManyReturning<M, V, S>
     where
         S: Projection<M>,
     {

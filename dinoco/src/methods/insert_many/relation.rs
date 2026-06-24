@@ -17,7 +17,11 @@ where
     M: InsertModel + InsertRelation<R> + Projection<M> + Clone,
     R: InsertModel + Projection<R>,
 {
-    pub fn returning<S>(self) -> InsertManyWithRelationReturning<M, R, S>
+    pub fn returning(self) -> InsertManyWithRelationReturning<M, R, M> {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> InsertManyWithRelationReturning<M, R, S>
     where
         S: Projection<M>,
     {
@@ -152,7 +156,11 @@ where
     M: InsertModel + InsertRelation<R> + Projection<M> + Clone,
     R: InsertModel + Projection<R> + Clone,
 {
-    pub fn returning<S>(self) -> InsertManyWithRelationsReturning<M, R, S>
+    pub fn returning(self) -> InsertManyWithRelationsReturning<M, R, M> {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> InsertManyWithRelationsReturning<M, R, S>
     where
         S: Projection<M>,
     {

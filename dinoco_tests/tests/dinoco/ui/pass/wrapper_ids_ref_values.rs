@@ -85,9 +85,9 @@ fn main() {
     let _ = insert_into::<Event>().values(&first);
     let _ = insert_many::<Event>().values(vec![&first, &second]);
 
-    let _ = update::<Event>().cond(|x| x.id.eq(first.id.clone())).values(&first);
-    let _ = update::<Event>().cond(|x| x.id.eq(first_id_as_string)).values(&first);
-    let _ = update::<Event>().cond(|x| x.sequence.eq(first.sequence)).values(&first);
-    let _ = update::<Event>().cond(|x| x.sequence.eq(first_sequence_as_i64)).values(&first);
-    let _ = update_many::<Event>().cond(|x| x.sequence.gt(0_i64)).values(vec![&first, &second]);
+    let _ = update::<Event>().cond(|x| x.id.eq(first.id.clone())).update(|x| x.name.set(&first.name));
+    let _ = update::<Event>().cond(|x| x.id.eq(first_id_as_string)).update(|x| x.name.set(&first.name));
+    let _ = update::<Event>().cond(|x| x.sequence.eq(first.sequence)).update(|x| x.name.set(&first.name));
+    let _ = update::<Event>().cond(|x| x.sequence.eq(first_sequence_as_i64)).update(|x| x.name.set(&first.name));
+    let _ = update_many::<Event>().cond(|x| x.sequence.gt(0_i64)).update(|x| x.name.set(&second.name));
 }

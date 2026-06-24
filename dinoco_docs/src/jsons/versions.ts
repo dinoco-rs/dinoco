@@ -1,12 +1,7 @@
-import v0_0_6 from './versions/v0.0.6';
-import v0_0_5 from './versions/v0.0.5';
-import v0_0_4 from './versions/v0.0.4';
-import v0_0_2 from './versions/v0.0.2';
-import v0_0_3 from './versions/v0.0.3';
-import v0_0_1 from './versions/v0.0.1';
+import v0_0_8 from './versions/v0.0.8';
 
-export type DocsLocale = 'pt-br' | 'en-us' | 'ru-ru' | 'ja-jp' | 'ko-kr' | 'de-de' | 'it-it' | 'zh-cn' | 'fr-fr';
-export const SUPPORTED_LOCALES: DocsLocale[] = ['pt-br', 'en-us', 'ru-ru', 'ja-jp', 'ko-kr', 'de-de', 'it-it', 'zh-cn', 'fr-fr'];
+export type DocsLocale = 'pt-br';
+export const SUPPORTED_LOCALES: DocsLocale[] = ['pt-br'];
 type RawDocsLocale = DocsLocale | 'pt';
 
 type DocsItemData = {
@@ -100,7 +95,7 @@ function normalizeLocalizedRecord<T>(record: Partial<Record<RawDocsLocale, T>>):
 	) as Partial<Record<DocsLocale, T>>;
 }
 
-const versionsData: DocsVersionData[] = [v0_0_6 as DocsVersionData, v0_0_5 as DocsVersionData, v0_0_4 as DocsVersionData, v0_0_3 as DocsVersionData, v0_0_2 as DocsVersionData, v0_0_1 as DocsVersionData];
+const versionsData: DocsVersionData[] = [v0_0_8 as DocsVersionData];
 
 export const versions: DocsVersion[] = versionsData.map(version => ({
 	...version,
@@ -157,7 +152,7 @@ function fallbackLocale(locale: DocsLocale, version: DocsVersion): DocsLocale {
 }
 
 export function getLatestVersionName(): string {
-	return versions[0]?.name ?? 'v0.0.1';
+	return versions[0]?.name ?? 'v0.0.8';
 }
 
 export function isLatestVersion(versionName: string): boolean {

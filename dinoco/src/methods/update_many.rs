@@ -5,22 +5,22 @@ use chrono::{DateTime, Utc};
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression};
 
 use crate::{
-    IntoUpdatePayloadOwned, Projection, UpdateModel, UpdatePayload, execute_update_many, execute_update_many_returning,
-    queue::{QueueDispatch, dispatch_update_lookup, enqueue_many_conditions},
+    FieldUpdate, FindAndUpdateModel, Projection, UpdateModel, execute_update_fields, execute_update_fields_returning,
+    queue::{QueueDispatch, enqueue_many_conditions},
 };
 
 #[derive(Debug, Clone)]
-pub struct UpdateMany<M, V = M> {
+pub struct UpdateMany<M> {
     conditions: Vec<Expression>,
-    items: Vec<V>,
+    updates: Vec<FieldUpdate>,
     queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> M>,
 }
 
 #[derive(Debug, Clone)]
-pub struct UpdateManyReturning<M, V = M, S = M> {
+pub struct UpdateManyReturning<M, S = M> {
     conditions: Vec<Expression>,
-    items: Vec<V>,
+    updates: Vec<FieldUpdate>,
     queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> (M, S)>,
 }
@@ -29,13 +29,12 @@ pub fn update_many<M>() -> UpdateMany<M>
 where
     M: UpdateModel,
 {
-    UpdateMany { conditions: Vec::new(), items: Vec::new(), queue: None, marker: PhantomData }
+    UpdateMany { conditions: Vec::new(), updates: Vec::new(), queue: None, marker: PhantomData }
 }
 
-impl<M, V> UpdateMany<M, V>
+impl<M> UpdateMany<M>
 where
     M: UpdateModel,
-    V: UpdatePayload<M>,
 {
     pub fn cond<F>(mut self, closure: F) -> Self
     where
@@ -46,21 +45,29 @@ where
         self
     }
 
-    pub fn values<N, I>(self, items: Vec<I>) -> UpdateMany<M, N>
+    pub fn update<F>(mut self, closure: F) -> Self
     where
-        N: UpdatePayload<M>,
-        I: IntoUpdatePayloadOwned<M, N>,
+        M: FindAndUpdateModel,
+        F: FnOnce(M::Update) -> FieldUpdate,
     {
-        let items = items.into_iter().map(IntoUpdatePayloadOwned::into_update_payload_owned).collect::<Vec<_>>();
+        self.updates.push(closure(M::Update::default()));
 
-        UpdateMany { conditions: self.conditions, items, queue: self.queue, marker: PhantomData }
+        self
     }
 
-    pub fn returning<S>(self) -> UpdateManyReturning<M, V, S>
+    pub fn returning(self) -> UpdateManyReturning<M, M>
     where
+        M: Projection<M>,
+    {
+        self.returning_as::<M>()
+    }
+
+    pub fn returning_as<S>(self) -> UpdateManyReturning<M, S>
+    where
+        M: Projection<M>,
         S: Projection<M>,
     {
-        UpdateManyReturning { conditions: self.conditions, items: self.items, queue: self.queue, marker: PhantomData }
+        UpdateManyReturning { conditions: self.conditions, updates: self.updates, queue: self.queue, marker: PhantomData }
     }
 
     #[doc(hidden)]
@@ -90,25 +97,14 @@ where
     ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a
     where
         M: Send + Sync + 'a,
-        V: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
-            let queue_lookup = if self.queue.is_some() {
-                Some(
-                    self.items
-                        .iter()
-                        .map(|item| dispatch_update_lookup::<M, _>(item, &self.conditions))
-                        .collect::<Vec<_>>(),
-                )
-            } else {
-                None
-            };
+            let conditions = self.conditions;
+            execute_update_fields::<M, A>(conditions.clone(), self.updates, client).await?;
 
-            execute_update_many::<M, V, A>(self.items, self.conditions, client).await?;
-
-            if let (Some(queue), Some(queue_lookup)) = (&self.queue, queue_lookup) {
-                enqueue_many_conditions(client, queue, queue_lookup).await?;
+            if let Some(queue) = &self.queue {
+                enqueue_many_conditions(client, queue, vec![conditions]).await?;
             }
 
             Ok(())
@@ -116,10 +112,9 @@ where
     }
 }
 
-impl<M, V, S> UpdateManyReturning<M, V, S>
+impl<M, S> UpdateManyReturning<M, S>
 where
-    M: UpdateModel,
-    V: UpdatePayload<M>,
+    M: UpdateModel + Projection<M>,
     S: Projection<M>,
 {
     #[doc(hidden)]
@@ -149,25 +144,15 @@ where
     ) -> impl std::future::Future<Output = dinoco_engine::DinocoResult<Vec<S>>> + Send + 'a
     where
         M: Send + Sync + 'a,
-        V: Send + Sync + 'a,
         S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
         async move {
-            let queue_lookup = if self.queue.is_some() {
-                Some(
-                    self.items
-                        .iter()
-                        .map(|item| dispatch_update_lookup::<M, _>(item, &self.conditions))
-                        .collect::<Vec<_>>(),
-                )
-            } else {
-                None
-            };
-            let result = execute_update_many_returning::<M, V, S, A>(self.items, self.conditions, client).await?;
+            let conditions = self.conditions;
+            let result = execute_update_fields_returning::<M, S, A>(conditions.clone(), self.updates, client).await?;
 
-            if let (Some(queue), Some(queue_lookup)) = (&self.queue, queue_lookup) {
-                enqueue_many_conditions(client, queue, queue_lookup).await?;
+            if let Some(queue) = &self.queue {
+                enqueue_many_conditions(client, queue, vec![conditions]).await?;
             }
 
             Ok(result)
