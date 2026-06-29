@@ -159,6 +159,10 @@ fn render_field_attributes(field: &ParsedField) -> Vec<String> {
         attributes.push("@unique".to_string());
     }
 
+    if field.is_virtual {
+        attributes.push("@virtual".to_string());
+    }
+
     if !matches!(field.default_value, ParsedFieldDefault::NotDefined) {
         attributes.push(format!("@default({})", render_default_value(&field.default_value)));
     }

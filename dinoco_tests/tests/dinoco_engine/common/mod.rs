@@ -83,6 +83,7 @@ pub fn migration_schema(prefix: &str) -> ParsedSchema {
                         is_primary_key: false,
                         is_optional: false,
                         is_unique: false,
+                        is_virtual: false,
                         is_list: false,
                         relation: ParsedRelation::NotDefined,
                         default_value: ParsedFieldDefault::EnumValue("ACTIVE".to_string()),
@@ -93,6 +94,7 @@ pub fn migration_schema(prefix: &str) -> ParsedSchema {
                         is_primary_key: false,
                         is_optional: false,
                         is_unique: false,
+                        is_virtual: false,
                         is_list: false,
                         relation: ParsedRelation::NotDefined,
                         default_value: ParsedFieldDefault::NotDefined,
@@ -103,6 +105,7 @@ pub fn migration_schema(prefix: &str) -> ParsedSchema {
                         is_primary_key: false,
                         is_optional: false,
                         is_unique: false,
+                        is_virtual: false,
                         is_list: false,
                         relation: ParsedRelation::ManyToOne(
                             None,
@@ -184,6 +187,7 @@ pub fn alter_enum_schema(prefix: &str) -> ParsedSchema {
                     is_primary_key: false,
                     is_optional: false,
                     is_unique: false,
+                    is_virtual: false,
                     is_list: false,
                     relation: ParsedRelation::NotDefined,
                     default_value: ParsedFieldDefault::EnumValue("ACTIVE".to_string()),
@@ -224,6 +228,7 @@ fn integer_field(name: &str, is_primary_key: bool) -> ParsedField {
         is_primary_key,
         is_optional: false,
         is_unique: false,
+        is_virtual: false,
         is_list: false,
         relation: ParsedRelation::NotDefined,
         default_value: ParsedFieldDefault::NotDefined,
@@ -233,6 +238,7 @@ fn integer_field(name: &str, is_primary_key: bool) -> ParsedField {
 fn string_field(name: &str, is_optional: bool, is_unique: bool) -> ParsedField {
     ParsedField {
         name: name.to_string(),
+        is_virtual: false,
         field_type: ParsedFieldType::String,
         is_primary_key: false,
         is_optional,

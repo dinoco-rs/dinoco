@@ -87,7 +87,7 @@ dinoco::insert_many::<User>()
     .await?;
 ```
 
-Veja mais sobre workers em [**`queues`**](/v0.0.8/orm/queues).
+Veja mais sobre workers em [**`queues`**](/v0.1.0/orm/queues).
 
 ## Exemplo com relações aninhadas
 
@@ -238,6 +238,6 @@ dinoco::insert_many::<Article>()
 
 ## Próximos passos
 
-- [**Derives**](/v0.0.8/core/derives): entenda como montar payloads com `Extend` e `#[insertable]`.
-- [**`insert_into::<M>()`**](/v0.0.8/orm/insert-into): inserção única.
-- [**`update::<M>()`**](/v0.0.8/orm/update): atualização com filtro.
+- [**Derives**](/v0.1.0/core/derives): entenda como montar payloads com `Extend` e `#[insertable]`.
+- [**`insert_into::<M>()`**](/v0.1.0/orm/insert-into): inserção única.
+- [**`update::<M>()`**](/v0.1.0/orm/update): atualização com filtro.

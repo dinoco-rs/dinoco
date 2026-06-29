@@ -138,6 +138,7 @@ Os atributos alteram o comportamento de campos e modelo.
 | `@id`           | Define o identificador principal |
 | `@default(...)` | Define um valor padrão           |
 | `@unique`       | Garante unicidade                |
+| `@virtual`      | Mantém o campo no model gerado sem criar coluna no banco |
 
 ### `@id`
 
@@ -167,6 +168,31 @@ Funções e valores comuns:
 | `@default(now())`           | Data atual          |
 | `@default(autoincrement())` | Inteiro incremental |
 | `@default(uuid())`          | Identificador UUID  |
+
+### `@virtual`
+
+Define um campo que existe apenas no model Rust gerado.
+
+Campos virtuais são úteis para dados calculados, valores preenchidos manualmente na aplicação ou informações temporárias que você quer carregar junto da struct sem persistir no banco.
+
+```dinoco
+model User {
+	id          Integer @id @default(autoincrement())
+	email       String
+	displayName String? @virtual
+	score       Integer @virtual @default(0)
+}
+```
+
+Regras do `@virtual`:
+
+- O campo aparece na struct gerada.
+- O campo não é criado na tabela do banco.
+- O campo não entra em `where`, `insert`, `update` nem no `SELECT` padrão.
+- O campo precisa ser opcional (`?`) ou ter `@default(...)`.
+- O campo não pode ser `@id`, `@unique` nem uma relação.
+
+No exemplo acima, `displayName` começa como `None` e `score` começa com `0` quando o model é criado por default.
 
 ### `@unique`
 
@@ -361,6 +387,7 @@ dinoco::delete_many::<User>()
 | ID             | `id Integer @id`       | Identificar unicamente      |
 | Default        | `@default(now())`      | Preencher automaticamente   |
 | Unique         | `email String @unique` | Evitar duplicidade          |
+| Virtual        | `name String? @virtual` | Campo só na struct gerada   |
 
 ## Quando criar um novo model
 

@@ -137,6 +137,6 @@ dinoco::insert_many::<Article>()
 
 ## Próximos passos
 
-- [**Traits**](/v0.0.8/core/traits): veja as traits implementadas pelo model.
-- [**`insert_into::&lt;M&gt;()`**](/v0.0.8/orm/insert-into): inserção única com payloads ricos.
-- [**`insert_many::&lt;M&gt;()`**](/v0.0.8/orm/insert-many): inserção em lote com relações e conexões aninhadas.
+- [**Traits**](/v0.1.0/core/traits): veja as traits implementadas pelo model.
+- [**`insert_into::&lt;M&gt;()`**](/v0.1.0/orm/insert-into): inserção única com payloads ricos.
+- [**`insert_many::&lt;M&gt;()`**](/v0.1.0/orm/insert-many): inserção em lote com relações e conexões aninhadas.

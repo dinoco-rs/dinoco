@@ -35,6 +35,13 @@ pub(crate) fn scalar_fields(fields: &[ParsedField]) -> Vec<&ParsedField> {
     fields.iter().filter(|field| !matches!(field.field_type, ParsedFieldType::Relation(_))).collect()
 }
 
+pub(crate) fn persistent_scalar_fields(fields: &[ParsedField]) -> Vec<&ParsedField> {
+    fields
+        .iter()
+        .filter(|field| !field.is_virtual && !matches!(field.field_type, ParsedFieldType::Relation(_)))
+        .collect()
+}
+
 pub(crate) fn relation_fields(fields: &[ParsedField]) -> Vec<&ParsedField> {
     fields.iter().filter(|field| matches!(field.field_type, ParsedFieldType::Relation(_))).collect()
 }

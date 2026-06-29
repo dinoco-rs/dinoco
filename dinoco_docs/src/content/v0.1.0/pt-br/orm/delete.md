@@ -37,5 +37,5 @@ dinoco::delete::<Session>()
 
 ## Próximos passos
 
-- [**`delete_many::&lt;M&gt;()`**](/v0.0.8/orm/delete-many): remoção em lote.
-- [**`find_many::&lt;M&gt;()`**](/v0.0.8/orm/find-many): validar registros antes de remover.
+- [**`delete_many::&lt;M&gt;()`**](/v0.1.0/orm/delete-many): remoção em lote.
+- [**`find_many::&lt;M&gt;()`**](/v0.1.0/orm/find-many): validar registros antes de remover.

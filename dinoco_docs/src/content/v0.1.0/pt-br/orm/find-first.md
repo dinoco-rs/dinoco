@@ -77,6 +77,27 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
+## Exemplo com count de relação
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let user = dinoco::find_first::<User>()
+    .select::<UserWithPostsCount>()
+    .cond(|x| x.id.eq(1_i64))
+    .count(|x| x.posts().cond(|post| post.state.eq(PostStatus::Active)))
+    .execute(&client)
+    .await?;
+```
+
+O count respeita o item retornado e a condição da relação. Ele preenche `posts_count` com a quantidade de posts ativos daquele usuário, sem carregar `posts`.
+
 ## Exemplo com ordenação
 
 ```rust
@@ -106,7 +127,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-Veja mais sobre workers em [**`queues`**](/v0.0.8/orm/queues).
+Veja mais sobre workers em [**`queues`**](/v0.1.0/orm/queues).
 
 ## Exemplo com cache
 
@@ -138,5 +159,5 @@ let user = dinoco::find_first::<User>()
 
 ## Próximos passos
 
-- [**`find_many::&lt;M&gt;()`**](/v0.0.8/orm/find-many): busca múltiplos registros.
-- [**`count::&lt;M&gt;()`**](/v0.0.8/orm/count): contagem de registros.
+- [**`find_many::&lt;M&gt;()`**](/v0.1.0/orm/find-many): busca múltiplos registros.
+- [**`count::&lt;M&gt;()`**](/v0.1.0/orm/count): contagem de registros.

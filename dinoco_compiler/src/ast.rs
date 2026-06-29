@@ -109,6 +109,7 @@ pub struct Field<'a> {
     pub is_primary_key: bool,
     pub is_optional: bool,
     pub is_unique: bool,
+    pub is_virtual: bool,
     pub is_list: bool,
 
     pub relation: Option<Relation<'a>>,

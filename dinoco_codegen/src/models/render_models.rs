@@ -7,9 +7,9 @@ use dinoco_compiler::{
 };
 
 use super::helpers::{
-    can_derive_default_for_model, default_value_expr, filter_type, generated_id_wrapper_type, relation_fields,
-    relation_target, rust_scalar_base_type, rust_scalar_type, scalar_fields, singularize, to_pascal_case,
-    to_snake_case,
+    can_derive_default_for_model, default_value_expr, filter_type, generated_id_wrapper_type, persistent_scalar_fields,
+    relation_fields, relation_target, rust_scalar_base_type, rust_scalar_type, scalar_fields, singularize,
+    to_pascal_case, to_snake_case,
 };
 use super::relations::{RelationCardinality, collect_join_tables, resolve_relation};
 use super::render_dinoco::render_dinoco_module;
@@ -165,17 +165,18 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     let fields = &table.fields;
     let wrapper_overrides = relation_wrapper_overrides(table, schema);
     let scalar_fields = scalar_fields(fields);
-    let insert_fields = scalar_fields
+    let persistent_scalar_fields = persistent_scalar_fields(fields);
+    let insert_fields = persistent_scalar_fields
         .iter()
         .copied()
         .filter(|field| !matches!(field.default_value, ParsedFieldDefault::Function(FunctionCall::AutoIncrement)))
         .collect::<Vec<_>>();
-    let update_fields = scalar_fields
+    let update_fields = persistent_scalar_fields
         .iter()
         .copied()
         .filter(|field| !table.primary_key_fields.iter().any(|primary_key| primary_key == &field.name))
         .collect::<Vec<_>>();
-    let primary_key_fields = scalar_fields
+    let primary_key_fields = persistent_scalar_fields
         .iter()
         .copied()
         .filter(|field| table.primary_key_fields.iter().any(|primary_key| primary_key == &field.name))
@@ -231,6 +232,10 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     output.push_str(&format!("pub struct {} {{\n", name));
 
     for field in &scalar_fields {
+        if field.is_virtual {
+            output.push_str("    #[dinoco_virtual]\n");
+        }
+
         output.push_str(&format!(
             "    pub {}: {},\n",
             field.name,
@@ -240,13 +245,11 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
 
     for field in &relation_fields {
         let relation_type = relation_target(field);
-        let relation_type = if field.is_list {
-            format!("Vec<{relation_type}>")
-        } else {
-            format!("Option<{relation_type}>")
-        };
+        let relation_type =
+            if field.is_list { format!("Vec<{relation_type}>") } else { format!("Option<{relation_type}>") };
 
         output.push_str(&format!("    pub {}: {},\n", field.name, relation_type));
+        output.push_str(&format!("    pub {}_count: usize,\n", field.name));
     }
 
     output.push_str("}\n\n");
@@ -270,6 +273,7 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
 
         for field in &relation_fields {
             output.push_str(&format!("            {}: Default::default(),\n", field.name));
+            output.push_str(&format!("            {}_count: Default::default(),\n", field.name));
         }
 
         output.push_str("        }\n");
@@ -278,7 +282,7 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     }
     output.push_str(&format!("pub struct {}Where {{\n", name));
 
-    for field in &scalar_fields {
+    for field in &persistent_scalar_fields {
         output.push_str(&format!("    pub {}: ScalarField<{}>,\n", field.name, filter_type(field, enum_names)));
     }
 
@@ -290,7 +294,7 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     }
 
     output.push_str("}\n\n");
-    output.push_str(&render_relation_mutation_where(table, &scalar_fields, enum_names));
+    output.push_str(&render_relation_mutation_where(table, &persistent_scalar_fields, enum_names));
     output.push_str("#[derive(Default)]\n");
     output.push_str(&format!("pub struct {}Include {}\n\n", name, "{}"));
     output.push_str("#[derive(Default)]\n");
@@ -382,7 +386,7 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     output.push_str("    fn default() -> Self {\n");
     output.push_str("        Self {\n");
 
-    for field in &scalar_fields {
+    for field in &persistent_scalar_fields {
         output.push_str(&format!("            {}: ScalarField::new(\"{}\"),\n", field.name, field.name));
     }
 
@@ -607,28 +611,30 @@ fn render_relation_loaders(table: &ParsedTable, schema: &ParsedSchema) -> String
                 remote_key_ident,
                 statement_table,
             ),
-            RelationCardinality::OptionalOne => render_optional_loader(
-                table.name.as_str(),
-                &loader_name,
-                &local_key_ty,
-                &remote_key_ty,
-                &target_model,
-                relation.local_key_field.name.as_str(),
-                remote_key_ident,
-                table.database_name.as_str(),
-                statement_table,
-            ) + &render_optional_loader_by_primary_key(
-                table.name.as_str(),
-                &loader_by_primary_key_name,
-                &primary_key_ty,
-                &remote_key_ty,
-                &target_model,
-                current_primary_key_field.name.as_str(),
-                relation.local_key_field.name.as_str(),
-                remote_key_ident,
-                table.database_name.as_str(),
-                statement_table,
-            ),
+            RelationCardinality::OptionalOne => {
+                render_optional_loader(
+                    table.name.as_str(),
+                    &loader_name,
+                    &local_key_ty,
+                    &remote_key_ty,
+                    &target_model,
+                    relation.local_key_field.name.as_str(),
+                    remote_key_ident,
+                    table.database_name.as_str(),
+                    statement_table,
+                ) + &render_optional_loader_by_primary_key(
+                    table.name.as_str(),
+                    &loader_by_primary_key_name,
+                    &primary_key_ty,
+                    &remote_key_ty,
+                    &target_model,
+                    current_primary_key_field.name.as_str(),
+                    relation.local_key_field.name.as_str(),
+                    remote_key_ident,
+                    table.database_name.as_str(),
+                    statement_table,
+                )
+            }
             RelationCardinality::ManyToMany {
                 ref join_table_name,
                 ref current_join_column,

@@ -91,6 +91,8 @@ pub struct ParsedField {
     pub is_primary_key: bool,
     pub is_optional: bool,
     pub is_unique: bool,
+    #[serde(default)]
+    pub is_virtual: bool,
     pub is_list: bool,
 
     pub relation: ParsedRelation,

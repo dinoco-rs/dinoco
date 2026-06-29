@@ -67,7 +67,12 @@ where
         M: Projection<M>,
         S: Projection<M>,
     {
-        UpdateManyReturning { conditions: self.conditions, updates: self.updates, queue: self.queue, marker: PhantomData }
+        UpdateManyReturning {
+            conditions: self.conditions,
+            updates: self.updates,
+            queue: self.queue,
+            marker: PhantomData,
+        }
     }
 
     #[doc(hidden)]

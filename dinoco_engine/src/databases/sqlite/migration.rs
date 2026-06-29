@@ -185,7 +185,7 @@ fn table_column_names(table: &ParsedTable) -> Vec<String> {
     table
         .fields
         .iter()
-        .filter(|field| !matches!(field.field_type, ParsedFieldType::Relation(..)))
+        .filter(|field| !field.is_virtual && !matches!(field.field_type, ParsedFieldType::Relation(..)))
         .map(|field| field.name.clone())
         .collect()
 }

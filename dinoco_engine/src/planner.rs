@@ -302,8 +302,10 @@ pub fn calculate_diff(old_schema: &Option<ParsedSchema>, new_schema: &ParsedSche
 fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut Vec<SafetyLevel>) -> Vec<MigrationStep> {
     let mut steps = Vec::new();
 
-    let old_fields: HashMap<&String, &ParsedField> = old_table.fields.iter().map(|f| (&f.name, f)).collect();
-    let new_fields: HashMap<&String, &ParsedField> = new_table.fields.iter().map(|f| (&f.name, f)).collect();
+    let old_fields: HashMap<&String, &ParsedField> =
+        old_table.fields.iter().filter(|f| !f.is_virtual).map(|f| (&f.name, f)).collect();
+    let new_fields: HashMap<&String, &ParsedField> =
+        new_table.fields.iter().filter(|f| !f.is_virtual).map(|f| (&f.name, f)).collect();
 
     let mut added_fields = Vec::new();
     let mut dropped_fields = Vec::new();
@@ -398,7 +400,10 @@ fn diff_columns(old_table: &ParsedTable, new_table: &ParsedTable, alerts: &mut V
         if !resolved_adds.contains(&add_f.name) {
             if !add_f.is_optional
                 && add_f.default_value == ParsedFieldDefault::NotDefined
-                && old_table.fields.iter().any(|field| !matches!(field.field_type, ParsedFieldType::Relation(..)))
+                && old_table
+                    .fields
+                    .iter()
+                    .any(|field| !field.is_virtual && !matches!(field.field_type, ParsedFieldType::Relation(..)))
             {
                 push_safety_alert(
                     alerts,
@@ -554,6 +559,7 @@ pub fn extract_relations(
                             is_primary_key: false,
                             is_optional: false,
                             is_unique: false,
+                            is_virtual: false,
                             is_list: false,
                             relation: ParsedRelation::NotDefined,
                             default_value: ParsedFieldDefault::NotDefined,
@@ -569,6 +575,7 @@ pub fn extract_relations(
                                 is_primary_key: false,
                                 is_optional: false,
                                 is_unique: false,
+                                is_virtual: false,
                                 is_list: false,
                                 relation: ParsedRelation::NotDefined,
                                 default_value: ParsedFieldDefault::NotDefined,

@@ -104,6 +104,6 @@ Exemplos comuns:
 
 ## Próximos passos
 
-- [**`find_first::&lt;M&gt;()`**](/v0.0.8/orm/find-first)
-- [**`find_many::&lt;M&gt;()`**](/v0.0.8/orm/find-many)
-- [**`queues`**](/v0.0.8/orm/queues)
+- [**`find_first::&lt;M&gt;()`**](/v0.1.0/orm/find-first)
+- [**`find_many::&lt;M&gt;()`**](/v0.1.0/orm/find-many)
+- [**`queues`**](/v0.1.0/orm/queues)

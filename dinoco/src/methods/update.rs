@@ -154,7 +154,9 @@ where
             if !self.updates.is_empty() {
                 execute_update_fields::<M, A>(conditions.clone(), self.updates, client).await?;
             } else if self.relation_writes.is_empty() {
-                return Err(dinoco_engine::DinocoError::ParseError("update() requires at least one update().".to_string()));
+                return Err(dinoco_engine::DinocoError::ParseError(
+                    "update() requires at least one update().".to_string(),
+                ));
             }
 
             if !self.relation_writes.is_empty() {

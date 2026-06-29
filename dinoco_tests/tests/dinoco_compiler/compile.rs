@@ -29,6 +29,75 @@ fn compile_parses_valid_schema() {
 }
 
 #[test]
+fn compile_normalizes_enum_default_values_case_insensitively() {
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = "file:dev.db"
+}
+
+enum UserRule {
+    ADMIN
+    USER
+    MEMBER
+}
+
+model User {
+    id Integer @id
+    rule UserRule @default(member)
+}
+"#;
+
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let rule = parsed.tables[0].fields.iter().find(|field| field.name == "rule").expect("rule field should exist");
+
+    assert_eq!(rule.default_value, ParsedFieldDefault::EnumValue("MEMBER".to_string()));
+}
+
+#[test]
+fn compile_parses_virtual_fields_when_optional_or_defaulted() {
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = "file:dev.db"
+}
+
+model User {
+    id Integer @id
+    displayName String? @virtual
+    score Integer @virtual @default(0)
+}
+"#;
+
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let table = &parsed.tables[0];
+    let display_name = table.fields.iter().find(|field| field.name == "displayName").unwrap();
+    let score = table.fields.iter().find(|field| field.name == "score").unwrap();
+
+    assert!(display_name.is_virtual);
+    assert!(display_name.is_optional);
+    assert!(score.is_virtual);
+    assert_eq!(score.default_value, ParsedFieldDefault::Integer(0));
+}
+
+#[test]
+fn compile_rejects_virtual_fields_without_optional_or_default() {
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = "file:dev.db"
+}
+
+model User {
+    id Integer @id
+    displayName String @virtual
+}
+"#;
+
+    expect_compile_error(raw, "@virtual fields must be optional (?) or define @default(...).");
+}
+
+#[test]
 fn compile_parses_negative_integer_and_float_defaults() {
     let raw = r#"
 config {

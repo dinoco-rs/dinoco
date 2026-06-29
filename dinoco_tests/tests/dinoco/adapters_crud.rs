@@ -212,11 +212,8 @@ async fn exercise_crud_flow<A: DinocoAdapter>(client: &DinocoClient<A>) -> Dinoc
 
     let inserted_first =
         insert_into::<Record>().values(first.clone()).returning_as::<RecordNameProjection>().execute(client).await?;
-    let inserted_many = insert_many::<Record>()
-        .values(vec![second.clone(), third.clone()])
-        .returning()
-        .execute(client)
-        .await?;
+    let inserted_many =
+        insert_many::<Record>().values(vec![second.clone(), third.clone()]).returning().execute(client).await?;
 
     assert_eq!(inserted_first.name, "Matheus");
     assert!((inserted_first.score - 9.25).abs() < f64::EPSILON);

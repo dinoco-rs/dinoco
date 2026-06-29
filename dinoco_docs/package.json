@@ -2,7 +2,7 @@
 	"name": "dinoco-docs",
 	"description": "Dinoco documentation website powered by Next.js",
 	"private": true,
-	"version": "0.0.8",
+	"version": "0.1.0",
 	"scripts": {
 		"build": "next build",
 		"dev": "next dev",

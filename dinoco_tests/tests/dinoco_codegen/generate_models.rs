@@ -114,9 +114,49 @@ model Device {
 
     assert!(account_file.contains("#[extend(Account)]"));
     assert!(account_file.contains("pub devices: Vec<super::device::Device>"));
+    assert!(account_file.contains("pub devices_count: usize"));
     assert!(device_file.contains("#[extend(Device)]"));
     assert!(device_file.contains("pub account: Option<super::account::Account>"));
+    assert!(device_file.contains("pub account_count: usize"));
     assert!(device_file.contains("account: Default::default()"));
+    assert!(device_file.contains("account_count: Default::default()"));
+}
+
+#[test]
+fn generate_models_embeds_virtual_fields_without_persisting_them() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model User {
+    id Integer @id
+    email String
+    displayName String? @virtual
+    score Integer @virtual @default(10)
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let user_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/user.rs")).expect("generated user model should exist");
+
+    assert!(user_file.contains("#[dinoco_virtual]\n    pub displayName: Option<String>"));
+    assert!(user_file.contains("#[dinoco_virtual]\n    pub score: i64"));
+    assert!(user_file.contains("score: 10"));
+    assert!(user_file.contains("pub id: ScalarField<i64>"));
+    assert!(user_file.contains("pub email: ScalarField<String>"));
+    assert!(!user_file.contains("pub displayName: ScalarField"));
+    assert!(!user_file.contains("pub score: ScalarField"));
+    assert!(user_file.contains("\"email\""));
+    assert!(!user_file.contains("\"displayName\""));
+    assert!(!user_file.contains("\"score\""));
 }
 
 #[test]
@@ -385,6 +425,40 @@ model User {
 }
 
 #[test]
+fn generate_models_uses_requested_enum_default_instead_of_first_variant() {
+    let _lock = lock_current_dir();
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum UserRule {
+    ADMIN
+    USER
+    MEMBER
+}
+
+model User {
+    id Integer @id
+    rule UserRule @default(member)
+}
+"#;
+    let (_, parsed) = compile(raw).expect("schema should compile");
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let _guard = CurrentDirGuard::change_to(temp_dir.path());
+
+    generate_models(parsed);
+
+    let user_file =
+        fs::read_to_string(temp_dir.path().join("dinoco/models/user.rs")).expect("generated user model should exist");
+
+    assert!(user_file.contains("impl Default for User {"));
+    assert!(user_file.contains("rule: super::enums::UserRule::MEMBER"));
+    assert!(!user_file.contains("Deserialize, Extend, Default)]"));
+}
+
+#[test]
 fn generate_models_uses_partitioned_loader_for_many_to_many_include_limits() {
     let _lock = lock_current_dir();
     let raw = r#"
@@ -536,8 +610,15 @@ model Tag {
     assert!(post_file.contains("impl dinoco::InsertConnectionPayload<Post> for PostConnection"));
     assert!(post_file.contains("Self::Tag(value) => vec![dinoco::RelationLinkPlan"));
     assert!(user_file.contains("pub fn __dinoco_count_posts"));
+    assert!(user_file.contains("let mut statement = count.statement.clone().unwrap_or_else"));
+    assert!(
+        user_file.contains("statement.conditions.push(dinoco::Expression::Column(\"authorId\".to_string()).in_values")
+    );
     assert!(user_file.contains("C::load_counts(&mut children, &include.counts, client, read_mode).await?;"));
     assert!(post_file.contains("pub fn __dinoco_count_comments"));
+    assert!(
+        post_file.contains("statement.conditions.push(dinoco::Expression::Column(\"postId\".to_string()).in_values")
+    );
     assert!(post_file.contains("pub fn __dinoco_count_tags"));
 
     assert!(comment_file.contains("pub fn __dinoco_load_replies"));

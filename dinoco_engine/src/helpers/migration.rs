@@ -173,7 +173,7 @@ pub fn render_create_table_sql<D: AdapterDialect>(table: &ParsedTable, dialect: 
     let data_fields = table
         .fields
         .iter()
-        .filter(|field| !matches!(field.field_type, ParsedFieldType::Relation(..)))
+        .filter(|field| !field.is_virtual && !matches!(field.field_type, ParsedFieldType::Relation(..)))
         .collect::<Vec<_>>();
 
     let primary_key_columns = table
@@ -390,7 +390,7 @@ pub fn find_enum_columns<'a>(schema: &'a ParsedSchema, enum_name: &str) -> Vec<(
         .iter()
         .flat_map(|table| {
             table.fields.iter().filter_map(move |field| match &field.field_type {
-                ParsedFieldType::Enum(name) if name == enum_name => Some((table, field)),
+                ParsedFieldType::Enum(name) if !field.is_virtual && name == enum_name => Some((table, field)),
                 _ => None,
             })
         })

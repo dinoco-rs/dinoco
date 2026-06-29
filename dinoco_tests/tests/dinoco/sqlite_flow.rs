@@ -1,10 +1,10 @@
 use std::env;
 
 use dinoco::{
-    DinocoAdapter, DinocoClient, DinocoError, DinocoResult, DinocoValue, Extend, InsertConnection, InsertModel,
-    InsertRelation, Model, Projection, RelationLinkPlan, RelationMutationModel, RelationMutationWhere,
-    RelationScalarField, RelationWritePlan, Rowable, ScalarField, UpdateField, UpdateModel, FindAndUpdateModel, count, delete, delete_many, find_first,
-    find_many, insert_into, insert_many, update, update_many,
+    DinocoAdapter, DinocoClient, DinocoError, DinocoResult, DinocoValue, Extend, FindAndUpdateModel, InsertConnection,
+    InsertModel, InsertRelation, Model, Projection, RelationLinkPlan, RelationMutationModel, RelationMutationWhere,
+    RelationScalarField, RelationWritePlan, Rowable, ScalarField, UpdateField, UpdateModel, count, delete, delete_many,
+    find_first, find_many, insert_into, insert_many, update, update_many,
 };
 use uuid::Uuid;
 
@@ -424,10 +424,7 @@ async fn sqlite_crud_flow_and_delete_many_work() -> DinocoResult<()> {
         .execute(&client)
         .await?;
 
-    update_many::<User>()
-        .update(|x| x.name.set("Ana Batch"))
-        .execute(&client)
-        .await?;
+    update_many::<User>().update(|x| x.name.set("Ana Batch")).execute(&client).await?;
 
     delete::<User>().cond(|x| x.id.eq(1_i64)).execute(&client).await?;
 

@@ -60,6 +60,6 @@ config {
 
 ## Próximos passos
 
-- [**Visão geral**](/v0.0.8/orm/supported-databases)
-- [**Modelos**](/v0.0.8/orm/models)
-- [**Relações**](/v0.0.8/orm/relations)
+- [**Visão geral**](/v0.1.0/orm/supported-databases)
+- [**Modelos**](/v0.1.0/orm/models)
+- [**Relações**](/v0.1.0/orm/relations)

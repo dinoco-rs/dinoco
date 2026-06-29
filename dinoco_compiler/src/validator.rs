@@ -387,6 +387,7 @@ fn validate_tables<'a>(
                 is_primary_key: field.is_primary_key,
                 is_optional: field.is_optional,
                 is_unique: field.is_unique,
+                is_virtual: field.is_virtual,
                 is_list: field.is_list,
             };
 
@@ -528,17 +529,39 @@ fn validate_tables<'a>(
                 FieldDefaultValue::Custom(val) => {
                     if let ParsedFieldType::Enum(name) = &parsed_field.field_type {
                         let _enum = enums.iter().find(|e| e.name == *name).unwrap();
-                        if !_enum.values.contains(&val) {
+                        let Some(enum_value) = _enum.values.iter().find(|value| value.eq_ignore_ascii_case(&val))
+                        else {
                             return Err(format_span_error(
                                 format!("Invalid default value '{}' for enum '{}'", val, name),
                                 field.span,
                             ));
-                        }
+                        };
 
-                        parsed_field.default_value = ParsedFieldDefault::EnumValue(val.to_string())
+                        parsed_field.default_value = ParsedFieldDefault::EnumValue(enum_value.to_string())
                     } else {
                         return Err(format_span_error(format!("Invalid default value '{}'", val), field.span));
                     }
+                }
+            }
+
+            if parsed_field.is_virtual {
+                if parsed_field.is_primary_key {
+                    return Err(format_span_error("@virtual fields cannot be primary keys.".to_string(), field.span));
+                }
+
+                if parsed_field.is_unique {
+                    return Err(format_span_error("@virtual fields cannot be unique.".to_string(), field.span));
+                }
+
+                if matches!(parsed_field.field_type, ParsedFieldType::Relation(_)) {
+                    return Err(format_span_error("@virtual fields cannot be relations.".to_string(), field.span));
+                }
+
+                if !parsed_field.is_optional && matches!(parsed_field.default_value, ParsedFieldDefault::NotDefined) {
+                    return Err(format_span_error(
+                        "@virtual fields must be optional (?) or define @default(...).".to_string(),
+                        field.span,
+                    ));
                 }
             }
 

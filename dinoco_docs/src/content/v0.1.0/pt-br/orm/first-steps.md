@@ -153,5 +153,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## Próximos passos
 
-- [**Dinoco schema**](/v0.0.8/orm/introduction-dinoco): Entenda melhor a estrutura e a proposta do Dinoco.
-- [**find_many**](/v0.0.8/orm/find-many): veja filtros, includes e cache em consultas de lista.
+- [**Dinoco schema**](/v0.1.0/orm/introduction-dinoco): Entenda melhor a estrutura e a proposta do Dinoco.
+- [**find_many**](/v0.1.0/orm/find-many): veja filtros, includes e cache em consultas de lista.

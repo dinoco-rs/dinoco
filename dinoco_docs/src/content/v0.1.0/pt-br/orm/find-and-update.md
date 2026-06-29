@@ -49,7 +49,7 @@ let task = dinoco::find_and_update::<Task>()
     .await?;
 ```
 
-Veja mais sobre workers em [**`queues`**](/v0.0.8/orm/queues).
+Veja mais sobre workers em [**`queues`**](/v0.1.0/orm/queues).
 
 ## Operações disponíveis em `ModelUpdate`
 
@@ -68,5 +68,5 @@ Veja mais sobre workers em [**`queues`**](/v0.0.8/orm/queues).
 
 ## Próximos passos
 
-- [**`update::&lt;M&gt;()`**](/v0.0.8/orm/update): update tradicional.
-- [**`update_many::&lt;M&gt;()`**](/v0.0.8/orm/update-many): update em lote.
+- [**`update::&lt;M&gt;()`**](/v0.1.0/orm/update): update tradicional.
+- [**`update_many::&lt;M&gt;()`**](/v0.1.0/orm/update-many): update em lote.

@@ -64,5 +64,5 @@ dinoco::update::<User>()
 
 ## Próximos passos
 
-- [**`update_many::<M>()`**](/v0.0.8/orm/update-many): atualiza vários registros.
-- [**`find_and_update::<M>()`**](/v0.0.8/orm/find-and-update): atualiza e retorna um único registro.
+- [**`update_many::<M>()`**](/v0.1.0/orm/update-many): atualiza vários registros.
+- [**`find_and_update::<M>()`**](/v0.1.0/orm/find-and-update): atualiza e retorna um único registro.

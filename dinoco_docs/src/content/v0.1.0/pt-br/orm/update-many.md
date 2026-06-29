@@ -47,5 +47,5 @@ let users = dinoco::update_many::<User>()
 
 ## Próximos passos
 
-- [**`update::<M>()`**](/v0.0.8/orm/update): atualização condicionada.
-- [**`find_and_update::<M>()`**](/v0.0.8/orm/find-and-update): atualização atômica de um registro.
+- [**`update::<M>()`**](/v0.1.0/orm/update): atualização condicionada.
+- [**`find_and_update::<M>()`**](/v0.1.0/orm/find-and-update): atualização atômica de um registro.

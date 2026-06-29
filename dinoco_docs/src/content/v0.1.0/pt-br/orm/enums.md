@@ -40,6 +40,33 @@ Aqui:
 - `role` usa o enum `Role`.
 - `@default(USER)` define o valor padrão do campo.
 
+## Defaults em enums
+
+O valor informado em `@default(...)` é o valor usado no model gerado.
+
+```dinoco
+enum UserRule {
+	ADMIN
+	USER
+	MEMBER
+}
+
+model User {
+	id   Integer  @id @default(autoincrement())
+	rule UserRule @default(MEMBER)
+}
+```
+
+Nesse caso, o default gerado é `UserRule::MEMBER`.
+
+O compiler também aceita o valor do default sem depender de caixa alta ou baixa, desde que exista um valor equivalente no enum:
+
+```dinoco
+rule UserRule @default(member)
+```
+
+Esse exemplo também será normalizado para `MEMBER`.
+
 ## Quando usar enums
 
 Enums são úteis para representar valores como:
@@ -74,5 +101,5 @@ model Post {
 
 ## Próximos passos
 
-- [**Relações**](/v0.0.8/orm/relations): veja `@relation`, `onDelete`, `onUpdate` e tipos de relacionamento.
-- [**Models**](/v0.0.8/orm/models): veja onde enums entram na definição de campos e no schema principal.
+- [**Relações**](/v0.1.0/orm/relations): veja `@relation`, `onDelete`, `onUpdate` e tipos de relacionamento.
+- [**Models**](/v0.1.0/orm/models): veja onde enums entram na definição de campos e no schema principal.

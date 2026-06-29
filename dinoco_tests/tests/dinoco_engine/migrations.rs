@@ -3,13 +3,38 @@ mod common;
 use dinoco_compiler::compile;
 use dinoco_engine::{
     DinocoAdapterHandler, DinocoClient, DinocoClientConfig, MigrationExecutor, MigrationStep, MySqlAdapter,
-    PostgresAdapter, SqliteAdapter, calculate_diff,
+    PostgresAdapter, SqliteAdapter, SqliteDialect, calculate_diff, render_create_table_sql,
 };
 
 use crate::common::{
     alter_enum_schema, alter_enum_step, apply_sqls, migration_schema, migration_steps, mysql_url, postgres_url,
     should_skip_external_adapter_test, sqlite_url, unique_name,
 };
+
+#[test]
+fn create_table_sql_ignores_virtual_fields() {
+    let raw = r#"
+config {
+    database = "sqlite"
+    database_url = "file:dev.db"
+}
+
+model User {
+    id Integer @id
+    email String
+    displayName String? @virtual
+    score Integer @virtual @default(10)
+}
+"#;
+    let (_, schema) = compile(raw).expect("schema should compile");
+    let table = schema.tables.iter().find(|table| table.name == "User").expect("User table should exist");
+    let sql = render_create_table_sql(table, &SqliteDialect, &schema);
+
+    assert!(sql.contains("\"id\""));
+    assert!(sql.contains("\"email\""));
+    assert!(!sql.contains("displayName"));
+    assert!(!sql.contains("score"));
+}
 
 #[tokio::test]
 async fn sqlite_migration_builds_and_applies_schema() {

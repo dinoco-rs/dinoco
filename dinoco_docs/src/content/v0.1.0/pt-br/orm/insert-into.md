@@ -228,10 +228,10 @@ dinoco::insert_into::<User>()
     .await?;
 ```
 
-Veja mais sobre workers em [**`queues`**](/v0.0.8/orm/queues).
+Veja mais sobre workers em [**`queues`**](/v0.1.0/orm/queues).
 
 ## Próximos passos
 
-- [**Derives**](/v0.0.8/core/derives): entenda quando usar `Rowable`, `Extend` e `#[insertable]`.
-- [**`insert_many::<M>()`**](/v0.0.8/orm/insert-many): inserção em lote.
-- [**`update::<M>()`**](/v0.0.8/orm/update): atualização de registros.
+- [**Derives**](/v0.1.0/core/derives): entenda quando usar `Rowable`, `Extend` e `#[insertable]`.
+- [**`insert_many::<M>()`**](/v0.1.0/orm/insert-many): inserção em lote.
+- [**`update::<M>()`**](/v0.1.0/orm/update): atualização de registros.

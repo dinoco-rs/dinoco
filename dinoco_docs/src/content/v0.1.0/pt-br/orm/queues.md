@@ -146,6 +146,6 @@ no-appendfsync-on-rewrite yes
 
 ## Próximos passos
 
-- [**`insert_into::&lt;M&gt;()`**](/v0.0.8/orm/insert-into)
-- [**`find_many::&lt;M&gt;()`**](/v0.0.8/orm/find-many)
-- [**`update::&lt;M&gt;()`**](/v0.0.8/orm/update)
+- [**`insert_into::&lt;M&gt;()`**](/v0.1.0/orm/insert-into)
+- [**`find_many::&lt;M&gt;()`**](/v0.1.0/orm/find-many)
+- [**`update::&lt;M&gt;()`**](/v0.1.0/orm/update)

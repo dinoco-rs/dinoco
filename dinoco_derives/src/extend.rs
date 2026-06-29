@@ -17,12 +17,21 @@ pub fn derive(input: TokenStream) -> TokenStream {
         Ok(model) => model,
         Err(error) => return TokenStream::from(error.to_compile_error()),
     };
+    // A generated model extends itself. `dinoco` already provides
+    // `ProjectionModel` for every `Model + Projection<Model>`, so emitting a
+    // second implementation here conflicts with that blanket implementation.
+    // Custom projections still need the explicit mapping to their source model.
+    let is_model_self_projection = model.is_ident(&name);
     let insertable = has_insertable_attr(&input.attrs);
     let crate_path = runtime_crate();
 
     let scalar_fields = fields.iter().filter(|field| !is_relation_field(&field.ty)).collect::<Vec<_>>();
     let count_fields = scalar_fields.iter().copied().filter(|field| is_count_field(field)).collect::<Vec<_>>();
-    let base_scalar_fields = scalar_fields.iter().copied().filter(|field| !is_count_field(field)).collect::<Vec<_>>();
+    let base_scalar_fields = scalar_fields
+        .iter()
+        .copied()
+        .filter(|field| !is_count_field(field) && !is_virtual_field(field))
+        .collect::<Vec<_>>();
     let relation_fields = fields.iter().filter(|field| is_relation_field(&field.ty)).collect::<Vec<_>>();
 
     let scalar_field_validations = base_scalar_fields.iter().map(|field| {
@@ -120,7 +129,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
         if is_relation_field(&field.ty) {
             quote! { #ident: ::core::default::Default::default() }
-        } else if is_count_field(field) {
+        } else if is_count_field(field) || is_virtual_field(field) {
             quote! { #ident: ::core::default::Default::default() }
         } else if let Some(inner_ty) = extract_option_inner(&field.ty) {
             let index = scalar_index;
@@ -277,6 +286,15 @@ pub fn derive(input: TokenStream) -> TokenStream {
     } else {
         quote! {}
     };
+    let projection_model_impl = if is_model_self_projection {
+        quote! {}
+    } else {
+        quote! {
+            impl #crate_path::ProjectionModel for #name {
+                type Model = #model;
+            }
+        }
+    };
 
     TokenStream::from(quote! {
         #[doc(hidden)]
@@ -299,9 +317,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             #(#count_field_validations)*
         };
 
-        impl #crate_path::ProjectionModel for #name {
-            type Model = #model;
-        }
+        #projection_model_impl
 
         impl #crate_path::Projection<#model> for #name {
             fn columns() -> &'static [&'static str] {
@@ -384,6 +400,10 @@ fn is_count_field(field: &syn::Field) -> bool {
     };
 
     ident.to_string().ends_with("_count") && is_usize_type(&field.ty)
+}
+
+fn is_virtual_field(field: &syn::Field) -> bool {
+    field.attrs.iter().any(|attr| attr.path().is_ident("dinoco_virtual"))
 }
 
 fn is_usize_type(ty: &syn::Type) -> bool {
@@ -563,12 +583,9 @@ fn find_relation_foreign_key_field<'a>(
 ) -> Option<&'a syn::Field> {
     let expected = normalized_field_name(&format!("{relation_name}id"));
 
-    fields.iter().find(|field| {
-        field
-            .ident
-            .as_ref()
-            .is_some_and(|ident| normalized_field_name(&ident.to_string()) == expected)
-    })
+    fields
+        .iter()
+        .find(|field| field.ident.as_ref().is_some_and(|ident| normalized_field_name(&ident.to_string()) == expected))
 }
 
 fn normalized_field_name(value: &str) -> String {

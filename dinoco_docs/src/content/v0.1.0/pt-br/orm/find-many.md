@@ -168,6 +168,22 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
+O campo `posts_count` é preenchido somente porque a query chamou `.count(...)`. Sem esse método, o valor permanece no default (`0`).
+
+O count é sempre calculado por item pai, não como total global da tabela. Se o banco possui 10 posts, mas um usuário retornado possui 3 posts relacionados, o `posts_count` desse usuário será `3`.
+
+Você pode aplicar condições no count mantendo a relação do item:
+
+```rust
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|user| user.posts().cond(|post| post.state.eq(PostStatus::Active)))
+    .execute(&client)
+    .await?;
+```
+
+Esse exemplo preenche `posts_count` apenas com os posts ativos de cada usuário. O Dinoco não carrega todos os posts em memória para preencher o count; ele executa uma query de count da relação e agrupa o resultado por item pai.
+
 ## Exemplo lendo no banco principal
 
 ```rust
@@ -199,7 +215,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-Veja mais sobre workers em [**`queues`**](/v0.0.8/orm/queues).
+Veja mais sobre workers em [**`queues`**](/v0.1.0/orm/queues).
 
 ## Exemplo com cache
 
@@ -229,5 +245,5 @@ let users = dinoco::find_many::<User>()
 
 ## Próximos passos
 
-- [**`find_first::&lt;M&gt;()`**](/v0.0.8/orm/find-first): versão para buscar no máximo um registro.
-- [**`count::&lt;M&gt;()`**](/v0.0.8/orm/count): contagem de registros com filtro.
+- [**`find_first::&lt;M&gt;()`**](/v0.1.0/orm/find-first): versão para buscar no máximo um registro.
+- [**`count::&lt;M&gt;()`**](/v0.1.0/orm/count): contagem de registros com filtro.

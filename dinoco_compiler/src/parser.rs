@@ -227,6 +227,7 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompile
     let mut is_optional = false;
     let mut is_unique = false;
     let mut is_primary_key = false;
+    let mut is_virtual = false;
     let mut is_list = false;
     let mut default_value = FieldDefaultValue::NotDefined;
     let mut relation = None;
@@ -318,6 +319,14 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompile
                     }
                     ("unique", false) => is_unique = true,
 
+                    ("virtual", true) => {
+                        return Err(format_span_error(
+                            "@virtual does not accept arguments".to_string(),
+                            decorator_span,
+                        ));
+                    }
+                    ("virtual", false) => is_virtual = true,
+
                     ("relation", true) => {
                         relation = Some(Relation { named_params, span: decorator_span });
                     }
@@ -372,6 +381,7 @@ fn parse_field<'a>(field_pair: Pair<'a, Rule>, position: usize) -> DinocoCompile
         field_type,
         is_optional,
         is_unique,
+        is_virtual,
         is_list,
         is_primary_key,
         default_value,
