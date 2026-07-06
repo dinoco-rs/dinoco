@@ -101,5 +101,5 @@ model Post {
 
 ## Próximos passos
 
-- [**Relações**](/v0.1.0/orm/relations): veja `@relation`, `onDelete`, `onUpdate` e tipos de relacionamento.
-- [**Models**](/v0.1.0/orm/models): veja onde enums entram na definição de campos e no schema principal.
+- [**Relações**](/v0.1.1/orm/relations): veja `@relation`, `onDelete`, `onUpdate` e tipos de relacionamento.
+- [**Models**](/v0.1.1/orm/models): veja onde enums entram na definição de campos e no schema principal.

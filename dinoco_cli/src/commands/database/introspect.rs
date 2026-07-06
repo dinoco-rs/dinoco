@@ -239,7 +239,6 @@ async fn build_schema_from_database(
             database: context.database.clone(),
             database_url: context.database_url.clone(),
             read_replicas: Vec::new(),
-            redis: None,
         },
         enums: parsed_enums,
         tables: parsed_tables,

@@ -50,5 +50,5 @@ let total = dinoco::count::<User>()
 
 ## Próximos passos
 
-- [**`find_many::&lt;M&gt;()`**](/v0.1.0/orm/find-many): recupera registros em uma lista.
-- [**`find_first::&lt;M&gt;()`**](/v0.1.0/orm/find-first): recupera um único registro.
+- [**`find_many::&lt;M&gt;()`**](/v0.1.1/orm/find-many): recupera registros em uma lista.
+- [**`find_first::&lt;M&gt;()`**](/v0.1.1/orm/find-first): recupera um único registro.

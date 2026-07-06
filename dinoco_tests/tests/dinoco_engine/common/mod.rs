@@ -53,7 +53,6 @@ pub fn migration_schema(prefix: &str) -> ParsedSchema {
             database: Database::Sqlite,
             database_url: ConnectionUrl::Literal("file:./dinoco/database.sqlite".to_string()),
             read_replicas: vec![],
-            redis: None,
         },
         enums: vec![ParsedEnum {
             name: status_enum.clone(),
@@ -167,7 +166,6 @@ pub fn alter_enum_schema(prefix: &str) -> ParsedSchema {
             database: Database::Sqlite,
             database_url: ConnectionUrl::Literal("file:./dinoco/database.sqlite".to_string()),
             read_replicas: vec![],
-            redis: None,
         },
         enums: vec![ParsedEnum {
             name: status_enum.clone(),

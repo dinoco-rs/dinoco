@@ -1,7 +1,5 @@
 use std::marker::PhantomData;
 
-use chrono::{DateTime, Utc};
-
 use dinoco_engine::{DinocoAdapter, DinocoClient};
 
 use crate::execution::execute_reload_by_identity;
@@ -9,13 +7,11 @@ use crate::{
     InsertConnection, InsertModel, InsertPayload, InsertRelation, IntoInsertPayloadOwned, Projection,
     execute_connection_updates, execute_insert, execute_insert_payload_returning, execute_insert_relation_links,
     execute_insert_returning,
-    queue::{QueueDispatch, dispatch_insert_lookup, enqueue_many_conditions, enqueue_single_conditions},
 };
 
 #[derive(Debug, Clone)]
 pub struct Insert<M, V = M> {
     item: Option<V>,
-    queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> M>,
 }
 
@@ -34,7 +30,6 @@ pub struct InsertWithConnection<M, R> {
 #[derive(Debug, Clone)]
 pub struct InsertReturning<M, V = M, S = M> {
     item: Option<V>,
-    queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> (M, S)>,
 }
 
@@ -56,7 +51,7 @@ pub fn insert_into<M>() -> Insert<M>
 where
     M: InsertModel,
 {
-    Insert { item: None, queue: None, marker: PhantomData }
+    Insert { item: None, marker: PhantomData }
 }
 
 impl<M, V> Insert<M, V>
@@ -69,7 +64,7 @@ where
         N: InsertPayload<M>,
         I: IntoInsertPayloadOwned<M, N>,
     {
-        Insert { item: Some(item.into_insert_payload_owned()), queue: self.queue, marker: PhantomData }
+        Insert { item: Some(item.into_insert_payload_owned()), marker: PhantomData }
     }
 
     pub fn returning(self) -> InsertReturning<M, V, M>
@@ -83,28 +78,7 @@ where
     where
         S: Projection<M>,
     {
-        InsertReturning { item: self.item, queue: self.queue, marker: PhantomData }
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
-        self.queue = Some(QueueDispatch::immediate(event));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
-        self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
-        self.queue = Some(QueueDispatch::at(event, execute_at));
-
-        self
+        InsertReturning { item: self.item, marker: PhantomData }
     }
 
     pub fn execute<'a, A>(
@@ -119,13 +93,7 @@ where
     {
         async move {
             let item = self.item.expect("insert_into().values(...) must be called before execute()");
-            let queue = self.queue;
-            let inserted = execute_insert_payload_returning::<M, V, M, A>(vec![item], client).await?;
-
-            if let Some(queue) = &queue {
-                let conditions = inserted.iter().map(dispatch_insert_lookup).collect::<Vec<_>>();
-                enqueue_many_conditions(client, queue, conditions).await?;
-            }
+            execute_insert_payload_returning::<M, V, M, A>(vec![item], client).await?;
 
             Ok(())
         }
@@ -163,27 +131,6 @@ where
     V: InsertPayload<M>,
     S: Projection<M>,
 {
-    #[doc(hidden)]
-    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
-        self.queue = Some(QueueDispatch::immediate(event));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
-        self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
-        self.queue = Some(QueueDispatch::at(event, execute_at));
-
-        self
-    }
-
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -204,10 +151,6 @@ where
                     M::table_name()
                 ))
             })?;
-
-            if let Some(queue) = &self.queue {
-                enqueue_single_conditions(client, queue, dispatch_insert_lookup(&inserted_item)).await?;
-            }
 
             execute_reload_by_identity::<M, S, A>(&inserted_item, client).await
         }

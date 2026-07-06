@@ -64,31 +64,6 @@ let created = dinoco::insert_many::<User>()
     .await?;
 ```
 
-## Exemplo com worker
-
-```rust
-use database::*;
-
-let _worker = workers()
-    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
-        println!("Usuários criados no lote: {}", job.data.len());
-        job.success();
-    })
-    .run()
-    .await?;
-
-dinoco::insert_many::<User>()
-    .values(vec![
-        User { id: 2, name: "Ana".to_string() },
-        User { id: 3, name: "Caio".to_string() },
-    ])
-    .enqueue("user.batch-created")
-    .execute(&client)
-    .await?;
-```
-
-Veja mais sobre workers em [**`queues`**](/v0.1.0/orm/queues).
-
 ## Exemplo com relações aninhadas
 
 ```rust
@@ -238,6 +213,6 @@ dinoco::insert_many::<Article>()
 
 ## Próximos passos
 
-- [**Derives**](/v0.1.0/core/derives): entenda como montar payloads com `Extend` e `#[insertable]`.
-- [**`insert_into::<M>()`**](/v0.1.0/orm/insert-into): inserção única.
-- [**`update::<M>()`**](/v0.1.0/orm/update): atualização com filtro.
+- [**Derives**](/v0.1.1/core/derives): entenda como montar payloads com `Extend` e `#[insertable]`.
+- [**`insert_into::<M>()`**](/v0.1.1/orm/insert-into): inserção única.
+- [**`update::<M>()`**](/v0.1.1/orm/update): atualização com filtro.

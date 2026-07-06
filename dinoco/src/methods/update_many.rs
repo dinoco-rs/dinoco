@@ -1,19 +1,15 @@
 use std::marker::PhantomData;
 
-use chrono::{DateTime, Utc};
-
 use dinoco_engine::{DinocoAdapter, DinocoClient, Expression};
 
 use crate::{
     FieldUpdate, FindAndUpdateModel, Projection, UpdateModel, execute_update_fields, execute_update_fields_returning,
-    queue::{QueueDispatch, enqueue_many_conditions},
 };
 
 #[derive(Debug, Clone)]
 pub struct UpdateMany<M> {
     conditions: Vec<Expression>,
     updates: Vec<FieldUpdate>,
-    queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> M>,
 }
 
@@ -21,7 +17,6 @@ pub struct UpdateMany<M> {
 pub struct UpdateManyReturning<M, S = M> {
     conditions: Vec<Expression>,
     updates: Vec<FieldUpdate>,
-    queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> (M, S)>,
 }
 
@@ -29,7 +24,7 @@ pub fn update_many<M>() -> UpdateMany<M>
 where
     M: UpdateModel,
 {
-    UpdateMany { conditions: Vec::new(), updates: Vec::new(), queue: None, marker: PhantomData }
+    UpdateMany { conditions: Vec::new(), updates: Vec::new(), marker: PhantomData }
 }
 
 impl<M> UpdateMany<M>
@@ -67,33 +62,7 @@ where
         M: Projection<M>,
         S: Projection<M>,
     {
-        UpdateManyReturning {
-            conditions: self.conditions,
-            updates: self.updates,
-            queue: self.queue,
-            marker: PhantomData,
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
-        self.queue = Some(QueueDispatch::immediate(event));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
-        self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
-        self.queue = Some(QueueDispatch::at(event, execute_at));
-
-        self
+        UpdateManyReturning { conditions: self.conditions, updates: self.updates, marker: PhantomData }
     }
 
     pub fn execute<'a, A>(
@@ -105,12 +74,7 @@ where
         A: DinocoAdapter,
     {
         async move {
-            let conditions = self.conditions;
-            execute_update_fields::<M, A>(conditions.clone(), self.updates, client).await?;
-
-            if let Some(queue) = &self.queue {
-                enqueue_many_conditions(client, queue, vec![conditions]).await?;
-            }
+            execute_update_fields::<M, A>(self.conditions, self.updates, client).await?;
 
             Ok(())
         }
@@ -122,27 +86,6 @@ where
     M: UpdateModel + Projection<M>,
     S: Projection<M>,
 {
-    #[doc(hidden)]
-    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
-        self.queue = Some(QueueDispatch::immediate(event));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
-        self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
-        self.queue = Some(QueueDispatch::at(event, execute_at));
-
-        self
-    }
-
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -152,15 +95,6 @@ where
         S: Send + Sync + 'a,
         A: DinocoAdapter,
     {
-        async move {
-            let conditions = self.conditions;
-            let result = execute_update_fields_returning::<M, S, A>(conditions.clone(), self.updates, client).await?;
-
-            if let Some(queue) = &self.queue {
-                enqueue_many_conditions(client, queue, vec![conditions]).await?;
-            }
-
-            Ok(result)
-        }
+        async move { execute_update_fields_returning::<M, S, A>(self.conditions, self.updates, client).await }
     }
 }

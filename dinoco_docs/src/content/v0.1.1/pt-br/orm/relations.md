@@ -532,5 +532,5 @@ Nesse fluxo:
 
 ## Próximos passos
 
-- [**Enums**](/v0.1.0/orm/enums): veja como representar valores controlados no schema.
-- [**Models**](/v0.1.0/orm/models): veja estrutura de campos e exemplos de busca, insert, update e delete com a API do Dinoco.
+- [**Enums**](/v0.1.1/orm/enums): veja como representar valores controlados no schema.
+- [**Models**](/v0.1.1/orm/models): veja estrutura de campos e exemplos de busca, insert, update e delete com a API do Dinoco.

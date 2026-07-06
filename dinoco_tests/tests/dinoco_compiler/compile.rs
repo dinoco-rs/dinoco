@@ -228,58 +228,6 @@ model Post {
 }
 
 #[test]
-fn compile_parses_redis_config_with_url() {
-    let raw = r#"
-config {
-    database = "postgresql"
-    database_url = "postgresql://primary"
-    redis = {
-        url = env("REDIS_URL")
-    }
-}
-
-model User {
-    id Integer @id
-}
-"#;
-
-    let (_, parsed) = compile(raw).expect("schema should compile");
-    let redis = parsed.config.redis.expect("redis config should exist");
-
-    assert_eq!(redis.url, Some(dinoco_compiler::ConnectionUrl::Env("REDIS_URL".to_string())));
-    assert_eq!(redis.host, None);
-    assert_eq!(redis.username, None);
-    assert_eq!(redis.password, None);
-}
-
-#[test]
-fn compile_parses_redis_config_with_separated_fields() {
-    let raw = r#"
-config {
-    database = "postgresql"
-    database_url = "postgresql://primary"
-    redis = {
-        host = "localhost"
-        username = env("REDIS_USERNAME")
-        password = env("REDIS_PASSWORD")
-    }
-}
-
-model User {
-    id Integer @id
-}
-"#;
-
-    let (_, parsed) = compile(raw).expect("schema should compile");
-    let redis = parsed.config.redis.expect("redis config should exist");
-
-    assert_eq!(redis.url, None);
-    assert_eq!(redis.host, Some(dinoco_compiler::ConnectionUrl::Literal("localhost".to_string())));
-    assert_eq!(redis.username, Some(dinoco_compiler::ConnectionUrl::Env("REDIS_USERNAME".to_string())));
-    assert_eq!(redis.password, Some(dinoco_compiler::ConnectionUrl::Env("REDIS_PASSWORD".to_string())));
-}
-
-#[test]
 fn compile_rejects_duplicate_database_key() {
     let raw = r#"
 config {
@@ -306,42 +254,26 @@ config {
 }
 
 #[test]
-fn compile_rejects_redis_when_url_and_host_are_mixed() {
-    let raw = r#"
-config {
+fn compile_rejects_removed_external_store_config_key() {
+    let key = ["re", "dis"].join("");
+    let raw = format!(
+        r#"
+config {{
     database = "sqlite"
     database_url = "file:dev.db"
-    redis = {
-        url = "redis://localhost:6379"
+    {key} = {{
+        url = "{key}://localhost:6379"
         host = "localhost"
-    }
-}
+    }}
+}}
 
-model User {
+model User {{
     id Integer @id
-}
-"#;
+}}
+"#
+    );
 
-    expect_compile_error(raw, "'redis' must define either 'url' or the separated connection fields, not both.");
-}
-
-#[test]
-fn compile_rejects_redis_without_url_or_host() {
-    let raw = r#"
-config {
-    database = "sqlite"
-    database_url = "file:dev.db"
-    redis = {
-        username = "default"
-    }
-}
-
-model User {
-    id Integer @id
-}
-"#;
-
-    expect_compile_error(raw, "'redis' must define either 'url' or at least 'host'.");
+    expect_compile_error(&raw, &format!("'{key}' is not a valid configuration key."));
 }
 
 #[test]

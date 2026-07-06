@@ -13,8 +13,6 @@ Usado para buscar uma lista de registros.
 - `.order_by(...)`: define a ordenação da consulta.
 - `.includes(...)`: carrega relações junto com os registros principais.
 - `.count(...)`: calcula contadores de relações e preenche campos como `posts_count`.
-- `.cache(...)`: consulta primeiro no Redis usando a chave informada; em cache miss executa a query, salva e retorna o resultado. Em cache hit, o query logger registra `CACHE HIT key=...`.
-- `.cache_with_expiration(...)`: mesmo comportamento do cache padrão, mas grava com TTL em segundos.
 - `.read_in_primary()`: força a leitura no banco principal, sem usar réplica.
 - `.execute(&client)`: executa a consulta no banco.
 
@@ -194,56 +192,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-## Exemplo com worker
-
-```rust
-use database::*;
-
-let _worker = workers()
-    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
-        println!("Lote lido com {} usuários", job.data.len());
-        job.success();
-    })
-    .run()
-    .await?;
-
-let users = dinoco::find_many::<User>()
-    .order_by(|w| w.name.asc())
-    .take(20)
-    .enqueue("user.batch-read")
-    .execute(&client)
-    .await?;
-```
-
-Veja mais sobre workers em [**`queues`**](/v0.1.0/orm/queues).
-
-## Exemplo com cache
-
-Esse método só é gerado quando o `config {}` do schema tiver `redis`.
-
-```rust
-use database::*;
-
-let users = dinoco::find_many::<User>()
-    .order_by(|w| w.name.asc())
-    .cache("users:list")
-    .execute(&client)
-    .await?;
-```
-
-## Exemplo com cache e expiração
-
-```rust
-use database::*;
-
-let users = dinoco::find_many::<User>()
-    .take(20)
-    .cache_with_expiration("users:top-20", 60)
-    .execute(&client)
-    .await?;
-```
-
 ## Próximos passos
 
-- [**`find_first::&lt;M&gt;()`**](/v0.1.0/orm/find-first): versão para buscar no máximo um registro.
-- [**`count::&lt;M&gt;()`**](/v0.1.0/orm/count): contagem de registros com filtro.
+- [**`find_first::&lt;M&gt;()`**](/v0.1.1/orm/find-first): versão para buscar no máximo um registro.
+- [**`count::&lt;M&gt;()`**](/v0.1.1/orm/count): contagem de registros com filtro.

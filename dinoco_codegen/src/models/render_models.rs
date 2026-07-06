@@ -346,6 +346,7 @@ fn render_model(table: &ParsedTable, model_name: &str, schema: &ParsedSchema, en
     }
 
     output.push_str("    }\n");
+    output.push_str(&render_insert_model_nested_relations(table, schema));
     output.push_str("}\n\n");
     output.push_str(&format!("impl UpdateModel for {} {{\n", name));
     output.push_str("    fn update_columns() -> &'static [&'static str] {\n");
@@ -528,6 +529,43 @@ fn render_insert_validations(table: &ParsedTable, insert_fields: &[&dinoco_compi
     }
 
     output
+}
+
+fn render_insert_model_nested_relations(table: &ParsedTable, schema: &ParsedSchema) -> String {
+    let mut steps = String::new();
+
+    for field in relation_fields(&table.fields) {
+        if !matches!(
+            field.relation,
+            ParsedRelation::OneToMany(_) | ParsedRelation::OneToOneInverse(_) | ParsedRelation::ManyToMany(_)
+        ) {
+            continue;
+        }
+
+        if resolve_relation(table, field, schema).is_none() {
+            continue;
+        }
+
+        if field.is_list {
+            steps.push_str(&format!(
+                "            dinoco::execute_insert_related_payloads(parent, self.{}, client).await?;\n",
+                field.name
+            ));
+        } else {
+            steps.push_str(&format!(
+                "            if let Some(related) = self.{} {{\n                dinoco::execute_insert_related_payload(parent, related, client).await?;\n            }}\n",
+                field.name
+            ));
+        }
+    }
+
+    if steps.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        "\n\n    fn execute_nested_relations<'a, A>(\n        self,\n        parent: &'a Self,\n        client: &'a dinoco::DinocoClient<A>,\n    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco::DinocoResult<()>> + Send + 'a>>\n    where\n        Self: Send + 'a,\n        A: dinoco::DinocoAdapter,\n    {{\n        Box::pin(async move {{\n{steps}            Ok(())\n        }})\n    }}",
+    )
 }
 
 fn render_relation_mutation_where(

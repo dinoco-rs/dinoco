@@ -37,6 +37,14 @@ struct Team {
     name: String,
 }
 
+#[derive(Debug, Clone)]
+struct TeamGraph {
+    id: String,
+    name: String,
+    members: Vec<Member>,
+    members_count: usize,
+}
+
 struct TeamWhere {
     id: ScalarField<String>,
     name: ScalarField<String>,
@@ -546,6 +554,71 @@ async fn insert_into_accepts_insertable_extend_with_relations() -> DinocoResult<
 }
 
 #[tokio::test]
+async fn insert_into_and_insert_many_accept_model_owned_relations() -> DinocoResult<()> {
+    let client = DinocoClient::<dinoco_engine::SqliteAdapter>::new(
+        sqlite_url("model-owned-relations"),
+        vec![],
+        dinoco::DinocoClientConfig::default(),
+    )
+    .await?;
+
+    create_team_tables(&client).await;
+
+    insert_into::<TeamGraph>()
+        .values(TeamGraph {
+            id: "team-graph-1".to_string(),
+            name: "Graph One".to_string(),
+            members: vec![
+                Member { id: "member-graph-1".to_string(), name: "Ana".to_string(), teamId: String::new() },
+                Member { id: "member-graph-2".to_string(), name: "Bia".to_string(), teamId: String::new() },
+            ],
+            members_count: 0,
+        })
+        .execute(&client)
+        .await?;
+
+    insert_many::<TeamGraph>()
+        .values(vec![
+            TeamGraph {
+                id: "team-graph-2".to_string(),
+                name: "Graph Two".to_string(),
+                members: vec![Member {
+                    id: "member-graph-3".to_string(),
+                    name: "Caio".to_string(),
+                    teamId: String::new(),
+                }],
+                members_count: 0,
+            },
+            TeamGraph {
+                id: "team-graph-3".to_string(),
+                name: "Graph Three".to_string(),
+                members: vec![Member {
+                    id: "member-graph-4".to_string(),
+                    name: "Duda".to_string(),
+                    teamId: String::new(),
+                }],
+                members_count: 0,
+            },
+        ])
+        .execute(&client)
+        .await?;
+
+    let members = find_many::<Member>().order_by(|x| x.id.asc()).execute(&client).await?;
+
+    assert_eq!(
+        members.iter().map(|item| (&item.id, &item.teamId)).collect::<Vec<_>>(),
+        vec![
+            (&"member-graph-1".to_string(), &"team-graph-1".to_string()),
+            (&"member-graph-2".to_string(), &"team-graph-1".to_string()),
+            (&"member-graph-3".to_string(), &"team-graph-2".to_string()),
+            (&"member-graph-4".to_string(), &"team-graph-3".to_string()),
+        ]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn relation_insert_with_autoincrement_binds_generated_foreign_keys() -> DinocoResult<()> {
     let client = DinocoClient::<dinoco_engine::SqliteAdapter>::new(
         sqlite_url("relations-autoincrement"),
@@ -897,6 +970,18 @@ impl Projection<Team> for Team {
     }
 }
 
+impl Projection<TeamGraph> for TeamGraph {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+
+impl dinoco::DinocoRow for TeamGraph {
+    fn from_row<R: dinoco::DinocoGenericRow>(row: &R) -> DinocoResult<Self> {
+        Ok(Self { id: row.get(0)?, name: row.get(1)?, members: Vec::new(), members_count: 0 })
+    }
+}
+
 impl Projection<Member> for Member {
     fn columns() -> &'static [&'static str] {
         &["id", "name", "teamId"]
@@ -1022,6 +1107,36 @@ impl InsertModel for Team {
 
     fn insert_identity_conditions(&self) -> Vec<dinoco_engine::Expression> {
         vec![dinoco_engine::Expression::Column("id".to_string()).eq(self.id.clone())]
+    }
+}
+
+impl InsertModel for TeamGraph {
+    fn insert_columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+
+    fn into_insert_row(self) -> Vec<DinocoValue> {
+        vec![self.id.into(), self.name.into()]
+    }
+
+    fn insert_identity_conditions(&self) -> Vec<dinoco_engine::Expression> {
+        vec![dinoco_engine::Expression::Column("id".to_string()).eq(self.id.clone())]
+    }
+
+    fn execute_nested_relations<'a, A>(
+        self,
+        parent: &'a Self,
+        client: &'a dinoco::DinocoClient<A>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco::DinocoResult<()>> + Send + 'a>>
+    where
+        Self: Send + 'a,
+        A: dinoco::DinocoAdapter,
+    {
+        Box::pin(async move {
+            dinoco::execute_insert_related_payloads(parent, self.members, client).await?;
+
+            Ok(())
+        })
     }
 }
 
@@ -1179,6 +1294,12 @@ impl InsertRelation<Member> for Team {
     }
 }
 
+impl InsertRelation<Member> for TeamGraph {
+    fn bind_relation(&self, item: &mut Member) {
+        item.teamId = self.id.clone();
+    }
+}
+
 impl InsertRelation<AutoMember> for AutoTeam {
     fn bind_relation(&self, item: &mut AutoMember) {
         item.teamId = self.id;
@@ -1313,6 +1434,15 @@ impl Model for User {
 }
 
 impl Model for Team {
+    type Include = TeamInclude;
+    type Where = TeamWhere;
+
+    fn table_name() -> &'static str {
+        "teams"
+    }
+}
+
+impl Model for TeamGraph {
     type Include = TeamInclude;
     type Where = TeamWhere;
 

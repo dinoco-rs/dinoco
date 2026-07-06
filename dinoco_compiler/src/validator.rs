@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ConnectionUrl, Database, ParsedConfig, ParsedEnum, ParsedField, ParsedFieldDefault, ParsedFieldType,
-    ParsedRelation, ParsedSchema, ParsedTable, RedisConfig, ReferentialAction,
+    ParsedRelation, ParsedSchema, ParsedTable, ReferentialAction,
     ast::*,
     parser::{format_span_error, format_span_errors},
 };
@@ -90,83 +90,11 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerR
         Ok(ConnectionUrl::Env(var))
     }
 
-    fn parse_connection_url_value(
-        value: &ConfigValue<'_>,
-        span: Span,
-        name: &str,
-    ) -> DinocoCompilerResult<ConnectionUrl> {
-        match value {
-            ConfigValue::String(url_str, _) => Ok(ConnectionUrl::Literal(url_str.clone())),
-            ConfigValue::Function { name: function_name, args, .. } if function_name == "env" => {
-                parse_function(args, span, name)
-            }
-            _ => Err(format_span_error(format!("'{name}' must be string or env()."), span)),
-        }
-    }
-
-    fn validate_redis_config(value: &ConfigValue<'_>, span: Span) -> DinocoCompilerResult<RedisConfig> {
-        let ConfigValue::Object(fields, _) = value else {
-            return Err(format_span_error("'redis' must be an object.".to_string(), span));
-        };
-
-        let mut keys = HashSet::new();
-        let mut url = None;
-        let mut host = None;
-        let mut username = None;
-        let mut password = None;
-
-        for field in fields {
-            let value = field.value.as_ref().ok_or_else(|| {
-                format_span_error(format!("The redis field '{}' is missing a value.", field.name), field.span)
-            })?;
-
-            if !keys.insert(field.name.as_str()) {
-                return Err(format_span_error(format!("Duplicate 'redis.{}'.", field.name), field.span));
-            }
-
-            match field.name.as_str() {
-                "url" => {
-                    url = Some(parse_connection_url_value(value, field.span, "redis.url")?);
-                }
-                "host" => {
-                    host = Some(parse_connection_url_value(value, field.span, "redis.host")?);
-                }
-                "username" => {
-                    username = Some(parse_connection_url_value(value, field.span, "redis.username")?);
-                }
-                "password" => {
-                    password = Some(parse_connection_url_value(value, field.span, "redis.password")?);
-                }
-                _ => {
-                    return Err(format_span_error(
-                        format!("'redis.{}' is not a valid configuration key.", field.name),
-                        field.span,
-                    ));
-                }
-            }
-        }
-
-        if url.is_some() && (host.is_some() || username.is_some() || password.is_some()) {
-            return Err(format_span_error(
-                "'redis' must define either 'url' or the separated connection fields, not both.".to_string(),
-                span,
-            ));
-        }
-
-        if url.is_none() && host.is_none() {
-            return Err(format_span_error("'redis' must define either 'url' or at least 'host'.".to_string(), span));
-        }
-
-        Ok(RedisConfig { url, host, username, password })
-    }
-
     let config = &configs[0];
 
     let mut database = None;
     let mut database_url = None;
     let mut read_replicas = vec![];
-    let mut redis = None;
-
     let mut keys = HashSet::new();
 
     for field in &config.fields {
@@ -258,13 +186,6 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerR
                     ));
                 }
             }
-            "redis" => {
-                if !keys.insert("redis") {
-                    return Err(format_span_error("Duplicate 'redis'.".to_string(), field.span));
-                }
-
-                redis = Some(validate_redis_config(value, field.span)?);
-            }
             _ => {
                 return Err(format_span_error(
                     format!("'{}' is not a valid configuration key.", field.name),
@@ -278,7 +199,7 @@ fn validate_configs(configs: &Vec<Config>, schema_span: Span) -> DinocoCompilerR
     let database_url =
         database_url.ok_or_else(|| format_span_error("'database_url' is required.".to_string(), config.span))?;
 
-    Ok(ParsedConfig { database, database_url, read_replicas, redis })
+    Ok(ParsedConfig { database, database_url, read_replicas })
 }
 
 fn validate_enums<'a>(enums: &'a Vec<Enum>, names: &mut HashSet<&'a str>) -> DinocoCompilerResult<Vec<ParsedEnum>> {

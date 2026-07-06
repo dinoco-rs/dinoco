@@ -59,6 +59,17 @@ pub trait InsertModel: Model {
     fn insert_columns() -> &'static [&'static str];
     fn into_insert_row(self) -> Vec<DinocoValue>;
     fn insert_identity_conditions(&self) -> Vec<Expression>;
+    fn execute_nested_relations<'a, A>(
+        self,
+        _parent: &'a Self,
+        _client: &'a dinoco_engine::DinocoClient<A>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a>>
+    where
+        Self: Sized + Send + 'a,
+        A: dinoco_engine::DinocoAdapter,
+    {
+        Box::pin(async { Ok(()) })
+    }
     fn auto_increment_primary_key_column() -> Option<&'static str> {
         None
     }
@@ -222,12 +233,28 @@ where
 
 impl<M> InsertPayload<M> for M
 where
-    M: InsertModel,
+    M: InsertModel + Clone + Send + 'static,
 {
-    type Nested = ();
+    type Nested = M;
 
     fn split_insert_payload(self) -> (M, Self::Nested) {
-        (self, ())
+        (self.clone(), self)
+    }
+}
+
+impl<M> InsertNested<M> for M
+where
+    M: InsertModel + Send + 'static,
+{
+    fn execute<'a, A>(
+        self,
+        parent: &'a M,
+        client: &'a dinoco_engine::DinocoClient<A>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = dinoco_engine::DinocoResult<()>> + Send + 'a>>
+    where
+        A: dinoco_engine::DinocoAdapter,
+    {
+        InsertModel::execute_nested_relations(self, parent, client)
     }
 }
 

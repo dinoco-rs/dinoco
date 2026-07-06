@@ -208,30 +208,8 @@ let created = dinoco::insert_into::<User>()
     .await?;
 ```
 
-## Exemplo com worker
-
-```rust
-use database::*;
-
-let _worker = workers()
-    .on::<User, _, _>("user.created", |job| async move {
-        println!("Usuário criado: {}", job.data.name);
-        job.success();
-    })
-    .run()
-    .await?;
-
-dinoco::insert_into::<User>()
-    .values(User { id: 1, name: "Matheus".to_string() })
-    .enqueue("user.created")
-    .execute(&client)
-    .await?;
-```
-
-Veja mais sobre workers em [**`queues`**](/v0.1.0/orm/queues).
-
 ## Próximos passos
 
-- [**Derives**](/v0.1.0/core/derives): entenda quando usar `Rowable`, `Extend` e `#[insertable]`.
-- [**`insert_many::<M>()`**](/v0.1.0/orm/insert-many): inserção em lote.
-- [**`update::<M>()`**](/v0.1.0/orm/update): atualização de registros.
+- [**Derives**](/v0.1.1/core/derives): entenda quando usar `Rowable`, `Extend` e `#[insertable]`.
+- [**`insert_many::<M>()`**](/v0.1.1/orm/insert-many): inserção em lote.
+- [**`update::<M>()`**](/v0.1.1/orm/update): atualização de registros.

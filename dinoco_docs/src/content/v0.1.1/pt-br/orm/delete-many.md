@@ -40,5 +40,5 @@ dinoco::delete_many::<TaskAssignees>()
 
 ## Próximos passos
 
-- [**`delete::&lt;M&gt;()`**](/v0.1.0/orm/delete): remoção pontual com filtro explícito.
-- [**`find_many::&lt;M&gt;()`**](/v0.1.0/orm/find-many): listar antes de remover em lote.
+- [**`delete::&lt;M&gt;()`**](/v0.1.1/orm/delete): remoção pontual com filtro explícito.
+- [**`find_many::&lt;M&gt;()`**](/v0.1.1/orm/find-many): listar antes de remover em lote.

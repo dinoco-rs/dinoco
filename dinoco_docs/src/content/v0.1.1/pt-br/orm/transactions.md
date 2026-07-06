@@ -87,6 +87,6 @@ Se qualquer passo retornar erro, a transação é revertida e nenhuma alteraçã
 
 ## Próximos passos
 
-- [**`insert_into::<M>()`**](/v0.1.0/orm/insert-into): inserção única.
-- [**`insert_many::<M>()`**](/v0.1.0/orm/insert-many): inserção em lote.
-- [**`update::<M>()`**](/v0.1.0/orm/update): atualização com condição.
+- [**`insert_into::<M>()`**](/v0.1.1/orm/insert-into): inserção única.
+- [**`insert_many::<M>()`**](/v0.1.1/orm/insert-many): inserção em lote.
+- [**`update::<M>()`**](/v0.1.1/orm/update): atualização com condição.

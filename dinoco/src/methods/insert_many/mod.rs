@@ -1,14 +1,10 @@
 use std::marker::PhantomData;
 
-use chrono::{DateTime, Utc};
-
 use dinoco_engine::{DinocoAdapter, DinocoClient, DinocoError, DinocoResult};
 
 use crate::{
     InsertConnection, InsertModel, InsertPayload, InsertRelation, IntoInsertPayloadOwned, Projection,
-    execute_insert_payload_returning,
-    execution::execute_reload_many_by_identity,
-    queue::{QueueDispatch, dispatch_insert_lookup, enqueue_many_conditions},
+    execute_insert_payload_returning, execution::execute_reload_many_by_identity,
 };
 
 mod connection;
@@ -17,7 +13,6 @@ mod relation;
 #[derive(Debug, Clone)]
 pub struct InsertMany<M, V = M> {
     items: Vec<V>,
-    queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> M>,
 }
 
@@ -48,7 +43,6 @@ pub struct InsertManyWithConnection<M, R> {
 #[derive(Debug, Clone)]
 pub struct InsertManyReturning<M, V = M, S = M> {
     items: Vec<V>,
-    queue: Option<QueueDispatch>,
     marker: PhantomData<fn() -> (M, S)>,
 }
 
@@ -84,7 +78,7 @@ pub fn insert_many<M>() -> InsertMany<M>
 where
     M: InsertModel,
 {
-    InsertMany { items: Vec::new(), queue: None, marker: PhantomData }
+    InsertMany { items: Vec::new(), marker: PhantomData }
 }
 
 pub(super) fn validate_pair_len(left: usize, right: usize, context: &str) -> DinocoResult<()> {
@@ -107,7 +101,7 @@ where
     {
         let items = items.into_iter().map(IntoInsertPayloadOwned::into_insert_payload_owned).collect::<Vec<_>>();
 
-        InsertMany { items, queue: self.queue, marker: PhantomData }
+        InsertMany { items, marker: PhantomData }
     }
 
     pub fn returning(self) -> InsertManyReturning<M, V, M>
@@ -121,28 +115,7 @@ where
     where
         S: Projection<M>,
     {
-        InsertManyReturning { items: self.items, queue: self.queue, marker: PhantomData }
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
-        self.queue = Some(QueueDispatch::immediate(event));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
-        self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
-        self.queue = Some(QueueDispatch::at(event, execute_at));
-
-        self
+        InsertManyReturning { items: self.items, marker: PhantomData }
     }
 
     pub fn execute<'a, A>(
@@ -156,13 +129,7 @@ where
         A: DinocoAdapter,
     {
         async move {
-            let queue = self.queue;
-            let inserted = execute_insert_payload_returning::<M, V, M, A>(self.items, client).await?;
-
-            if let Some(queue) = &queue {
-                let conditions = inserted.iter().map(dispatch_insert_lookup).collect::<Vec<_>>();
-                enqueue_many_conditions(client, queue, conditions).await?;
-            }
+            execute_insert_payload_returning::<M, V, M, A>(self.items, client).await?;
 
             Ok(())
         }
@@ -210,27 +177,6 @@ where
     V: InsertPayload<M>,
     S: Projection<M>,
 {
-    #[doc(hidden)]
-    pub fn __enqueue(mut self, event: impl Into<String>) -> Self {
-        self.queue = Some(QueueDispatch::immediate(event));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_in(mut self, event: impl Into<String>, delay_ms: u64) -> Self {
-        self.queue = Some(QueueDispatch::in_milliseconds(event, delay_ms));
-
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn __enqueue_at(mut self, event: impl Into<String>, execute_at: DateTime<Utc>) -> Self {
-        self.queue = Some(QueueDispatch::at(event, execute_at));
-
-        self
-    }
-
     pub fn execute<'a, A>(
         self,
         client: &'a DinocoClient<A>,
@@ -244,11 +190,6 @@ where
     {
         async move {
             let inserted = execute_insert_payload_returning::<M, V, M, A>(self.items, client).await?;
-
-            if let Some(queue) = &self.queue {
-                let conditions = inserted.iter().map(dispatch_insert_lookup).collect::<Vec<_>>();
-                enqueue_many_conditions(client, queue, conditions).await?;
-            }
 
             execute_reload_many_by_identity::<M, S, A>(&inserted, client).await
         }

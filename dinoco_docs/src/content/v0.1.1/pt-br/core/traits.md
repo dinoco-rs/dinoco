@@ -149,5 +149,5 @@ dinoco::insert_into::<Article>()
 
 ## Próximos passos
 
-- [**Derives**](/v0.1.0/core/derives): veja os derives e atributos usados junto dessas traits.
-- [**Relações**](/v0.1.0/orm/relations): veja como isso se conecta ao sistema de relações.
+- [**Derives**](/v0.1.1/core/derives): veja os derives e atributos usados junto dessas traits.
+- [**Relações**](/v0.1.1/orm/relations): veja como isso se conecta ao sistema de relações.

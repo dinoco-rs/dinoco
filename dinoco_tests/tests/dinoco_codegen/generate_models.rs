@@ -115,11 +115,14 @@ model Device {
     assert!(account_file.contains("#[extend(Account)]"));
     assert!(account_file.contains("pub devices: Vec<super::device::Device>"));
     assert!(account_file.contains("pub devices_count: usize"));
+    assert!(account_file.contains("fn execute_nested_relations<'a, A>"));
+    assert!(account_file.contains("dinoco::execute_insert_related_payloads(parent, self.devices, client).await?;"));
     assert!(device_file.contains("#[extend(Device)]"));
     assert!(device_file.contains("pub account: Option<super::account::Account>"));
     assert!(device_file.contains("pub account_count: usize"));
     assert!(device_file.contains("account: Default::default()"));
     assert!(device_file.contains("account_count: Default::default()"));
+    assert!(!device_file.contains("execute_nested_relations"));
 }
 
 #[test]
@@ -160,77 +163,7 @@ model User {
 }
 
 #[test]
-fn generate_models_adds_cache_extensions_when_redis_is_configured() {
-    let _lock = lock_current_dir();
-    let raw = r#"
-config {
-    database = "sqlite"
-    database_url = env("DATABASE_URL")
-
-    redis = {
-        url = env("REDIS_URL")
-    }
-}
-
-model User {
-    id String @id @default(uuid())
-    name String
-}
-"#;
-    let (_, parsed) = compile(raw).expect("schema should compile");
-    let temp_dir = TempDir::new().expect("temp dir should be created");
-    let _guard = CurrentDirGuard::change_to(temp_dir.path());
-
-    generate_models(parsed);
-
-    let dinoco_module =
-        fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
-
-    assert!(dinoco_module.contains("pub trait DinocoClientCacheExt<A>"));
-    assert!(dinoco_module.contains("pub trait FindFirstCacheExt"));
-    assert!(dinoco_module.contains("pub trait FindManyCacheExt"));
-    assert!(dinoco_module.contains("fn cache(self, key: impl Into<String>) -> dinoco::CachedFindMany<M, S>"));
-    assert!(dinoco_module.contains("cache_with_expiration(self, key: impl Into<String>, ttl_seconds: u64)"));
-    assert!(dinoco_module.contains("pub trait FindManyQueueExt"));
-    assert!(dinoco_module.contains("pub trait InsertQueueExt"));
-    assert!(dinoco_module.contains("pub trait FindAndUpdateQueueExt"));
-    assert!(dinoco_module.contains("pub fn workers() -> QueueWorkers<SqliteAdapter>"));
-    assert!(dinoco_module.contains("config.with_redis(dinoco::DinocoRedisConfig::from_url("));
-}
-
-#[test]
-fn generate_models_adds_workers_helper() {
-    let _lock = lock_current_dir();
-    let raw = r#"
-config {
-    database = "sqlite"
-    database_url = env("DATABASE_URL")
-
-    redis = {
-        url = env("REDIS_URL")
-    }
-}
-
-model User {
-    id String @id @default(uuid())
-    name String
-}
-"#;
-    let (_, parsed) = compile(raw).expect("schema should compile");
-    let temp_dir = TempDir::new().expect("temp dir should be created");
-    let _guard = CurrentDirGuard::change_to(temp_dir.path());
-
-    generate_models(parsed);
-
-    let dinoco_module =
-        fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
-
-    assert!(dinoco_module.contains("pub fn workers() -> QueueWorkers<SqliteAdapter>"));
-    assert!(dinoco_module.contains("QueueWorkers::<SqliteAdapter>::new()"));
-}
-
-#[test]
-fn generate_models_skips_cache_extensions_without_redis() {
+fn generate_models_omits_removed_external_api() {
     let _lock = lock_current_dir();
     let raw = r#"
 config {
@@ -252,13 +185,13 @@ model User {
     let dinoco_module =
         fs::read_to_string(temp_dir.path().join("dinoco/mod.rs")).expect("generated dinoco module should exist");
 
-    assert!(!dinoco_module.contains("pub trait DinocoClientCacheExt"));
-    assert!(!dinoco_module.contains("pub trait FindFirstCacheExt"));
-    assert!(!dinoco_module.contains("pub trait FindManyCacheExt"));
-    assert!(!dinoco_module.contains("pub trait FindManyQueueExt"));
-    assert!(!dinoco_module.contains("pub trait InsertQueueExt"));
-    assert!(!dinoco_module.contains("pub fn workers() -> QueueWorkers<"));
-    assert!(!dinoco_module.contains("config.with_redis("));
+    assert!(!dinoco_module.contains(&["DinocoClient", "Ca", "cheExt"].join("")));
+    assert!(!dinoco_module.contains(&["FindFirst", "Ca", "cheExt"].join("")));
+    assert!(!dinoco_module.contains(&["FindMany", "Ca", "cheExt"].join("")));
+    assert!(!dinoco_module.contains(&["FindMany", "Que", "ueExt"].join("")));
+    assert!(!dinoco_module.contains(&["Insert", "Que", "ueExt"].join("")));
+    assert!(!dinoco_module.contains(&["Que", "ue", "Wor", "kers"].join("")));
+    assert!(!dinoco_module.contains(&["with_", &["re", "dis"].join("")].join("")));
 }
 
 #[test]

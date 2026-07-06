@@ -30,9 +30,6 @@ O Dinoco Schema defina o conteudo de seus models e configurações do banco de d
 config {
 	database = "postgresql"
 	database_url = env("DATABASE_URL")
-	redis = {
-		url = env("REDIS_URL")
-	}
 }
 
 model User {
@@ -121,18 +118,8 @@ async fn main() -> dinoco::DinocoResult<()> {
     // Busque todos os usuários com suas postagens.
     let users = find_many::<User>().select::<UserWithRelation>().includes(|x| x.posts()).execute(&client).await?;
 
-    let cached_users = find_many::<User>()
-        .select::<UserWithRelation>()
-        .includes(|x| x.posts())
-        .cache_with_expiration("users:with-posts", 30)
-        .execute(&client)
-        .await?;
-
-    let cached_direct = client.cache().get::<Vec<UserWithRelation>>("users:with-posts").await?;
 
     println!("{users:#?}");
-    println!("{cached_users:#?}");
-    println!("{cached_direct:#?}");
 
     // resultado:
     // [
@@ -153,5 +140,5 @@ async fn main() -> dinoco::DinocoResult<()> {
 
 ## Próximos passos
 
-- [**Dinoco schema**](/v0.1.0/orm/introduction-dinoco): Entenda melhor a estrutura e a proposta do Dinoco.
-- [**find_many**](/v0.1.0/orm/find-many): veja filtros, includes e cache em consultas de lista.
+- [**Dinoco schema**](/v0.1.1/orm/introduction-dinoco): Entenda melhor a estrutura e a proposta do Dinoco.
+- [**find_many**](/v0.1.1/orm/find-many): veja filtros, includes em consultas de lista.
