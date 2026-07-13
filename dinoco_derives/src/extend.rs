@@ -25,14 +25,21 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let insertable = has_insertable_attr(&input.attrs);
     let crate_path = runtime_crate();
 
-    let scalar_fields = fields.iter().filter(|field| !is_relation_field(&field.ty)).collect::<Vec<_>>();
+    let scalar_fields = fields
+        .iter()
+        .filter(|field| is_count_container_field(field) || !is_relation_field(&field.ty))
+        .collect::<Vec<_>>();
     let count_fields = scalar_fields.iter().copied().filter(|field| is_count_field(field)).collect::<Vec<_>>();
+    let count_container_field = scalar_fields.iter().copied().find(|field| is_count_container_field(field));
     let base_scalar_fields = scalar_fields
         .iter()
         .copied()
-        .filter(|field| !is_count_field(field) && !is_virtual_field(field))
+        .filter(|field| !is_count_field(field) && !is_count_container_field(field) && !is_virtual_field(field))
         .collect::<Vec<_>>();
-    let relation_fields = fields.iter().filter(|field| is_relation_field(&field.ty)).collect::<Vec<_>>();
+    let relation_fields = fields
+        .iter()
+        .filter(|field| !is_count_container_field(field) && is_relation_field(&field.ty))
+        .collect::<Vec<_>>();
 
     let scalar_field_validations = base_scalar_fields.iter().map(|field| {
         let ident = field.ident.as_ref().unwrap();
@@ -127,9 +134,9 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let row_initializers = fields.iter().map(|field| {
         let ident = field.ident.as_ref().unwrap();
 
-        if is_relation_field(&field.ty) {
+        if is_count_field(field) || is_count_container_field(field) || is_virtual_field(field) {
             quote! { #ident: ::core::default::Default::default() }
-        } else if is_count_field(field) || is_virtual_field(field) {
+        } else if is_relation_field(&field.ty) {
             quote! { #ident: ::core::default::Default::default() }
         } else if let Some(inner_ty) = extract_option_inner(&field.ty) {
             let index = scalar_index;
@@ -243,6 +250,49 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
         })
     });
+    let count_container_match_arms = count_container_field
+        .into_iter()
+        .flat_map(|field| {
+            let count_ident = field.ident.as_ref().unwrap();
+            let model_for_counts = model.clone();
+
+            relation_fields
+                .iter()
+                .filter_map(move |relation_field| {
+                    let model = model_for_counts.clone();
+                    let relation_ident = relation_field.ident.as_ref()?;
+                    let relation_name = relation_ident.to_string();
+                    let loader = format_ident!("__dinoco_count_{}", relation_ident);
+                    let key_getter =
+                        if let Some(foreign_key_field) = find_relation_foreign_key_field(fields, &relation_name) {
+                            let foreign_key_ident = foreign_key_field.ident.as_ref()?;
+
+                            if extract_option_inner(&foreign_key_field.ty).is_some() {
+                                quote! { |item: &Self| item.#foreign_key_ident.clone() }
+                            } else {
+                                quote! { |item: &Self| ::core::option::Option::Some(item.#foreign_key_ident.clone()) }
+                            }
+                        } else {
+                            quote! { |item: &Self| ::core::option::Option::Some(item.id.clone()) }
+                        };
+
+                    Some(quote! {
+                        #relation_name => {
+                            let item_keys = items.iter().map(#key_getter).collect::<::std::vec::Vec<_>>();
+
+                            tasks.push(#model::#loader::<Self, A>(
+                                item_keys,
+                                count,
+                                client,
+                                read_mode,
+                                |item: &mut Self| &mut item.#count_ident.get_or_insert_with(::core::default::Default::default).#relation_ident,
+                            ));
+                        }
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
 
     let insert_payload_impl = if insertable {
         quote! {
@@ -368,6 +418,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     for count in counts {
                         match count.name {
                             #(#count_match_arms)*
+                            #(#count_container_match_arms)*
                             _ => {}
                         }
                     }
@@ -400,6 +451,14 @@ fn is_count_field(field: &syn::Field) -> bool {
     };
 
     ident.to_string().ends_with("_count") && is_usize_type(&field.ty)
+}
+
+fn is_count_container_field(field: &syn::Field) -> bool {
+    let Some(ident) = &field.ident else {
+        return false;
+    };
+
+    ident == "_count" && extract_option_inner(&field.ty).is_some_and(is_custom_type)
 }
 
 fn is_virtual_field(field: &syn::Field) -> bool {

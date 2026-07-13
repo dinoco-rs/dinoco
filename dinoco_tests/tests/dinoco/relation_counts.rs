@@ -68,8 +68,13 @@ struct CommentListItem {
 struct PostListItem {
     id: i64,
     title: String,
-    comments_count: usize,
     comments: Vec<CommentListItem>,
+    _count: Option<PostCount>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PostCount {
+    comments: usize,
 }
 
 #[derive(Debug, Clone, Extend)]
@@ -77,8 +82,13 @@ struct PostListItem {
 struct UserListItem {
     id: i64,
     name: String,
-    posts_count: usize,
     posts: Vec<PostListItem>,
+    _count: Option<UserCount>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct UserCount {
+    posts: usize,
 }
 
 fn sqlite_url(name: &str) -> String {
@@ -197,11 +207,11 @@ async fn find_many_and_find_first_can_count_relations() -> DinocoResult<()> {
         .await?;
 
     assert_eq!(users.len(), 2);
-    assert_eq!(users[0].posts_count, 2);
-    assert_eq!(users[1].posts_count, 1);
-    assert_eq!(users[0].posts[0].comments_count, 2);
-    assert_eq!(users[0].posts[1].comments_count, 1);
-    assert_eq!(users[1].posts[0].comments_count, 1);
+    assert_eq!(users[0]._count.as_ref().expect("user count").posts, 2);
+    assert_eq!(users[1]._count.as_ref().expect("user count").posts, 1);
+    assert_eq!(users[0].posts[0]._count.as_ref().expect("post count").comments, 2);
+    assert_eq!(users[0].posts[1]._count.as_ref().expect("post count").comments, 1);
+    assert_eq!(users[1].posts[0]._count.as_ref().expect("post count").comments, 1);
     assert_eq!(users[0].posts[0].comments.iter().map(|item| item.id).collect::<Vec<_>>(), vec![1, 2]);
 
     let first_user = find_first::<User>()
@@ -219,8 +229,8 @@ async fn find_many_and_find_first_can_count_relations() -> DinocoResult<()> {
         .expect("first user should exist");
 
     assert_eq!(first_user.id, 1);
-    assert_eq!(first_user.posts_count, 2);
-    assert_eq!(first_user.posts[0].comments_count, 2);
+    assert_eq!(first_user._count.as_ref().expect("user count").posts, 2);
+    assert_eq!(first_user.posts[0]._count.as_ref().expect("post count").comments, 2);
 
     Ok(())
 }

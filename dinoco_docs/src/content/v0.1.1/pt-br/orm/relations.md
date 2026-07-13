@@ -218,15 +218,23 @@ pub struct Device {
     pub id: dinoco::Uuid,
     pub account_id: Option<dinoco::Uuid>,
     pub account: Option<Account>,
-    pub account_count: usize,
+    pub _count: Option<DeviceCount>,
+}
+
+pub struct DeviceCount {
+    pub account: usize,
 }
 
 pub struct Account {
     pub id: dinoco::Uuid,
     pub devices: Vec<Device>,
-    pub devices_count: usize,
     pub subscriptions: Vec<Subscription>,
-    pub subscriptions_count: usize,
+    pub _count: Option<AccountCount>,
+}
+
+pub struct AccountCount {
+    pub devices: usize,
+    pub subscriptions: usize,
 }
 ```
 
@@ -240,7 +248,7 @@ let device = dinoco::find_first::<Device>()
     .await?;
 ```
 
-Os campos `*_count` também são gerados para relações. Eles começam como `0` e só são preenchidos quando a query chama `.count(...)`.
+O campo `_count` também é gerado quando o model possui relações. Ele começa como `None` e vira `Some(AccountCount { ... })` quando a query chama `.count(...)`.
 
 ```rust
 let accounts = dinoco::find_many::<Account>()
@@ -249,7 +257,7 @@ let accounts = dinoco::find_many::<Account>()
     .await?;
 ```
 
-O count sempre respeita a relação do item pai. Se existem 10 devices na tabela, mas uma account possui 3 devices relacionados, `devices_count` será `3`.
+O count sempre respeita a relação do item pai. Se existem 10 devices na tabela, mas uma account possui 3 devices relacionados, `_count.devices` será `3`.
 
 Você também pode filtrar o count da relação:
 
@@ -260,7 +268,7 @@ let accounts = dinoco::find_many::<Account>()
     .await?;
 ```
 
-Nesse caso, `devices_count` recebe apenas a quantidade de devices ativos daquela account. O Dinoco faz uma query para o count e não popula `devices` automaticamente; para carregar a lista, use também `.includes(...)`.
+Nesse caso, `_count.devices` recebe apenas a quantidade de devices ativos daquela account. O Dinoco faz uma query para o count e não popula `devices` automaticamente; para carregar a lista, use também `.includes(...)`.
 
 ## Exemplo de busca com todas as relações possíveis a partir de User
 

@@ -87,7 +87,13 @@ dinoco::insert_into::<Team>()
 struct UserWithPostsCount {
     id: String,
     name: String,
-    posts_count: usize,
+    posts: Vec<Post>,
+    _count: Option<UserCount>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct UserCount {
+    posts: usize,
 }
 
 let users = dinoco::find_many::<User>()

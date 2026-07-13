@@ -113,15 +113,19 @@ model Device {
         .expect("generated device model should exist");
 
     assert!(account_file.contains("#[extend(Account)]"));
+    assert!(account_file.contains("pub struct AccountCount"));
+    assert!(account_file.contains("pub devices: usize"));
     assert!(account_file.contains("pub devices: Vec<super::device::Device>"));
-    assert!(account_file.contains("pub devices_count: usize"));
+    assert!(account_file.contains("pub _count: Option<AccountCount>"));
     assert!(account_file.contains("fn execute_nested_relations<'a, A>"));
     assert!(account_file.contains("dinoco::execute_insert_related_payloads(parent, self.devices, client).await?;"));
     assert!(device_file.contains("#[extend(Device)]"));
+    assert!(device_file.contains("pub struct DeviceCount"));
+    assert!(device_file.contains("pub account: usize"));
     assert!(device_file.contains("pub account: Option<super::account::Account>"));
-    assert!(device_file.contains("pub account_count: usize"));
+    assert!(device_file.contains("pub _count: Option<DeviceCount>"));
     assert!(device_file.contains("account: Default::default()"));
-    assert!(device_file.contains("account_count: Default::default()"));
+    assert!(device_file.contains("_count: Default::default()"));
     assert!(!device_file.contains("execute_nested_relations"));
 }
 
@@ -520,6 +524,8 @@ model Tag {
     assert!(user_file.contains("pub fn __dinoco_load_profile_by_primary_key"));
     assert!(user_file.contains("qualify_select_statement"));
     assert!(user_file.contains("LEFT JOIN"));
+    assert!(user_file.contains("let current_table_ident = adapter.dialect().identifier(\"User\");"));
+    assert!(user_file.contains("let statement_table_ident = adapter.dialect().identifier(\"Profile\");"));
     assert!(user_file.contains("client.read_adapter(matches!(read_mode, dinoco::ReadMode::Primary))"));
     assert!(user_file.contains("Expression::Column(format!(\"{}.{}\", \"User\", \"id\"))"));
     assert!(user_file.contains("row.get_optional::<i64>(relation_offset)?"));

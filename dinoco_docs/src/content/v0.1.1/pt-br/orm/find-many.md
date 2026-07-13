@@ -12,7 +12,7 @@ Usado para buscar uma lista de registros.
 - `.skip(...)`: pula uma quantidade de registros antes de retornar o resultado.
 - `.order_by(...)`: define a ordenação da consulta.
 - `.includes(...)`: carrega relações junto com os registros principais.
-- `.count(...)`: calcula contadores de relações e preenche campos como `posts_count`.
+- `.count(...)`: calcula contadores de relações e preenche o campo `_count`.
 - `.read_in_primary()`: força a leitura no banco principal, sem usar réplica.
 - `.execute(&client)`: executa a consulta no banco.
 
@@ -126,7 +126,12 @@ struct PostWithComments {
     id: i64,
     title: String,
     comments: Vec<CommentListItem>,
-    comments_count: usize,
+    _count: Option<PostCount>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PostCount {
+    comments: usize,
 }
 
 #[derive(Debug, Clone, dinoco::Extend)]
@@ -156,7 +161,13 @@ let users = dinoco::find_many::<User>()
 struct UserWithPostsCount {
     id: i64,
     name: String,
-    posts_count: usize,
+    posts: Vec<Post>,
+    _count: Option<UserCount>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct UserCount {
+    posts: usize,
 }
 
 let users = dinoco::find_many::<User>()
@@ -166,9 +177,9 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-O campo `posts_count` é preenchido somente porque a query chamou `.count(...)`. Sem esse método, o valor permanece no default (`0`).
+O campo `_count` é preenchido somente porque a query chamou `.count(...)`. Sem esse método, ele permanece `None`.
 
-O count é sempre calculado por item pai, não como total global da tabela. Se o banco possui 10 posts, mas um usuário retornado possui 3 posts relacionados, o `posts_count` desse usuário será `3`.
+O count é sempre calculado por item pai, não como total global da tabela. Se o banco possui 10 posts, mas um usuário retornado possui 3 posts relacionados, `_count.posts` desse usuário será `3`.
 
 Você pode aplicar condições no count mantendo a relação do item:
 
@@ -180,7 +191,7 @@ let users = dinoco::find_many::<User>()
     .await?;
 ```
 
-Esse exemplo preenche `posts_count` apenas com os posts ativos de cada usuário. O Dinoco não carrega todos os posts em memória para preencher o count; ele executa uma query de count da relação e agrupa o resultado por item pai.
+Esse exemplo preenche `_count.posts` apenas com os posts ativos de cada usuário. O Dinoco não carrega todos os posts em memória para preencher o count; ele executa uma query de count da relação e agrupa o resultado por item pai.
 
 ## Exemplo lendo no banco principal
 

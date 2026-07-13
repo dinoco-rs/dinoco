@@ -83,7 +83,13 @@ let user = dinoco::find_first::<User>()
 struct UserWithPostsCount {
     id: i64,
     name: String,
-    posts_count: usize,
+    posts: Vec<Post>,
+    _count: Option<UserCount>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct UserCount {
+    posts: usize,
 }
 
 let user = dinoco::find_first::<User>()
@@ -94,7 +100,7 @@ let user = dinoco::find_first::<User>()
     .await?;
 ```
 
-O count respeita o item retornado e a condição da relação. Ele preenche `posts_count` com a quantidade de posts ativos daquele usuário, sem carregar `posts`.
+O count respeita o item retornado e a condição da relação. Ele preenche `_count.posts` com a quantidade de posts ativos daquele usuário, sem carregar `posts`.
 
 ## Exemplo com ordenação
 
