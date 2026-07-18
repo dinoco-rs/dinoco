@@ -1,9 +1,9 @@
 use crate::{
     CountQuery, DeleteQuery, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, SqliteAdapter, UpdateQuery,
+    MySqlAdapter, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, UpdateQuery,
 };
 
-impl DinocoSqlCompiler for SqliteAdapter {
+impl DinocoSqlCompiler for MySqlAdapter {
     fn compile_find_query(&self, query: FindQuery) -> (String, Vec<DinocoValue>) {
         let mut sql = format!("SELECT {} FROM {}", query.fields.join(", "), query.from);
         let params = append_find_tail(&mut sql, query.conditions, query.order_by, query.limit, query.skip, None);

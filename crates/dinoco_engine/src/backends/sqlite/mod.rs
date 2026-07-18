@@ -31,7 +31,7 @@ impl DinocoAdapter for SqliteAdapter {
         let params_owned = params.to_vec();
 
         conn.interact(move |conn| -> anyhow::Result<Vec<M>> {
-            let mut stmt = conn.prepare(&query_owned)?;
+            let mut stmt = conn.prepare_cached(&query_owned)?;
             let params_refs: Vec<&dyn rusqlite::ToSql> =
                 params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
@@ -58,7 +58,7 @@ impl DinocoAdapter for SqliteAdapter {
         let params_owned = params.to_vec();
 
         conn.interact(move |conn| -> anyhow::Result<Vec<M>> {
-            let mut stmt = conn.prepare(&query_owned)?;
+            let mut stmt = conn.prepare_cached(&query_owned)?;
             let params_refs: Vec<&dyn rusqlite::ToSql> =
                 params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
@@ -72,6 +72,40 @@ impl DinocoAdapter for SqliteAdapter {
             }
 
             Ok(result)
+        })
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?
+    }
+
+    async fn execute(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<usize> {
+        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
+        let query_owned = query.to_string();
+        let params_owned = params.to_vec();
+
+        conn.interact(move |conn| -> anyhow::Result<usize> {
+            let mut stmt = conn.prepare_cached(&query_owned)?;
+            let params_refs: Vec<&dyn rusqlite::ToSql> =
+                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+
+            Ok(stmt.execute(params_refs.as_slice())?)
+        })
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?
+    }
+}
+
+impl SqliteAdapter {
+    pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
+        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
+        let query_owned = query.to_string();
+        let params_owned = params.to_vec();
+
+        conn.interact(move |conn| -> anyhow::Result<i64> {
+            let mut stmt = conn.prepare_cached(&query_owned)?;
+            let params_refs: Vec<&dyn rusqlite::ToSql> =
+                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+
+            Ok(stmt.query_row(params_refs.as_slice(), |row| row.get(0))?)
         })
         .await
         .map_err(|err| anyhow!(err.to_string()))?

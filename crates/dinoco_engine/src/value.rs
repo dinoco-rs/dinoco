@@ -43,9 +43,41 @@ impl From<&i64> for DinocoValue {
     }
 }
 
+macro_rules! impl_integer_value {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl From<$ty> for DinocoValue {
+                fn from(value: $ty) -> Self {
+                    DinocoValue::Integer(value as i64)
+                }
+            }
+
+            impl From<&$ty> for DinocoValue {
+                fn from(value: &$ty) -> Self {
+                    DinocoValue::Integer(*value as i64)
+                }
+            }
+        )*
+    };
+}
+
+impl_integer_value!(i8, i16, i32, i128, isize, u8, u16, u32, u64, u128, usize);
+
 impl From<f64> for DinocoValue {
     fn from(value: f64) -> Self {
         DinocoValue::Float(value)
+    }
+}
+
+impl From<f32> for DinocoValue {
+    fn from(value: f32) -> Self {
+        DinocoValue::Float(value as f64)
+    }
+}
+
+impl From<&f32> for DinocoValue {
+    fn from(value: &f32) -> Self {
+        DinocoValue::Float(*value as f64)
     }
 }
 

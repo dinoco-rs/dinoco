@@ -23,8 +23,61 @@ pub struct FindQuery {
 }
 
 #[derive(Debug, Clone)]
+pub struct InsertQuery {
+    pub table: &'static str,
+    pub fields: Vec<&'static str>,
+    pub rows: Vec<Vec<DinocoValue>>,
+    pub returning: Option<&'static [&'static str]>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateQuery {
+    pub table: &'static str,
+    pub sets: Vec<UpdateSet>,
+    pub conditions: Vec<FindWhere>,
+    pub returning: Option<&'static [&'static str]>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateSet {
+    pub field: &'static str,
+    pub value: DinocoValue,
+    pub operation: UpdateOperation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateOperation {
+    Set,
+    Connect,
+    Disconnect,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteQuery {
+    pub table: &'static str,
+    pub conditions: Vec<FindWhere>,
+    pub returning: Option<&'static [&'static str]>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CountQuery {
+    pub table: &'static str,
+    pub conditions: Vec<FindWhere>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RelationCountQuery {
+    pub parent_table: &'static str,
+    pub child_table: &'static str,
+    pub parent_field: &'static str,
+    pub child_field: &'static str,
+    pub parent_conditions: Vec<FindWhere>,
+    pub child_conditions: Vec<FindWhere>,
+}
+
+#[derive(Debug, Clone)]
 pub struct RelationJoinQuery {
-    pub fields: &'static [&'static str],
+    pub query: FindQuery,
     pub parent_table: &'static str,
     pub child_table: &'static str,
     pub parent_field: &'static str,

@@ -1,12 +1,13 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoClient, DinocoEntity, DinocoProjection, DinocoSqlite, FindOrderBy, FindQuery, FindWhere};
+use dinoco_engine::{DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere};
 
 use crate::{IncludeLoader, IntoIncludeLoader, load_includes};
 
 pub struct FindFirst<M, S = M> {
     query: FindQuery,
     includes: Vec<Box<dyn IncludeLoader<S>>>,
+    read_primary: bool,
 
     select_marker: PhantomData<S>,
     marker: PhantomData<M>,
@@ -14,8 +15,8 @@ pub struct FindFirst<M, S = M> {
 
 impl<M, S> FindFirst<M, S>
 where
-    M: DinocoEntity + DinocoSqlite,
-    S: DinocoSqlite,
+    M: DinocoEntity + DinocoRowModel,
+    S: DinocoRowModel,
 {
     pub fn where_<F>(mut self, callback: F) -> Self
     where
@@ -42,7 +43,13 @@ where
     {
         self.query.fields = NS::FIELDS;
 
-        FindFirst { query: self.query, includes: Vec::new(), select_marker: PhantomData, marker: PhantomData }
+        FindFirst {
+            query: self.query,
+            includes: Vec::new(),
+            read_primary: self.read_primary,
+            select_marker: PhantomData,
+            marker: PhantomData,
+        }
     }
 
     pub fn order_by<F>(mut self, closure: F) -> Self
@@ -54,19 +61,26 @@ where
         self
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Option<S>> {
-        let mut rows = client.backend.query::<S>(self.query).await?;
+    pub fn read_in_primary(mut self) -> Self {
+        self.read_primary = true;
 
-        load_includes(self.includes, client, &mut rows).await?;
+        self
+    }
+
+    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Option<S>> {
+        let mut rows = client.read_backend(self.read_primary).query::<S>(self.query).await?;
+
+        load_includes(self.includes, client, &mut rows, self.read_primary).await?;
 
         Ok(rows.into_iter().next())
     }
 }
 
-pub fn find_first<M: DinocoEntity + DinocoSqlite>() -> FindFirst<M> {
+pub fn find_first<M: DinocoEntity + DinocoRowModel>() -> FindFirst<M> {
     FindFirst::<M> {
         query: FindQuery::new(M::FIELDS, M::TABLE_NAME, 1, -1),
         includes: Vec::new(),
+        read_primary: false,
         select_marker: PhantomData,
         marker: PhantomData,
     }

@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 
-use crate::{DinocoValue, FindQuery, RelationBatchQuery, RelationJoinQuery, SqliteRow};
+use crate::{
+    CountQuery, DeadpoolPostgresRow, DeleteQuery, DinocoValue, FindQuery, InsertQuery, MysqlRow, PostgresRow,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, SqliteRow, UpdateQuery,
+};
 
 #[async_trait(?Send)]
 pub trait DinocoEntity: Sized + Send + 'static {
@@ -10,8 +13,8 @@ pub trait DinocoEntity: Sized + Send + 'static {
     type Where: Default;
     type OrderBy: Default;
     type Include: Default;
-
-    // type Update;
+    type Update: Default;
+    type Count: Default;
 }
 
 #[async_trait(?Send)]
@@ -20,23 +23,46 @@ pub trait DinocoAdapter: Sized {
 
     async fn query<M>(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<Vec<M>>
     where
-        M: DinocoSqlite;
+        M: DinocoRowModel;
 
     async fn query_optional<M>(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<Vec<M>>
     where
-        M: DinocoSqlite;
+        M: DinocoRowModel;
+
+    async fn execute(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<usize>;
 }
 
 pub trait DinocoSqlCompiler {
     fn compile_find_query(&self, query: FindQuery) -> (String, Vec<DinocoValue>);
+    fn compile_insert_query(&self, query: InsertQuery) -> (String, Vec<DinocoValue>);
+    fn compile_update_query(&self, query: UpdateQuery) -> (String, Vec<DinocoValue>);
+    fn compile_delete_query(&self, query: DeleteQuery) -> (String, Vec<DinocoValue>);
+    fn compile_count_query(&self, query: CountQuery) -> (String, Vec<DinocoValue>);
+    fn compile_relation_count_query(&self, query: RelationCountQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_batch_query(&self, query: RelationBatchQuery) -> (String, Vec<DinocoValue>);
-    fn compile_relation_join_query(&self, query: RelationJoinQuery) -> String;
+    fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>);
 }
 
 pub trait DinocoSqlite: Sized + Send + 'static {
     fn from_sqlite_row(row: &SqliteRow<'_>) -> Option<Self>;
 }
 
-pub trait DinocoProjection<M>: DinocoSqlite {
+pub trait DinocoPostgres: Sized + Send + 'static {
+    fn from_deadpool_posgres_row(row: &DeadpoolPostgresRow) -> Option<Self>;
+    fn from_deadpool_postgres_row(row: &DeadpoolPostgresRow) -> Option<Self> {
+        Self::from_deadpool_posgres_row(row)
+    }
+    fn from_postgres_row(row: &PostgresRow) -> Option<Self>;
+}
+
+pub trait DinocoMysql: Sized + Send + 'static {
+    fn from_mysql_row(row: &MysqlRow) -> Option<Self>;
+}
+
+pub trait DinocoRowModel: DinocoSqlite + DinocoPostgres + DinocoMysql {}
+
+impl<T> DinocoRowModel for T where T: DinocoSqlite + DinocoPostgres + DinocoMysql {}
+
+pub trait DinocoProjection<M>: DinocoRowModel {
     const FIELDS: &'static [&'static str];
 }
