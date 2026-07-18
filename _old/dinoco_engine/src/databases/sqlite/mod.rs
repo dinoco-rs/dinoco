@@ -14,8 +14,8 @@ mod migration;
 mod row;
 
 use crate::{
-    ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult,
-    DinocoRow, DinocoTransactionAdapter, DinocoValue, ExecutionResult,
+    ConstraintError, DinocoAdapter, DinocoClientConfig, DinocoError, DinocoQueryLog, DinocoQueryLogger, DinocoResult, DinocoRow, DinocoTransactionAdapter, DinocoValue,
+    ExecutionResult,
 };
 
 pub use dialect::SqliteDialect;
@@ -42,9 +42,7 @@ impl DinocoAdapter for SqliteAdapter {
 
     async fn connect(url: String, config: DinocoClientConfig) -> DinocoResult<Self> {
         if !url.starts_with("file:") {
-            return Err(DinocoError::ConnectionError(
-                "Invalid sqlite connection URL. Expected format: file:path".to_string(),
-            ));
+            return Err(DinocoError::ConnectionError("Invalid sqlite connection URL. Expected format: file:path".to_string()));
         }
 
         let cfg = Config::new(&url);
@@ -79,11 +77,7 @@ impl DinocoAdapter for SqliteAdapter {
         Ok(())
     }
 
-    async fn query_as<T: DinocoRow + Send + 'static>(
-        &self,
-        query: &str,
-        params: &[DinocoValue],
-    ) -> DinocoResult<Vec<T>> {
+    async fn query_as<T: DinocoRow + Send + 'static>(&self, query: &str, params: &[DinocoValue]) -> DinocoResult<Vec<T>> {
         if let Ok(tx_conn) = SQLITE_TX_CONNECTION.try_with(Clone::clone) {
             let conn = tx_conn.lock().await;
 
@@ -112,10 +106,7 @@ impl DinocoTransactionAdapter for SqliteAdapter {
 
             {
                 let conn = tx_connection.lock().await;
-                conn.interact(|conn| conn.execute("BEGIN", []))
-                    .await
-                    .map_err(DinocoError::from)?
-                    .map_err(DinocoError::from)?;
+                conn.interact(|conn| conn.execute("BEGIN", [])).await.map_err(DinocoError::from)?.map_err(DinocoError::from)?;
             }
 
             let result = SQLITE_TX_CONNECTION.scope(tx_connection.clone(), async move { operation().await }).await;
@@ -123,10 +114,7 @@ impl DinocoTransactionAdapter for SqliteAdapter {
             match result {
                 Ok(output) => {
                     let conn = tx_connection.lock().await;
-                    conn.interact(|conn| conn.execute("COMMIT", []))
-                        .await
-                        .map_err(DinocoError::from)?
-                        .map_err(DinocoError::from)?;
+                    conn.interact(|conn| conn.execute("COMMIT", [])).await.map_err(DinocoError::from)?.map_err(DinocoError::from)?;
 
                     Ok(output)
                 }
@@ -141,12 +129,7 @@ impl DinocoTransactionAdapter for SqliteAdapter {
     }
 }
 
-async fn execute_result_with_connection(
-    conn: &deadpool_sqlite::Object,
-    query: &str,
-    params: &[DinocoValue],
-    query_logger: &DinocoQueryLogger,
-) -> DinocoResult<ExecutionResult> {
+async fn execute_result_with_connection(conn: &deadpool_sqlite::Object, query: &str, params: &[DinocoValue], query_logger: &DinocoQueryLogger) -> DinocoResult<ExecutionResult> {
     let query_owned = query.to_string();
     let params_owned = params.to_vec();
     let logged_query = query.to_string();
@@ -155,22 +138,15 @@ async fn execute_result_with_connection(
 
     let affected_rows = conn
         .interact(move |conn| {
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+            let params_refs: Vec<&dyn rusqlite::ToSql> = params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
-            conn.execute(&query_owned, params_refs.as_slice())
-                .map(|affected_rows| (affected_rows, conn.last_insert_rowid()))
+            conn.execute(&query_owned, params_refs.as_slice()).map(|affected_rows| (affected_rows, conn.last_insert_rowid()))
         })
         .await
         .map_err(DinocoError::from)?
         .map_err(DinocoError::from)?;
 
-    query_logger.log(DinocoQueryLog {
-        adapter: "sqlite",
-        duration: started_at.elapsed(),
-        params: logged_params,
-        query: logged_query,
-    });
+    query_logger.log(DinocoQueryLog { adapter: "sqlite", duration: started_at.elapsed(), params: logged_params, query: logged_query });
 
     Ok(ExecutionResult { affected_rows: affected_rows.0 as u64, last_insert_id: Some(affected_rows.1) })
 }
@@ -190,8 +166,7 @@ async fn query_as_with_connection<T: DinocoRow + Send + 'static>(
     let results = conn
         .interact(move |conn| -> DinocoResult<Vec<T>> {
             let mut stmt = conn.prepare(&query_owned).map_err(DinocoError::from)?;
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+            let params_refs: Vec<&dyn rusqlite::ToSql> = params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
             let mut rows = stmt.query(params_refs.as_slice()).map_err(DinocoError::from)?;
             let mut results = Vec::new();
@@ -205,12 +180,7 @@ async fn query_as_with_connection<T: DinocoRow + Send + 'static>(
         .await
         .map_err(DinocoError::from)??;
 
-    query_logger.log(DinocoQueryLog {
-        adapter: "sqlite",
-        duration: started_at.elapsed(),
-        params: logged_params,
-        query: logged_query,
-    });
+    query_logger.log(DinocoQueryLog { adapter: "sqlite", duration: started_at.elapsed(), params: logged_params, query: logged_query });
 
     Ok(results)
 }
@@ -276,8 +246,7 @@ fn map_sqlite_constraint_error(error: &rusqlite::Error) -> Option<ConstraintErro
     if normalized.starts_with("unique constraint failed:") {
         let targets = parse_sqlite_constraint_targets(&message, "UNIQUE constraint failed:");
         let table = targets.first().and_then(|target| target.split('.').next()).map(str::to_string);
-        let columns =
-            targets.into_iter().map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string()).collect();
+        let columns = targets.into_iter().map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string()).collect();
 
         return Some(ConstraintError::unique(table, columns, None, message));
     }
@@ -285,8 +254,7 @@ fn map_sqlite_constraint_error(error: &rusqlite::Error) -> Option<ConstraintErro
     if normalized.starts_with("not null constraint failed:") {
         let targets = parse_sqlite_constraint_targets(&message, "NOT NULL constraint failed:");
         let table = targets.first().and_then(|target| target.split('.').next()).map(str::to_string);
-        let columns =
-            targets.into_iter().map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string()).collect();
+        let columns = targets.into_iter().map(|target| target.split('.').nth(1).unwrap_or(target.as_str()).to_string()).collect();
 
         return Some(ConstraintError::not_null(table, columns, None, message));
     }
@@ -296,8 +264,7 @@ fn map_sqlite_constraint_error(error: &rusqlite::Error) -> Option<ConstraintErro
     }
 
     if normalized.starts_with("check constraint failed:") {
-        let constraint =
-            message.split_once(':').map(|(_, rest)| rest.trim().to_string()).filter(|item| !item.is_empty());
+        let constraint = message.split_once(':').map(|(_, rest)| rest.trim().to_string()).filter(|item| !item.is_empty());
 
         return Some(ConstraintError::check(None, Vec::new(), constraint, message));
     }
@@ -306,12 +273,5 @@ fn map_sqlite_constraint_error(error: &rusqlite::Error) -> Option<ConstraintErro
 }
 
 fn parse_sqlite_constraint_targets(message: &str, prefix: &str) -> Vec<String> {
-    message
-        .strip_prefix(prefix)
-        .unwrap_or(message)
-        .split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(str::to_string)
-        .collect()
+    message.strip_prefix(prefix).unwrap_or(message).split(',').map(str::trim).filter(|item| !item.is_empty()).map(str::to_string).collect()
 }

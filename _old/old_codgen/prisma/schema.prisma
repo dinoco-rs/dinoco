@@ -1,0 +1,235 @@
+datasource db {
+    provider = "sqlite"
+    url      = env("DATABASE_URL")
+}
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+model User {
+    id       String @id @default(uuid())
+    email    String
+    password String
+    office   String @default("Membro")
+
+    tokens UserToken[]
+}
+
+model UserToken {
+    id        String  @id @default(uuid())
+    isExpired Boolean @default(false)
+
+    createdAt String
+
+    user   User?   @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+    userId String?
+}
+
+model AppVersion {
+    id      String @id
+    version String
+
+    platform String @default("android")
+}
+
+model Books {
+    id String @id @default(uuid())
+
+    name        String
+    description String
+    image       String
+    url         String
+    readUrl     String @default("")
+}
+
+model CronJob {
+    id String @id @default(uuid())
+
+    executeIn       String
+    alreadyExecuted Boolean
+
+    orixa    Orixa[]
+    study    Study[]
+    category OrixaCategory[]
+    falange  OrixaFalange[]
+
+    contents  OrixaContent[]
+    questions OrixaQuestion[]
+}
+
+model Subscription {
+    id       String @id @default(uuid())
+    platform String @default("android")
+
+    transactionId String @default("")
+    paymentState  Int    @default(1)
+    purchaseToken String
+    expireIn      String
+    assignIn      String
+
+    isActive Boolean @default(true)
+
+    device   Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    deviceId String?
+}
+
+model Device {
+    id String @id @default(uuid())
+
+    name     String @default("")
+    uniqueId String
+    platform String
+    token    String
+
+    username String @default("")
+    phone    String @default("")
+    email    String @default("")
+
+    unlocked      OrixaUnlock[]
+    subs          Subscription[]
+    readedContent OrixaContent[]
+}
+
+model Study {
+    id       String @id @default(uuid())
+    name     String
+    image    String
+    fullname String @default("")
+
+    isShow Boolean @default(true)
+
+    contents OrixaContent[]
+
+    cronJob   CronJob? @relation(fields: [cronJobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    cronJobId String?
+}
+
+model Orixa {
+    id          String  @id @default(uuid())
+    name        String
+    cover       String
+    ilustration String
+    isShow      Boolean @default(true)
+
+    questions  OrixaQuestion[]
+    falanges   OrixaFalange[]
+    contents   OrixaContent[]
+    categories OrixaCategory[]
+    unlock     OrixaUnlock[]
+
+    cron   CronJob? @relation(fields: [cronId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    cronId String?
+}
+
+model OrixaUnlock {
+    id        String @id @default(uuid())
+    createdAt String
+    lockAt    String
+
+    orixa   Orixa?  @relation(fields: [orixaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    orixaId String?
+
+    device   Device? @relation(fields: [deviceId], references: [id])
+    deviceId String?
+}
+
+model OrixaQuestion {
+    id      String  @id @default(uuid())
+    title   String
+    content String
+    isShow  Boolean @default(true)
+
+    audio String?
+
+    orixa   Orixa?  @relation(fields: [orixaId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+    orixaId String?
+
+    cronJob   CronJob? @relation(fields: [cronJobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    cronJobId String?
+}
+
+model OrixaFalange {
+    id       String  @id @default(uuid())
+    name     String
+    fullname String  @default("")
+    image    String
+    isShow   Boolean @default(true)
+
+    categories OrixaFalangeCategory[]
+
+    orixa   Orixa?  @relation(fields: [orixaId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+    orixaId String?
+
+    cronJob   CronJob? @relation(fields: [cronJobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    cronJobId String?
+}
+
+model OrixaCategory {
+    id     String  @id @default(uuid())
+    name   String
+    isShow Boolean @default(true)
+
+    contents OrixaContent[]
+
+    orixa   Orixa?  @relation(fields: [orixaId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+    orixaId String?
+
+    cronJob   CronJob? @relation(fields: [cronJobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    cronJobId String?
+}
+
+model OrixaFalangeCategory {
+    id     String  @id @default(uuid())
+    name   String
+    isShow Boolean @default(true)
+
+    contents OrixaContent[]
+
+    orixaFalange   OrixaFalange? @relation(fields: [orixaFalangeId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+    orixaFalangeId String?
+}
+
+model OrixaContent {
+    id     String             @id @default(uuid())
+    isShow Boolean            @default(true)
+    parts  OrixaContentPart[]
+
+    readedByDevice Device[]
+
+    orixaId String?
+    orixa   Orixa?  @relation(fields: [orixaId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+    falangeCategory   OrixaFalangeCategory? @relation(fields: [falangeCategoryId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+    falangeCategoryId String?
+
+    orixaCategory   OrixaCategory? @relation(fields: [orixaCategoryId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+    orixaCategoryId String?
+
+    study   Study?  @relation(fields: [studyId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    studyId String?
+
+    cronJob   CronJob? @relation(fields: [cronJobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    cronJobId String?
+}
+
+model OrixaContentPart {
+    id     String  @id @default(uuid())
+    isShow Boolean @default(true)
+
+    text  String?
+    image String?
+    audio String?
+
+    contentId String?
+    content   OrixaContent? @relation(fields: [contentId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+}
+
+model Product {
+    id String @id @default(uuid())
+
+    name        String
+    description String
+    image       String
+    url         String
+}
