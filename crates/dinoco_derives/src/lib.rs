@@ -51,6 +51,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let include_name = format_ident!("{}Include", name);
     let update_name = format_ident!("{}Update", name);
     let count_name = format_ident!("{}Count", name);
+    let count_include_name = format_ident!("{}CountInclude", name);
     let parent_snake = to_snake_case(&name.to_string());
 
     let mut scalar_fields = Vec::new();
@@ -108,8 +109,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
     let count_relation_fields = relations.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
         let ident = &field.ident;
-        let target = field.target_ty.as_ref().expect("relation target");
-        quote! { pub #ident: ::core::option::Option<<#target as ::dinoco_engine::DinocoEntity>::Count> }
+        quote! { pub #ident: ::core::option::Option<i64> }
     });
 
     let count_relation_defaults = relations.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
@@ -128,30 +128,32 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
         quote! {
             pub fn #ident(&self) -> ::dinoco::RelationCount<#name, #target> {
-                ::dinoco::RelationCount::new(#relation_name, #references, #child_field)
+                ::dinoco::RelationCount::<#name, #target>::new(#relation_name, #references, #child_field)
             }
         }
     });
 
-    let count_apply_impls = relations.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
+    let count_apply_arms = relations.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
         let relation_name = &field.name;
         let ident = &field.ident;
-        let target = field.target_ty.as_ref().expect("relation target");
 
         quote! {
-            impl ::dinoco::DinocoRelationCountApply<<#target as ::dinoco_engine::DinocoEntity>::Count> for #count_name {
-                fn dinoco_apply_count(
-                    &mut self,
-                    relation: &'static str,
-                    count: <#target as ::dinoco_engine::DinocoEntity>::Count,
-                ) {
-                    if relation == #relation_name {
-                        self.#ident = ::core::option::Option::Some(count);
-                    }
+            #relation_name => {
+                self.#ident = ::core::option::Option::Some(count);
+            }
+        }
+    });
+
+    let count_apply_impl = quote! {
+        impl ::dinoco::DinocoRelationCountApply for #count_name {
+            fn dinoco_apply_count(&mut self, relation: &'static str, count: i64) {
+                match relation {
+                    #(#count_apply_arms)*
+                    _ => {}
                 }
             }
         }
-    });
+    };
 
     let row_initializers = scalar_fields
         .iter()
@@ -176,7 +178,8 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         .map(|field| {
             let ident = &field.ident;
             let name = &field.name;
-            quote! { #ident: row.take(#name)? }
+            let value = mysql_row_value(&field.ty, field.is_option, quote! { #name });
+            quote! { #ident: #value }
         })
         .collect::<Vec<_>>();
 
@@ -285,7 +288,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             quote! {
                 match &self.#ident {
                     ::core::option::Option::Some(value) => ::core::convert::Into::into(value),
-                    ::core::option::Option::None => ::dinoco_engine::DinocoValue::Null,
+                    ::core::option::Option::None => ::dinoco::DinocoValue::Null,
                 }
             }
         } else {
@@ -306,12 +309,12 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         if field.is_option {
             quote! {
                 match &self.#ident {
-                    ::core::option::Option::Some(value) => ::dinoco_engine::FindWhere::Eq(#name, ::core::convert::Into::into(value)),
-                    ::core::option::Option::None => ::dinoco_engine::FindWhere::Null(#name),
+                    ::core::option::Option::Some(value) => ::dinoco::FindWhere::Eq(#name, ::core::convert::Into::into(value)),
+                    ::core::option::Option::None => ::dinoco::FindWhere::Null(#name),
                 }
             }
         } else {
-            quote! { ::dinoco_engine::FindWhere::Eq(#name, ::core::convert::Into::into(&self.#ident)) }
+            quote! { ::dinoco::FindWhere::Eq(#name, ::core::convert::Into::into(&self.#ident)) }
         }
     });
 
@@ -470,7 +473,10 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             }
         }
 
-        impl #count_name {
+        #[derive(Default)]
+        pub struct #count_include_name {}
+
+        impl #count_include_name {
             #(#count_methods)*
         }
 
@@ -500,7 +506,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
 
         #[::dinoco::async_trait(?Send)]
-        impl ::dinoco_engine::DinocoEntity for #name {
+        impl ::dinoco::DinocoEntity for #name {
             const TABLE_NAME: &'static str = #table_name;
             const FIELDS: &'static [&'static str] = &[#(#field_names),*];
 
@@ -509,14 +515,15 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             type Include = #include_name;
             type Update = #update_name;
             type Count = #count_name;
+            type CountInclude = #count_include_name;
         }
 
-        impl ::dinoco_engine::DinocoProjection<#name> for #name {
-            const FIELDS: &'static [&'static str] = <#name as ::dinoco_engine::DinocoEntity>::FIELDS;
+        impl ::dinoco::DinocoProjection<#name> for #name {
+            const FIELDS: &'static [&'static str] = <#name as ::dinoco::DinocoEntity>::FIELDS;
         }
 
-        impl ::dinoco_engine::DinocoSqlite for #name {
-            fn from_sqlite_row(row: &::dinoco_engine::SqliteRow<'_>) -> ::core::option::Option<Self> {
+        impl ::dinoco::DinocoSqlite for #name {
+            fn from_sqlite_row(row: &::dinoco::SqliteRow<'_>) -> ::core::option::Option<Self> {
                 ::core::option::Option::Some(Self {
                     #(#row_initializers,)*
                     #(#relation_initializers,)*
@@ -524,19 +531,19 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             }
         }
 
-        impl ::dinoco_engine::DinocoPostgres for #name {
-            fn from_deadpool_posgres_row(row: &::dinoco_engine::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
+        impl ::dinoco::DinocoPostgres for #name {
+            fn from_deadpool_posgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
                 ::core::option::Option::Some(Self {
                     #(#postgres_row_initializers,)*
                     #(#relation_initializers,)*
                 })
             }
 
-            fn from_deadpool_postgres_row(row: &::dinoco_engine::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
+            fn from_deadpool_postgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
                 Self::from_deadpool_posgres_row(row)
             }
 
-            fn from_postgres_row(row: &::dinoco_engine::PostgresRow) -> ::core::option::Option<Self> {
+            fn from_postgres_row(row: &::dinoco::PostgresRow) -> ::core::option::Option<Self> {
                 ::core::option::Option::Some(Self {
                     #(#postgres_row_initializers,)*
                     #(#relation_initializers,)*
@@ -544,8 +551,8 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             }
         }
 
-        impl ::dinoco_engine::DinocoMysql for #name {
-            fn from_mysql_row(row: &::dinoco_engine::MysqlRow) -> ::core::option::Option<Self> {
+        impl ::dinoco::DinocoMysql for #name {
+            fn from_mysql_row(row: &::dinoco::MysqlRow) -> ::core::option::Option<Self> {
                 let mut row = row.clone();
 
                 ::core::option::Option::Some(Self {
@@ -556,7 +563,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
 
         impl ::dinoco::DinocoRelationValue for #name {
-            fn dinoco_relation_value(&self, field: &'static str) -> ::core::option::Option<::dinoco_engine::DinocoValue> {
+            fn dinoco_relation_value(&self, field: &'static str) -> ::core::option::Option<::dinoco::DinocoValue> {
                 match field {
                     #(#relation_value_arms)*
                     _ => ::core::option::Option::None,
@@ -567,11 +574,11 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         impl ::dinoco::DinocoInsertable for #name {
             const INSERT_FIELDS: &'static [&'static str] = &[#(#insert_field_names),*];
 
-            fn dinoco_insert_values(&self) -> ::std::vec::Vec<::dinoco_engine::DinocoValue> {
+            fn dinoco_insert_values(&self) -> ::std::vec::Vec<::dinoco::DinocoValue> {
                 ::std::vec![#(#insert_values),*]
             }
 
-            fn dinoco_insert_identity(&self) -> ::std::vec::Vec<::dinoco_engine::FindWhere> {
+            fn dinoco_insert_identity(&self) -> ::std::vec::Vec<::dinoco::FindWhere> {
                 ::std::vec![#(#insert_identity_conditions),*]
             }
         }
@@ -589,7 +596,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             fn dinoco_insert_nested<'a>(
                 &'a self,
                 parent: &'a #name,
-                client: &'a ::dinoco_engine::DinocoClient,
+                client: &'a ::dinoco::DinocoClient,
             ) -> ::dinoco::InsertNestedFuture<'a> {
                 ::std::boxed::Box::pin(async move {
                     #(#insert_nested_steps)*
@@ -607,7 +614,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
         #(#relation_apply_impls)*
         #(#belongs_to_binders)*
-        #(#count_apply_impls)*
+        #count_apply_impl
     })
 }
 
@@ -651,7 +658,7 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
         let ident = &field.ident;
 
         quote! {
-            let _ = |include: &<#model as ::dinoco_engine::DinocoEntity>::Include| {
+            let _ = |include: &<#model as ::dinoco::DinocoEntity>::Include| {
                 let _ = include.#ident();
             };
         }
@@ -693,8 +700,8 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             let ident = &field.ident;
             let index = scalar_index;
             scalar_index += 1;
-
-            quote! { #ident: row.take(#index)? }
+            let value = mysql_row_value(&field.ty, field.is_option, quote! { #index });
+            quote! { #ident: #value }
         })
         .collect::<Vec<_>>();
 
@@ -800,7 +807,7 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             fn dinoco_insert_nested<'a>(
                 &'a self,
                 parent: &'a #model,
-                client: &'a ::dinoco_engine::DinocoClient,
+                client: &'a ::dinoco::DinocoClient,
             ) -> ::dinoco::InsertNestedFuture<'a> {
                 ::std::boxed::Box::pin(async move {
                     #(#insert_nested_steps)*
@@ -818,12 +825,12 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             #(#relation_validations)*
         };
 
-        impl ::dinoco_engine::DinocoProjection<#model> for #name {
+        impl ::dinoco::DinocoProjection<#model> for #name {
             const FIELDS: &'static [&'static str] = &[#(#field_names),*];
         }
 
-        impl ::dinoco_engine::DinocoSqlite for #name {
-            fn from_sqlite_row(row: &::dinoco_engine::SqliteRow<'_>) -> ::core::option::Option<Self> {
+        impl ::dinoco::DinocoSqlite for #name {
+            fn from_sqlite_row(row: &::dinoco::SqliteRow<'_>) -> ::core::option::Option<Self> {
                 ::core::option::Option::Some(Self {
                     #(#row_initializers,)*
                     #(#relation_initializers,)*
@@ -831,19 +838,19 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             }
         }
 
-        impl ::dinoco_engine::DinocoPostgres for #name {
-            fn from_deadpool_posgres_row(row: &::dinoco_engine::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
+        impl ::dinoco::DinocoPostgres for #name {
+            fn from_deadpool_posgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
                 ::core::option::Option::Some(Self {
                     #(#postgres_row_initializers,)*
                     #(#relation_initializers,)*
                 })
             }
 
-            fn from_deadpool_postgres_row(row: &::dinoco_engine::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
+            fn from_deadpool_postgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
                 Self::from_deadpool_posgres_row(row)
             }
 
-            fn from_postgres_row(row: &::dinoco_engine::PostgresRow) -> ::core::option::Option<Self> {
+            fn from_postgres_row(row: &::dinoco::PostgresRow) -> ::core::option::Option<Self> {
                 ::core::option::Option::Some(Self {
                     #(#postgres_row_initializers,)*
                     #(#relation_initializers,)*
@@ -851,8 +858,8 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             }
         }
 
-        impl ::dinoco_engine::DinocoMysql for #name {
-            fn from_mysql_row(row: &::dinoco_engine::MysqlRow) -> ::core::option::Option<Self> {
+        impl ::dinoco::DinocoMysql for #name {
+            fn from_mysql_row(row: &::dinoco::MysqlRow) -> ::core::option::Option<Self> {
                 let mut row = row.clone();
 
                 ::core::option::Option::Some(Self {
@@ -863,7 +870,7 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
         }
 
         impl ::dinoco::DinocoRelationValue for #name {
-            fn dinoco_relation_value(&self, field: &'static str) -> ::core::option::Option<::dinoco_engine::DinocoValue> {
+            fn dinoco_relation_value(&self, field: &'static str) -> ::core::option::Option<::dinoco::DinocoValue> {
                 match field {
                     #(#relation_value_arms)*
                     _ => ::core::option::Option::None,
@@ -1285,6 +1292,27 @@ fn option_inner(ty: &Type) -> Option<&Type> {
     };
 
     Some(inner)
+}
+
+fn mysql_row_value(ty: &Type, is_option: bool, index: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    let ty = option_inner(ty).unwrap_or(ty);
+    let is_datetime =
+        matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "DateTime"));
+
+    if !is_datetime {
+        return quote! { row.take(#index)? };
+    }
+
+    if is_option {
+        quote! {
+            row.take::<::core::option::Option<::dinoco::chrono::NaiveDateTime>, _>(#index)?
+                .map(|value| value.and_utc())
+        }
+    } else {
+        quote! {
+            row.take::<::dinoco::chrono::NaiveDateTime, _>(#index)?.and_utc()
+        }
+    }
 }
 
 fn is_custom_type(ty: &Type) -> bool {

@@ -556,7 +556,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_cli"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -588,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_codegen"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "dinoco_compiler",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_compiler"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "pest",
  "pest_derive",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_derives"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -614,7 +614,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_engine"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -633,14 +633,14 @@ dependencies = [
 
 [[package]]
 name = "dinoco_formatter"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "dinoco_compiler",
 ]
 
 [[package]]
 name = "dinoco_tests"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -658,7 +658,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_vscode"
-version = "1.0.0"
+version = "1.0.5"
 dependencies = [
  "dinoco_compiler",
  "dinoco_formatter",
@@ -1383,6 +1383,7 @@ dependencies = [
  "btoi",
  "byteorder",
  "bytes",
+ "chrono",
  "crc32fast",
  "flate2",
  "getrandom 0.3.4",
@@ -1809,10 +1810,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1c93dd1c9683b438c392c492109cb702b8090b2bfc8fed6f6e4eb4523f17af3"
 dependencies = [
  "bitflags 2.13.0",
+ "chrono",
  "fallible-iterator 0.3.0",
  "fallible-streaming-iterator",
  "hashlink",
  "libsqlite3-sys",
+ "serde_json",
  "smallvec",
  "sqlite-wasm-rs",
 ]

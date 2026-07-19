@@ -117,7 +117,7 @@ async function restartLanguageServer(): Promise<void> {
 function registerCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('dinoco.openSchema', openSchema),
-        vscode.commands.registerCommand('dinoco.formatSchema', () => vscode.commands.executeCommand('editor.action.formatDocument')),
+        vscode.commands.registerCommand('dinoco.formatSchema', formatActiveSchema),
         vscode.commands.registerCommand('dinoco.restartLanguageServer', restartLanguageServer),
         vscode.commands.registerCommand('dinoco.showOutput', () => outputChannel?.show(true)),
         vscode.commands.registerCommand('dinoco.init', () => runCli(['init'], 'Initialize project')),
@@ -125,6 +125,46 @@ function registerCommands(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand('dinoco.migrate.generate', () => runCli(['migrate', 'generate'], 'Generate migration')),
         vscode.commands.registerCommand('dinoco.migrate.run', () => runCli(['migrate', 'run'], 'Run migrations')),
     );
+}
+
+async function formatActiveSchema(): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.languageId !== 'dinoco') {
+        void vscode.window.showWarningMessage('Open a Dinoco schema before formatting.');
+        return;
+    }
+    if (!client?.isRunning()) {
+        void vscode.window.showErrorMessage('The Dinoco language server is not running.', 'Show Output').then(choice => {
+            if (choice === 'Show Output') {
+                outputChannel?.show(true);
+            }
+        });
+        return;
+    }
+
+    const tabSize = typeof editor.options.tabSize === 'number' ? editor.options.tabSize : 4;
+    const insertSpaces = typeof editor.options.insertSpaces === 'boolean' ? editor.options.insertSpaces : true;
+    const edits = await vscode.commands.executeCommand<vscode.TextEdit[]>('vscode.executeFormatDocumentProvider',
+        editor.document.uri,
+        { tabSize, insertSpaces },
+    );
+    if (!edits) {
+        void vscode.window.showErrorMessage('The Dinoco formatter did not return a result.', 'Show Output').then(choice => {
+            if (choice === 'Show Output') {
+                outputChannel?.show(true);
+            }
+        });
+        return;
+    }
+    if (edits.length === 0) {
+        return;
+    }
+
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    workspaceEdit.set(editor.document.uri, edits);
+    if (!(await vscode.workspace.applyEdit(workspaceEdit))) {
+        void vscode.window.showErrorMessage('VS Code could not apply the Dinoco formatting edits.');
+    }
 }
 
 function registerEditorEvents(context: vscode.ExtensionContext): void {

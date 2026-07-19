@@ -49,9 +49,10 @@ pub struct UserSummary {
 | --- | --- | --- |
 | `find_first::<M>()` | `where_`, `select`, `includes`, `order_by`, `read_in_primary` | `Option<M>` ou `Option<S>` |
 | `find_many::<M>()` | os anteriores, `take`, `skip` | `Vec<M>` ou `Vec<S>` |
-| `count::<M>()` | `where_`, `includes`, `count` | `M::Count` |
+| `count::<M>()` | `where_`, `includes` | `M::Count` |
 
 Builders de include aceitam `where_`, `select`, `includes`, `order_by`, `take` e `skip`.
+Builders de relações do count aceitam filtros tipados com `where_` e preenchem campos `Option<i64>` em `M::Count`.
 
 ## Methods de escrita
 

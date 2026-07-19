@@ -31,22 +31,25 @@ pub fn render_models(schema: &Schema) -> String {
 pub fn render_models_mod(schema: &Schema) -> String {
     let mut out = String::new();
     for item in schema.enums() {
-        out.push_str("#[derive(Debug, Clone, PartialEq, Eq)]\n");
+        out.push_str("#[derive(Debug, Clone, PartialEq, Eq, Default)]\n");
         out.push_str(&format!("pub enum {} {{\n", item.name));
-        for value in &item.values {
+        for (index, value) in item.values.iter().enumerate() {
+            if index == 0 {
+                out.push_str("    #[default]\n");
+            }
             out.push_str("    ");
             out.push_str(&to_pascal_case(value));
             out.push_str(",\n");
         }
         out.push_str("}\n\n");
-        out.push_str(&format!("impl ::core::convert::From<&{}> for ::dinoco_engine::DinocoValue {{\n", item.name));
+        out.push_str(&format!("impl ::core::convert::From<&{}> for ::dinoco::DinocoValue {{\n", item.name));
         out.push_str("    fn from(value: &");
         out.push_str(&item.name);
         out.push_str(") -> Self {\n");
         out.push_str("        match value {\n");
         for value in &item.values {
             out.push_str(&format!(
-                "            {}::{} => ::dinoco_engine::DinocoValue::Enum(\"{}\".to_string(), \"{}\".to_string()),\n",
+                "            {}::{} => ::dinoco::DinocoValue::Enum(\"{}\".to_string(), \"{}\".to_string()),\n",
                 item.name,
                 to_pascal_case(value),
                 item.name,
@@ -54,46 +57,41 @@ pub fn render_models_mod(schema: &Schema) -> String {
             ));
         }
         out.push_str("        }\n    }\n}\n\n");
-        out.push_str(&format!("impl ::dinoco_engine::rusqlite::types::FromSql for {} {{\n", item.name));
-        out.push_str("    fn column_result(value: ::dinoco_engine::rusqlite::types::ValueRef<'_>) -> ::dinoco_engine::rusqlite::types::FromSqlResult<Self> {\n");
-        out.push_str(
-            "        let value = <String as ::dinoco_engine::rusqlite::types::FromSql>::column_result(value)?;\n",
-        );
+        out.push_str(&format!("impl ::dinoco::rusqlite::types::FromSql for {} {{\n", item.name));
+        out.push_str("    fn column_result(value: ::dinoco::rusqlite::types::ValueRef<'_>) -> ::dinoco::rusqlite::types::FromSqlResult<Self> {\n");
+        out.push_str("        let value = <String as ::dinoco::rusqlite::types::FromSql>::column_result(value)?;\n");
         out.push_str("        match value.as_str() {\n");
         for value in &item.values {
             out.push_str(&format!("            \"{}\" => Ok(Self::{}),\n", value, to_pascal_case(value)));
         }
-        out.push_str("            _ => Err(::dinoco_engine::rusqlite::types::FromSqlError::InvalidType),\n");
+        out.push_str("            _ => Err(::dinoco::rusqlite::types::FromSqlError::InvalidType),\n");
         out.push_str("        }\n    }\n}\n\n");
-        out.push_str(&format!("impl<'a> ::dinoco_engine::tokio_postgres::types::FromSql<'a> for {} {{\n", item.name));
-        out.push_str("    fn from_sql(ty: &::dinoco_engine::tokio_postgres::types::Type, raw: &'a [u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {\n");
-        out.push_str(
-            "        let value = <String as ::dinoco_engine::tokio_postgres::types::FromSql>::from_sql(ty, raw)?;\n",
-        );
+        out.push_str(&format!("impl<'a> ::dinoco::tokio_postgres::types::FromSql<'a> for {} {{\n", item.name));
+        out.push_str("    fn from_sql(ty: &::dinoco::tokio_postgres::types::Type, raw: &'a [u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {\n");
+        out.push_str("        let value = <String as ::dinoco::tokio_postgres::types::FromSql>::from_sql(ty, raw)?;\n");
         out.push_str("        match value.as_str() {\n");
         for value in &item.values {
             out.push_str(&format!("            \"{}\" => Ok(Self::{}),\n", value, to_pascal_case(value)));
         }
         out.push_str("            _ => Err(format!(\"unknown enum value `{}`\", value).into()),\n");
         out.push_str("        }\n    }\n");
-        out.push_str("    fn accepts(ty: &::dinoco_engine::tokio_postgres::types::Type) -> bool { <String as ::dinoco_engine::tokio_postgres::types::FromSql>::accepts(ty) }\n");
+        out.push_str("    fn accepts(ty: &::dinoco::tokio_postgres::types::Type) -> bool { <String as ::dinoco::tokio_postgres::types::FromSql>::accepts(ty) }\n");
         out.push_str("}\n\n");
-        out.push_str(&format!("impl ::dinoco_engine::mysql_common::prelude::FromValue for {} {{\n", item.name));
+        out.push_str(&format!("impl ::dinoco::mysql_common::prelude::FromValue for {} {{\n", item.name));
         out.push_str("    type Intermediate = Self;\n");
         out.push_str("}\n\n");
-        out.push_str(&format!(
-            "impl ::core::convert::TryFrom<::dinoco_engine::mysql_async::Value> for {} {{\n",
-            item.name
-        ));
-        out.push_str("    type Error = ::dinoco_engine::mysql_common::value::convert::FromValueError;\n");
-        out.push_str("    fn try_from(value: ::dinoco_engine::mysql_async::Value) -> Result<Self, Self::Error> {\n");
+        out.push_str(&format!("impl ::core::convert::TryFrom<::dinoco::mysql_async::Value> for {} {{\n", item.name));
+        out.push_str("    type Error = ::dinoco::mysql_common::value::convert::FromValueError;\n");
+        out.push_str("    fn try_from(value: ::dinoco::mysql_async::Value) -> Result<Self, ::dinoco::mysql_common::value::convert::FromValueError> {\n");
         out.push_str("        let raw = value.clone();\n");
-        out.push_str("        let value = <String as ::dinoco_engine::mysql_common::prelude::FromValue>::from_value_opt(value)?;\n");
+        out.push_str(
+            "        let value = <String as ::dinoco::mysql_common::prelude::FromValue>::from_value_opt(value)?;\n",
+        );
         out.push_str("        match value.as_str() {\n");
         for value in &item.values {
             out.push_str(&format!("            \"{}\" => Ok(Self::{}),\n", value, to_pascal_case(value)));
         }
-        out.push_str("            _ => Err(::dinoco_engine::mysql_common::value::convert::FromValueError(raw)),\n");
+        out.push_str("            _ => Err(::dinoco::mysql_common::value::convert::FromValueError(raw)),\n");
         out.push_str("        }\n    }\n}\n\n");
     }
 
@@ -114,7 +112,7 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
     out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", to_snake_case(&model.name)));
     out.push_str(&format!("pub struct {} {{\n", model.name));
     for field in &model.fields {
-        for attr in field_attributes(field, schema) {
+        for attr in field_attributes(model, field, schema) {
             out.push_str("    ");
             out.push_str(&attr);
             out.push('\n');
@@ -156,20 +154,20 @@ pub fn render_dinoco_mod(schema: &Schema) -> String {
     let mut out = String::new();
     out.push_str("pub mod models;\n\n");
     out.push_str("pub use models::*;\n\n");
-    out.push_str("pub async fn connect() -> anyhow::Result<dinoco_engine::DinocoClient> {\n");
+    out.push_str("pub async fn connect() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n");
     out.push_str(&format!("    let database_url = std::env::var(\"{database_url_env}\")?;\n"));
     match database {
         "postgresql" | "postgres" if connection == "pgbouncer" => out.push_str(
-            "    let adapter = dinoco_engine::PgBouncerAdapter::new(database_url).await?;\n    Ok(dinoco_engine::DinocoClient::new(dinoco_engine::Backend::PgBouncer(adapter)))\n",
+            "    let adapter = ::dinoco::PgBouncerAdapter::new(database_url).await?;\n    Ok(::dinoco::DinocoClient::new(::dinoco::Backend::PgBouncer(adapter)))\n",
         ),
         "postgresql" | "postgres" => out.push_str(
-            "    let adapter = dinoco_engine::PostgresAdapter::direct(database_url).await?;\n    Ok(dinoco_engine::DinocoClient::new(dinoco_engine::Backend::Postgres(adapter)))\n",
+            "    let adapter = ::dinoco::PostgresAdapter::direct(database_url).await?;\n    Ok(::dinoco::DinocoClient::new(::dinoco::Backend::Postgres(adapter)))\n",
         ),
         "mysql" => out.push_str(
-            "    let adapter = dinoco_engine::MySqlAdapter::new(database_url);\n    Ok(dinoco_engine::DinocoClient::new(dinoco_engine::Backend::Mysql(adapter)))\n",
+            "    let adapter = ::dinoco::MySqlAdapter::new(database_url);\n    Ok(::dinoco::DinocoClient::new(::dinoco::Backend::Mysql(adapter)))\n",
         ),
         _ => out.push_str(
-            "    let adapter = <dinoco_engine::SqliteAdapter as dinoco_engine::DinocoAdapter>::new(database_url).await.map_err(anyhow::Error::msg)?;\n    Ok(dinoco_engine::DinocoClient::new(dinoco_engine::Backend::Sqlite(adapter)))\n",
+            "    let adapter = <::dinoco::SqliteAdapter as ::dinoco::DinocoAdapter>::new(database_url).await.map_err(::dinoco::anyhow::Error::msg)?;\n    Ok(::dinoco::DinocoClient::new(::dinoco::Backend::Sqlite(adapter)))\n",
         ),
     }
     out.push_str("}\n");
@@ -188,9 +186,9 @@ fn rust_type(field: &ModelField, schema: &Schema) -> String {
     } else {
         match field.ty.name.as_str() {
             "String" => "String".to_string(),
-            "DateTime" => "::dinoco_engine::chrono::DateTime<::dinoco_engine::chrono::Utc>".to_string(),
-            "Date" => "::dinoco_engine::chrono::NaiveDate".to_string(),
-            "Json" => "::dinoco_engine::serde_json::Value".to_string(),
+            "DateTime" => "::dinoco::chrono::DateTime<::dinoco::chrono::Utc>".to_string(),
+            "Date" => "::dinoco::chrono::NaiveDate".to_string(),
+            "Json" => "::dinoco::serde_json::Value".to_string(),
             "Boolean" => "bool".to_string(),
             "Integer" => "i64".to_string(),
             "Float" => "f64".to_string(),
@@ -221,7 +219,7 @@ fn has_default_call(field: &ModelField, name: &str) -> bool {
     )
 }
 
-fn field_attributes(field: &ModelField, schema: &Schema) -> Vec<String> {
+fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<String> {
     let mut attrs = Vec::new();
     let mut dinoco_attrs = Vec::new();
 
@@ -245,9 +243,9 @@ fn field_attributes(field: &ModelField, schema: &Schema) -> Vec<String> {
                 }
                 dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. }) if name == "now" => {
                     if field.ty.name == "Date" {
-                        dinoco_attrs.push("default = ::dinoco_engine::chrono::Utc::now().date_naive()".to_string());
+                        dinoco_attrs.push("default = ::dinoco::chrono::Utc::now().date_naive()".to_string());
                     } else {
-                        dinoco_attrs.push("default = ::dinoco_engine::chrono::Utc::now()".to_string());
+                        dinoco_attrs.push("default = ::dinoco::chrono::Utc::now()".to_string());
                     }
                 }
                 dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value))
@@ -274,19 +272,25 @@ fn field_attributes(field: &ModelField, schema: &Schema) -> Vec<String> {
         let relation = field.attributes.iter().find(|attr| attr.name == "relation");
         let fields = relation.and_then(|relation| relation.argument("fields")).and_then(first_array_ident);
         let references = relation.and_then(|relation| relation.argument("references")).and_then(first_array_ident);
-        let relation_kind = if field.ty.list {
-            if fields.is_some() { "one_to_many" } else { "many_to_many" }
-        } else if field.attributes.iter().any(|attr| attr.name == "unique") {
-            "one_to_one"
+        let (relation_kind, foreign_key, relation_reference) = if field.ty.list {
+            if let (Some(parent_field), Some(child_field)) = (fields, references) {
+                ("one_to_many", Some(child_field), Some(parent_field))
+            } else if let Some((child_field, parent_field)) = inverse_relation_fields(model, field, schema) {
+                ("one_to_many", Some(child_field), Some(parent_field))
+            } else {
+                ("many_to_many", None, None)
+            }
+        } else if relation_is_unique(model, field, fields.as_deref()) {
+            ("one_to_one", fields, references)
         } else {
-            "many_to_one"
+            ("many_to_one", fields, references)
         };
 
         dinoco_attrs.push(relation_kind.to_string());
         if let Some(name) = relation.and_then(relation_name) {
             dinoco_attrs.push(format!("relation_name = \"{name}\""));
         }
-        if let (Some(foreign_key), Some(references)) = (fields, references) {
+        if let (Some(foreign_key), Some(references)) = (foreign_key, relation_reference) {
             dinoco_attrs.push(format!("foreign_key = \"{foreign_key}\""));
             dinoco_attrs.push(format!("references = \"{references}\""));
         }
@@ -297,6 +301,37 @@ fn field_attributes(field: &ModelField, schema: &Schema) -> Vec<String> {
     }
 
     attrs
+}
+
+fn inverse_relation_fields(model: &Model, field: &ModelField, schema: &Schema) -> Option<(String, String)> {
+    let target = schema.models().find(|candidate| candidate.name == field.ty.name)?;
+    let expected_name = field.attributes.iter().find(|attr| attr.name == "relation").and_then(relation_name);
+    let mut candidates = target.fields.iter().filter_map(|candidate| {
+        if candidate.ty.list || candidate.ty.name != model.name {
+            return None;
+        }
+        let relation = candidate.attributes.iter().find(|attr| attr.name == "relation")?;
+        if relation_name(relation) != expected_name {
+            return None;
+        }
+        let child_field = relation.argument("fields").and_then(first_array_ident)?;
+        let parent_field = relation.argument("references").and_then(first_array_ident)?;
+        Some((child_field, parent_field))
+    });
+
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+fn relation_is_unique(model: &Model, field: &ModelField, foreign_key: Option<&str>) -> bool {
+    field.attributes.iter().any(|attr| attr.name == "unique")
+        || foreign_key.is_some_and(|foreign_key| {
+            model
+                .fields
+                .iter()
+                .find(|candidate| candidate.name == foreign_key)
+                .is_some_and(|candidate| candidate.attributes.iter().any(|attr| attr.name == "unique"))
+        })
 }
 
 fn escape_rust_string(value: &str) -> String {

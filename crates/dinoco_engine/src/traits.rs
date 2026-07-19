@@ -17,6 +17,7 @@ pub trait DinocoEntity: Sized + Send + 'static {
     type Include: Default;
     type Update: Default;
     type Count: Default;
+    type CountInclude: Default;
 }
 
 #[async_trait(?Send)]

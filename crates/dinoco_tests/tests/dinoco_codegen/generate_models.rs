@@ -64,6 +64,8 @@ fn codegen_respects_uuid_snowflake_enum_defaults_and_implicit_relations() {
             sequence   Integer   @default(snowflake())
             role       Role      @default(USER)
             createdAt  DateTime  @default(now())
+            birthday   Date
+            metadata   Json
             posts      Post[]
         }
 
@@ -79,7 +81,111 @@ fn codegen_respects_uuid_snowflake_enum_defaults_and_implicit_relations() {
 
     assert!(models.contains("pub id: ::dinoco::Uuid"));
     assert!(models.contains("pub sequence: ::dinoco::Snowflake"));
-    assert!(models.contains("pub createdAt: ::dinoco_engine::chrono::DateTime<::dinoco_engine::chrono::Utc>"));
+    assert!(models.contains("#[derive(Debug, Clone, PartialEq, Eq, Default)]"));
+    assert!(models.contains("#[default]\n    USER,"));
+    assert!(models.contains("pub createdAt: ::dinoco::chrono::DateTime<::dinoco::chrono::Utc>"));
+    assert!(models.contains("pub birthday: ::dinoco::chrono::NaiveDate"));
+    assert!(models.contains("pub metadata: ::dinoco::serde_json::Value"));
     assert!(models.contains("#[dinoco(default = Role::USER)]"));
     assert!(models.contains("#[dinoco(many_to_many)]"));
+    assert!(!models.contains("dinoco_engine"));
+
+    let dinoco_mod = dinoco_codegen::render_dinoco_mod(&schema);
+    assert!(dinoco_mod.contains("::dinoco::DinocoClient"));
+    assert!(dinoco_mod.contains("::dinoco::anyhow::Result"));
+    assert!(!dinoco_mod.contains("dinoco_engine"));
+}
+
+#[test]
+fn codegen_infers_one_to_many_from_the_owning_relation_side() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        config {
+            database = "sqlite"
+            database_url = env("DATABASE_URL")
+        }
+
+        model Device {
+            id      String        @id @default(uuid())
+            unlocks OrixaUnlock[]
+        }
+
+        model OrixaUnlock {
+            id        String  @id @default(uuid())
+            device_id String?
+            device    Device? @relation(fields: [device_id], references: [id])
+        }
+        "#,
+    )
+    .expect("schema");
+
+    let device = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "Device").expect("device model"),
+        &schema,
+    );
+    let unlock = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "OrixaUnlock").expect("unlock model"),
+        &schema,
+    );
+
+    assert!(device.contains("#[dinoco(one_to_many, foreign_key = \"device_id\", references = \"id\")]"));
+    assert!(!device.contains("#[dinoco(many_to_many)]"));
+    assert!(unlock.contains("#[dinoco(many_to_one, foreign_key = \"device_id\", references = \"id\")]"));
+}
+
+#[test]
+fn codegen_reverses_explicit_list_relation_keys_for_the_derive() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        config {
+            database = "sqlite"
+            database_url = env("DATABASE_URL")
+        }
+
+        model User {
+            id     String      @id @default(uuid())
+            tokens UserToken[] @relation(fields: [id], references: [user_id])
+        }
+
+        model UserToken {
+            id      String @id @default(uuid())
+            user_id String?
+        }
+        "#,
+    )
+    .expect("schema");
+
+    let user = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "User").expect("user model"),
+        &schema,
+    );
+
+    assert!(user.contains("#[dinoco(one_to_many, foreign_key = \"user_id\", references = \"id\")]"));
+}
+
+#[test]
+fn codegen_qualifies_try_from_error_when_enum_has_error_variant() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        config {
+            database = "mysql"
+            database_url = env("DATABASE_URL")
+        }
+
+        enum AudioStatus {
+            generated
+            building
+            error
+        }
+        "#,
+    )
+    .expect("schema");
+
+    let models = dinoco_codegen::render_models_mod(&schema);
+
+    assert!(models.contains("Error,"));
+    assert!(models.contains(
+        "fn try_from(value: ::dinoco::mysql_async::Value) -> Result<Self, ::dinoco::mysql_common::value::convert::FromValueError>"
+    ));
+    assert!(!models.contains("Result<Self, Self::Error>"));
 }

@@ -58,7 +58,7 @@ async fn sqlite_flow_covers_find_insert_update_delete_and_count() -> anyhow::Res
 
     let count = dinoco::count::<User>().includes(|x| x.tokens()).execute(&client).await?;
     assert_eq!(count.total, 1);
-    assert_eq!(count.tokens.expect("token count").total, 2);
+    assert_eq!(count.tokens, Some(2));
 
     insert_many::<User>()
         .values(vec![

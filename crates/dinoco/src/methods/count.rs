@@ -36,20 +36,12 @@ where
 
     pub fn includes<F, I>(mut self, callback: F) -> Self
     where
-        F: FnOnce(M::Count) -> I,
+        F: FnOnce(M::CountInclude) -> I,
         I: IntoCountLoader<M, M::Count>,
     {
-        self.counts.push(callback(M::Count::default()).into_count_loader());
+        self.counts.push(callback(M::CountInclude::default()).into_count_loader());
 
         self
-    }
-
-    pub fn count<F, I>(self, callback: F) -> Self
-    where
-        F: FnOnce(M::Count) -> I,
-        I: IntoCountLoader<M, M::Count>,
-    {
-        self.includes(callback)
     }
 
     pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<M::Count>

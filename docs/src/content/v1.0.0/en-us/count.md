@@ -30,7 +30,7 @@ The filters constrain the parent total and provide context for requested relatio
 
 ## Count relations
 
-Request a relation through `.includes(...)` or its `.count(...)` alias:
+Request a relation through `.includes(...)`. Relation builders accept typed filters, so the relation count can be narrower than the parent count:
 
 ```rust
 let result = dinoco::count::<User>()
@@ -43,19 +43,10 @@ let result = dinoco::count::<User>()
     .await?;
 
 println!("users: {}", result.total);
-println!("active tokens: {}", result.tokens.unwrap().total);
+println!("active tokens: {}", result.tokens.unwrap());
 ```
 
 Without `.includes(|x| x.tokens())`, `result.tokens` remains `None`. Dinoco does not count every relation implicitly.
-
-Nested relation counts can be selected from the relation count builder:
-
-```rust
-let result = dinoco::count::<User>()
-    .count(|x| x.posts().count(|post| post.comments()))
-    .execute(&client)
-    .await?;
-```
 
 ## Generated count types
 
@@ -64,9 +55,9 @@ For an entity with relation fields, the derive generates a shape conceptually li
 ```rust
 pub struct UserCount {
     pub total: i64,
-    pub tokens: Option<UserTokenCount>,
-    pub posts: Option<PostCount>,
+    pub tokens: Option<i64>,
+    pub posts: Option<i64>,
 }
 ```
 
-Each nested count type can carry its own `total` and relation counts. This makes requested aggregate structure explicit in the Rust type while avoiding work for omitted branches.
+The derive also creates an internal `UserCountInclude` selector for the `.includes(...)` callback. Relation methods live on that selector, not on the returned `UserCount`. Each requested relation receives `Some(total)`; omitted relations remain `None`.

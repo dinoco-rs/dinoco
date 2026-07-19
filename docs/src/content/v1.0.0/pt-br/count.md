@@ -36,17 +36,23 @@ let result = dinoco::count::<User>()
     .await?;
 
 println!("users: {}", result.total);
-println!("tokens: {}", result.tokens.unwrap().total);
+println!("tokens: {}", result.tokens.unwrap());
 ```
 
-Sem `.includes(|x| x.tokens())`, `result.tokens` fica `None`. `.count(...)` é um alias de `.includes(...)`, e relações aninhadas também podem ser escolhidas:
+O builder da relação aceita filtros tipados. Assim, você pode contar somente os registros relacionados que interessam:
 
 ```rust
-let result = dinoco::count::<User>()
-    .count(|x| x.posts().count(|post| post.comments()))
+let result = dinoco::count::<Orixa>()
+    .where_(|orixa| orixa.is_show.eq(true))
+    .includes(|orixa| {
+        orixa.questions()
+            .where_(|question| question.age.gt(3))
+    })
     .execute(&client)
     .await?;
 ```
+
+Sem `.includes(|x| x.tokens())`, `result.tokens` fica `None`. Relações não são contadas implicitamente.
 
 ## Tipos de count gerados
 
@@ -55,9 +61,9 @@ O derive gera uma forma equivalente a:
 ```rust
 pub struct UserCount {
     pub total: i64,
-    pub tokens: Option<UserTokenCount>,
-    pub posts: Option<PostCount>,
+    pub tokens: Option<i64>,
+    pub posts: Option<i64>,
 }
 ```
 
-Cada nível possui seu `total` e seus próprios counts opcionais, sem executar branches não pedidas.
+O derive também cria internamente um seletor `UserCountInclude` para o callback de `.includes(...)`. Os métodos de relação ficam nesse seletor, não no `UserCount` retornado. Cada relação solicitada recebe `Some(total)`; as omitidas permanecem `None`.

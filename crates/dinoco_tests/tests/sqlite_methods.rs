@@ -94,7 +94,7 @@ async fn sqlite_crud_relations_and_count_work_end_to_end() -> anyhow::Result<()>
 
     let count = dinoco::count::<User>().includes(|x| x.tokens()).execute(&client).await?;
     assert_eq!(count.total, 1);
-    assert_eq!(count.tokens.expect("token count").total, 1);
+    assert_eq!(count.tokens, Some(1));
 
     dinoco::delete_many::<UserToken>().where_(|x| x.user_id.not_null()).execute(&client).await?;
     let count = dinoco::count::<UserToken>().execute(&client).await?;

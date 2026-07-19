@@ -379,7 +379,7 @@ async fn run_all_methods(client: DinocoClient) -> anyhow::Result<()> {
         .execute(&client)
         .await?;
     assert_eq!(count.total, 4);
-    assert_eq!(count.tokens.expect("token count").total, 2);
+    assert_eq!(count.tokens, Some(2));
 
     let deleted = dinoco::delete::<User>()
         .where_(|x| x.email.eq("returning@dinoco.rs"))

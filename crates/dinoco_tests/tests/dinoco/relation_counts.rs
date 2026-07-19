@@ -57,11 +57,14 @@ async fn relation_counts_only_appear_when_included() -> anyhow::Result<()> {
     assert!(base.tokens.is_none());
 
     let filtered = dinoco::count::<User>()
-        .includes(|x| x.tokens().where_(|token| token.is_expired.eq(false)))
+        .includes(|x| {
+            let relation: dinoco::RelationCount<User, Token> = x.tokens();
+            relation.where_(|token| token.is_expired.eq(false))
+        })
         .execute(&client)
         .await?;
     assert_eq!(filtered.total, 1);
-    assert_eq!(filtered.tokens.expect("token count").total, 1);
+    assert_eq!(filtered.tokens, Some(1));
 
     let _ = std::fs::remove_file(path);
     Ok(())

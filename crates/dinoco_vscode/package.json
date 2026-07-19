@@ -1,7 +1,7 @@
 {
 	"name": "dinoco-vscode",
 	"displayName": "Dinoco",
-	"version": "1.0.0",
+	"version": "1.0.5",
 	"description": "Intelligent language support and database workflows for Dinoco schemas.",
 	"publisher": "dinoco-rs",
 	"license": "Apache-2.0",
@@ -40,6 +40,7 @@
 	"activationEvents": [
 		"onLanguage:dinoco",
 		"onCommand:dinoco.openSchema",
+		"onCommand:dinoco.formatSchema",
 		"onCommand:dinoco.init",
 		"onCommand:dinoco.models.generate",
 		"onCommand:dinoco.migrate.generate",
@@ -56,9 +57,11 @@
 		}
 	},
 	"scripts": {
-		"compile": "tsc -p ./; yarn run build:binaries",
+		"compile": "tsc -p ./ --noEmit && npm run bundle && npm run build:binaries",
+		"bundle": "esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=./out/extension.js --sourcemap",
 		"watch": "tsc -watch -p ./",
 		"build:binaries": "node ./scripts/build-binaries.mjs",
+		"build:binaries:all": "node ./scripts/build-binaries.mjs all",
 		"build:binaries:linux": "node ./scripts/build-binaries.mjs linux",
 		"build:binaries:macos": "node ./scripts/build-binaries.mjs macos",
 		"build:binaries:windows": "node ./scripts/build-binaries.mjs windows"
@@ -182,7 +185,7 @@
 		"configurationDefaults": {
 			"[dinoco]": {
 				"editor.defaultFormatter": "dinoco-rs.dinoco-vscode",
-				"editor.formatOnSave": false,
+				"editor.formatOnSave": true,
 				"editor.semanticHighlighting.enabled": true
 			}
 		}

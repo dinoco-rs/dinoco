@@ -366,14 +366,12 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&params.text_document.uri) else {
             return Ok(None);
         };
-        let Ok(schema) = dinoco_compiler::compile(&state.text) else {
-            return Ok(None);
-        };
         let config = dinoco_formatter::FormatterConfig {
             indent_width: params.options.tab_size.max(1) as usize,
             final_newline: true,
         };
-        let formatted = dinoco_formatter::format_schema(&schema, &config);
+        let formatted = dinoco_formatter::format_from_raw_with_config(&state.text, &config)
+            .map_err(|error| LspError::invalid_params(format!("Cannot format an invalid Dinoco schema: {error}")))?;
         if formatted == state.text {
             return Ok(Some(Vec::new()));
         }

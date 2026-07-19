@@ -19,11 +19,22 @@ pub fn format_enum(enum_def: &EnumDef, config: &FormatterConfig) -> String {
 }
 
 pub fn format_model(model: &Model, config: &FormatterConfig) -> String {
+    format_model_with_layout(model, config, None)
+}
+
+pub(crate) fn format_model_with_layout(
+    model: &Model,
+    config: &FormatterConfig,
+    blank_lines: Option<&[bool]>,
+) -> String {
     let indent = config.indent();
     let widths = grouped_field_widths(&model.fields);
     let mut out = format!("model {} {{\n", model.name);
 
-    for field in &model.fields {
+    for (index, field) in model.fields.iter().enumerate() {
+        if index > 0 && blank_lines.and_then(|hints| hints.get(index)).copied().unwrap_or(false) {
+            out.push('\n');
+        }
         let type_string = format_field_type(&field.ty);
         let (name_width, type_width) = widths;
 

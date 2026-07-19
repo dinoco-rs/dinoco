@@ -1,4 +1,5 @@
 mod config;
+mod layout;
 mod model;
 mod utils;
 mod value;
@@ -6,7 +7,8 @@ mod value;
 use dinoco_compiler::{CompileError, Schema, SchemaItem};
 
 use crate::config::format_config;
-use crate::model::{format_enum, format_model};
+use crate::layout::LayoutHints;
+use crate::model::{format_enum, format_model, format_model_with_layout};
 
 #[derive(Debug, Clone)]
 pub struct FormatterConfig {
@@ -27,9 +29,14 @@ impl FormatterConfig {
 }
 
 pub fn format_from_raw(source: &str) -> Result<String, CompileError> {
-    let schema = dinoco_compiler::compile(source)?;
+    format_from_raw_with_config(source, &FormatterConfig::default())
+}
 
-    Ok(format_schema(&schema, &FormatterConfig::default()))
+pub fn format_from_raw_with_config(source: &str, config: &FormatterConfig) -> Result<String, CompileError> {
+    let schema = dinoco_compiler::compile(source)?;
+    let layout = LayoutHints::from_source(source, &schema);
+
+    Ok(format_schema_with_layout(&schema, config, &layout))
 }
 
 pub fn format_schema(schema: &Schema, config: &FormatterConfig) -> String {
@@ -52,6 +59,24 @@ pub fn format_schema(schema: &Schema, config: &FormatterConfig) -> String {
     output
 }
 
+fn format_schema_with_layout(schema: &Schema, config: &FormatterConfig, layout: &LayoutHints) -> String {
+    let mut blocks = Vec::new();
+
+    for item in &schema.items {
+        blocks.push(match item {
+            SchemaItem::Config(config_block) => format_config(config_block, config),
+            SchemaItem::Enum(enum_def) => format_enum(enum_def, config),
+            SchemaItem::Model(model) => format_model_with_layout(model, config, layout.model_blank_lines(&model.name)),
+        });
+    }
+
+    let mut output = blocks.join("\n\n");
+    if config.final_newline {
+        output.push('\n');
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,5 +92,65 @@ mod tests {
         assert!(formatted.contains("enum Status {\n"));
         assert!(formatted.contains("model User {\n"));
         assert!(formatted.contains("@relation(fields: [user_id], references: [id], onDelete: Cascade)"));
+    }
+
+    #[test]
+    fn preserves_single_model_field_group_separator() {
+        let raw = r#"model AdminAccount {
+    id String @id @default(uuid())
+    email String
+    password String
+
+    tokens AdminToken[]
+}
+
+model AdminToken {
+    id String @id
+}"#;
+
+        let formatted = format_from_raw(raw).expect("format");
+
+        assert!(formatted.contains("password  String\n\n    tokens"));
+    }
+
+    #[test]
+    fn collapses_multiple_model_field_group_separators() {
+        let raw = r#"model AdminAccount {
+    id String @id @default(uuid())
+    email String
+    password String
+
+
+
+    tokens AdminToken[]
+}
+
+model AdminToken {
+    id String @id
+}"#;
+
+        let formatted = format_from_raw(raw).expect("format");
+
+        assert!(formatted.contains("password  String\n\n    tokens"));
+        assert!(!formatted.contains("password  String\n\n\n"));
+    }
+
+    #[test]
+    fn does_not_add_model_field_group_separator() {
+        let raw = r#"model AdminAccount {
+    id String @id @default(uuid())
+    email String
+    password String
+    tokens AdminToken[]
+}
+
+model AdminToken {
+    id String @id
+}"#;
+
+        let formatted = format_from_raw(raw).expect("format");
+
+        assert!(formatted.contains("password  String\n    tokens"));
+        assert!(!formatted.contains("password  String\n\n    tokens"));
     }
 }
