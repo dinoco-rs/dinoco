@@ -13,7 +13,7 @@ pub struct SqliteAdapter {
     pub pool: Arc<Pool>,
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl DinocoAdapter for SqliteAdapter {
     async fn new(path: String) -> Result<Self, String> {
         let path = normalize_sqlite_path(path);

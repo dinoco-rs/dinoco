@@ -26,7 +26,7 @@ pub struct PgBouncerAdapter {
     inner: PostgresAdapter,
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl DinocoAdapter for PostgresAdapter {
     async fn new(url: String) -> Result<Self, String> {
         Self::direct(url).await.map_err(|err| err.to_string())
@@ -125,7 +125,7 @@ impl PostgresAdapter {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl DinocoAdapter for PgBouncerAdapter {
     async fn new(url: String) -> Result<Self, String> {
         Self::new(url).await.map_err(|err| err.to_string())
@@ -164,26 +164,26 @@ impl PgBouncerAdapter {
     }
 }
 
-fn postgres_params(params: &[DinocoValue]) -> Vec<Box<dyn ToSql + Sync>> {
+fn postgres_params(params: &[DinocoValue]) -> Vec<Box<dyn ToSql + Sync + Send>> {
     params
         .iter()
         .map(|param| match param {
-            DinocoValue::Null => Box::new(None::<String>) as Box<dyn ToSql + Sync>,
-            DinocoValue::Integer(value) => Box::new(*value) as Box<dyn ToSql + Sync>,
-            DinocoValue::Float(value) => Box::new(*value) as Box<dyn ToSql + Sync>,
-            DinocoValue::String(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync>,
-            DinocoValue::Enum(_, value) => Box::new(value.clone()) as Box<dyn ToSql + Sync>,
-            DinocoValue::Boolean(value) => Box::new(*value) as Box<dyn ToSql + Sync>,
-            DinocoValue::Bytes(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync>,
-            DinocoValue::Json(value) => Box::new(Json(value.clone())) as Box<dyn ToSql + Sync>,
-            DinocoValue::DateTime(value) => Box::new(*value) as Box<dyn ToSql + Sync>,
-            DinocoValue::Date(value) => Box::new(*value) as Box<dyn ToSql + Sync>,
+            DinocoValue::Null => Box::new(None::<String>) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Integer(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Float(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::String(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Enum(_, value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Boolean(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Bytes(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Json(value) => Box::new(Json(value.clone())) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::DateTime(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Date(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
         })
         .collect()
 }
 
-fn postgres_param_refs(params: &[Box<dyn ToSql + Sync>]) -> Vec<&(dyn ToSql + Sync)> {
-    params.iter().map(|param| param.as_ref()).collect()
+fn postgres_param_refs(params: &[Box<dyn ToSql + Sync + Send>]) -> Vec<&(dyn ToSql + Sync)> {
+    params.iter().map(|param| param.as_ref() as &(dyn ToSql + Sync)).collect()
 }
 
 impl<'a> tokio_postgres::types::FromSql<'a> for DinocoValue {

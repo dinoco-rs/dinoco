@@ -7,8 +7,8 @@ use crate::{
     RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, SqliteRow, UpdateQuery,
 };
 
-#[async_trait(?Send)]
-pub trait DinocoEntity: Sized + Send + 'static {
+#[async_trait]
+pub trait DinocoEntity: Sized + Send + Sync + 'static {
     const TABLE_NAME: &'static str = "";
     const FIELDS: &'static [&'static str] = &[];
 
@@ -20,7 +20,7 @@ pub trait DinocoEntity: Sized + Send + 'static {
     type CountInclude: Default;
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait DinocoAdapter: Sized {
     async fn new(path: String) -> Result<Self, String>;
 
@@ -59,11 +59,11 @@ pub trait DinocoSqlCompiler {
     fn compile_alter_enum_migration(&self, migration: AlterEnumMigration) -> Vec<String>;
 }
 
-pub trait DinocoSqlite: Sized + Send + 'static {
+pub trait DinocoSqlite: Sized + Send + Sync + 'static {
     fn from_sqlite_row(row: &SqliteRow<'_>) -> Option<Self>;
 }
 
-pub trait DinocoPostgres: Sized + Send + 'static {
+pub trait DinocoPostgres: Sized + Send + Sync + 'static {
     fn from_deadpool_posgres_row(row: &DeadpoolPostgresRow) -> Option<Self>;
     fn from_deadpool_postgres_row(row: &DeadpoolPostgresRow) -> Option<Self> {
         Self::from_deadpool_posgres_row(row)
@@ -71,7 +71,7 @@ pub trait DinocoPostgres: Sized + Send + 'static {
     fn from_postgres_row(row: &PostgresRow) -> Option<Self>;
 }
 
-pub trait DinocoMysql: Sized + Send + 'static {
+pub trait DinocoMysql: Sized + Send + Sync + 'static {
     fn from_mysql_row(row: &MysqlRow) -> Option<Self>;
 }
 

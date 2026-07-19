@@ -106,6 +106,7 @@ pub fn render_models_mod(schema: &Schema) -> String {
 
 pub fn render_model_file(model: &Model, schema: &Schema) -> String {
     let mut out = String::new();
+    out.push_str("#[allow(unused_imports)]\n");
     out.push_str("use super::*;\n");
     out.push_str("use dinoco::Entity;\n\n");
     out.push_str("#[derive(Debug, Entity)]\n");

@@ -505,7 +505,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             #(#include_methods)*
         }
 
-        #[::dinoco::async_trait(?Send)]
+        #[::dinoco::async_trait]
         impl ::dinoco::DinocoEntity for #name {
             const TABLE_NAME: &'static str = #table_name;
             const FIELDS: &'static [&'static str] = &[#(#field_names),*];

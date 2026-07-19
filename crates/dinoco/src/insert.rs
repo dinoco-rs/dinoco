@@ -11,7 +11,7 @@ use dinoco_engine::{
 pub type Uuid = String;
 pub type Snowflake = i64;
 
-pub type InsertNestedFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>>;
+pub type InsertNestedFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>;
 
 pub trait DinocoInsertable: DinocoEntity + Sized {
     const INSERT_FIELDS: &'static [&'static str];
@@ -20,7 +20,7 @@ pub trait DinocoInsertable: DinocoEntity + Sized {
     fn dinoco_insert_identity(&self) -> Vec<FindWhere>;
 }
 
-pub trait InsertPayload<M>
+pub trait InsertPayload<M>: Sync
 where
     M: DinocoInsertable,
 {

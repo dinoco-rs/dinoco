@@ -14,10 +14,11 @@ pub enum IncludeStrategy {
     LeftJoin,
 }
 
-pub(crate) type IncludeApplier<S> = Box<dyn FnOnce(&mut [S])>;
-pub(crate) type IncludeLoaderFuture<'a, S> = Pin<Box<dyn Future<Output = anyhow::Result<IncludeApplier<S>>> + 'a>>;
+pub(crate) type IncludeApplier<S> = Box<dyn FnOnce(&mut [S]) + Send>;
+pub(crate) type IncludeLoaderFuture<'a, S> =
+    Pin<Box<dyn Future<Output = anyhow::Result<IncludeApplier<S>>> + Send + 'a>>;
 
-pub trait IncludeLoader<S> {
+pub trait IncludeLoader<S>: Send + Sync {
     fn load_applier<'a>(
         &'a self,
         client: &'a DinocoClient,
@@ -241,7 +242,7 @@ where
 impl<M, S, C, CS> IntoIncludeLoader<M, S> for HasMany<M, C, CS>
 where
     M: DinocoEntity + 'static,
-    S: DinocoRelationValue + DinocoRelationApply<CS> + 'static,
+    S: DinocoRelationValue + DinocoRelationApply<CS> + Sync + 'static,
     C: DinocoEntity + DinocoRowModel + 'static,
     CS: DinocoProjection<C> + DinocoRelationValue + 'static,
 {
@@ -253,7 +254,7 @@ where
 impl<M, S, C, CS> IntoIncludeLoader<M, S> for BelongsTo<M, C, CS>
 where
     M: DinocoEntity + 'static,
-    S: DinocoRelationValue + DinocoRelationApply<CS> + 'static,
+    S: DinocoRelationValue + DinocoRelationApply<CS> + Sync + 'static,
     C: DinocoEntity + DinocoRowModel + 'static,
     CS: DinocoProjection<C> + DinocoRelationValue + 'static,
 {
@@ -264,7 +265,7 @@ where
 
 impl<M, S, C, CS> IncludeLoader<S> for HasMany<M, C, CS>
 where
-    S: DinocoRelationValue + DinocoRelationApply<CS> + 'static,
+    S: DinocoRelationValue + DinocoRelationApply<CS> + Sync + 'static,
     C: DinocoEntity + DinocoRowModel,
     CS: DinocoProjection<C> + DinocoRelationValue + 'static,
 {
@@ -324,7 +325,7 @@ where
 impl<M, S, C, CS> IncludeLoader<S> for BelongsTo<M, C, CS>
 where
     M: DinocoEntity,
-    S: DinocoRelationValue + DinocoRelationApply<CS> + 'static,
+    S: DinocoRelationValue + DinocoRelationApply<CS> + Sync + 'static,
     C: DinocoEntity + DinocoRowModel,
     CS: DinocoProjection<C> + DinocoRelationValue + 'static,
 {

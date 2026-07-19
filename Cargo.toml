@@ -9,6 +9,8 @@ members = [
 	"crates/dinoco_vscode",
 	"crates/dinoco_derives",
 	"crates/dinoco_tests",
+	"examples/axum",
+	"examples/actix-web",
 ]
 
 resolver = "3"

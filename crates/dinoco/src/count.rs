@@ -12,9 +12,9 @@ pub trait DinocoRelationCountApply {
     fn dinoco_apply_count(&mut self, relation: &'static str, count: i64);
 }
 
-pub type CountLoaderFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>>;
+pub type CountLoaderFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>;
 
-pub trait CountLoader<S> {
+pub trait CountLoader<S>: Send + Sync {
     fn load_count<'a>(
         &'a self,
         parent_table: &'static str,
@@ -66,7 +66,7 @@ where
 impl<M, S, C> IntoCountLoader<M, S> for RelationCount<M, C>
 where
     M: DinocoEntity,
-    S: DinocoRelationCountApply,
+    S: DinocoRelationCountApply + Send,
     C: DinocoEntity,
 {
     fn into_count_loader(self) -> Box<dyn CountLoader<S>> {
@@ -76,7 +76,7 @@ where
 
 impl<M, S, C> CountLoader<S> for RelationCount<M, C>
 where
-    S: DinocoRelationCountApply,
+    S: DinocoRelationCountApply + Send,
     C: DinocoEntity,
 {
     fn load_count<'a>(

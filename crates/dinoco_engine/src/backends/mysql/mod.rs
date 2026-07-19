@@ -13,7 +13,7 @@ pub struct MySqlAdapter {
     pub pool: Arc<Pool>,
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl DinocoAdapter for MySqlAdapter {
     async fn new(url: String) -> Result<Self, String> {
         Ok(Self::new(url))
