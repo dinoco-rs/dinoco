@@ -1,0 +1,148 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Dinoco",
+  "scopeName": "source.dinoco",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#config-block" },
+    { "include": "#enum-block" },
+    { "include": "#model-block" },
+    { "include": "#strings" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.number-sign.dinoco", "match": "#.*$" },
+        { "name": "comment.line.double-slash.dinoco", "match": "//.*$" }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.dinoco",
+      "begin": "\"",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.dinoco" } },
+      "end": "\"",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.dinoco" } },
+      "patterns": [
+        { "name": "constant.character.escape.dinoco", "match": "\\\\(?:[\\\"nrt]|u[0-9A-Fa-f]{4})" }
+      ]
+    },
+    "config-block": {
+      "name": "meta.block.config.dinoco",
+      "begin": "\\b(config)\\b\\s*(\\{)",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.config.dinoco" },
+        "2": { "name": "punctuation.section.block.begin.dinoco" }
+      },
+      "end": "(\\})",
+      "endCaptures": { "1": { "name": "punctuation.section.block.end.dinoco" } },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        {
+          "match": "\\b(database|connection|database_url|read_replicas|snowflake_node_id)\\b\\s*(=)",
+          "captures": {
+            "1": { "name": "variable.other.property.dinoco" },
+            "2": { "name": "keyword.operator.assignment.dinoco" }
+          }
+        },
+        { "name": "support.function.environment.dinoco", "match": "\\benv(?=\\s*\\()" },
+        { "name": "constant.language.database.dinoco", "match": "\\b(postgresql|postgres|mysql|sqlite|direct|pgbouncer)\\b" },
+        { "name": "punctuation.separator.array.dinoco", "match": "[\\[\\],()]" }
+      ]
+    },
+    "enum-block": {
+      "name": "meta.block.enum.dinoco",
+      "begin": "\\b(enum)\\b\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(\\{)",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.enum.dinoco" },
+        "2": { "name": "entity.name.type.enum.dinoco" },
+        "3": { "name": "punctuation.section.block.begin.dinoco" }
+      },
+      "end": "(\\})",
+      "endCaptures": { "1": { "name": "punctuation.section.block.end.dinoco" } },
+      "patterns": [
+        { "include": "#comments" },
+        { "name": "constant.other.enum.dinoco", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" }
+      ]
+    },
+    "model-block": {
+      "name": "meta.block.model.dinoco",
+      "begin": "\\b(model)\\b\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(\\{)",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.model.dinoco" },
+        "2": { "name": "entity.name.type.class.dinoco" },
+        "3": { "name": "punctuation.section.block.begin.dinoco" }
+      },
+      "end": "(\\})",
+      "endCaptures": { "1": { "name": "punctuation.section.block.end.dinoco" } },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#relation-attribute" },
+        { "include": "#attributes" },
+        {
+          "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s+(String|Boolean|Integer|Float|DateTime|Date|Json)(\\?|\\[\\])?",
+          "captures": {
+            "1": { "name": "variable.other.member.dinoco" },
+            "2": { "name": "support.type.primitive.dinoco" },
+            "3": { "name": "keyword.operator.type-modifier.dinoco" }
+          }
+        },
+        {
+          "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\?|\\[\\])?",
+          "captures": {
+            "1": { "name": "variable.other.member.dinoco" },
+            "2": { "name": "entity.name.type.dinoco" },
+            "3": { "name": "keyword.operator.type-modifier.dinoco" }
+          }
+        }
+      ]
+    },
+    "relation-attribute": {
+      "name": "meta.attribute.relation.dinoco",
+      "begin": "(@)(relation)\\s*(\\()",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.annotation.dinoco" },
+        "2": { "name": "entity.name.function.attribute.dinoco" },
+        "3": { "name": "punctuation.section.arguments.begin.dinoco" }
+      },
+      "end": "(\\))",
+      "endCaptures": { "1": { "name": "punctuation.section.arguments.end.dinoco" } },
+      "patterns": [
+        { "include": "#strings" },
+        { "name": "variable.parameter.relation.dinoco", "match": "\\b(name|fields|references|onDelete|onUpdate)\\b(?=\\s*[:=])" },
+        { "name": "constant.language.referential-action.dinoco", "match": "\\b(Cascade|Restrict|NoAction|SetNull|SetDefault)\\b" },
+        { "name": "variable.other.member.reference.dinoco", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" },
+        { "name": "punctuation.separator.arguments.dinoco", "match": "[\\[\\],:=]" }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "match": "(@)(id|unique)\\b",
+          "captures": {
+            "1": { "name": "punctuation.definition.annotation.dinoco" },
+            "2": { "name": "entity.name.function.attribute.dinoco" }
+          }
+        },
+        {
+          "begin": "(@)(default)\\s*(\\()",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.annotation.dinoco" },
+            "2": { "name": "entity.name.function.attribute.dinoco" },
+            "3": { "name": "punctuation.section.arguments.begin.dinoco" }
+          },
+          "end": "(\\))",
+          "endCaptures": { "1": { "name": "punctuation.section.arguments.end.dinoco" } },
+          "patterns": [
+            { "include": "#strings" },
+            { "name": "support.function.generator.dinoco", "match": "\\b(autoincrement|uuid|snowflake|now)(?=\\s*\\()" },
+            { "name": "constant.language.boolean.dinoco", "match": "\\b(true|false)\\b" },
+            { "name": "constant.numeric.dinoco", "match": "-?\\b\\d+(?:\\.\\d+)?\\b" },
+            { "name": "constant.other.enum.dinoco", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,65 @@
+use dinoco_engine::{
+    CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, MigrationColumn, MigrationColumnType, MigrationDefault,
+    MigrationForeignKey, ReferentialAction, SqliteAdapter,
+};
+
+#[tokio::test]
+async fn sqlite_adapter_compiles_migration_sql() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let sql = adapter.compile_create_table_migration(CreateTableMigration {
+        table: "account".to_string(),
+        if_not_exists: true,
+        columns: vec![
+            MigrationColumn {
+                name: "id".to_string(),
+                ty: MigrationColumnType::String,
+                primary_key: true,
+                nullable: false,
+                default: None,
+            },
+            MigrationColumn {
+                name: "is_active".to_string(),
+                ty: MigrationColumnType::Boolean,
+                primary_key: false,
+                nullable: false,
+                default: Some(MigrationDefault::Boolean(false)),
+            },
+        ],
+        foreign_keys: Vec::new(),
+    });
+
+    assert!(sql.contains("CREATE TABLE IF NOT EXISTS account"));
+    assert!(sql.contains("id TEXT PRIMARY KEY NOT NULL"));
+    assert!(sql.contains("is_active BOOLEAN NOT NULL DEFAULT 0"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_adapter_compiles_foreign_key_actions() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let sql = adapter.compile_create_table_migration(CreateTableMigration {
+        table: "post".to_string(),
+        if_not_exists: true,
+        columns: vec![MigrationColumn {
+            name: "user_id".to_string(),
+            ty: MigrationColumnType::Integer,
+            primary_key: false,
+            nullable: true,
+            default: None,
+        }],
+        foreign_keys: vec![MigrationForeignKey {
+            name: "fk_post_user_id".to_string(),
+            columns: vec!["user_id".to_string()],
+            references_table: "user".to_string(),
+            references_columns: vec!["id".to_string()],
+            on_update: ReferentialAction::Restrict,
+            on_delete: ReferentialAction::Cascade,
+        }],
+    });
+
+    assert!(sql.contains("CONSTRAINT fk_post_user_id FOREIGN KEY (user_id) REFERENCES user (id)"));
+    assert!(sql.contains("ON UPDATE RESTRICT ON DELETE CASCADE"));
+
+    Ok(())
+}

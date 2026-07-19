@@ -1,6 +1,9 @@
 use crate::{
-    CountQuery, DeleteQuery, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    MySqlAdapter, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, UpdateQuery,
+    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
+    CreateEnumMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue, DropColumnMigration,
+    DropEnumMigration, DropForeignKeyMigration, DropTableMigration, FindOrderBy, FindQuery, FindWhere, InsertQuery,
+    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MySqlAdapter, ReferentialAction,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, UpdateQuery,
 };
 
 impl DinocoSqlCompiler for MySqlAdapter {
@@ -127,6 +130,137 @@ impl DinocoSqlCompiler for MySqlAdapter {
 
         (sql, params)
     }
+
+    fn compile_create_migrations_table(&self) -> String {
+        "CREATE TABLE IF NOT EXISTS dinoco_migrations (name VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            .to_string()
+    }
+
+    fn compile_insert_migration_record(&self, name: &str) -> String {
+        format!("INSERT IGNORE INTO dinoco_migrations (name) VALUES ('{}')", escape_sql(name))
+    }
+
+    fn compile_create_table_migration(&self, migration: CreateTableMigration) -> String {
+        let if_not_exists = if migration.if_not_exists { " IF NOT EXISTS" } else { "" };
+        let mut definitions = migration.columns.iter().map(compile_migration_column).collect::<Vec<_>>();
+        definitions.extend(migration.foreign_keys.iter().map(compile_foreign_key));
+
+        format!("CREATE TABLE{if_not_exists} {} (\n    {}\n);", migration.table, definitions.join(",\n    "))
+    }
+
+    fn compile_drop_table_migration(&self, migration: DropTableMigration) -> String {
+        let if_exists = if migration.if_exists { " IF EXISTS" } else { "" };
+        format!("DROP TABLE{if_exists} {};", migration.table)
+    }
+
+    fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String {
+        format!("ALTER TABLE {} ADD COLUMN {};", migration.table, compile_migration_column(&migration.column))
+    }
+
+    fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String {
+        format!("ALTER TABLE {} DROP COLUMN {};", migration.table, migration.column)
+    }
+
+    fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String> {
+        vec![format!("ALTER TABLE {} MODIFY COLUMN {};", migration.table, compile_migration_column(&migration.desired))]
+    }
+
+    fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String> {
+        vec![format!("ALTER TABLE {} RENAME COLUMN {} TO {};", migration.table, migration.from, migration.to)]
+    }
+
+    fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
+        vec![format!("ALTER TABLE {} ADD {};", migration.table, compile_foreign_key(&migration.foreign_key))]
+    }
+
+    fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String> {
+        vec![format!("ALTER TABLE {} DROP FOREIGN KEY {};", migration.table, migration.name)]
+    }
+
+    fn compile_create_enum_migration(&self, _migration: CreateEnumMigration) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn compile_drop_enum_migration(&self, _migration: DropEnumMigration) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn compile_alter_enum_migration(&self, _migration: AlterEnumMigration) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+fn compile_migration_column(column: &MigrationColumn) -> String {
+    let mut parts = vec![column.name.clone(), migration_type(&column.ty)];
+
+    if column.primary_key {
+        parts.push("PRIMARY KEY".to_string());
+    }
+
+    if !column.nullable {
+        parts.push("NOT NULL".to_string());
+    }
+
+    if let Some(default) = &column.default {
+        if let Some(default) = migration_default(default) {
+            parts.push(default);
+        }
+    }
+
+    parts.join(" ")
+}
+
+fn compile_foreign_key(foreign_key: &MigrationForeignKey) -> String {
+    format!(
+        "CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON UPDATE {} ON DELETE {}",
+        foreign_key.name,
+        foreign_key.columns.join(", "),
+        foreign_key.references_table,
+        foreign_key.references_columns.join(", "),
+        referential_action(foreign_key.on_update),
+        referential_action(foreign_key.on_delete),
+    )
+}
+
+fn referential_action(action: ReferentialAction) -> &'static str {
+    match action {
+        ReferentialAction::Cascade => "CASCADE",
+        ReferentialAction::Restrict => "RESTRICT",
+        ReferentialAction::NoAction => "NO ACTION",
+        ReferentialAction::SetNull => "SET NULL",
+        ReferentialAction::SetDefault => "SET DEFAULT",
+    }
+}
+
+fn migration_type(ty: &MigrationColumnType) -> String {
+    match ty {
+        MigrationColumnType::String | MigrationColumnType::Text => "VARCHAR(255)".to_string(),
+        MigrationColumnType::Boolean => "TINYINT(1)".to_string(),
+        MigrationColumnType::Integer => "BIGINT".to_string(),
+        MigrationColumnType::Float => "DOUBLE PRECISION".to_string(),
+        MigrationColumnType::DateTime => "TIMESTAMP".to_string(),
+        MigrationColumnType::Date => "DATE".to_string(),
+        MigrationColumnType::Json => "JSON".to_string(),
+        MigrationColumnType::Enum { values, .. } => {
+            let values = values.iter().map(|value| format!("'{}'", escape_sql(value))).collect::<Vec<_>>().join(", ");
+            format!("ENUM({values})")
+        }
+    }
+}
+
+fn migration_default(default: &MigrationDefault) -> Option<String> {
+    match default {
+        MigrationDefault::String(value) => Some(format!("DEFAULT '{}'", escape_sql(value))),
+        MigrationDefault::Boolean(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::Integer(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::Float(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::CurrentTimestamp => Some("DEFAULT CURRENT_TIMESTAMP".to_string()),
+        MigrationDefault::AutoIncrement => Some("AUTO_INCREMENT".to_string()),
+    }
+}
+
+fn escape_sql(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 fn compile_partitioned_relation_batch_query(
@@ -196,7 +330,7 @@ fn append_row_window(
         params.push(DinocoValue::Integer((skip + limit) as i64));
     }
 
-    let mut sql = format!("SELECT * FROM ({inner_sql})");
+    let mut sql = format!("SELECT * FROM ({inner_sql}) AS __dinoco_partitioned");
 
     if !row_conditions.is_empty() {
         sql.push_str(" WHERE ");
@@ -323,6 +457,19 @@ fn collect_conditions(
             FindWhere::Lte(field, value) => {
                 sql_conditions.push(format!("{} <= ?", qualify_field(field, qualifier)));
                 params.push(value);
+            }
+            FindWhere::Like(field, value) => {
+                sql_conditions.push(format!("{} LIKE ?", qualify_field(field, qualifier)));
+                params.push(value);
+            }
+            FindWhere::Between(field, start, end) => {
+                sql_conditions.push(format!(
+                    "{} >= ? AND {} <= ?",
+                    qualify_field(field, qualifier),
+                    qualify_field(field, qualifier)
+                ));
+                params.push(start);
+                params.push(end);
             }
             FindWhere::Batch(field, values) => {
                 if values.is_empty() {

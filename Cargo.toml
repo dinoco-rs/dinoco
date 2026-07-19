@@ -8,6 +8,7 @@ members = [
 	"crates/dinoco_formatter",
 	"crates/dinoco_vscode",
 	"crates/dinoco_derives",
+	"crates/dinoco_tests",
 ]
 
 resolver = "3"

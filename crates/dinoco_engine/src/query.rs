@@ -92,6 +92,127 @@ pub struct RelationBatchQuery {
 }
 
 #[derive(Debug, Clone)]
+pub struct CreateTableMigration {
+    pub table: String,
+    pub columns: Vec<MigrationColumn>,
+    pub foreign_keys: Vec<MigrationForeignKey>,
+    pub if_not_exists: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropTableMigration {
+    pub table: String,
+    pub if_exists: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AddColumnMigration {
+    pub table: String,
+    pub column: MigrationColumn,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropColumnMigration {
+    pub table: String,
+    pub column: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AlterColumnMigration {
+    pub table: String,
+    pub current: MigrationColumn,
+    pub desired: MigrationColumn,
+}
+
+#[derive(Debug, Clone)]
+pub struct RenameColumnMigration {
+    pub table: String,
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AddForeignKeyMigration {
+    pub table: String,
+    pub foreign_key: MigrationForeignKey,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropForeignKeyMigration {
+    pub table: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateEnumMigration {
+    pub name: String,
+    pub values: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropEnumMigration {
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AlterEnumMigration {
+    pub name: String,
+    pub current_values: Vec<String>,
+    pub desired_values: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MigrationColumn {
+    pub name: String,
+    pub ty: MigrationColumnType,
+    pub primary_key: bool,
+    pub nullable: bool,
+    pub default: Option<MigrationDefault>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MigrationForeignKey {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub references_table: String,
+    pub references_columns: Vec<String>,
+    pub on_update: ReferentialAction,
+    pub on_delete: ReferentialAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferentialAction {
+    Cascade,
+    Restrict,
+    NoAction,
+    SetNull,
+    SetDefault,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MigrationColumnType {
+    String,
+    Boolean,
+    Integer,
+    Float,
+    Text,
+    DateTime,
+    Date,
+    Json,
+    Enum { name: String, values: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MigrationDefault {
+    String(String),
+    Boolean(bool),
+    Integer(i64),
+    Float(f64),
+    CurrentTimestamp,
+    AutoIncrement,
+}
+
+#[derive(Debug, Clone)]
 pub enum FindWhere {
     Eq(&'static str, DinocoValue),
     Neq(&'static str, DinocoValue),
@@ -100,6 +221,8 @@ pub enum FindWhere {
     Gte(&'static str, DinocoValue),
     Lt(&'static str, DinocoValue),
     Lte(&'static str, DinocoValue),
+    Like(&'static str, DinocoValue),
+    Between(&'static str, DinocoValue, DinocoValue),
 
     Batch(&'static str, Vec<DinocoValue>),
 

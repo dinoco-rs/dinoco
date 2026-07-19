@@ -2,5 +2,16 @@
 name = "dinoco_cli"
 version = "1.0.0"
 edition = "2024"
+description = "Command-line tools for Dinoco schema setup, code generation, and migrations."
 
 [dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+colored = "3"
+dotenvy = "0.15"
+inquire = "0.7"
+tokio = { version = "1.50", features = ["full"] }
+dinoco_compiler = { path = "../dinoco_compiler", version = "1.0.0" }
+dinoco_formatter = { path = "../dinoco_formatter", version = "1.0.0" }
+dinoco_codegen = { path = "../dinoco_codegen", version = "1.0.0" }
+dinoco_engine = { path = "../dinoco_engine", version = "1.0.0" }

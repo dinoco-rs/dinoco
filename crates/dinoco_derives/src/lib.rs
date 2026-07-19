@@ -961,6 +961,11 @@ impl ParsedField {
                     return Ok(());
                 }
 
+                if meta.path.is_ident("relation_name") {
+                    let _ = meta.value()?.parse::<LitStr>()?;
+                    return Ok(());
+                }
+
                 if meta.path.is_ident("primary_key") {
                     primary_key = true;
                     return Ok(());
@@ -1367,7 +1372,7 @@ fn is_string(ty: &Type) -> bool {
         return false;
     };
 
-    type_path.path.segments.last().is_some_and(|segment| segment.ident == "String")
+    type_path.path.segments.last().is_some_and(|segment| segment.ident == "String" || segment.ident == "Uuid")
 }
 
 fn to_snake_case(value: &str) -> String {

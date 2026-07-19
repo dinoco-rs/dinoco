@@ -1,3 +1,5 @@
+use chrono::{DateTime, NaiveDate, Utc};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DinocoValue {
     Null,
@@ -8,9 +10,9 @@ pub enum DinocoValue {
     Boolean(bool),
 
     Bytes(Vec<u8>),
-    // Json(serde_json::Value),
-    // DateTime(DateTime<Utc>),
-    // Date(NaiveDate),
+    Json(serde_json::Value),
+    DateTime(DateTime<Utc>),
+    Date(NaiveDate),
 }
 
 impl From<&str> for DinocoValue {
@@ -111,14 +113,38 @@ impl From<&Vec<u8>> for DinocoValue {
     }
 }
 
-// impl From<DateTime<Utc>> for DinocoValue {
-//     fn from(value: DateTime<Utc>) -> Self {
-//         DinocoValue::DateTime(value)
-//     }
-// }
+impl From<serde_json::Value> for DinocoValue {
+    fn from(value: serde_json::Value) -> Self {
+        DinocoValue::Json(value)
+    }
+}
 
-// impl From<NaiveDate> for DinocoValue {
-//     fn from(value: NaiveDate) -> Self {
-//         DinocoValue::Date(value)
-//     }
-// }
+impl From<&serde_json::Value> for DinocoValue {
+    fn from(value: &serde_json::Value) -> Self {
+        DinocoValue::Json(value.clone())
+    }
+}
+
+impl From<DateTime<Utc>> for DinocoValue {
+    fn from(value: DateTime<Utc>) -> Self {
+        DinocoValue::DateTime(value)
+    }
+}
+
+impl From<&DateTime<Utc>> for DinocoValue {
+    fn from(value: &DateTime<Utc>) -> Self {
+        DinocoValue::DateTime(*value)
+    }
+}
+
+impl From<NaiveDate> for DinocoValue {
+    fn from(value: NaiveDate) -> Self {
+        DinocoValue::Date(value)
+    }
+}
+
+impl From<&NaiveDate> for DinocoValue {
+    fn from(value: &NaiveDate) -> Self {
+        DinocoValue::Date(*value)
+    }
+}

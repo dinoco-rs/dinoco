@@ -76,6 +76,9 @@ fn mysql_params(params: &[DinocoValue]) -> Vec<Value> {
             DinocoValue::Enum(_, value) => Value::Bytes(value.clone().into_bytes()),
             DinocoValue::Boolean(value) => Value::Int(if *value { 1 } else { 0 }),
             DinocoValue::Bytes(value) => Value::Bytes(value.clone()),
+            DinocoValue::Json(value) => Value::Bytes(value.to_string().into_bytes()),
+            DinocoValue::DateTime(value) => Value::Bytes(value.naive_utc().to_string().into_bytes()),
+            DinocoValue::Date(value) => Value::Bytes(value.to_string().into_bytes()),
         })
         .collect()
 }
@@ -111,6 +114,9 @@ impl From<DinocoValue> for Value {
             DinocoValue::String(value) | DinocoValue::Enum(_, value) => Value::Bytes(value.into_bytes()),
             DinocoValue::Boolean(value) => Value::Int(if value { 1 } else { 0 }),
             DinocoValue::Bytes(value) => Value::Bytes(value),
+            DinocoValue::Json(value) => Value::Bytes(value.to_string().into_bytes()),
+            DinocoValue::DateTime(value) => Value::Bytes(value.naive_utc().to_string().into_bytes()),
+            DinocoValue::Date(value) => Value::Bytes(value.to_string().into_bytes()),
         }
     }
 }

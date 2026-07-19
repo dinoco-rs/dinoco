@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
 use deadpool_postgres::{ManagerConfig, Pool, RecyclingMethod, Runtime};
-use tokio_postgres::types::ToSql;
+use tokio_postgres::types::{Json, ToSql};
 use tokio_postgres::{Config, NoTls};
 
 mod compiler;
@@ -155,6 +155,10 @@ impl PgBouncerAdapter {
         Ok(Self { inner: PostgresAdapter::pgbouncer(url).await? })
     }
 
+    pub fn inner(&self) -> &PostgresAdapter {
+        &self.inner
+    }
+
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         self.inner.query_count(query, params).await
     }
@@ -171,6 +175,9 @@ fn postgres_params(params: &[DinocoValue]) -> Vec<Box<dyn ToSql + Sync>> {
             DinocoValue::Enum(_, value) => Box::new(value.clone()) as Box<dyn ToSql + Sync>,
             DinocoValue::Boolean(value) => Box::new(*value) as Box<dyn ToSql + Sync>,
             DinocoValue::Bytes(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync>,
+            DinocoValue::Json(value) => Box::new(Json(value.clone())) as Box<dyn ToSql + Sync>,
+            DinocoValue::DateTime(value) => Box::new(*value) as Box<dyn ToSql + Sync>,
+            DinocoValue::Date(value) => Box::new(*value) as Box<dyn ToSql + Sync>,
         })
         .collect()
 }
@@ -210,6 +217,25 @@ impl<'a> tokio_postgres::types::FromSql<'a> for DinocoValue {
 
         if *ty == tokio_postgres::types::Type::BYTEA {
             return Ok(DinocoValue::Bytes(<Vec<u8> as tokio_postgres::types::FromSql>::from_sql(ty, raw)?));
+        }
+
+        if *ty == tokio_postgres::types::Type::JSON || *ty == tokio_postgres::types::Type::JSONB {
+            return Ok(DinocoValue::Json(<serde_json::Value as tokio_postgres::types::FromSql>::from_sql(ty, raw)?));
+        }
+
+        if *ty == tokio_postgres::types::Type::TIMESTAMPTZ {
+            return Ok(DinocoValue::DateTime(
+                <chrono::DateTime<chrono::Utc> as tokio_postgres::types::FromSql>::from_sql(ty, raw)?,
+            ));
+        }
+
+        if *ty == tokio_postgres::types::Type::TIMESTAMP {
+            let naive = <chrono::NaiveDateTime as tokio_postgres::types::FromSql>::from_sql(ty, raw)?;
+            return Ok(DinocoValue::DateTime(chrono::DateTime::from_naive_utc_and_offset(naive, chrono::Utc)));
+        }
+
+        if *ty == tokio_postgres::types::Type::DATE {
+            return Ok(DinocoValue::Date(<chrono::NaiveDate as tokio_postgres::types::FromSql>::from_sql(ty, raw)?));
         }
 
         Ok(DinocoValue::String(<String as tokio_postgres::types::FromSql>::from_sql(ty, raw)?))

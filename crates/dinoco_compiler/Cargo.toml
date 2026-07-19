@@ -2,5 +2,8 @@
 name = "dinoco_compiler"
 version = "1.0.0"
 edition = "2024"
+description = "The Dinoco schema compiler for parsing, validating, and analyzing database schemas."
 
 [dependencies]
+pest = "2.8"
+pest_derive = "2.8"

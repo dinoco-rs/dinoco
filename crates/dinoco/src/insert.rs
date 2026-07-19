@@ -8,6 +8,9 @@ use dinoco_engine::{
     DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
 };
 
+pub type Uuid = String;
+pub type Snowflake = i64;
+
 pub type InsertNestedFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>>;
 
 pub trait DinocoInsertable: DinocoEntity + Sized {
@@ -50,11 +53,11 @@ pub trait DinocoBelongsTo<P> {
     fn dinoco_bind_parent(&mut self, parent: &P);
 }
 
-pub fn new_uuid() -> String {
+pub fn new_uuid() -> Uuid {
     uuid::Uuid::now_v7().to_string()
 }
 
-pub fn new_snowflake_id() -> i64 {
+pub fn new_snowflake_id() -> Snowflake {
     static SEQUENCE: AtomicU16 = AtomicU16::new(0);
 
     let timestamp =

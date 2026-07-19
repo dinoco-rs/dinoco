@@ -12,6 +12,7 @@ keywords = ["orm", "database", "sql", "migrations", "rust"]
 [dependencies]
 dinoco_engine = { path = "../dinoco_engine", version = "1.0.0" }
 dinoco_derives = { path = "../dinoco_derives", version = "1.0.0" }
+dinoco_cli = { path = "../dinoco_cli", version = "1.0.0" }
 
 uuid = { version = "1.18.1", features = ["v7"] }
 

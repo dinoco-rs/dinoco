@@ -19,7 +19,9 @@ futures = "0.3.32"
 deadpool-sqlite = "0.13"
 rusqlite = { version = "0.38", features = ["bundled"] }
 deadpool-postgres = "0.14"
-tokio-postgres = "0.7"
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1"] }
 mysql_async = "0.36"
 mysql_common = "0.35"
 anyhow = "1.0.103"
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1.0"

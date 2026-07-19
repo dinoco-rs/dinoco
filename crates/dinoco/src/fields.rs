@@ -70,3 +70,79 @@ impl<T> Field<T> {
         FindWhere::NotNull(self.name)
     }
 }
+
+macro_rules! impl_string_field {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl Field<$ty> {
+                pub fn like<V>(self, value: V) -> FindWhere
+                where
+                    V: AsRef<str>,
+                {
+                    FindWhere::Like(self.name, DinocoValue::String(format!("%{}%", value.as_ref())))
+                }
+
+                pub fn starts_with<V>(self, value: V) -> FindWhere
+                where
+                    V: AsRef<str>,
+                {
+                    FindWhere::Like(self.name, DinocoValue::String(format!("{}%", value.as_ref())))
+                }
+
+                pub fn ends_with<V>(self, value: V) -> FindWhere
+                where
+                    V: AsRef<str>,
+                {
+                    FindWhere::Like(self.name, DinocoValue::String(format!("%{}", value.as_ref())))
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! impl_between_field {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl Field<$ty> {
+                pub fn between<V>(self, start: V, end: V) -> FindWhere
+                where
+                    V: Into<DinocoValue>,
+                {
+                    FindWhere::Between(self.name, start.into(), end.into())
+                }
+            }
+        )*
+    };
+}
+
+impl_string_field!(String, Option<String>);
+impl_between_field!(
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    f32,
+    f64,
+    Option<i8>,
+    Option<i16>,
+    Option<i32>,
+    Option<i64>,
+    Option<i128>,
+    Option<isize>,
+    Option<u8>,
+    Option<u16>,
+    Option<u32>,
+    Option<u64>,
+    Option<u128>,
+    Option<usize>,
+    Option<f32>,
+    Option<f64>,
+);

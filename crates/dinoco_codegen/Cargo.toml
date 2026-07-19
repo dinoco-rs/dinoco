@@ -2,5 +2,8 @@
 name = "dinoco_codegen"
 version = "1.0.0"
 edition = "2024"
+description = "Code generation utilities for Dinoco models and typed Rust client output."
 
 [dependencies]
+dinoco_compiler = { path = "../dinoco_compiler", version = "1.0.0" }
+anyhow = "1.0"

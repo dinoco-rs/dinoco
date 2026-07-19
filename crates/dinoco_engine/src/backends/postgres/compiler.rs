@@ -1,6 +1,9 @@
 use crate::{
-    CountQuery, DeleteQuery, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, UpdateQuery,
+    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
+    CreateEnumMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue, DropColumnMigration,
+    DropEnumMigration, DropForeignKeyMigration, DropTableMigration, FindOrderBy, FindQuery, FindWhere, InsertQuery,
+    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, ReferentialAction, RelationBatchQuery,
+    RelationCountQuery, RelationJoinQuery, RenameColumnMigration, UpdateQuery,
 };
 
 use super::{PgBouncerAdapter, PostgresAdapter};
@@ -37,6 +40,58 @@ impl DinocoSqlCompiler for PostgresAdapter {
     fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>) {
         compile_relation_join_query(query)
     }
+
+    fn compile_create_migrations_table(&self) -> String {
+        compile_create_migrations_table()
+    }
+
+    fn compile_insert_migration_record(&self, name: &str) -> String {
+        compile_insert_migration_record(name)
+    }
+
+    fn compile_create_table_migration(&self, migration: CreateTableMigration) -> String {
+        compile_create_table_migration(migration)
+    }
+
+    fn compile_drop_table_migration(&self, migration: DropTableMigration) -> String {
+        compile_drop_table_migration(migration)
+    }
+
+    fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String {
+        compile_add_column_migration(migration)
+    }
+
+    fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String {
+        compile_drop_column_migration(migration)
+    }
+
+    fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String> {
+        compile_alter_column_migration(migration)
+    }
+
+    fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String> {
+        compile_rename_column_migration(migration)
+    }
+
+    fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
+        compile_add_foreign_key_migration(migration)
+    }
+
+    fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String> {
+        compile_drop_foreign_key_migration(migration)
+    }
+
+    fn compile_create_enum_migration(&self, migration: CreateEnumMigration) -> Vec<String> {
+        compile_create_enum_migration(migration)
+    }
+
+    fn compile_drop_enum_migration(&self, migration: DropEnumMigration) -> Vec<String> {
+        compile_drop_enum_migration(migration)
+    }
+
+    fn compile_alter_enum_migration(&self, migration: AlterEnumMigration) -> Vec<String> {
+        compile_alter_enum_migration(migration)
+    }
 }
 
 impl DinocoSqlCompiler for PgBouncerAdapter {
@@ -71,6 +126,221 @@ impl DinocoSqlCompiler for PgBouncerAdapter {
     fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>) {
         compile_relation_join_query(query)
     }
+
+    fn compile_create_migrations_table(&self) -> String {
+        compile_create_migrations_table()
+    }
+
+    fn compile_insert_migration_record(&self, name: &str) -> String {
+        compile_insert_migration_record(name)
+    }
+
+    fn compile_create_table_migration(&self, migration: CreateTableMigration) -> String {
+        compile_create_table_migration(migration)
+    }
+
+    fn compile_drop_table_migration(&self, migration: DropTableMigration) -> String {
+        compile_drop_table_migration(migration)
+    }
+
+    fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String {
+        compile_add_column_migration(migration)
+    }
+
+    fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String {
+        compile_drop_column_migration(migration)
+    }
+
+    fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String> {
+        compile_alter_column_migration(migration)
+    }
+
+    fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String> {
+        compile_rename_column_migration(migration)
+    }
+
+    fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
+        compile_add_foreign_key_migration(migration)
+    }
+
+    fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String> {
+        compile_drop_foreign_key_migration(migration)
+    }
+
+    fn compile_create_enum_migration(&self, migration: CreateEnumMigration) -> Vec<String> {
+        compile_create_enum_migration(migration)
+    }
+
+    fn compile_drop_enum_migration(&self, migration: DropEnumMigration) -> Vec<String> {
+        compile_drop_enum_migration(migration)
+    }
+
+    fn compile_alter_enum_migration(&self, migration: AlterEnumMigration) -> Vec<String> {
+        compile_alter_enum_migration(migration)
+    }
+}
+
+fn compile_create_migrations_table() -> String {
+    "CREATE TABLE IF NOT EXISTS dinoco_migrations (name VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        .to_string()
+}
+
+fn compile_insert_migration_record(name: &str) -> String {
+    format!("INSERT INTO dinoco_migrations (name) VALUES ('{}') ON CONFLICT (name) DO NOTHING", escape_sql(name))
+}
+
+fn compile_create_table_migration(migration: CreateTableMigration) -> String {
+    let if_not_exists = if migration.if_not_exists { " IF NOT EXISTS" } else { "" };
+    let mut definitions = migration.columns.iter().map(compile_migration_column).collect::<Vec<_>>();
+    definitions.extend(migration.foreign_keys.iter().map(compile_foreign_key));
+
+    format!("CREATE TABLE{if_not_exists} {} (\n    {}\n);", migration.table, definitions.join(",\n    "))
+}
+
+fn compile_drop_table_migration(migration: DropTableMigration) -> String {
+    let if_exists = if migration.if_exists { " IF EXISTS" } else { "" };
+    format!("DROP TABLE{if_exists} {};", migration.table)
+}
+
+fn compile_add_column_migration(migration: AddColumnMigration) -> String {
+    format!("ALTER TABLE {} ADD COLUMN {};", migration.table, compile_migration_column(&migration.column))
+}
+
+fn compile_drop_column_migration(migration: DropColumnMigration) -> String {
+    format!("ALTER TABLE {} DROP COLUMN {};", migration.table, migration.column)
+}
+
+fn compile_alter_column_migration(migration: AlterColumnMigration) -> Vec<String> {
+    let mut statements = Vec::new();
+    let table = migration.table;
+    let current = migration.current;
+    let desired = migration.desired;
+
+    if current.ty != desired.ty {
+        statements.push(format!(
+            "ALTER TABLE {table} ALTER COLUMN {} TYPE {};",
+            desired.name,
+            migration_type(&desired.ty)
+        ));
+    }
+
+    if current.nullable != desired.nullable {
+        let action = if desired.nullable { "DROP NOT NULL" } else { "SET NOT NULL" };
+        statements.push(format!("ALTER TABLE {table} ALTER COLUMN {} {action};", desired.name));
+    }
+
+    if current.default != desired.default {
+        match &desired.default {
+            Some(default) => {
+                if let Some(default) = migration_default(default) {
+                    statements.push(format!("ALTER TABLE {table} ALTER COLUMN {} SET {default};", desired.name));
+                }
+            }
+            None => statements.push(format!("ALTER TABLE {table} ALTER COLUMN {} DROP DEFAULT;", desired.name)),
+        }
+    }
+
+    statements
+}
+
+fn compile_rename_column_migration(migration: RenameColumnMigration) -> Vec<String> {
+    vec![format!("ALTER TABLE {} RENAME COLUMN {} TO {};", migration.table, migration.from, migration.to)]
+}
+
+fn compile_add_foreign_key_migration(migration: AddForeignKeyMigration) -> Vec<String> {
+    vec![format!("ALTER TABLE {} ADD {};", migration.table, compile_foreign_key(&migration.foreign_key))]
+}
+
+fn compile_drop_foreign_key_migration(migration: DropForeignKeyMigration) -> Vec<String> {
+    vec![format!("ALTER TABLE {} DROP CONSTRAINT IF EXISTS {};", migration.table, migration.name)]
+}
+
+fn compile_foreign_key(foreign_key: &MigrationForeignKey) -> String {
+    format!(
+        "CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON UPDATE {} ON DELETE {}",
+        foreign_key.name,
+        foreign_key.columns.join(", "),
+        foreign_key.references_table,
+        foreign_key.references_columns.join(", "),
+        referential_action(foreign_key.on_update),
+        referential_action(foreign_key.on_delete),
+    )
+}
+
+fn referential_action(action: ReferentialAction) -> &'static str {
+    match action {
+        ReferentialAction::Cascade => "CASCADE",
+        ReferentialAction::Restrict => "RESTRICT",
+        ReferentialAction::NoAction => "NO ACTION",
+        ReferentialAction::SetNull => "SET NULL",
+        ReferentialAction::SetDefault => "SET DEFAULT",
+    }
+}
+
+fn compile_create_enum_migration(migration: CreateEnumMigration) -> Vec<String> {
+    let values = migration.values.iter().map(|value| format!("'{}'", escape_sql(value))).collect::<Vec<_>>().join(", ");
+    vec![format!("CREATE TYPE {} AS ENUM ({values});", migration.name)]
+}
+
+fn compile_drop_enum_migration(migration: DropEnumMigration) -> Vec<String> {
+    vec![format!("DROP TYPE IF EXISTS {};", migration.name)]
+}
+
+fn compile_alter_enum_migration(migration: AlterEnumMigration) -> Vec<String> {
+    migration
+        .desired_values
+        .iter()
+        .filter(|value| !migration.current_values.contains(value))
+        .map(|value| format!("ALTER TYPE {} ADD VALUE IF NOT EXISTS '{}';", migration.name, escape_sql(value)))
+        .collect()
+}
+
+fn compile_migration_column(column: &MigrationColumn) -> String {
+    let mut parts = vec![column.name.clone(), migration_type(&column.ty).to_string()];
+
+    if column.primary_key {
+        parts.push("PRIMARY KEY".to_string());
+    }
+
+    if !column.nullable {
+        parts.push("NOT NULL".to_string());
+    }
+
+    if let Some(default) = &column.default {
+        if let Some(default) = migration_default(default) {
+            parts.push(default);
+        }
+    }
+
+    parts.join(" ")
+}
+
+fn migration_type(ty: &MigrationColumnType) -> &str {
+    match ty {
+        MigrationColumnType::String | MigrationColumnType::Text => "TEXT",
+        MigrationColumnType::Boolean => "BOOLEAN",
+        MigrationColumnType::Integer => "BIGINT",
+        MigrationColumnType::Float => "DOUBLE PRECISION",
+        MigrationColumnType::DateTime => "TIMESTAMP",
+        MigrationColumnType::Date => "DATE",
+        MigrationColumnType::Json => "JSONB",
+        MigrationColumnType::Enum { name, .. } => name.as_str(),
+    }
+}
+
+fn migration_default(default: &MigrationDefault) -> Option<String> {
+    match default {
+        MigrationDefault::String(value) => Some(format!("DEFAULT '{}'", escape_sql(value))),
+        MigrationDefault::Boolean(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::Integer(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::Float(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::CurrentTimestamp => Some("DEFAULT CURRENT_TIMESTAMP".to_string()),
+        MigrationDefault::AutoIncrement => Some("GENERATED BY DEFAULT AS IDENTITY".to_string()),
+    }
+}
+
+fn escape_sql(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 fn compile_find_query(query: FindQuery) -> (String, Vec<DinocoValue>) {
@@ -412,6 +682,17 @@ fn collect_conditions(
             }
             FindWhere::Lte(field, value) => {
                 push_binary(sql_conditions, params, field, "<=", value, qualifier, placeholders)
+            }
+            FindWhere::Like(field, value) => {
+                push_binary(sql_conditions, params, field, "LIKE", value, qualifier, placeholders)
+            }
+            FindWhere::Between(field, start, end) => {
+                let start_placeholder = placeholders.next();
+                let end_placeholder = placeholders.next();
+                let field = qualify_field(field, qualifier);
+                sql_conditions.push(format!("{field} >= {start_placeholder} AND {field} <= {end_placeholder}"));
+                params.push(start);
+                params.push(end);
             }
             FindWhere::Batch(field, values) => {
                 if values.is_empty() {

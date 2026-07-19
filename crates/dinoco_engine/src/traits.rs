@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 
 use crate::{
-    CountQuery, DeadpoolPostgresRow, DeleteQuery, DinocoValue, FindQuery, InsertQuery, MysqlRow, PostgresRow,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, SqliteRow, UpdateQuery,
+    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
+    CreateEnumMigration, CreateTableMigration, DeadpoolPostgresRow, DeleteQuery, DinocoValue, DropColumnMigration,
+    DropEnumMigration, DropForeignKeyMigration, DropTableMigration, FindQuery, InsertQuery, MysqlRow, PostgresRow,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, SqliteRow, UpdateQuery,
 };
 
 #[async_trait(?Send)]
@@ -41,6 +43,19 @@ pub trait DinocoSqlCompiler {
     fn compile_relation_count_query(&self, query: RelationCountQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_batch_query(&self, query: RelationBatchQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>);
+    fn compile_create_migrations_table(&self) -> String;
+    fn compile_insert_migration_record(&self, name: &str) -> String;
+    fn compile_create_table_migration(&self, migration: CreateTableMigration) -> String;
+    fn compile_drop_table_migration(&self, migration: DropTableMigration) -> String;
+    fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String;
+    fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String;
+    fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String>;
+    fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String>;
+    fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String>;
+    fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String>;
+    fn compile_create_enum_migration(&self, migration: CreateEnumMigration) -> Vec<String>;
+    fn compile_drop_enum_migration(&self, migration: DropEnumMigration) -> Vec<String>;
+    fn compile_alter_enum_migration(&self, migration: AlterEnumMigration) -> Vec<String>;
 }
 
 pub trait DinocoSqlite: Sized + Send + 'static {

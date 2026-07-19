@@ -16,6 +16,48 @@ pub use tokio_postgres::Row as PostgresRow;
 pub type DeadpoolPostgresRow = tokio_postgres::Row;
 pub type MysqlRow = mysql_async::Row;
 
+pub use chrono;
+pub use deadpool_postgres;
+pub use mysql_async;
+pub use mysql_common;
+pub use rusqlite;
+pub use serde_json;
+pub use tokio_postgres;
+
+pub struct SingleIdRow {
+    pub id: DinocoValue,
+}
+
+impl DinocoSqlite for SingleIdRow {
+    fn from_sqlite_row(row: &SqliteRow<'_>) -> Option<Self> {
+        row.get::<_, String>("id")
+            .map(|id| Self { id: DinocoValue::String(id) })
+            .or_else(|_| row.get::<_, i64>("id").map(|id| Self { id: DinocoValue::Integer(id) }))
+            .ok()
+    }
+}
+
+impl DinocoPostgres for SingleIdRow {
+    fn from_deadpool_posgres_row(row: &DeadpoolPostgresRow) -> Option<Self> {
+        row.try_get::<_, String>("id")
+            .map(|id| Self { id: DinocoValue::String(id) })
+            .or_else(|_| row.try_get::<_, i64>("id").map(|id| Self { id: DinocoValue::Integer(id) }))
+            .ok()
+    }
+
+    fn from_postgres_row(row: &PostgresRow) -> Option<Self> {
+        Self::from_deadpool_posgres_row(row)
+    }
+}
+
+impl DinocoMysql for SingleIdRow {
+    fn from_mysql_row(row: &MysqlRow) -> Option<Self> {
+        row.get::<String, _>("id")
+            .map(|id| Self { id: DinocoValue::String(id) })
+            .or_else(|| row.get::<i64, _>("id").map(|id| Self { id: DinocoValue::Integer(id) }))
+    }
+}
+
 pub struct DinocoClient {
     pub backend: Backend,
     pub read_replicas: Vec<Backend>,

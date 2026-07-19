@@ -526,6 +526,9 @@ enum RelationKey {
     Enum(String, String),
     Boolean(bool),
     Bytes(Vec<u8>),
+    Json(String),
+    DateTime(String),
+    Date(String),
 }
 
 fn relation_key(value: &DinocoValue) -> RelationKey {
@@ -537,6 +540,9 @@ fn relation_key(value: &DinocoValue) -> RelationKey {
         DinocoValue::Enum(name, value) => RelationKey::Enum(name.clone(), value.clone()),
         DinocoValue::Boolean(value) => RelationKey::Boolean(*value),
         DinocoValue::Bytes(value) => RelationKey::Bytes(value.clone()),
+        DinocoValue::Json(value) => RelationKey::Json(value.to_string()),
+        DinocoValue::DateTime(value) => RelationKey::DateTime(value.to_rfc3339()),
+        DinocoValue::Date(value) => RelationKey::Date(value.to_string()),
     }
 }
 

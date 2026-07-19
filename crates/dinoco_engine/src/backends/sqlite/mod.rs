@@ -16,6 +16,10 @@ pub struct SqliteAdapter {
 #[async_trait::async_trait(?Send)]
 impl DinocoAdapter for SqliteAdapter {
     async fn new(path: String) -> Result<Self, String> {
+        let path = normalize_sqlite_path(path);
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        }
         let cfg = Config::new(&path);
         let Ok(pool) = cfg.create_pool(Runtime::Tokio1) else { return Err("Pool error".to_string()) };
 
@@ -94,6 +98,14 @@ impl DinocoAdapter for SqliteAdapter {
     }
 }
 
+fn normalize_sqlite_path(path: String) -> String {
+    if path == ":memory:" || path.starts_with('/') || path.starts_with("file:") || path.starts_with("dinoco/") {
+        path
+    } else {
+        format!("dinoco/{path}")
+    }
+}
+
 impl SqliteAdapter {
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
@@ -122,9 +134,9 @@ impl rusqlite::ToSql for DinocoValue {
             DinocoValue::String(s) => Ok(ToSqlOutput::Owned(Value::Text(s.clone()))),
             DinocoValue::Enum(_, s) => Ok(ToSqlOutput::Owned(Value::Text(s.clone()))),
             DinocoValue::Bytes(v) => Ok(ToSqlOutput::Owned(Value::Blob(v.clone()))),
-            // DinocoValue::DateTime(dt) => Ok(ToSqlOutput::Owned(Value::Text(dt.to_string()))),
-            // DinocoValue::Json(v) => Ok(ToSqlOutput::Owned(Value::Text(v.to_string()))),
-            // DinocoValue::Date(date) => Ok(ToSqlOutput::Owned(Value::Text(date.to_string()))),
+            DinocoValue::Json(v) => Ok(ToSqlOutput::Owned(Value::Blob(v.to_string().into_bytes()))),
+            DinocoValue::DateTime(dt) => Ok(ToSqlOutput::Owned(Value::Text(dt.to_rfc3339()))),
+            DinocoValue::Date(date) => Ok(ToSqlOutput::Owned(Value::Text(date.to_string()))),
         }
     }
 }
