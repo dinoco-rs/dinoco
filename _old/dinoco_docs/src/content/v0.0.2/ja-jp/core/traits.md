@@ -1,0 +1,153 @@
+# トレイト
+
+Dinocoでモデルとペイロードが使用する主要なトレイトの概要。
+
+---
+
+## Dinocoにおけるトレイトとは
+
+トレイトはORMの基本動作を定義します。モデルがメタデータを公開する方法、列を投影する方法、挿入する方法、更新する方法、およびネストされたペイロードが処理される方法などです。
+
+コード生成によって生成されたモデルでは、これらのほとんどが自動的に実装されます。
+
+## Modelトレイト
+
+`Model`は、`Include`、`Where`、テーブル名など、モデルの基本的なメタデータを定義します。
+
+```rust
+impl dinoco::Model for User {
+    type Include = UserInclude;
+    type Where = UserWhere;
+
+    fn table_name() -> &'static str {
+        "users"
+    }
+}
+```
+
+## Projectionトレイト
+
+`Projection`は、構造体がモデルから列を読み取る方法と、どの列をロードする必要があるかを定義します。
+
+```rust
+impl dinoco::Projection<User> for UserSummary {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+```
+
+これは`select::&lt;T&gt;()`、`include`、および`Extend`で派生した構造体と共によく使用されます。
+
+## InsertModelトレイト
+
+`InsertModel`は、Dinocoがモデルの挿入行をどのように組み立てるべきかを記述します。
+
+```rust
+impl dinoco::InsertModel for User {
+    fn insert_columns() -> &'static [&'static str] {
+        &["id", "email", "name"]
+    }
+}
+```
+
+生成されたモデルでは、このトレイトはすでに準備されています。
+
+## UpdateModelトレイト
+
+`UpdateModel`は、更新で送信できるフィールドと、変更するレコードを識別する方法を記述します。
+
+```rust
+impl dinoco::UpdateModel for User {
+    fn update_columns() -> &'static [&'static str] {
+        &["email", "name"]
+    }
+}
+```
+
+## InsertPayloadトレイト
+
+`InsertPayload`は、`.values(...)`が生のモデルとは異なるものを受け入れ、ペイロードを次のように分離することを可能にします。
+
+- 挿入されるベースモデル
+- 後で処理されるネストされたコンテンツ
+
+`#[insertable]`が自動的に実装するようになるのはこのトレイトです。
+
+## InsertConnectionPayloadトレイト
+
+`InsertConnectionPayload`は、ネストされたペイロードが既存のレコードへの接続を表す場合に使用されます。
+
+これは、`ArticleConnection`のようなコード生成によって生成されたenumが使用するフックです。
+
+```rust
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
+```
+
+## モデルによって実装されるトレイト
+
+Dinocoによって生成されたモデルでは、通常、以下の実装がすでに提供されています。
+
+- `Model`
+- `Projection`
+- `InsertModel`
+- `UpdateModel`
+- `FindAndUpdateModel`
+- `RelationMutationModel`
+
+スキーマのリレーションシップによっては、モデルは以下も受け取ることがあります。
+
+- `InsertRelation&lt;T&gt;`
+- `InsertConnection&lt;T&gt;`
+
+## トレイトとderiveを組み合わせた例
+
+実際には、最も一般的なフローは次のとおりです。
+
+- 行の読み取りのための`Rowable`
+- プロジェクションまたはリッチペイロードのための`Extend`
+- ネストされた挿入のための`#[insertable]`
+- コード生成によって自動的に生成される`Model`、`Projection`、`InsertModel`などのトレイト
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-30".into(),
+        title: "コアの例".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## 各トレイトをいつ使用するか
+
+- テーブル、`Where`、`Include`を識別するために`Model`を使用します。
+- 構造体が`select`によってロードされる必要がある場合に`Projection`を使用します。
+- ORMの書き込みパスを理解するために`InsertModel`と`UpdateModel`を使用します。
+- ネストされたペイロードを扱う場合に`InsertPayload`を使用します。
+- ネストされたペイロードが既存のレコードを接続する場合に`InsertConnectionPayload`を使用します。
+
+## 次のステップ
+
+- [**Derives**](/v0.0.2/core/derives): これらのトレイトと共に使用されるderiveと属性を参照してください。
+- [**リレーション**](/v0.0.2/orm/relations): これがリレーションシステムとどのように接続されるかを参照してください。

@@ -1,0 +1,33 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "#" ~ (!("\n" | "\r") ~ ANY)* | "//" ~ (!("\n" | "\r") ~ ANY)* }
+
+schema = { SOI ~ item* ~ EOI }
+item = _{ config_block | enum_block | model_block }
+
+config_block = { "config" ~ "{" ~ config_entry* ~ "}" }
+config_entry = { ident ~ "=" ~ config_value }
+config_value = { config_array | env_call | string_literal | ident }
+config_array = { "[" ~ (config_value ~ ("," ~ config_value)* ~ ","?)? ~ "]" }
+env_call = { "env" ~ "(" ~ string_literal ~ ")" }
+
+enum_block = { "enum" ~ ident ~ "{" ~ enum_value* ~ "}" }
+enum_value = { ident }
+
+model_block = { "model" ~ ident ~ "{" ~ model_field* ~ "}" }
+model_field = { ident ~ field_type ~ field_optional? ~ field_list? ~ attribute* }
+field_type = { ident }
+field_optional = { "?" }
+field_list = { "[" ~ "]" }
+
+attribute = { "@" ~ ident ~ ("(" ~ attribute_arguments? ~ ")")? }
+attribute_arguments = { attribute_argument ~ ("," ~ attribute_argument)* ~ ","? }
+attribute_argument = { named_argument | attribute_value }
+named_argument = { ident ~ (":" | "=") ~ attribute_value }
+attribute_value = { attribute_array | attribute_call | string_literal | number_literal | boolean_literal | ident }
+attribute_call = { ident ~ "(" ~ attribute_arguments? ~ ")" }
+attribute_array = { "[" ~ (attribute_value ~ ("," ~ attribute_value)* ~ ","?)? ~ "]" }
+
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+string_literal = @{ "\"" ~ ( "\\\"" | "\\\\" | "\\n" | "\\r" | "\\t" | (!"\"" ~ ANY) )* ~ "\"" }
+number_literal = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+boolean_literal = { "true" | "false" }

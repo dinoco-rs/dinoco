@@ -1,0 +1,79 @@
+[package]
+name = "dinoco_tests"
+version = "1.0.5"
+edition = "2024"
+description = "Integration and compile-time test suite covering Dinoco crates and workflows."
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+colored = "3"
+dotenvy = "0.15"
+inquire = "0.7"
+tokio = { version = "1.50", features = ["full"] }
+dinoco = { path = "../dinoco", version = "1.0.5" }
+dinoco_cli = { path = "../dinoco_cli", version = "1.0.5" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "1.0.5" }
+dinoco_formatter = { path = "../dinoco_formatter", version = "1.0.5" }
+dinoco_codegen = { path = "../dinoco_codegen", version = "1.0.5" }
+dinoco_engine = { path = "../dinoco_engine", version = "1.0.5" }
+
+[[bin]]
+name = "dinoco_cli"
+path = "../dinoco_cli/src/main.rs"
+
+[[test]]
+name = "dinoco_sqlite_flow"
+path = "tests/dinoco/sqlite_flow.rs"
+
+[[test]]
+name = "dinoco_adapters_crud"
+path = "tests/dinoco/adapters_crud.rs"
+
+[[test]]
+name = "dinoco_adapters_relations"
+path = "tests/dinoco/adapters_relations.rs"
+
+[[test]]
+name = "dinoco_include_limits"
+path = "tests/dinoco/include_limits.rs"
+
+[[test]]
+name = "dinoco_relation_counts"
+path = "tests/dinoco/relation_counts.rs"
+
+[[test]]
+name = "dinoco_generated_types"
+path = "tests/dinoco/generated_types.rs"
+
+[[test]]
+name = "dinoco_deferred_features"
+path = "tests/dinoco/deferred_features.rs"
+
+[[test]]
+name = "dinoco_cli_commands"
+path = "tests/dinoco_cli/cli.rs"
+
+[[test]]
+name = "dinoco_codegen_generate_models"
+path = "tests/dinoco_codegen/generate_models.rs"
+
+[[test]]
+name = "dinoco_compiler_compile"
+path = "tests/dinoco_compiler/compile.rs"
+
+[[test]]
+name = "dinoco_engine_migrations"
+path = "tests/dinoco_engine/migrations.rs"
+
+[[test]]
+name = "dinoco_engine_query_builder"
+path = "tests/dinoco_engine/query_builder.rs"
+
+[[test]]
+name = "dinoco_engine_window_functions"
+path = "tests/dinoco_engine/window_functions.rs"
+
+[[test]]
+name = "dinoco_formatter_format"
+path = "tests/dinoco_formatter/format.rs"

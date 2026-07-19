@@ -1,0 +1,94 @@
+# update_many
+
+Wird verwendet, um mehrere Datensätze gleichzeitig zu aktualisieren.
+
+---
+
+## Was Sie tun können
+
+- `.cond(...)`: schränkt ein, welche Datensätze aktualisiert werden können.
+- `.values(Vec&lt;M&gt;)`: definiert die Elemente, die bei der Batch-Aktualisierung verwendet werden.
+- `.returning::&lt;T&gt;()`: gibt die aktualisierten Datensätze als typisierte Liste zurück.
+- `.execute(&client)`: führt die Batch-Aktualisierung aus.
+
+## Rückgabe
+
+Ohne `.returning::&lt;T&gt;()` ist die Rückgabe:
+
+```rust
+DinocoResult<()>
+```
+
+Mit `.returning::&lt;T&gt;()` wird die Rückgabe:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Grundlegendes Beispiel
+
+```rust
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 1, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 2, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Rückgabe
+
+```rust
+let updated = dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana Batch".to_string() },
+        User { id: 3, name: "Caio Batch".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Filter
+
+```rust
+dinoco::update_many::<User>()
+    .cond(|x| x.active.eq(true))
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Beispiel mit Worker
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        println!("Benutzer aktualisiert: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .enqueue("user.batch-updated")
+    .execute(&client)
+    .await?;
+```
+
+Erfahren Sie mehr über Worker unter [**`queues`**](/v0.0.2/orm/queues).
+
+## Nächste Schritte
+
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): traditionelles Update mit Bedingung.
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): atomares Update eines einzelnen Datensatzes.

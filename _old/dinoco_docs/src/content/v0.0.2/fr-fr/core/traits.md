@@ -1,0 +1,153 @@
+# Traits
+
+Aperçu des traits centraux que les modèles et les payloads utilisent dans Dinoco.
+
+---
+
+## Que sont les traits dans Dinoco
+
+Les traits définissent le comportement de base de l'ORM : comment un modèle expose les métadonnées, comment il projette les colonnes, comment il insère, comment il met à jour et comment les payloads imbriqués sont traités.
+
+Dans les modèles générés par le codegen, la majeure partie de cela est déjà implémentée automatiquement.
+
+## Trait Model
+
+`Model` définit les métadonnées de base du modèle, telles que `Include`, `Where` et le nom de la table.
+
+```rust
+impl dinoco::Model for User {
+    type Include = UserInclude;
+    type Where = UserWhere;
+
+    fn table_name() -> &'static str {
+        "users"
+    }
+}
+```
+
+## Trait Projection
+
+`Projection` définit comment une struct lit les colonnes d'un modèle et quelles colonnes elle doit charger.
+
+```rust
+impl dinoco::Projection<User> for UserSummary {
+    fn columns() -> &'static [&'static str] {
+        &["id", "name"]
+    }
+}
+```
+
+Elle est très utilisée avec `select::&lt;T&gt;()`, `include` et les structs dérivées avec `Extend`.
+
+## Trait InsertModel
+
+`InsertModel` décrit comment Dinoco doit assembler une ligne d'insertion pour le modèle.
+
+```rust
+impl dinoco::InsertModel for User {
+    fn insert_columns() -> &'static [&'static str] {
+        &["id", "email", "name"]
+    }
+}
+```
+
+Dans les modèles générés, ce trait est déjà prêt.
+
+## Trait UpdateModel
+
+`UpdateModel` décrit les champs qui peuvent être envoyés en mise à jour et comment identifier l'enregistrement à modifier.
+
+```rust
+impl dinoco::UpdateModel for User {
+    fn update_columns() -> &'static [&'static str] {
+        &["email", "name"]
+    }
+}
+```
+
+## Trait InsertPayload
+
+`InsertPayload` permet à `.values(...)` d'accepter quelque chose de différent du modèle brut, en séparant le payload en :
+
+- modèle de base à insérer
+- contenu imbriqué qui sera traité ultérieurement
+
+C'est ce trait que `#[insertable]` implémente automatiquement.
+
+## Trait InsertConnectionPayload
+
+`InsertConnectionPayload` est utilisé lorsque le payload imbriqué représente des connexions avec des enregistrements déjà existants.
+
+C'est l'interface utilisée par les enums générés par le codegen, comme `ArticleConnection`.
+
+```rust
+impl dinoco::InsertConnectionPayload<Article> for ArticleConnection {
+    fn relation_links(&self, parent: &Article) -> Vec<dinoco::RelationLinkPlan> {
+        match self {
+            Self::Label(label_id) => vec![dinoco::RelationLinkPlan {
+                table_name: "_ArticleLabels",
+                columns: &["article_id", "label_id"],
+                row: vec![parent.id.clone().into(), label_id.clone().into()],
+            }],
+        }
+    }
+}
+```
+
+## Traits implémentés par le modèle
+
+Dans un modèle généré par Dinoco, le plus courant est de recevoir déjà des implémentations de :
+
+- `Model`
+- `Projection`
+- `InsertModel`
+- `UpdateModel`
+- `FindAndUpdateModel`
+- `RelationMutationModel`
+
+Selon les relations du schéma, le modèle peut également recevoir :
+
+- `InsertRelation&lt;T&gt;`
+- `InsertConnection&lt;T&gt;`
+
+## Exemple avec traits et derive ensemble
+
+En pratique, le flux le plus courant est :
+
+- `Rowable` pour la lecture de la ligne
+- `Extend` pour les projections ou les payloads enrichis
+- `#[insertable]` pour les insertions imbriquées
+- traits comme `Model`, `Projection` et `InsertModel` générés automatiquement par le codegen
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_into::<Article>()
+    .values(ArticleWithLabels {
+        id: "article-30".into(),
+        title: "Exemple de base".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Quand utiliser chaque trait
+
+- Utilisez `Model` pour identifier la table, `Where` et `Include`.
+- Utilisez `Projection` lorsque la struct doit être chargée par `select`.
+- Utilisez `InsertModel` et `UpdateModel` pour comprendre le chemin d'écriture de l'ORM.
+- Utilisez `InsertPayload` lorsque vous travaillez avec des payloads imbriqués.
+- Utilisez `InsertConnectionPayload` lorsque le payload imbriqué connecte des enregistrements existants.
+
+## Prochaines étapes
+
+- [**Derives**](/v0.0.2/core/derives) : découvrez les derives et attributs utilisés avec ces traits.
+- [**Relations**](/v0.0.2/orm/relations) : découvrez comment cela se connecte au système de relations.

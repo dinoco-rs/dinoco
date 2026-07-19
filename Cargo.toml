@@ -1,15 +1,16 @@
 [workspace]
 members = [
-	"dinoco",
-	"dinoco_cli",
-	"dinoco_codegen",
-	"dinoco_compiler",
-	"dinoco_derives",
-	"dinoco_engine",
-	"dinoco_formatter",
-	"dinoco_tests",
-	"dinoco_vscode",
+	"crates/dinoco",
+	"crates/dinoco_cli",
+	"crates/dinoco_codegen",
+	"crates/dinoco_compiler",
+	"crates/dinoco_engine",
+	"crates/dinoco_formatter",
+	"crates/dinoco_vscode",
+	"crates/dinoco_derives",
+	"crates/dinoco_tests",
+	"examples/axum",
+	"examples/actix-web",
 ]
-resolver = "2"
 
-exclude = ["dinoco_docs", "dinoco_vscode"]
+resolver = "3"

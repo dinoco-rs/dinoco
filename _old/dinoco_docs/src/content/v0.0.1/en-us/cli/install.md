@@ -1,0 +1,15 @@
+# Installation
+
+Install the CLI to start projects, generate artifacts, and validate the local environment.
+
+## Installation
+
+```bash
+cargo install dinoco
+```
+
+## Configuration
+
+- Adjust environment variables.
+- Define the database provider.
+- Generate initial workspace files.

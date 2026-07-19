@@ -1,0 +1,525 @@
+use crate::{
+    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
+    CreateEnumMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue, DropColumnMigration,
+    DropEnumMigration, DropForeignKeyMigration, DropTableMigration, FindOrderBy, FindQuery, FindWhere, InsertQuery,
+    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MySqlAdapter, ReferentialAction,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, UpdateQuery,
+};
+
+impl DinocoSqlCompiler for MySqlAdapter {
+    fn compile_find_query(&self, query: FindQuery) -> (String, Vec<DinocoValue>) {
+        let mut sql = format!("SELECT {} FROM {}", query.fields.join(", "), query.from);
+        let params = append_find_tail(&mut sql, query.conditions, query.order_by, query.limit, query.skip, None);
+
+        (sql, params)
+    }
+
+    fn compile_insert_query(&self, query: InsertQuery) -> (String, Vec<DinocoValue>) {
+        let fields_len = query.fields.len();
+        let row_placeholders = format!("({})", vec!["?"; fields_len].join(", "));
+        let placeholders = vec![row_placeholders; query.rows.len()].join(", ");
+        let params = query.rows.into_iter().flatten().collect::<Vec<_>>();
+        let mut sql = format!("INSERT INTO {} ({}) VALUES {placeholders}", query.table, query.fields.join(", "));
+
+        if let Some(returning) = query.returning {
+            sql.push_str(" RETURNING ");
+            sql.push_str(&returning.join(", "));
+        }
+
+        (sql, params)
+    }
+
+    fn compile_update_query(&self, query: UpdateQuery) -> (String, Vec<DinocoValue>) {
+        let sets = query.sets.iter().filter(|set| set.operation == crate::UpdateOperation::Set).collect::<Vec<_>>();
+        let mut params = sets.iter().map(|set| set.value.clone()).collect::<Vec<_>>();
+        let set_sql = sets.iter().map(|set| format!("{} = ?", set.field)).collect::<Vec<_>>().join(", ");
+        let mut sql = format!("UPDATE {} SET {set_sql}", query.table);
+
+        params.extend(append_conditions(&mut sql, query.conditions, None));
+
+        if let Some(returning) = query.returning {
+            sql.push_str(" RETURNING ");
+            sql.push_str(&returning.join(", "));
+        }
+
+        (sql, params)
+    }
+
+    fn compile_delete_query(&self, query: DeleteQuery) -> (String, Vec<DinocoValue>) {
+        let mut sql = format!("DELETE FROM {}", query.table);
+        let params = append_conditions(&mut sql, query.conditions, None);
+
+        if let Some(returning) = query.returning {
+            sql.push_str(" RETURNING ");
+            sql.push_str(&returning.join(", "));
+        }
+
+        (sql, params)
+    }
+
+    fn compile_count_query(&self, query: CountQuery) -> (String, Vec<DinocoValue>) {
+        let mut sql = format!("SELECT COUNT(*) FROM {}", query.table);
+        let params = append_conditions(&mut sql, query.conditions, None);
+
+        (sql, params)
+    }
+
+    fn compile_relation_count_query(&self, query: RelationCountQuery) -> (String, Vec<DinocoValue>) {
+        let mut parent_sql = format!("SELECT {} FROM {}", query.parent_field, query.parent_table);
+        let mut params = append_conditions(&mut parent_sql, query.parent_conditions, Some(query.parent_table));
+        let mut sql =
+            format!("SELECT COUNT(*) FROM {} WHERE {} IN ({parent_sql})", query.child_table, query.child_field,);
+        collect_conditions_prefixed_with_and(&mut sql, &mut params, query.child_conditions, Some(query.child_table));
+
+        (sql, params)
+    }
+
+    fn compile_relation_batch_query(&self, query: RelationBatchQuery) -> (String, Vec<DinocoValue>) {
+        let fields =
+            query.query.fields.iter().map(|field| format!("{}.{}", query.query.from, field)).collect::<Vec<_>>();
+        let mut select_fields = fields.join(", ");
+        select_fields.push_str(", ");
+        select_fields.push_str(query.query.from);
+        select_fields.push('.');
+        select_fields.push_str(query.relation_key_field);
+        select_fields.push_str(" AS __dinoco_relation_key");
+
+        if query.query.limit >= 0 || query.query.skip >= 0 {
+            return compile_partitioned_relation_batch_query(query, select_fields);
+        }
+
+        let table = query.query.from;
+        let mut sql = format!("SELECT {select_fields} FROM {table}");
+        let params = append_find_tail(
+            &mut sql,
+            query.query.conditions,
+            query.query.order_by,
+            query.query.limit,
+            query.query.skip,
+            Some(table),
+        );
+
+        (sql, params)
+    }
+
+    fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>) {
+        if query.query.limit >= 0 || query.query.skip >= 0 {
+            return compile_partitioned_relation_join_query(query);
+        }
+
+        let placeholders = vec!["?"; query.key_count].join(", ");
+        let mut sql = format!(
+            "SELECT {} FROM {} LEFT JOIN {} ON {}.{} = {}.{}",
+            relation_join_fields(&query).join(", "),
+            query.parent_table,
+            query.child_table,
+            query.parent_table,
+            query.parent_field,
+            query.child_table,
+            query.child_field,
+        );
+        let params = append_join_conditions(
+            &mut sql,
+            query.parent_table,
+            query.parent_field,
+            query.child_table,
+            placeholders,
+            query.query.conditions,
+        );
+        append_order_by(&mut sql, query.query.order_by, Some(query.child_table));
+
+        (sql, params)
+    }
+
+    fn compile_create_migrations_table(&self) -> String {
+        "CREATE TABLE IF NOT EXISTS dinoco_migrations (name VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            .to_string()
+    }
+
+    fn compile_insert_migration_record(&self, name: &str) -> String {
+        format!("INSERT IGNORE INTO dinoco_migrations (name) VALUES ('{}')", escape_sql(name))
+    }
+
+    fn compile_create_table_migration(&self, migration: CreateTableMigration) -> String {
+        let if_not_exists = if migration.if_not_exists { " IF NOT EXISTS" } else { "" };
+        let mut definitions = migration.columns.iter().map(compile_migration_column).collect::<Vec<_>>();
+        definitions.extend(migration.foreign_keys.iter().map(compile_foreign_key));
+
+        format!("CREATE TABLE{if_not_exists} {} (\n    {}\n);", migration.table, definitions.join(",\n    "))
+    }
+
+    fn compile_drop_table_migration(&self, migration: DropTableMigration) -> String {
+        let if_exists = if migration.if_exists { " IF EXISTS" } else { "" };
+        format!("DROP TABLE{if_exists} {};", migration.table)
+    }
+
+    fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String {
+        format!("ALTER TABLE {} ADD COLUMN {};", migration.table, compile_migration_column(&migration.column))
+    }
+
+    fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String {
+        format!("ALTER TABLE {} DROP COLUMN {};", migration.table, migration.column)
+    }
+
+    fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String> {
+        vec![format!("ALTER TABLE {} MODIFY COLUMN {};", migration.table, compile_migration_column(&migration.desired))]
+    }
+
+    fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String> {
+        vec![format!("ALTER TABLE {} RENAME COLUMN {} TO {};", migration.table, migration.from, migration.to)]
+    }
+
+    fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
+        vec![format!("ALTER TABLE {} ADD {};", migration.table, compile_foreign_key(&migration.foreign_key))]
+    }
+
+    fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String> {
+        vec![format!("ALTER TABLE {} DROP FOREIGN KEY {};", migration.table, migration.name)]
+    }
+
+    fn compile_create_enum_migration(&self, _migration: CreateEnumMigration) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn compile_drop_enum_migration(&self, _migration: DropEnumMigration) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn compile_alter_enum_migration(&self, _migration: AlterEnumMigration) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+fn compile_migration_column(column: &MigrationColumn) -> String {
+    let mut parts = vec![column.name.clone(), migration_type(&column.ty)];
+
+    if column.primary_key {
+        parts.push("PRIMARY KEY".to_string());
+    }
+
+    if !column.nullable {
+        parts.push("NOT NULL".to_string());
+    }
+
+    if let Some(default) = &column.default {
+        if let Some(default) = migration_default(default) {
+            parts.push(default);
+        }
+    }
+
+    parts.join(" ")
+}
+
+fn compile_foreign_key(foreign_key: &MigrationForeignKey) -> String {
+    format!(
+        "CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON UPDATE {} ON DELETE {}",
+        foreign_key.name,
+        foreign_key.columns.join(", "),
+        foreign_key.references_table,
+        foreign_key.references_columns.join(", "),
+        referential_action(foreign_key.on_update),
+        referential_action(foreign_key.on_delete),
+    )
+}
+
+fn referential_action(action: ReferentialAction) -> &'static str {
+    match action {
+        ReferentialAction::Cascade => "CASCADE",
+        ReferentialAction::Restrict => "RESTRICT",
+        ReferentialAction::NoAction => "NO ACTION",
+        ReferentialAction::SetNull => "SET NULL",
+        ReferentialAction::SetDefault => "SET DEFAULT",
+    }
+}
+
+fn migration_type(ty: &MigrationColumnType) -> String {
+    match ty {
+        MigrationColumnType::String | MigrationColumnType::Text => "VARCHAR(255)".to_string(),
+        MigrationColumnType::Boolean => "TINYINT(1)".to_string(),
+        MigrationColumnType::Integer => "BIGINT".to_string(),
+        MigrationColumnType::Float => "DOUBLE PRECISION".to_string(),
+        MigrationColumnType::DateTime => "TIMESTAMP".to_string(),
+        MigrationColumnType::Date => "DATE".to_string(),
+        MigrationColumnType::Json => "JSON".to_string(),
+        MigrationColumnType::Enum { values, .. } => {
+            let values = values.iter().map(|value| format!("'{}'", escape_sql(value))).collect::<Vec<_>>().join(", ");
+            format!("ENUM({values})")
+        }
+    }
+}
+
+fn migration_default(default: &MigrationDefault) -> Option<String> {
+    match default {
+        MigrationDefault::String(value) => Some(format!("DEFAULT '{}'", escape_sql(value))),
+        MigrationDefault::Boolean(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::Integer(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::Float(value) => Some(format!("DEFAULT {value}")),
+        MigrationDefault::CurrentTimestamp => Some("DEFAULT CURRENT_TIMESTAMP".to_string()),
+        MigrationDefault::AutoIncrement => Some("AUTO_INCREMENT".to_string()),
+    }
+}
+
+fn escape_sql(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
+fn compile_partitioned_relation_batch_query(
+    query: RelationBatchQuery,
+    select_fields: String,
+) -> (String, Vec<DinocoValue>) {
+    let table = query.query.from;
+    let partition_field = format!("{table}.{}", query.relation_key_field);
+    let order_by = relation_partition_order_by(table, query.query.order_by, &partition_field);
+    let mut inner_sql = format!(
+        "SELECT {select_fields}, ROW_NUMBER() OVER (PARTITION BY {partition_field} ORDER BY {order_by}) AS __dinoco_row_num FROM {table}",
+    );
+    let mut params = append_conditions(&mut inner_sql, query.query.conditions, Some(table));
+
+    append_row_window(&mut params, &mut inner_sql, query.query.skip, query.query.limit)
+}
+
+fn compile_partitioned_relation_join_query(query: RelationJoinQuery) -> (String, Vec<DinocoValue>) {
+    let placeholders = vec!["?"; query.key_count].join(", ");
+    let partition_field = format!("{}.{}", query.parent_table, query.parent_field);
+    let order_by = relation_partition_order_by(
+        query.child_table,
+        query.query.order_by.clone(),
+        &format!("{}.{}", query.child_table, query.child_field),
+    );
+    let mut fields = relation_join_fields(&query);
+    fields.push(format!("ROW_NUMBER() OVER (PARTITION BY {partition_field} ORDER BY {order_by}) AS __dinoco_row_num"));
+
+    let mut inner_sql = format!(
+        "SELECT {} FROM {} LEFT JOIN {} ON {}.{} = {}.{}",
+        fields.join(", "),
+        query.parent_table,
+        query.child_table,
+        query.parent_table,
+        query.parent_field,
+        query.child_table,
+        query.child_field,
+    );
+    let mut params = append_join_conditions(
+        &mut inner_sql,
+        query.parent_table,
+        query.parent_field,
+        query.child_table,
+        placeholders,
+        query.query.conditions,
+    );
+
+    append_row_window(&mut params, &mut inner_sql, query.query.skip, query.query.limit)
+}
+
+fn append_row_window(
+    params: &mut Vec<DinocoValue>,
+    inner_sql: &mut str,
+    skip: i32,
+    limit: i32,
+) -> (String, Vec<DinocoValue>) {
+    let mut row_conditions = Vec::new();
+    let skip = skip.max(0);
+
+    if skip > 0 {
+        row_conditions.push("__dinoco_row_num > ?".to_string());
+        params.push(DinocoValue::Integer(skip as i64));
+    }
+
+    if limit >= 0 {
+        row_conditions.push("__dinoco_row_num <= ?".to_string());
+        params.push(DinocoValue::Integer((skip + limit) as i64));
+    }
+
+    let mut sql = format!("SELECT * FROM ({inner_sql}) AS __dinoco_partitioned");
+
+    if !row_conditions.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&row_conditions.join(" AND "));
+    }
+
+    sql.push_str(" ORDER BY __dinoco_relation_key, __dinoco_row_num");
+
+    (sql, std::mem::take(params))
+}
+
+fn relation_join_fields(query: &RelationJoinQuery) -> Vec<String> {
+    let mut fields =
+        query.query.fields.iter().map(|field| format!("{}.{}", query.child_table, field)).collect::<Vec<_>>();
+
+    fields.push(format!("{}.{}", query.child_table, query.child_field));
+    fields.push(format!("{}.{} AS __dinoco_relation_key", query.parent_table, query.parent_field));
+
+    fields
+}
+
+fn append_find_tail(
+    sql: &mut String,
+    conditions: Vec<FindWhere>,
+    order_by: Option<FindOrderBy>,
+    limit: i32,
+    skip: i32,
+    qualifier: Option<&str>,
+) -> Vec<DinocoValue> {
+    let mut params = append_conditions(sql, conditions, qualifier);
+
+    append_order_by(sql, order_by, qualifier);
+
+    if limit >= 0 {
+        sql.push_str(" LIMIT ?");
+        params.push(DinocoValue::Integer(limit as i64));
+    }
+
+    if skip >= 0 {
+        sql.push_str(" OFFSET ?");
+        params.push(DinocoValue::Integer(skip as i64));
+    }
+
+    params
+}
+
+fn append_join_conditions(
+    sql: &mut String,
+    parent_table: &str,
+    parent_field: &str,
+    child_table: &str,
+    placeholders: String,
+    child_conditions: Vec<FindWhere>,
+) -> Vec<DinocoValue> {
+    let mut conditions = vec![format!("{parent_table}.{parent_field} IN ({placeholders})")];
+    let mut params = Vec::new();
+
+    collect_conditions(&mut conditions, &mut params, child_conditions, Some(child_table));
+
+    sql.push_str(" WHERE ");
+    sql.push_str(&conditions.join(" AND "));
+
+    params
+}
+
+fn append_conditions(sql: &mut String, conditions: Vec<FindWhere>, qualifier: Option<&str>) -> Vec<DinocoValue> {
+    let mut params = Vec::new();
+    let mut sql_conditions = Vec::new();
+
+    collect_conditions(&mut sql_conditions, &mut params, conditions, qualifier);
+
+    if !sql_conditions.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&sql_conditions.join(" AND "));
+    }
+
+    params
+}
+
+fn collect_conditions_prefixed_with_and(
+    sql: &mut String,
+    params: &mut Vec<DinocoValue>,
+    conditions: Vec<FindWhere>,
+    qualifier: Option<&str>,
+) {
+    let mut sql_conditions = Vec::new();
+
+    collect_conditions(&mut sql_conditions, params, conditions, qualifier);
+
+    if !sql_conditions.is_empty() {
+        sql.push_str(" AND ");
+        sql.push_str(&sql_conditions.join(" AND "));
+    }
+}
+
+fn collect_conditions(
+    sql_conditions: &mut Vec<String>,
+    params: &mut Vec<DinocoValue>,
+    conditions: Vec<FindWhere>,
+    qualifier: Option<&str>,
+) {
+    for condition in conditions {
+        match condition {
+            FindWhere::Eq(field, value) => {
+                sql_conditions.push(format!("{} = ?", qualify_field(field, qualifier)));
+                params.push(value);
+            }
+            FindWhere::Neq(field, value) => {
+                sql_conditions.push(format!("{} != ?", qualify_field(field, qualifier)));
+                params.push(value);
+            }
+            FindWhere::Gt(field, value) => {
+                sql_conditions.push(format!("{} > ?", qualify_field(field, qualifier)));
+                params.push(value);
+            }
+            FindWhere::Gte(field, value) => {
+                sql_conditions.push(format!("{} >= ?", qualify_field(field, qualifier)));
+                params.push(value);
+            }
+            FindWhere::Lt(field, value) => {
+                sql_conditions.push(format!("{} < ?", qualify_field(field, qualifier)));
+                params.push(value);
+            }
+            FindWhere::Lte(field, value) => {
+                sql_conditions.push(format!("{} <= ?", qualify_field(field, qualifier)));
+                params.push(value);
+            }
+            FindWhere::Like(field, value) => {
+                sql_conditions.push(format!("{} LIKE ?", qualify_field(field, qualifier)));
+                params.push(value);
+            }
+            FindWhere::Between(field, start, end) => {
+                sql_conditions.push(format!(
+                    "{} >= ? AND {} <= ?",
+                    qualify_field(field, qualifier),
+                    qualify_field(field, qualifier)
+                ));
+                params.push(start);
+                params.push(end);
+            }
+            FindWhere::Batch(field, values) => {
+                if values.is_empty() {
+                    sql_conditions.push("1 = 0".to_string());
+                } else {
+                    let placeholders = vec!["?"; values.len()].join(", ");
+                    sql_conditions.push(format!("{} IN ({placeholders})", qualify_field(field, qualifier)));
+                    params.extend(values);
+                }
+            }
+            FindWhere::Null(field) => {
+                sql_conditions.push(format!("{} IS NULL", qualify_field(field, qualifier)));
+            }
+            FindWhere::NotNull(field) => {
+                sql_conditions.push(format!("{} IS NOT NULL", qualify_field(field, qualifier)));
+            }
+        }
+    }
+}
+
+fn append_order_by(sql: &mut String, order_by: Option<FindOrderBy>, qualifier: Option<&str>) {
+    if let Some(order_by) = order_by {
+        let (field, direction) = match order_by {
+            FindOrderBy::Asc(field) => (field, "ASC"),
+            FindOrderBy::Desc(field) => (field, "DESC"),
+        };
+
+        sql.push_str(" ORDER BY ");
+        sql.push_str(&qualify_field(field, qualifier));
+        sql.push(' ');
+        sql.push_str(direction);
+    }
+}
+
+fn relation_partition_order_by(table: &str, order_by: Option<FindOrderBy>, fallback: &str) -> String {
+    let Some(order_by) = order_by else {
+        return fallback.to_string();
+    };
+
+    let (field, direction) = match order_by {
+        FindOrderBy::Asc(field) => (field, "ASC"),
+        FindOrderBy::Desc(field) => (field, "DESC"),
+    };
+
+    format!("{} {direction}", qualify_field(field, Some(table)))
+}
+
+fn qualify_field(field: &str, qualifier: Option<&str>) -> String {
+    match qualifier {
+        Some(qualifier) if !field.contains('.') => format!("{qualifier}.{field}"),
+        _ => field.to_string(),
+    }
+}

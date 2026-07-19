@@ -1,0 +1,228 @@
+# insert_many
+
+Используется для пакетной вставки.
+
+---
+
+## Что вы можете сделать
+
+- `.values(Vec&lt;M&gt;)`: определяет записи, которые будут вставлены в пакетном режиме.
+- `.returning::&lt;T&gt;()`: изменяет возвращаемое значение на типизированный список вставленных элементов.
+- `.execute(&client)`: выполняет пакетную операцию.
+
+## Возвращаемое значение
+
+Без `.returning::&lt;T&gt;()` возвращаемое значение:
+
+```rust
+DinocoResult<()>
+```
+
+С `.returning::&lt;T&gt;()` возвращаемое значение становится:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Простой пример
+
+```rust
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: "u1".into(), email: "a@acme.com".into(), name: "A".into() },
+        User { id: "u2".into(), email: "b@acme.com".into(), name: "B".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Пример с возвращаемым значением
+
+```rust
+let created = dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Пример с воркером
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-created", |job| async move {
+        println!("Пользователи, созданные в пакете: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::insert_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana".to_string() },
+        User { id: 3, name: "Caio".to_string() },
+    ])
+    .enqueue("user.batch-created")
+    .execute(&client)
+    .await?;
+```
+
+Подробнее о воркерах см. в разделе [**`queues`**](/v0.0.2/orm/queues).
+
+## Пример с вложенными отношениями
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Team)]
+#[insertable]
+struct TeamWithMembers {
+    id: String,
+    name: String,
+    members: Vec<Member>,
+}
+
+dinoco::insert_many::<Team>()
+    .values(vec![
+        TeamWithMembers {
+            id: "team-11".into(),
+            name: "Data".into(),
+            members: vec![
+                Member { id: "member-11".into(), name: "Rafa".into(), teamId: "legacy".into() },
+                Member { id: "member-12".into(), name: "Bia".into(), teamId: "legacy".into() },
+            ],
+        },
+        TeamWithMembers {
+            id: "team-12".into(),
+            name: "DX".into(),
+            members: vec![
+                Member { id: "member-13".into(), name: "Caio".into(), teamId: "legacy".into() },
+            ],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Пример с вложенными связями
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_many::<Article>()
+    .values(vec![
+        ArticleWithLabels {
+            id: "article-11".into(),
+            title: "Connect Multiple".into(),
+            labels: vec![
+                ArticleConnection::Label("label-11".into()),
+                ArticleConnection::Label("label-12".into()),
+            ],
+        },
+        ArticleWithLabels {
+            id: "article-12".into(),
+            title: "Connect Batch".into(),
+            labels: vec![
+                ArticleConnection::Label("label-10".into()),
+            ],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Пример с ArticleConnection
+
+Если связанные элементы уже существуют, используйте перечисление, сгенерированное codegen, внутри полезной нагрузки.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+let values = vec![
+    ArticleWithLabels {
+        id: "article-21".into(),
+        title: "Connect Multiple".into(),
+        labels: vec![
+            ArticleConnection::Label("label-11".into()),
+            ArticleConnection::Label("label-12".into()),
+        ],
+    },
+    ArticleWithLabels {
+        id: "article-22".into(),
+        title: "Connect Batch".into(),
+        labels: vec![ArticleConnection::Label("label-10".into())],
+    },
+];
+
+dinoco::insert_many::<Article>()
+    .values(values)
+    .execute(&client)
+    .await?;
+```
+
+## Пример с Extend #[insertable]
+
+`insert_many` также может принимать более сложные полезные нагрузки через `.values(...)`, если структура помечена `#[insertable]`. Это полезно для создания родителей и их вложенных отношений в одном рекурсивном потоке.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<Label>,
+}
+
+dinoco::insert_many::<Article>()
+    .values(vec![
+        ArticleWithLabels {
+            id: "article-11".into(),
+            title: "Connect Multiple".into(),
+            labels: vec![
+                Label { id: "label-11".into(), name: "orm".into() },
+                Label { id: "label-12".into(), name: "rust".into() },
+            ],
+        },
+        ArticleWithLabels {
+            id: "article-12".into(),
+            title: "Connect Batch".into(),
+            labels: vec![
+                Label { id: "label-10".into(), name: "backend".into() },
+            ],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Примечания
+
+- `#[insertable]` в структуре `Extend` позволяет `.values(...)` рекурсивно вставлять новые отношения.
+- Для связей с уже существующими записями используйте перечисление `ModelConnection`, сгенерированное codegen.
+- Новые отношения могут использовать `Vec&lt;ModelRelacionado&gt;` или другие полезные нагрузки `Extend`, помеченные `#[insertable]`.
+- Существующие связи хорошо работают в сценариях "многие ко многим", а также в потоках, поддерживаемых сгенерированной моделью.
+
+## Следующие шаги
+
+- [**Derives**](/v0.0.2/core/derives): узнайте, как создавать полезные нагрузки с помощью `Extend` и `#[insertable]`.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into): одиночная вставка.
+- [**`update::&lt;M&gt;()`**](/v0.0.2/orm/update): обновление с фильтром.

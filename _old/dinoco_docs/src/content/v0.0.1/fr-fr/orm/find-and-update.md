@@ -1,0 +1,55 @@
+# find_and_update
+
+Utilisé pour localiser un enregistrement unique, appliquer des mises à jour atomiques dans la base de données et retourner l'élément mis à jour.
+
+---
+
+## Ce que vous pouvez faire
+
+- `.cond(...)`
+- `.update(...)`
+- `.execute(&client)`
+
+## Description des méthodes
+
+- `.cond(...)`: définit quel enregistrement sera localisé.
+- `.update(...)`: applique une opération atomique sur un champ du modèle.
+- `.execute(&client)`: exécute la mise à jour et retourne l'enregistrement mis à jour.
+
+## Retour
+
+Le retour de `find_and_update` est :
+
+```rust
+DinocoResult<M>
+```
+
+## Exemple de base
+
+```rust
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .execute(&client)
+    .await?;
+```
+
+## Opérations disponibles dans `ModelUpdate`
+
+- `set(value)`
+- `increment(value)`
+- `decrement(value)`
+- `multiply(value)`
+- `division(value)`
+
+## Remarques
+
+- La mise à jour est exécutée en un seul `UPDATE`.
+- Si aucune ligne ne correspond à la condition, le retour sera `DinocoError::RecordNotFound`.
+- La DSL de mise à jour n'expose pas les relations.
+- Actuellement, le flux prend en charge une clé primaire simple pour localiser et retourner l'enregistrement mis à jour.
+
+## Prochaines étapes
+
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): mise à jour traditionnelle.
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): mise à jour par lot.

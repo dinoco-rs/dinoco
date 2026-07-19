@@ -1,0 +1,13 @@
+.gitignore
+.DS_Store
+.vscode/**
+.vscode-test/**
+node_modules/**
+src/**
+scripts/**
+Cargo.toml
+Cargo.lock
+tsconfig.json
+package-lock.json
+*.vsix
+bin/.gitkeep

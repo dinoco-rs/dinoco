@@ -1,0 +1,458 @@
+# Отношения
+
+Отношения связывают модели друг с другом в схеме Dinoco.
+
+Эта страница охватывает `@relation(...)`, `onDelete`, `onUpdate` и наиболее распространенные шаблоны отношений.
+
+---
+
+## @relation(...)
+
+Атрибут `@relation(...)` определяет, как две модели связаны.
+
+Поддерживаемые параметры:
+
+| Параметр     | Использование                                    |
+| :----------- | :----------------------------------------------- |
+| `name`       | Явное имя отношения                              |
+| `fields`     | Локальные поля, используемые в качестве ключа    |
+| `references` | Ссылочные поля в целевой модели                  |
+| `onDelete`   | Поведение при удалении связанной записи          |
+| `onUpdate`   | Поведение при обновлении связанного значения     |
+
+Полный пример:
+
+```dinoco
+model Post {
+	id       Integer @id @default(autoincrement())
+	title    String
+	authorId Integer?
+	author   User?   @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: SetNull)
+}
+```
+
+## onDelete и onUpdate
+
+Dinoco предоставляет ссылочные действия для управления тем, что происходит при изменении или удалении связанной записи.
+
+Поддерживаемые значения:
+
+| Действие     | Значение                                         |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | Распространяет операцию на зависимые записи      |
+| `SetNull`    | Устанавливает внешний ключ в `null`              |
+| `SetDefault` | Устанавливает значение по умолчанию, настроенное для поля |
+
+Пример:
+
+```dinoco
+model Comment {
+	id      Integer @id @default(autoincrement())
+	postId  Integer?
+	post    Post?   @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: SetNull)
+}
+```
+
+Используйте `SetNull` только тогда, когда локальное поле является необязательным.
+
+## Один ко многим
+
+Это наиболее распространенное отношение: одна родительская запись имеет несколько дочерних.
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	name  String
+	posts Post[]
+}
+
+model Post {
+	id       Integer @id @default(autoincrement())
+	title    String
+	authorId Integer
+	author   User    @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}
+```
+
+Мысленное чтение:
+
+- Один `User` может иметь несколько `Post`.
+- Каждый `Post` принадлежит одному `User`.
+
+## Многие ко многим
+
+В отношении "многие ко многим" обе стороны имеют списки.
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	name  String
+
+	roles Role[]
+}
+
+model Role {
+	id    Integer @id @default(autoincrement())
+	name  String
+
+	users User[]
+}
+```
+
+Мысленное чтение:
+
+- Один `User` может иметь несколько `Role`.
+- Одна `Role` может принадлежать нескольким `User`.
+
+## Самоотношение
+
+Самоотношение возникает, когда модель связана сама с собой.
+
+```dinoco
+model User {
+	id        Integer @id @default(autoincrement())
+	name      String
+	managerId Integer?
+	manager   User?   @relation(name: "UserManager", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+	reports   User[]  @relation(name: "UserManager")
+}
+```
+
+Мысленное чтение:
+
+- У пользователя может быть менеджер.
+- У пользователя может быть несколько подчиненных.
+
+## Практические советы
+
+- Используйте `name`, когда между одними и теми же моделями существует более одного отношения.
+- Используйте `onDelete: Cascade`, когда дочерний элемент не имеет смысла без родительского.
+- Используйте `onDelete: SetNull`, когда отношение может быть разорвано без удаления дочерней записи.
+- Используйте самоотношения с явными именами для облегчения чтения и генерации кода.
+
+## Схема для примеров
+
+Приведенные ниже примеры используют следующую схему:
+
+```dinoco
+config {
+	database = "sqlite"
+	database_url = env("DATABASE_URL")
+}
+
+enum Role {
+	ADMIN
+	USER
+}
+
+model User {
+	id             String     @id @default(uuid())
+	username       String     @unique
+	role           Role       @default(USER)
+
+	profile        Profile?
+
+	followers      User[]     @relation(name: "UserFollows")
+	following      User[]     @relation(name: "UserFollows")
+
+	posts          Post[]     @relation(name: "PostAuthor")
+	comments       Comment[]  @relation(name: "CommentAuthor")
+
+	likedPosts     Post[]     @relation(name: "PostLikers")
+	likedComments  Comment[]  @relation(name: "CommentLikers")
+}
+
+model Profile {
+	id      String   @id @default(uuid())
+	bio     String?
+	userId  String   @unique
+	user    User     @relation(fields: [userId], references: [id])
+}
+
+model Post {
+	id        String     @id @default(uuid())
+	title     String
+	content   String
+
+	authorId  String
+	author    User       @relation(name: "PostAuthor", fields: [authorId], references: [id])
+
+	likers    User[]     @relation(name: "PostLikers")
+
+	comments  Comment[]
+
+	tags      Tag[]
+}
+
+model Comment {
+	id        String     @id @default(uuid())
+	text      String
+
+	parentId  String?
+	parent    Comment?   @relation(name: "CommentReplies", fields: [parentId], references: [id])
+	replies   Comment[]  @relation(name: "CommentReplies")
+
+	postId    String
+	post      Post       @relation(fields: [postId], references: [id])
+
+	authorId  String
+	author    User       @relation(name: "CommentAuthor", fields: [authorId], references: [id])
+
+	likers    User[]     @relation(name: "CommentLikers")
+}
+
+model Tag {
+	id     String  @id @default(uuid())
+	name   String  @unique
+
+	posts  Post[]
+}
+```
+
+## Пример запроса со всеми возможными отношениями от User
+
+Когда вы хотите начать с модели `User` и загрузить все прямые отношения в одном запросе на чтение, вы можете комбинировать `select::&lt;T&gt;()` с несколькими `includes(...)`.
+
+```rust
+use dinoco::{Extend, find_many};
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Profile)]
+struct ProfileView {
+	id: String,
+	bio: Option<String>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserRelationItem {
+	id: String,
+	username: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Tag)]
+struct TagView {
+	id: String,
+	name: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Comment)]
+struct CommentView {
+	id: String,
+	text: String,
+	replies: Vec<CommentReplyView>,
+	likers: Vec<UserRelationItem>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Comment)]
+struct CommentReplyView {
+	id: String,
+	text: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+struct PostView {
+	id: String,
+	title: String,
+	content: String,
+	likers: Vec<UserRelationItem>,
+	tags: Vec<TagView>,
+	comments: Vec<CommentView>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserWithAllRelations {
+	id: String,
+	username: String,
+	profile: Option<ProfileView>,
+	followers: Vec<UserRelationItem>,
+	following: Vec<UserRelationItem>,
+	posts: Vec<PostView>,
+	comments: Vec<CommentView>,
+	likedPosts: Vec<PostView>,
+	likedComments: Vec<CommentView>,
+}
+
+let users = find_many::<User>()
+	.select::<UserWithAllRelations>()
+	.includes(|user| user.profile())
+	.includes(|user| user.followers())
+	.includes(|user| user.following())
+	.includes(|user| {
+		user.posts()
+			.includes(|post| post.likers())
+			.includes(|post| post.tags())
+			.includes(|post| {
+				post.comments()
+					.includes(|comment| comment.replies())
+					.includes(|comment| comment.likers())
+			})
+	})
+	.includes(|user| {
+		user.comments()
+			.includes(|comment| comment.replies())
+			.includes(|comment| comment.likers())
+	})
+	.includes(|user| {
+		user.likedPosts()
+			.includes(|post| post.likers())
+			.includes(|post| post.tags())
+			.includes(|post| {
+				post.comments()
+					.includes(|comment| comment.replies())
+					.includes(|comment| comment.likers())
+			})
+	})
+	.includes(|user| {
+		user.likedComments()
+			.includes(|comment| comment.replies())
+			.includes(|comment| comment.likers())
+	})
+	.execute(&client)
+	.await?;
+```
+
+Этот шаблон полезен, когда вы хотите создать полное представление пользователя за одно чтение, ориентированное на отношения.
+
+## Пример вставки с отношением, использующим User и Profile
+
+Для вставки записи с отношением 1:1 используйте `with_relation(...)`.
+
+```rust
+use dinoco::insert_into;
+
+let created_user = insert_into::<User>()
+	.values(User {
+		id: "user-1".to_string(),
+		username: "bia".to_string(),
+		role: Role::USER,
+	})
+	.with_relation(Profile {
+		id: "profile-1".to_string(),
+		bio: Some("Инженер-программист".to_string()),
+		userId: String::new(),
+	})
+	.execute(&client)
+	.await?;
+```
+
+В этом потоке:
+
+- `User` вставляется первым.
+- Связанный `Profile` создается следующим.
+- Ключ `userId` связывается потоком отношений Dinoco.
+
+## Пример insert_many с with_relations(...)
+
+Используйте `with_relations(...)`, когда вы хотите вставить несколько родительских записей и для каждой из них также вставить несколько новых связанных записей.
+
+```rust
+use dinoco::insert_many;
+
+let posts = vec![
+	Post {
+		id: "post-1".to_string(),
+		title: "Первый пост".to_string(),
+		content: "Содержимое первого поста".to_string(),
+		authorId: "user-1".to_string(),
+	},
+	Post {
+		id: "post-2".to_string(),
+		title: "Второй пост".to_string(),
+		content: "Содержимое второго поста".to_string(),
+		authorId: "user-1".to_string(),
+	},
+];
+
+let comments_per_post = vec![
+	vec![
+		Comment {
+			id: "comment-1".to_string(),
+			text: "Очень хорошо".to_string(),
+			parentId: None,
+			postId: String::new(),
+			authorId: "user-2".to_string(),
+		},
+		Comment {
+			id: "comment-2".to_string(),
+			text: "Мне понравился пример".to_string(),
+			parentId: None,
+			postId: String::new(),
+			authorId: "user-3".to_string(),
+		},
+	],
+	vec![
+		Comment {
+			id: "comment-3".to_string(),
+			text: "Хочу больше деталей".to_string(),
+			parentId: None,
+			postId: String::new(),
+			authorId: "user-2".to_string(),
+		},
+	],
+];
+
+insert_many::<Post>()
+	.values(posts)
+	.with_relations(comments_per_post)
+	.execute(&client)
+	.await?;
+```
+
+В этом потоке:
+
+- Каждый `Post` вставляется.
+- Каждая группа в `comments_per_post` соответствует `Post` той же позиции.
+- Dinoco связывает `Comment` с правильным постом во время записи.
+
+## Пример insert_many с with_connections(...)
+
+Используйте `with_connections(...)`, когда вы хотите вставить несколько родительских записей и связать каждую из них с несколькими уже существующими записями.
+
+```rust
+use dinoco::insert_many;
+
+insert_many::<Post>()
+	.values(vec![
+		Post {
+			id: "post-10".to_string(),
+			title: "Rust и Dinoco".to_string(),
+			content: "Пост о продуктивности".to_string(),
+			authorId: "user-1".to_string(),
+		},
+		Post {
+			id: "post-11".to_string(),
+			title: "Расширенные отношения".to_string(),
+			content: "Пост об includes и отношениях".to_string(),
+			authorId: "user-1".to_string(),
+		},
+	])
+	.with_connections(vec![
+		vec![
+			Tag { id: "tag-1".to_string(), name: "rust".to_string() },
+			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
+		],
+		vec![
+			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
+			Tag { id: "tag-3".to_string(), name: "sqlite".to_string() },
+		],
+	])
+	.execute(&client)
+	.await?;
+```
+
+В этом потоке:
+
+- `Post` вставляются.
+- Уже существующие `Tag` связываются с соответствующими постами.
+- Каждая группа внешнего вектора представляет связи поста той же позиции.
+
+## Следующие шаги
+
+- [**Enums**](/v0.0.1/orm/enums): узнайте, как представлять контролируемые значения в схеме.
+- [**Models**](/v0.0.1/orm/models): ознакомьтесь со структурой полей и примерами поиска, вставки, обновления и удаления с помощью API Dinoco.

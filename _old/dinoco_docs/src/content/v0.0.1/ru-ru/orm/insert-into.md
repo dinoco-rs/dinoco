@@ -1,0 +1,93 @@
+# insert_into
+
+Используется для вставки записи.
+
+---
+
+## Что вы можете сделать
+
+- Передать значения с помощью `.values(item)`
+- Вставить с отношением через `.with_relation(related)`
+- Подключить существующее отношение через `.with_connection(connected)`
+- Выполнить с помощью `.execute(&client)`
+
+## Описание методов
+
+- `.values(item)`: определяет запись, которая будет вставлена.
+- `.with_relation(related)`: вставляет новую связанную запись вместе с родительской.
+- `.with_connection(connected)`: подключает вставленную запись к уже существующему элементу, обычно в поддерживаемых потоках отношений для подключения.
+- `.returning::&lt;T&gt;()`: изменяет возвращаемое значение на типизированную проекцию вставленного элемента.
+- `.execute(&client)`: выполняет запись в базу данных.
+
+## Возвращаемое значение
+
+Без `.returning::&lt;T&gt;()` возвращаемое значение:
+
+```rust
+DinocoResult<()>
+```
+
+С `.returning::&lt;T&gt;()` возвращаемое значение становится:
+
+```rust
+DinocoResult<T>
+```
+
+## Простой пример
+
+```rust
+dinoco::insert_into::<User>()
+    .values(User {
+        id: "usr_1".to_string(),
+        email: "ana@acme.com".to_string(),
+        name: "Ana".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Пример с отношением
+
+Используйте `.with_relation(...)`, когда сгенерированная модель поддерживает вставку родителя и связанного элемента вместе.
+
+```rust
+dinoco::insert_into::<User>()
+    .values(user)
+    .with_relation(profile)
+    .execute(&client)
+    .await?;
+```
+
+## Пример с подключением
+
+Используйте `.with_connection(...)`, когда вы хотите вставить элемент и подключить уже существующее отношение.
+
+```rust
+dinoco::insert_into::<User>()
+    .values(new_user)
+    .with_connection(existing_team)
+    .execute(&client)
+    .await?;
+```
+
+## Пример с типизированным возвращаемым значением
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let created = dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .returning::<UserSummary>()
+    .execute(&client)
+    .await?;
+```
+
+## Следующие шаги
+
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.1/orm/insert-many): пакетная вставка.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): обновление записей.

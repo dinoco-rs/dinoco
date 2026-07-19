@@ -1,0 +1,198 @@
+{
+	"groups": [
+		{
+			"icon": "rocket",
+			"name": "Guia",
+			"shortName": "guide",
+			"sections": [
+				{
+					"title": "Comece aqui",
+					"items": [
+						{
+							"name": "Introdução",
+							"shortName": "introduction",
+							"description": "O que é o Dinoco e como suas partes trabalham juntas.",
+							"contentPath": "v1.0.0/pt-br/introduction.md",
+							"inPage": ["O que o Dinoco entrega", "Como o fluxo se encaixa", "A superfície da v1.0.0"]
+						},
+						{
+							"name": "Início rápido",
+							"shortName": "quickstart",
+							"description": "Crie um projeto, execute uma migration e faça a primeira consulta.",
+							"contentPath": "v1.0.0/pt-br/quickstart.md",
+							"inPage": ["Pré-requisitos", "1. Instale o Dinoco", "2. Inicialize o projeto", "3. Defina o schema", "4. Gere e execute a migration", "5. Use o client gerado"]
+						}
+					]
+				},
+				{
+					"title": "Schema",
+					"items": [
+						{
+							"name": "Configuração",
+							"shortName": "configuration",
+							"description": "Configure banco, modo de conexão, réplicas e IDs Snowflake.",
+							"contentPath": "v1.0.0/pt-br/configuration.md",
+							"inPage": ["Bloco de configuração", "Variáveis de ambiente", "PostgreSQL", "MySQL", "SQLite", "Réplicas de leitura", "IDs Snowflake"]
+						},
+						{
+							"name": "Models e fields",
+							"shortName": "models",
+							"description": "Mapeie tipos escalares, opcionais, IDs e constraints para Rust e SQL.",
+							"contentPath": "v1.0.0/pt-br/models.md",
+							"inPage": ["Declare um model", "Tipos escalares", "Fields opcionais e listas", "Atributos de field", "A função new gerada", "Arquivos gerados"]
+						},
+						{
+							"name": "Defaults e enums",
+							"shortName": "defaults-enums",
+							"description": "Use literais, UUIDs, Snowflakes, autoincremento, datas e enums do banco.",
+							"contentPath": "v1.0.0/pt-br/defaults-enums.md",
+							"inPage": ["Defaults literais", "Valores gerados", "UUID", "Snowflake", "Autoincremento", "Enums", "Alterando enums com segurança"]
+						},
+						{
+							"name": "Relações",
+							"shortName": "relations",
+							"description": "Modele relações one-to-one, one-to-many, many-to-one, many-to-many, repetidas e self.",
+							"contentPath": "v1.0.0/pt-br/relations.md",
+							"inPage": ["Anatomia de uma relação", "One-to-many e many-to-one", "One-to-one", "Many-to-many", "Relações repetidas", "Self relations", "Ações referenciais", "Checklist de relações"]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "database",
+			"name": "ORM",
+			"shortName": "orm",
+			"sections": [
+				{
+					"title": "Runtime",
+					"items": [
+						{
+							"name": "Clients e adapters",
+							"shortName": "clients-adapters",
+							"description": "Conecte via PostgreSQL Direct, PgBouncer, MySQL ou SQLite e configure réplicas.",
+							"contentPath": "v1.0.0/pt-br/clients-adapters.md",
+							"inPage": ["Conexão gerada", "PostgreSQL Direct", "PostgreSQL com PgBouncer", "MySQL", "SQLite", "Réplicas de leitura", "Regras de execução"]
+						}
+					]
+				},
+				{
+					"title": "Leitura",
+					"items": [
+						{
+							"name": "Buscar registros",
+							"shortName": "find",
+							"description": "Leia um ou vários registros com filtros, ordenação, paginação e primary.",
+							"contentPath": "v1.0.0/pt-br/find.md",
+							"inPage": ["Busque o primeiro registro", "Busque vários registros", "Ordenação e paginação", "Leia no primary", "Valores retornados"]
+						},
+						{
+							"name": "Filtros",
+							"shortName": "filters",
+							"description": "Componha predicados tipados de igualdade, texto, range, null e batch.",
+							"contentPath": "v1.0.0/pt-br/filters.md",
+							"inPage": ["Monte uma cláusula where", "Operadores comuns", "Operadores de String", "Ranges numéricos", "Verificações de null", "Valores em batch", "Combinando condições"]
+						},
+						{
+							"name": "Select e includes",
+							"shortName": "select-includes",
+							"description": "Retorne projeções customizadas e carregue relações sem consultas N+1.",
+							"contentPath": "v1.0.0/pt-br/select-includes.md",
+							"inPage": ["Seleções customizadas", "Inclua uma relação", "Filtre um include", "Como as relações são carregadas", "Orientação prática"]
+						},
+						{
+							"name": "Count",
+							"shortName": "count",
+							"description": "Conte models e relações selecionadas com tipos de count gerados.",
+							"contentPath": "v1.0.0/pt-br/count.md",
+							"inPage": ["Conte um model", "Filtre o count", "Conte relações", "Tipos de count gerados"]
+						}
+				]
+			},
+			{
+				"title": "Escrita",
+				"items": [
+					{
+						"name": "Insert",
+						"shortName": "insert",
+						"description": "Insira uma ou várias entities, incluindo relações aninhadas do lado one.",
+						"contentPath": "v1.0.0/pt-br/insert.md",
+						"inPage": ["Crie uma entity", "Insira uma entity", "Insira várias entities", "Insira relações", "Identificadores gerados", "Retorne uma projeção"]
+					},
+					{
+						"name": "Update",
+						"shortName": "update",
+						"description": "Atualize um ou vários registros, faça updates atômicos e conecte many-to-many.",
+						"contentPath": "v1.0.0/pt-br/update.md",
+						"inPage": ["Atualize um registro", "Atualize vários registros", "Defina fields opcionais", "Retorne uma projeção", "Find and update atômico", "Conecte e desconecte many-to-many"]
+					},
+					{
+						"name": "Delete",
+						"shortName": "delete",
+						"description": "Remova um ou vários registros com filtros explícitos e projeções opcionais.",
+						"contentPath": "v1.0.0/pt-br/delete.md",
+						"inPage": ["Remova um registro", "O filtro obrigatório", "Remova vários registros", "Retorne os dados removidos", "Relações e ações referenciais"]
+					}
+				]
+			}
+		]
+	},
+	{
+		"icon": "terminal",
+		"name": "Ferramentas",
+		"shortName": "tooling",
+		"sections": [
+			{
+				"title": "Fluxo do banco",
+				"items": [
+					{
+						"name": "Migrations",
+						"shortName": "migrations",
+						"description": "Gere, revise e execute migrations por adapter com tabelas de validacao isoladas.",
+						"contentPath": "v1.0.0/pt-br/migrations.md",
+						"inPage": ["Ciclo de uma migration", "Gere uma migration", "Como as alterações são detectadas", "Alterações perigosas", "Revise o SQL gerado", "Execute migrations pendentes", "Models gerados"]
+					},
+					{
+						"name": "Referência da CLI",
+						"shortName": "cli",
+						"description": "Use todos os comandos disponíveis na CLI do Dinoco.",
+						"contentPath": "v1.0.0/pt-br/cli.md",
+						"inPage": ["dinoco init", "dinoco migrate generate", "dinoco migrate run", "dinoco models generate", "Fluxo recomendado"]
+					}
+				]
+			},
+			{
+				"title": "Editor",
+				"items": [
+					{
+						"name": "Extensão do VS Code",
+						"shortName": "vscode",
+						"description": "Use syntax highlight, diagnosticos, completion, hover e formatação do schema.",
+						"contentPath": "v1.0.0/pt-br/vscode.md",
+						"inPage": ["Abra um projeto Dinoco", "Recursos da linguagem", "Formatação", "Solução de problemas"]
+					}
+				]
+			}
+		]
+	},
+	{
+		"icon": "box",
+		"name": "Referência",
+		"shortName": "reference",
+		"sections": [
+			{
+				"title": "API",
+				"items": [
+					{
+						"name": "Referência da API",
+						"shortName": "api-reference",
+						"description": "Referência compacta da sintaxe do schema, APIs geradas, methods e retornos.",
+						"contentPath": "v1.0.0/pt-br/api-reference.md",
+						"inPage": ["Referência do schema", "API gerada da entity", "Methods de leitura", "Methods de escrita", "Methods de filtro", "Construtores de adapters", "Tipos de valor"]
+					}
+				]
+			}
+		]
+	}
+	]
+}

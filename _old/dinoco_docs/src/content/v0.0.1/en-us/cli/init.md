@@ -1,0 +1,40 @@
+# How to use?
+
+The `dinoco init` command initializes the Dinoco environment in the current project.
+
+It prepares the necessary foundation to start working with schema, migrations, and model generation.
+
+---
+
+## What the command does
+
+When running `dinoco init`, the CLI guides the initial setup of the Dinoco environment.
+
+In general, this flow prepares:
+
+- Base `dinoco` directory structure
+- Initial schema files
+- Database configuration
+- Foundation for future migrations
+
+## When to use
+
+Use this command when:
+
+- You are setting up Dinoco for the first time in the project
+- You want to create the initial local environment structure
+- You need to prepare the project to generate migrations and models
+
+## Next steps
+
+After `init`, the most common flow is:
+
+```bash
+dinoco migrate generate
+```
+
+or, if you want to generate and apply immediately:
+
+```bash
+dinoco migrate generate --apply
+```

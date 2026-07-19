@@ -1,0 +1,93 @@
+# insert_into
+
+레코드를 삽입하는 데 사용됩니다.
+
+---
+
+## 수행할 수 있는 작업
+
+- `.values(item)`으로 값 전달
+- `.with_relation(related)`를 통해 관계와 함께 삽입
+- `.with_connection(connected)`를 통해 기존 관계 연결
+- `.execute(&client)`로 실행
+
+## 메서드 설명
+
+- `.values(item)`: 삽입할 레코드를 정의합니다.
+- `.with_relation(related)`: 부모와 함께 새로운 관련 레코드를 삽입합니다.
+- `.with_connection(connected)`: 삽입된 레코드를 기존 항목에 연결합니다. 일반적으로 연결을 지원하는 관계 흐름에서 사용됩니다.
+- `.returning::&lt;T&gt;()`: 반환 값을 삽입된 항목의 타입화된 프로젝션으로 변경합니다.
+- `.execute(&client)`: 데이터베이스에 쓰기 작업을 실행합니다.
+
+## 반환
+
+`.returning::&lt;T&gt;()`가 없으면 반환 값은 다음과 같습니다:
+
+```rust
+DinocoResult<()>
+```
+
+`.returning::&lt;T&gt;()`가 있으면 반환 값은 다음과 같이 변경됩니다:
+
+```rust
+DinocoResult<T>
+```
+
+## 간단한 예시
+
+```rust
+dinoco::insert_into::<User>()
+    .values(User {
+        id: "usr_1".to_string(),
+        email: "ana@acme.com".to_string(),
+        name: "Ana".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## 관계 예시
+
+생성된 모델이 부모와 관련 항목을 함께 삽입하는 것을 지원할 때 `.with_relation(...)`을 사용하세요.
+
+```rust
+dinoco::insert_into::<User>()
+    .values(user)
+    .with_relation(profile)
+    .execute(&client)
+    .await?;
+```
+
+## 연결 예시
+
+항목을 삽입하고 기존 관계를 연결하려는 경우 `.with_connection(...)`을 사용하세요.
+
+```rust
+dinoco::insert_into::<User>()
+    .values(new_user)
+    .with_connection(existing_team)
+    .execute(&client)
+    .await?;
+```
+
+## 타입화된 반환 예시
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let created = dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .returning::<UserSummary>()
+    .execute(&client)
+    .await?;
+```
+
+## 다음 단계
+
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.1/orm/insert-many): 일괄 삽입.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): 레코드 업데이트.

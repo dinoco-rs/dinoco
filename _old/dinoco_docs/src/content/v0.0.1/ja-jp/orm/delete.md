@@ -1,0 +1,41 @@
+# delete
+
+明示的なフィルターで削除するために使用されます。
+
+---
+
+## できること
+
+- `.cond(...)`: どのレコードが削除されるかを定義します。
+- `.execute(&client)`: データベースで削除を実行します。
+
+## 戻り値
+
+`delete` の戻り値は次のとおりです。
+
+```rust
+DinocoResult<()>
+```
+
+## 基本的な例
+
+```rust
+dinoco::delete::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## 別のフィルターの例
+
+```rust
+dinoco::delete::<Session>()
+    .cond(|w| w.token.eq("session-1"))
+    .execute(&client)
+    .await?;
+```
+
+## 次のステップ
+
+- [**`delete_many::&lt;M&gt;()`**](/v0.0.1/orm/delete-many): 一括削除。
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): 削除する前にレコードを検証します。

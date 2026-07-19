@@ -1,0 +1,1115 @@
+{
+	"description": "Documentation for Dinoco version v0.0.2.",
+	"groups": [
+		{
+			"icon": "database",
+			"name": "Dinoco ORM",
+			"shortName": "orm",
+			"sections": [
+				{
+					"title": "Getting Started",
+					"items": [
+						{
+							"shortName": "introduction-dinoco",
+							"name": "Introduction to Dinoco",
+							"contentPath": "v0.0.2/en-us/orm/introduction-to-dinoco.md",
+							"inPage": [
+								"Introduction to Dinoco",
+								{
+									"title": "The Prisma Experience in Rust",
+									"items": []
+								},
+								{
+									"title": "Project Pillars",
+									"items": []
+								},
+								{
+									"title": "Where do we stand?",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "first-steps",
+							"name": "First steps",
+							"contentPath": "v0.0.2/en-us/orm/first-steps.md",
+							"inPage": [
+								"First steps",
+								{
+									"title": "How does it work?",
+									"items": ["1. Define your schema and connection", "2. Create the migration", "3. Query with DinocoClient"]
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "supported-databases",
+							"name": "Overview",
+							"contentPath": "v0.0.2/en-us/orm/supported-databases.md",
+							"inPage": [
+								"Overview",
+								{
+									"title": "Supported versions",
+									"items": []
+								},
+								{
+									"title": "Connection configuration",
+									"items": ["SQLite"]
+								},
+								{
+									"title": "PostgreSQL or MySQL",
+									"items": []
+								},
+								{
+									"title": "Type mapping",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco schema",
+					"items": [
+						{
+							"shortName": "configuration",
+							"name": "Configuration",
+							"contentPath": "v0.0.2/en-us/orm/configuration.md",
+							"inPage": [
+								"Configuration",
+								{
+									"title": "What goes into `config {}`",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with Redis",
+									"items": []
+								},
+								{
+									"title": "Example with replicas",
+									"items": []
+								},
+								{
+									"title": "What changes in the generated API",
+									"items": []
+								},
+								{
+									"title": "When to edit this block",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models",
+							"name": "Models",
+							"contentPath": "v0.0.2/en-us/orm/models.md",
+							"inPage": [
+								"Models",
+								{
+									"title": "What a model represents",
+									"items": []
+								},
+								{
+									"title": "Complete example",
+									"items": []
+								},
+								{
+									"title": "Field structure",
+									"items": []
+								},
+								{
+									"title": "Field types",
+									"items": ["Scalar fields"]
+								},
+								{
+									"title": "Type modifiers",
+									"items": ["Optional field", "List field"]
+								},
+								{
+									"title": "Most common attributes",
+									"items": ["`@id`", "`@default(...)`", "`@unique`"]
+								},
+								{
+									"title": "Model decorators",
+									"items": ["`@@ids([...])`", "`@@table_name(\"...\")`"]
+								},
+								{
+									"title": "User model example",
+									"items": []
+								},
+								{
+									"title": "Example of searching users with the Dinoco API",
+									"items": ["Find a single record", "Find multiple records"]
+								},
+								{
+									"title": "Example of creating a user with the Dinoco API",
+									"items": []
+								},
+								{
+									"title": "Example of updating a user with the Dinoco API",
+									"items": []
+								},
+								{
+									"title": "Example of deleting a user with the Dinoco API",
+									"items": []
+								},
+								{
+									"title": "Quick summary",
+									"items": []
+								},
+								{
+									"title": "When to create a new model",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "enums",
+							"name": "Enums",
+							"contentPath": "v0.0.2/en-us/orm/enums.md",
+							"inPage": [
+								"Enums",
+								{
+									"title": "What is an enum",
+									"items": []
+								},
+								{
+									"title": "Usage in models",
+									"items": []
+								},
+								{
+									"title": "When to use enums",
+									"items": []
+								},
+								{
+									"title": "Best practices",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "relations",
+							"name": "Relations",
+							"contentPath": "v0.0.2/en-us/orm/relations.md",
+							"inPage": [
+								"Relations",
+								{
+									"title": "@relation(...)",
+									"items": []
+								},
+								{
+									"title": "onDelete and onUpdate",
+									"items": []
+								},
+								{
+									"title": "One to many",
+									"items": []
+								},
+								{
+									"title": "Many to many",
+									"items": []
+								},
+								{
+									"title": "Self relation",
+									"items": []
+								},
+								{
+									"title": "Practical tips",
+									"items": []
+								},
+								{
+									"title": "Reference schema for examples",
+									"items": []
+								},
+								{
+									"title": "Example of search with all possible relations from User",
+									"items": []
+								},
+								{
+									"title": "Example of insert with relation using User and Profile",
+									"items": []
+								},
+								{
+									"title": "Example of insert_many with nested relations",
+									"items": []
+								},
+								{
+									"title": "Example of insert_many with nested connections",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco Core",
+					"items": [
+						{
+							"shortName": "derives",
+							"name": "Derives",
+							"contentPath": "v0.0.2/en-us/core/derives.md",
+							"inPage": [
+								"Derives",
+								{
+									"title": "What are derives in Dinoco",
+									"items": []
+								},
+								{
+									"title": "Derive Rowable",
+									"items": []
+								},
+								{
+									"title": "Derive Extend",
+									"items": []
+								},
+								{
+									"title": "Attribute #[insertable]",
+									"items": []
+								},
+								{
+									"title": "Example with Rowable",
+									"items": []
+								},
+								{
+									"title": "Example with Extend",
+									"items": []
+								},
+								{
+									"title": "Example with #[insertable]",
+									"items": []
+								},
+								{
+									"title": "When to use each",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "traits",
+							"name": "Traits",
+							"contentPath": "v0.0.2/en-us/core/traits.md",
+							"inPage": [
+								"Traits",
+								{
+									"title": "What are traits in Dinoco",
+									"items": []
+								},
+								{
+									"title": "Trait Model",
+									"items": []
+								},
+								{
+									"title": "Trait Projection",
+									"items": []
+								},
+								{
+									"title": "Trait InsertModel",
+									"items": []
+								},
+								{
+									"title": "Trait UpdateModel",
+									"items": []
+								},
+								{
+									"title": "Trait InsertPayload",
+									"items": []
+								},
+								{
+									"title": "Trait InsertConnectionPayload",
+									"items": []
+								},
+								{
+									"title": "Traits implemented by the model",
+									"items": []
+								},
+								{
+									"title": "Example with traits and derive together",
+									"items": []
+								},
+								{
+									"title": "When to use each",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco client",
+					"items": [
+						{
+							"shortName": "find-many",
+							"name": "find_many",
+							"contentPath": "v0.0.2/en-us/orm/find-many.md",
+							"inPage": [
+								"find_many",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with filter",
+									"items": []
+								},
+								{
+									"title": "Example with pagination and ordering",
+									"items": []
+								},
+								{
+									"title": "Example of custom select",
+									"items": []
+								},
+								{
+									"title": "Example with simple include",
+									"items": []
+								},
+								{
+									"title": "Example with filtered include",
+									"items": []
+								},
+								{
+									"title": "Example with nested include",
+									"items": []
+								},
+								{
+									"title": "Example with relation count",
+									"items": []
+								},
+								{
+									"title": "Example reading from the main database",
+									"items": []
+								},
+
+								{
+									"title": "Example with cache",
+									"items": []
+								},
+								{
+									"title": "Example with cache and expiration",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-first",
+							"name": "find_first",
+							"contentPath": "v0.0.2/en-us/orm/find-first.md",
+							"inPage": [
+								"find_first",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with select",
+									"items": []
+								},
+								{
+									"title": "Example with relation",
+									"items": []
+								},
+								{
+									"title": "Example with ordering",
+									"items": []
+								},
+								{
+									"title": "Example with cache",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-and-update",
+							"name": "find_and_update",
+							"contentPath": "v0.0.2/en-us/orm/find-and-update.md",
+							"inPage": [
+								"find_and_update",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
+									"title": "Available operations in `ModelUpdate`",
+									"items": []
+								},
+								{
+									"title": "Notes",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-into",
+							"name": "insert_into",
+							"contentPath": "v0.0.2/en-us/orm/insert-into.md",
+							"inPage": [
+								"insert_into",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+
+								{
+									"title": "Example with Extend #[insertable]",
+									"items": []
+								},
+								{
+									"title": "Example with nested relation",
+									"items": []
+								},
+								{
+									"title": "Example with nested connection",
+									"items": []
+								},
+								{
+									"title": "Example with ArticleConnection",
+									"items": []
+								},
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Simple example",
+									"items": []
+								},
+								{
+									"title": "Example with typed return",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-many",
+							"name": "insert_many",
+							"contentPath": "v0.0.2/en-us/orm/insert-many.md",
+							"inPage": [
+								"insert_many",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Simple example",
+									"items": []
+								},
+								{
+									"title": "Example with return",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
+									"title": "Example with nested relations",
+									"items": []
+								},
+								{
+									"title": "Example with nested connections",
+									"items": []
+								},
+								{
+									"title": "Example with ArticleConnection",
+									"items": []
+								},
+								{
+									"title": "Example with Extend #[insertable]",
+									"items": []
+								},
+								{
+									"title": "Notes",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update",
+							"name": "update",
+							"contentPath": "v0.0.2/en-us/orm/update.md",
+							"inPage": [
+								"update",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Example of field update",
+									"items": []
+								},
+								{
+									"title": "Example with connect(...)",
+									"items": []
+								},
+								{
+									"title": "Example with disconnect(...)",
+									"items": []
+								},
+								{
+									"title": "Filters available in connect and disconnect",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update-many",
+							"name": "update_many",
+							"contentPath": "v0.0.2/en-us/orm/update-many.md",
+							"inPage": [
+								"update_many",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with return",
+									"items": []
+								},
+								{
+									"title": "Example with filter",
+									"items": []
+								},
+								{
+									"title": "Example with worker",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "count",
+							"name": "count",
+							"contentPath": "v0.0.2/en-us/orm/count.md",
+							"inPage": [
+								"count",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+								{
+									"title": "Description of methods",
+									"items": []
+								},
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with boolean filter",
+									"items": []
+								},
+								{
+									"title": "Example with text filter",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete",
+							"name": "delete",
+							"contentPath": "v0.0.2/en-us/orm/delete.md",
+							"inPage": [
+								"delete",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with another filter",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete-many",
+							"name": "delete_many",
+							"contentPath": "v0.0.2/en-us/orm/delete-many.md",
+							"inPage": [
+								"delete_many",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+								{
+									"title": "Return",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example without filter",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "cache-client",
+							"name": "cache",
+							"contentPath": "v0.0.2/en-us/orm/cache-client.md",
+							"inPage": [
+								"cache",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+								{
+									"title": "When to use",
+									"items": []
+								},
+								{
+									"title": "How it works",
+									"items": []
+								},
+								{
+									"title": "Available methods",
+									"items": []
+								},
+								{
+									"title": "Basic example",
+									"items": []
+								},
+								{
+									"title": "Example with typed list",
+									"items": []
+								},
+								{
+									"title": "Example with TTL",
+									"items": []
+								},
+								{
+									"title": "Invalidation example",
+									"items": []
+								},
+								{
+									"title": "Supported types",
+									"items": []
+								},
+								{
+									"title": "Notes",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "queues",
+							"name": "workers",
+							"contentPath": "v0.0.2/en-us/orm/queues.md",
+							"inPage": [
+								"queues",
+								{
+									"title": "What you can do",
+									"items": []
+								},
+								{
+									"title": "How it works",
+									"items": []
+								},
+								{
+									"title": "Queueing methods",
+									"items": []
+								},
+								{
+									"title": "Worker",
+									"items": []
+								},
+								{
+									"title": "Redis configuration",
+									"items": []
+								},
+								{
+									"title": "Notes",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "terminal",
+			"name": "Dinoco CLI",
+			"shortName": "cli",
+			"sections": [
+				{
+					"title": "Installation",
+					"items": [
+						{
+							"shortName": "install",
+							"name": "Installation",
+							"contentPath": "v0.0.2/en-us/cli/install.md",
+							"inPage": [
+								{
+									"title": "Installation",
+									"items": []
+								},
+								{
+									"title": "Configuration",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Commands",
+					"items": [
+						{
+							"shortName": "init",
+							"name": "Init",
+							"contentPath": "v0.0.2/en-us/cli/init.md",
+							"inPage": [
+								"How to use?",
+								{
+									"title": "What the command does",
+									"items": []
+								},
+								{
+									"title": "When to use",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "database-reset",
+							"name": "Database reset",
+							"contentPath": "v0.0.2/en-us/cli/database-reset.md",
+							"inPage": [
+								"How to use?",
+								{
+									"title": "What the command does",
+									"items": []
+								},
+								{
+									"title": "Precautions",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-generate",
+							"name": "Migrate generate",
+							"contentPath": "v0.0.2/en-us/cli/migrate-generate.md",
+							"inPage": [
+								"How to use?",
+								{
+									"title": "What the command does",
+									"items": []
+								},
+								{
+									"title": "Parameters",
+									"items": ["--apply"]
+								},
+								{
+									"title": "Usage example without applying",
+									"items": []
+								},
+								{
+									"title": "Usage example with immediate application",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-run",
+							"name": "Migrate run",
+							"contentPath": "v0.0.2/en-us/cli/migrate-run.md",
+							"inPage": [
+								"How to use?",
+								{
+									"title": "What the command does",
+									"items": []
+								},
+								{
+									"title": "When to use",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-rollback",
+							"name": "Migrate rollback",
+							"contentPath": "v0.0.2/en-us/cli/migrate-rollback.md",
+							"inPage": [
+								"How to use?",
+								{
+									"title": "What the command does",
+									"items": []
+								},
+								{
+									"title": "Parameters",
+									"items": []
+								},
+								{
+									"title": "Usage example",
+									"items": []
+								},
+								{
+									"title": "When to use",
+									"items": []
+								},
+								{
+									"title": "Precautions",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models-generate",
+							"name": "Models generate",
+							"contentPath": "v0.0.2/en-us/cli/models-generate.md",
+							"inPage": [
+								"How to use?",
+								{
+									"title": "What the command does",
+									"items": []
+								},
+								{
+									"title": "When to use",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "schema-restore",
+							"name": "Schema restore",
+							"contentPath": "v0.0.2/en-us/cli/schema-restore.md",
+							"inPage": [
+								"How to use?",
+								{
+									"title": "What the command does",
+									"items": []
+								},
+								{
+									"title": "Example of restoring from a specific migration",
+									"items": []
+								},
+								{
+									"title": "When to use",
+									"items": []
+								},
+								{
+									"title": "Next steps",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "rocket",
+			"name": "Dinoco Supersonic",
+			"shortName": "supersonic",
+			"sections": [
+				{
+					"title": "Introduction",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "Introduction",
+							"contentPath": "v0.0.2/en-us/supersonic/introduction.md",
+							"inPage": ["Introduction"]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "box",
+			"name": "DinocoDB",
+			"shortName": "dinocodb",
+			"sections": [
+				{
+					"title": "Introduction",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "Introduction",
+							"contentPath": "v0.0.2/en-us/dinocodb/introduction.md",
+							"inPage": ["Introduction"]
+						}
+					]
+				}
+			]
+		}
+	],
+	"locale": "en-us",
+	"name": "v0.0.2"
+}

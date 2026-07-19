@@ -1,0 +1,41 @@
+# delete
+
+用于通过显式过滤器删除。
+
+---
+
+## 您可以做什么
+
+- `.cond(...)`: 定义要删除的记录。
+- `.execute(&client)`: 在数据库中执行删除操作。
+
+## 返回值
+
+`delete`的返回值是：
+
+```rust
+DinocoResult<()>
+```
+
+## 基本示例
+
+```rust
+dinoco::delete::<User>()
+    .cond(|w| w.id.eq(10))
+    .execute(&client)
+    .await?;
+```
+
+## 带有其他过滤器的示例
+
+```rust
+dinoco::delete::<Session>()
+    .cond(|w| w.token.eq("session-1"))
+    .execute(&client)
+    .await?;
+```
+
+## 下一步
+
+- [**`delete_many::&lt;M&gt;()`**](/v0.0.1/orm/delete-many): 批量删除。
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): 在删除前验证记录。

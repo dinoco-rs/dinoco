@@ -1,0 +1,55 @@
+# find_and_update
+
+Wird verwendet, um einen einzelnen Datensatz zu finden, atomare Updates in der Datenbank anzuwenden und das aktualisierte Element zurückzugeben.
+
+---
+
+## Was Sie tun können
+
+- `.cond(...)`
+- `.update(...)`
+- `.execute(&client)`
+
+## Beschreibung der Methoden
+
+- `.cond(...)`: definiert, welcher Datensatz gefunden werden soll.
+- `.update(...)`: wendet eine atomare Operation auf ein Feld des Modells an.
+- `.execute(&client)`: führt das Update aus und gibt den aktualisierten Datensatz zurück.
+
+## Rückgabe
+
+Die Rückgabe von `find_and_update` ist:
+
+```rust
+DinocoResult<M>
+```
+
+## Grundlegendes Beispiel
+
+```rust
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .execute(&client)
+    .await?;
+```
+
+## Verfügbare Operationen in `ModelUpdate`
+
+- `set(value)`
+- `increment(value)`
+- `decrement(value)`
+- `multiply(value)`
+- `division(value)`
+
+## Anmerkungen
+
+- Das Update wird in einem einzigen `UPDATE` ausgeführt.
+- Wenn keine Zeile der Bedingung entspricht, ist die Rückgabe `DinocoError::RecordNotFound`.
+- Die Update-DSL legt keine Beziehungen offen.
+- Derzeit unterstützt der Workflow einfache Primärschlüssel, um den aktualisierten Datensatz zu finden und zurückzugeben.
+
+## Nächste Schritte
+
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): traditionelles Update.
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): Batch-Update.

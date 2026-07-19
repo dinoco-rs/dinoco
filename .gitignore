@@ -7,3 +7,5 @@ dinoco_*/dinoco
 
 */src/database
 !dinoco_databases/src/database
+
+*.sqlite

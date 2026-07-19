@@ -1,0 +1,142 @@
+# Дерайвы
+
+Обзор дерайвов и основных атрибутов, используемых в Dinoco.
+
+---
+
+## Что такое дерайвы в Dinoco
+
+Дерайвы Dinoco помогают связать ваши структуры Rust с поведением ORM без необходимости писать всю реализацию вручную.
+
+Наиболее распространенные в повседневной работе:
+
+- `#[derive(Rowable)]`
+- `#[derive(Extend)]`
+- `#[insertable]`
+
+## Дерайв Rowable
+
+Используйте `Rowable`, когда структура напрямую представляет модель, которая будет читаться и записываться Dinoco.
+
+```rust
+#[derive(Debug, Clone, dinoco::Rowable)]
+struct User {
+    id: String,
+    email: String,
+    name: String,
+}
+```
+
+Этот дерайв выполняет сериализацию строки, возвращаемой адаптером, в структуру Rust.
+
+## Дерайв Extend
+
+Используйте `Extend`, когда вам нужна проекция, отличная от базовой модели, обычно для `select`, `include`, `count` или обогащенных полезных данных.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: String,
+    name: String,
+}
+```
+
+В этом случае структура остается связанной с моделью `User`, но может раскрывать только те поля, которые необходимы для данного потока.
+
+## Атрибут #[insertable]
+
+Используйте `#[insertable]` вместе с `Extend`, когда `.values(...)` должен принимать новые отношения или существующие связи внутри самой полезной нагрузки.
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+```
+
+Таким образом, Dinoco вставляет родителя, а затем автоматически обрабатывает вложенные элементы.
+
+## Пример с Rowable
+
+```rust
+#[derive(Debug, Clone, dinoco::Rowable)]
+struct Team {
+    id: String,
+    name: String,
+}
+
+dinoco::insert_into::<Team>()
+    .values(Team {
+        id: "team-1".into(),
+        name: "Platform".into(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Пример с Extend
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: String,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|user| user.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Пример с #[insertable]
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Article)]
+#[insertable]
+struct ArticleWithLabels {
+    id: String,
+    title: String,
+    labels: Vec<ArticleConnection>,
+}
+
+dinoco::insert_many::<Article>()
+    .values(vec![
+        ArticleWithLabels {
+            id: "article-11".into(),
+            title: "Connect Multiple".into(),
+            labels: vec![
+                ArticleConnection::Label("label-11".into()),
+                ArticleConnection::Label("label-12".into()),
+            ],
+        },
+        ArticleWithLabels {
+            id: "article-12".into(),
+            title: "Connect Batch".into(),
+            labels: vec![ArticleConnection::Label("label-10".into())],
+        },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## Когда использовать каждый
+
+- Используйте `Rowable` для основной сгенерированной модели или структур, совместимых с прямым чтением строк.
+- Используйте `Extend` для проекций, подсчетов, включений и специализированных полезных данных.
+- Используйте `#[insertable]`, когда `Extend` также будет служить полезной нагрузкой для записи с вложенностью.
+
+## Следующие шаги
+
+- [**Traits**](/v0.0.2/core/traits): просмотрите трейты, реализованные моделью.
+- [**`insert_into::&lt;M&gt;()`**](/v0.0.2/orm/insert-into): одиночная вставка с богатыми полезными данными.
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.2/orm/insert-many): пакетная вставка с вложенными отношениями и связями.

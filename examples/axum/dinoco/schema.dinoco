@@ -1,0 +1,10 @@
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Todo {
+    id        String  @id @default(uuid())
+    title     String
+    completed Boolean @default(false)
+}

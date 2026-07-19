@@ -1,0 +1,118 @@
+# update
+
+フィルタリングされたレコードを更新するために使用されます。
+
+---
+
+## できること
+
+- `.cond(...)`: 更新するレコードを定義します。
+- `.values(item)`: レコードの新しい値を指定します。
+- `.connect(...)`: 書き込みがサポートされているリレーションシップリンクを作成します。
+- `.disconnect(...)`: 書き込みがサポートされているリレーションシップリンクを削除します。
+- `.returning::&lt;T&gt;()`: 型付きプロジェクションで更新されたレコードを返します。
+- `.execute(&client)`: データベースで更新を実行します。
+
+## 戻り値
+
+`.returning::&lt;T&gt;()`がない場合、戻り値は次のようになります。
+
+```rust
+DinocoResult<()>
+```
+
+`.returning::&lt;T&gt;()`がある場合、戻り値は次のようになります。
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+注記：
+
+- `update().returning()` は `.connect(...)` または `.disconnect(...)` を使用したリレーション書き込みをサポートしていません。
+
+## フィールド更新の例
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "新しい名前".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## `connect(...)` の例
+
+書き込みがサポートされているリレーションシップ（通常は多対多）を接続するために使用されます。
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .connect(|r| r.roles().slug.eq("admin"))
+    .execute(&client)
+    .await?;
+```
+
+## `disconnect(...)` の例
+
+リレーションシップを切断するために使用されます。
+
+```rust
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .disconnect(|r| r.roles().slug.eq("guest"))
+    .execute(&client)
+    .await?;
+```
+
+## ワーカーの例
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<User, _, _>("user.updated", |job| async move {
+        println!("ユーザーが更新されました: {}", job.data.name);
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update::<User>()
+    .cond(|w| w.id.eq(10))
+    .values(User {
+        id: 10,
+        email: "novo@acme.com".to_string(),
+        name: "新しい名前".to_string(),
+    })
+    .enqueue("user.updated")
+    .execute(&client)
+    .await?;
+```
+
+ワーカーの詳細については、[**`queues`**](/v0.0.2/orm/queues) を参照してください。
+
+## `connect` および `disconnect` で利用可能なフィルター
+
+- `eq`
+- `neq`
+- `gt`
+- `gte`
+- `lt`
+- `lte`
+- `in_values`
+- `not_in_values`
+- `is_null`
+- `is_not_null`
+- `includes`
+- `starts_with`
+- `ends_with`
+
+## 次のステップ
+
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): バッチ更新。
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): 戻り値付きのアトミックな更新。

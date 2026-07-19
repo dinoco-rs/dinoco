@@ -1,0 +1,458 @@
+# Relazioni
+
+Le relazioni connettono i modelli tra loro nello schema di Dinoco.
+
+Questa pagina copre `@relation(...)`, `onDelete`, `onUpdate` e i pattern di relazione più comuni.
+
+---
+
+## @relation(...)
+
+L'attributo `@relation(...)` definisce come due modelli si connettono.
+
+Parametri supportati:
+
+| Parametro    | Uso                                              |
+| :----------- | :----------------------------------------------- |
+| `name`       | Nome esplicito della relazione                   |
+| `fields`     | Campi locali usati come chiave                   |
+| `references` | Campi referenziati nel modello target            |
+| `onDelete`   | Comportamento alla cancellazione del record referenziato |
+| `onUpdate`   | Comportamento all'aggiornamento del valore referenziato  |
+
+Esempio completo:
+
+```dinoco
+model Post {
+	id       Integer @id @default(autoincrement())
+	title    String
+	authorId Integer?
+	author   User?   @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: SetNull)
+}
+```
+
+## onDelete e onUpdate
+
+Dinoco espone azioni referenziali per controllare cosa succede quando il record correlato viene modificato o rimosso.
+
+Valori supportati:
+
+| Azione         | Significato                                      |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | Propaga l'operazione ai record dipendenti        |
+| `SetNull`    | Imposta la chiave esterna a `null`               |
+| `SetDefault` | Imposta il valore predefinito configurato per il campo |
+
+Esempio:
+
+```dinoco
+model Comment {
+	id      Integer @id @default(autoincrement())
+	postId  Integer?
+	post    Post?   @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: SetNull)
+}
+```
+
+Usa `SetNull` solo quando il campo locale è opzionale.
+
+## Uno a molti
+
+Questa è la relazione più comune: un record padre possiede più figli.
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	name  String
+	posts Post[]
+}
+
+model Post {
+	id       Integer @id @default(autoincrement())
+	title    String
+	authorId Integer
+	author   User    @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}
+```
+
+Lettura mentale:
+
+- Un `User` può avere più `Post`.
+- Ogni `Post` appartiene a un singolo `User`.
+
+## Molti a molti
+
+Nelle relazioni molti-a-molti, entrambi i lati hanno liste.
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	name  String
+
+	roles Role[]
+}
+
+model Role {
+	id    Integer @id @default(autoincrement())
+	name  String
+
+	users User[]
+}
+```
+
+Lettura mentale:
+
+- Un `User` può avere più `Role`.
+- Un `Role` può appartenere a più `User`.
+
+## Auto-relazione
+
+L'auto-relazione si verifica quando un modello si relaziona con se stesso.
+
+```dinoco
+model User {
+	id        Integer @id @default(autoincrement())
+	name      String
+	managerId Integer?
+	manager   User?   @relation(name: "UserManager", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+	reports   User[]  @relation(name: "UserManager")
+}
+```
+
+Lettura mentale:
+
+- Un utente può avere un manager.
+- Un utente può avere più subordinati.
+
+## Consigli pratici
+
+- Usa `name` quando c'è più di una relazione tra gli stessi modelli.
+- Usa `onDelete: Cascade` quando il figlio non ha senso senza il padre.
+- Usa `onDelete: SetNull` quando la relazione può essere annullata senza rimuovere il record figlio.
+- Usa auto-relazioni con nomi espliciti per facilitare la lettura e la generazione di codice.
+
+## Schema di riferimento per gli esempi
+
+Gli esempi seguenti utilizzano il seguente schema:
+
+```dinoco
+config {
+	database = "sqlite"
+	database_url = env("DATABASE_URL")
+}
+
+enum Role {
+	ADMIN
+	USER
+}
+
+model User {
+	id             String     @id @default(uuid())
+	username       String     @unique
+	role           Role       @default(USER)
+
+	profile        Profile?
+
+	followers      User[]     @relation(name: "UserFollows")
+	following      User[]     @relation(name: "UserFollows")
+
+	posts          Post[]     @relation(name: "PostAuthor")
+	comments       Comment[]  @relation(name: "CommentAuthor")
+
+	likedPosts     Post[]     @relation(name: "PostLikers")
+	likedComments  Comment[]  @relation(name: "CommentLikers")
+}
+
+model Profile {
+	id      String   @id @default(uuid())
+	bio     String?
+	userId  String   @unique
+	user    User     @relation(fields: [userId], references: [id])
+}
+
+model Post {
+	id        String     @id @default(uuid())
+	title     String
+	content   String
+
+	authorId  String
+	author    User       @relation(name: "PostAuthor", fields: [authorId], references: [id])
+
+	likers    User[]     @relation(name: "PostLikers")
+
+	comments  Comment[]
+
+	tags      Tag[]
+}
+
+model Comment {
+	id        String     @id @default(uuid())
+	text      String
+
+	parentId  String?
+	parent    Comment?   @relation(name: "CommentReplies", fields: [parentId], references: [id])
+	replies   Comment[]  @relation(name: "CommentReplies")
+
+	postId    String
+	post      Post       @relation(fields: [postId], references: [id])
+
+	authorId  String
+	author    User       @relation(name: "CommentAuthor", fields: [authorId], references: [id])
+
+	likers    User[]     @relation(name: "CommentLikers")
+}
+
+model Tag {
+	id     String  @id @default(uuid())
+	name   String  @unique
+
+	posts  Post[]
+}
+```
+
+## Esempio di ricerca con tutte le relazioni possibili a partire da User
+
+Quando vuoi partire dal modello `User` e caricare tutte le relazioni dirette in una stessa query di lettura, puoi combinare `select::&lt;T&gt;()` con vari `includes(...)`.
+
+```rust
+use dinoco::{Extend, find_many};
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Profile)]
+struct ProfileView {
+	id: String,
+	bio: Option<String>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserRelationItem {
+	id: String,
+	username: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Tag)]
+struct TagView {
+	id: String,
+	name: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Comment)]
+struct CommentView {
+	id: String,
+	text: String,
+	replies: Vec<CommentReplyView>,
+	likers: Vec<UserRelationItem>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Comment)]
+struct CommentReplyView {
+	id: String,
+	text: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+struct PostView {
+	id: String,
+	title: String,
+	content: String,
+	likers: Vec<UserRelationItem>,
+	tags: Vec<TagView>,
+	comments: Vec<CommentView>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserWithAllRelations {
+	id: String,
+	username: String,
+	profile: Option<ProfileView>,
+	followers: Vec<UserRelationItem>,
+	following: Vec<UserRelationItem>,
+	posts: Vec<PostView>,
+	comments: Vec<CommentView>,
+	likedPosts: Vec<PostView>,
+	likedComments: Vec<CommentView>,
+}
+
+let users = find_many::<User>()
+	.select::<UserWithAllRelations>()
+	.includes(|user| user.profile())
+	.includes(|user| user.followers())
+	.includes(|user| user.following())
+	.includes(|user| {
+		user.posts()
+			.includes(|post| post.likers())
+			.includes(|post| post.tags())
+			.includes(|post| {
+				post.comments()
+					.includes(|comment| comment.replies())
+					.includes(|comment| comment.likers())
+			})
+	})
+	.includes(|user| {
+		user.comments()
+			.includes(|comment| comment.replies())
+			.includes(|comment| comment.likers())
+	})
+	.includes(|user| {
+		user.likedPosts()
+			.includes(|post| post.likers())
+			.includes(|post| post.tags())
+			.includes(|post| {
+				post.comments()
+					.includes(|comment| comment.replies())
+					.includes(|comment| comment.likers())
+			})
+	})
+	.includes(|user| {
+		user.likedComments()
+			.includes(|comment| comment.replies())
+			.includes(|comment| comment.likers())
+	})
+	.execute(&client)
+	.await?;
+```
+
+Questo pattern è utile quando vuoi costruire una visione ricca dell'utente in una singola lettura orientata alle relazioni.
+
+## Esempio di insert con relazione usando User e Profile
+
+Per inserire un record con una relazione 1:1, usa `with_relation(...)`.
+
+```rust
+use dinoco::insert_into;
+
+let created_user = insert_into::<User>()
+	.values(User {
+		id: "user-1".to_string(),
+		username: "bia".to_string(),
+		role: Role::USER,
+	})
+	.with_relation(Profile {
+		id: "profile-1".to_string(),
+		bio: Some("Ingegnere del software".to_string()),
+		userId: String::new(),
+	})
+	.execute(&client)
+	.await?;
+```
+
+In questo flusso:
+
+- L'`User` viene inserito per primo.
+- Il `Profile` correlato viene creato successivamente.
+- La chiave `userId` è collegata dal flusso di relazione di Dinoco.
+
+## Esempio di insert_many con with_relations(...)
+
+Usa `with_relations(...)` quando vuoi inserire più record padre e, per ognuno di essi, inserire anche più record correlati nuovi.
+
+```rust
+use dinoco::insert_many;
+
+let posts = vec![
+	Post {
+		id: "post-1".to_string(),
+		title: "Primo post".to_string(),
+		content: "Contenuto del primo post".to_string(),
+		authorId: "user-1".to_string(),
+	},
+	Post {
+		id: "post-2".to_string(),
+		title: "Secondo post".to_string(),
+		content: "Contenuto del secondo post".to_string(),
+		authorId: "user-1".to_string(),
+	},
+];
+
+let comments_per_post = vec![
+	vec![
+		Comment {
+			id: "comment-1".to_string(),
+			text: "Molto buono".to_string(),
+			parentId: None,
+			postId: String::new(),
+			authorId: "user-2".to_string(),
+		},
+		Comment {
+			id: "comment-2".to_string(),
+			text: "Mi è piaciuto l'esempio".to_string(),
+			parentId: None,
+			postId: String::new(),
+			authorId: "user-3".to_string(),
+		},
+	],
+	vec![
+		Comment {
+			id: "comment-3".to_string(),
+			text: "Voglio più dettagli".to_string(),
+			parentId: None,
+			postId: String::new(),
+			authorId: "user-2".to_string(),
+		},
+	],
+];
+
+insert_many::<Post>()
+	.values(posts)
+	.with_relations(comments_per_post)
+	.execute(&client)
+	.await?;
+```
+
+In questo flusso:
+
+- Ogni `Post` viene inserito.
+- Ogni gruppo in `comments_per_post` corrisponde al `Post` nella stessa posizione.
+- Dinoco collega i `Comment` al post corretto durante la scrittura.
+
+## Esempio di insert_many con with_connections(...)
+
+Usa `with_connections(...)` quando vuoi inserire più record padre e connettere ognuno di essi a più record già esistenti.
+
+```rust
+use dinoco::insert_many;
+
+insert_many::<Post>()
+	.values(vec![
+		Post {
+			id: "post-10".to_string(),
+			title: "Rust e Dinoco".to_string(),
+			content: "Post sulla produttività".to_string(),
+			authorId: "user-1".to_string(),
+		},
+		Post {
+			id: "post-11".to_string(),
+			title: "Relazioni avanzate".to_string(),
+			content: "Post su includes e relazioni".to_string(),
+			authorId: "user-1".to_string(),
+		},
+	])
+	.with_connections(vec![
+		vec![
+			Tag { id: "tag-1".to_string(), name: "rust".to_string() },
+			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
+		],
+		vec![
+			Tag { id: "tag-2".to_string(), name: "orm".to_string() },
+			Tag { id: "tag-3".to_string(), name: "sqlite".to_string() },
+		],
+	])
+	.execute(&client)
+	.await?;
+```
+
+In questo flusso:
+
+- I `Post` vengono inseriti.
+- Le `Tag` già esistenti vengono connesse ai post corrispondenti.
+- Ogni gruppo del vettore esterno rappresenta le connessioni del post nella stessa posizione.
+
+## Prossimi passi
+
+- [**Enums**](/v0.0.1/orm/enums): scopri come rappresentare valori controllati nello schema.
+- [**Models**](/v0.0.1/orm/models): scopri la struttura dei campi ed esempi di ricerca, inserimento, aggiornamento ed eliminazione con l'API di Dinoco.

@@ -1,0 +1,40 @@
+# Comment utiliser ?
+
+La commande `dinoco init` initialise l'environnement Dinoco dans le projet actuel.
+
+Elle prépare la base nécessaire pour commencer à travailler avec les schémas, les migrations et la génération de modèles.
+
+---
+
+## Ce que fait la commande
+
+Lors de l'exécution de `dinoco init`, la CLI guide la configuration initiale de l'environnement Dinoco.
+
+En général, ce flux prépare :
+
+- La structure de base du répertoire `dinoco`
+- Les fichiers de schéma initiaux
+- La configuration de la base de données
+- La base pour les futures migrations
+
+## Quand l'utiliser
+
+Utilisez cette commande lorsque :
+
+- Vous configurez Dinoco pour la première fois dans le projet
+- Vous souhaitez créer la structure initiale de l'environnement local
+- Vous avez besoin de préparer le projet pour générer des migrations et des modèles
+
+## Prochaines étapes
+
+Après `init`, le flux le plus courant est :
+
+```bash
+dinoco migrate generate
+```
+
+ou, si vous souhaitez générer et appliquer immédiatement :
+
+```bash
+dinoco migrate generate --apply
+```

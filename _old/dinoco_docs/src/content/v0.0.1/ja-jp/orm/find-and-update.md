@@ -1,0 +1,55 @@
+# find_and_update
+
+単一のレコードを検索し、データベースにアトミックな更新を適用し、更新されたアイテムを返すために使用されます。
+
+---
+
+## できること
+
+- `.cond(...)`
+- `.update(...)`
+- `.execute(&client)`
+
+## メソッドの説明
+
+- `.cond(...)`: どのレコードを検索するかを定義します。
+- `.update(...)`: モデルのフィールドにアトミックな操作を適用します。
+- `.execute(&client)`: 更新を実行し、更新されたレコードを返します。
+
+## 戻り値
+
+`find_and_update` の戻り値は次のとおりです。
+
+```rust
+DinocoResult<M>
+```
+
+## 基本的な例
+
+```rust
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .execute(&client)
+    .await?;
+```
+
+## `ModelUpdate` で利用可能な操作
+
+- `set(value)`
+- `increment(value)`
+- `decrement(value)`
+- `multiply(value)`
+- `division(value)`
+
+## 注意事項
+
+- 更新は単一の `UPDATE` で実行されます。
+- 条件に一致する行がない場合、戻り値は `DinocoError::RecordNotFound` になります。
+- 更新のDSLはリレーションを公開しません。
+- 現在、このフローは、更新されたレコードを検索して返すために単純な主キーをサポートしています。
+
+## 次のステップ
+
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): 従来の更新。
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): バッチ更新。

@@ -1,0 +1,45 @@
+{
+  "comments": {
+    "lineComment": "#"
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"", "notIn": ["string", "comment"] }
+  ],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["\"", "\""]
+  ],
+  "wordPattern": "(-?\\d*\\.\\d\\w*)|([^`~!@#$%^&*()=+[{\\]}\\\\|;:'\",.<>/?\\s]+)",
+  "indentationRules": {
+    "increaseIndentPattern": "^.*\\{[^}]*$|^.*\\[[^\\]]*$|^.*\\([^)]*$",
+    "decreaseIndentPattern": "^\\s*[}\\])].*$"
+  },
+  "folding": {
+    "offSide": false,
+    "markers": {
+      "start": "^\\s*(model|enum|config)\\b.*\\{",
+      "end": "^\\s*}"
+    }
+  },
+  "onEnterRules": [
+    {
+      "beforeText": "^\\s*(model|enum|config)\\b.*\\{\\s*$",
+      "afterText": "^\\s*}\\s*$",
+      "action": { "indentAction": "indentOutdent" }
+    },
+    {
+      "beforeText": "^.*\\{[^}]*$",
+      "action": { "indentAction": "indent" }
+    }
+  ]
+}

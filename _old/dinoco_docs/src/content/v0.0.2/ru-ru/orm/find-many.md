@@ -1,0 +1,233 @@
+# find_many
+
+Используется для получения списка записей.
+
+---
+
+## Что вы можете сделать
+
+- `.select::&lt;T&gt;()`: заменяет стандартную проекцию модели на пользовательскую.
+- `.cond(...)`: добавляет условия фильтрации в запрос.
+- `.take(...)`: ограничивает количество возвращаемых записей.
+- `.skip(...)`: пропускает определенное количество записей перед возвратом результата.
+- `.order_by(...)`: определяет порядок сортировки запроса.
+- `.includes(...)`: загружает связанные сущности вместе с основными записями.
+- `.count(...)`: вычисляет счетчики связей и заполняет поля, такие как `posts_count`.
+- `.cache(...)`: сначала запрашивает данные из Redis, используя указанный ключ; при промахе кэша выполняет запрос, сохраняет и возвращает результат. При попадании в кэш логгер запросов регистрирует `CACHE HIT key=...`.
+- `.cache_with_expiration(...)`: то же поведение, что и у стандартного кэша, но записывает с TTL в секундах.
+- `.read_in_primary()`: принудительно читает данные из основной базы данных, не используя реплику.
+- `.execute(&client)`: выполняет запрос к базе данных.
+
+## Возвращаемое значение
+
+Без `select::&lt;T&gt;()` возвращается:
+
+```rust
+DinocoResult<Vec<M>>
+```
+
+С `select::&lt;T&gt;()` возвращается:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## Базовый пример
+
+```rust
+let users = dinoco::find_many::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## Пример с фильтром
+
+```rust
+let users = dinoco::find_many::<User>()
+    .cond(|w| w.email.eq("ana@acme.com"))
+    .execute(&client)
+    .await?;
+```
+
+## Пример с пагинацией и сортировкой
+
+```rust
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .skip(20)
+    .take(10)
+    .execute(&client)
+    .await?;
+```
+
+## Пример с пользовательским выбором полей
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserListItem {
+    id: i64,
+    name: String,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserListItem>()
+    .execute(&client)
+    .await?;
+```
+
+## Пример с простым включением
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Пример с фильтрованным включением
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPublishedPosts {
+    id: i64,
+    name: String,
+    posts: Vec<Post>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPublishedPosts>()
+    .includes(|i| i.posts().cond(|w| w.published.eq(true)))
+    .execute(&client)
+    .await?;
+```
+
+## Пример с вложенным включением
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Comment)]
+struct CommentListItem {
+    id: i64,
+    text: String,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+struct PostWithComments {
+    id: i64,
+    title: String,
+    comments: Vec<CommentListItem>,
+    comments_count: usize,
+}
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPosts {
+    id: i64,
+    name: String,
+    posts: Vec<PostWithComments>,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPosts>()
+    .includes(|i| {
+        i.posts()
+            .includes(|post| post.comments().take(3))
+            .count(|post| post.comments())
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Пример со счетчиком связей
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserWithPostsCount {
+    id: i64,
+    name: String,
+    posts_count: usize,
+}
+
+let users = dinoco::find_many::<User>()
+    .select::<UserWithPostsCount>()
+    .count(|i| i.posts())
+    .execute(&client)
+    .await?;
+```
+
+## Пример чтения из основной базы данных
+
+```rust
+let users = dinoco::find_many::<User>()
+    .read_in_primary()
+    .take(5)
+    .execute(&client)
+    .await?;
+```
+
+## Пример с воркером
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-read", |job| async move {
+        println!("Пакет прочитан с {} пользователями", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .take(20)
+    .enqueue("user.batch-read")
+    .execute(&client)
+    .await?;
+```
+
+Подробнее о воркерах см. в [**`queues`**](/v0.0.2/orm/queues).
+
+## Пример с кэшем
+
+Этот метод генерируется только тогда, когда `config {}` схемы содержит `redis`.
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .order_by(|w| w.name.asc())
+    .cache("users:list")
+    .execute(&client)
+    .await?;
+```
+
+## Пример с кэшем и истечением срока действия
+
+```rust
+use database::*;
+
+let users = dinoco::find_many::<User>()
+    .take(20)
+    .cache_with_expiration("users:top-20", 60)
+    .execute(&client)
+    .await?;
+```
+
+## Следующие шаги
+
+- [**`find_first::&lt;M&gt;()`**](/v0.0.2/orm/find-first): версия для поиска максимум одной записи.
+- [**`count::&lt;M&gt;()`**](/v0.0.2/orm/count): подсчет записей с фильтром.

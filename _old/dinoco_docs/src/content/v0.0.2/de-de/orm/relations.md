@@ -1,0 +1,483 @@
+# Beziehungen
+
+Beziehungen verbinden Models im Dinoco-Schema miteinander.
+
+Diese Seite behandelt `@relation(...)`, `onDelete`, `onUpdate` und die gängigsten Beziehungsmuster.
+
+---
+
+## @relation(...)
+
+Das Attribut `@relation(...)` definiert, wie zwei Models miteinander verbunden sind.
+
+Unterstützte Parameter:
+
+| Parameter    | Verwendung                                       |
+| :----------- | :----------------------------------------------- |
+| `name`       | Expliziter Name der Beziehung                    |
+| `fields`     | Lokale Felder, die als Schlüssel verwendet werden |
+| `references` | Referenzierte Felder im Ziel-Model               |
+| `onDelete`   | Verhalten beim Löschen des referenzierten Datensatzes |
+| `onUpdate`   | Verhalten beim Aktualisieren des referenzierten Wertes |
+
+Vollständiges Beispiel:
+
+```dinoco
+model Post {
+	id       Integer @id @default(autoincrement())
+	title    String
+	authorId Integer?
+	author   User?   @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: SetNull)
+}
+```
+
+## onDelete und onUpdate
+
+Dinoco stellt referenzielle Aktionen bereit, um zu steuern, was passiert, wenn der verknüpfte Datensatz geändert oder entfernt wird.
+
+Unterstützte Werte:
+
+| Aktion         | Bedeutung                                        |
+| :----------- | :----------------------------------------------- |
+| `Cascade`    | Leitet die Operation an abhängige Datensätze weiter |
+| `SetNull`    | Setzt den Fremdschlüssel auf `null`              |
+| `SetDefault` | Setzt den für das Feld konfigurierten Standardwert |
+
+Beispiel:
+
+```dinoco
+model Comment {
+	id      Integer @id @default(autoincrement())
+	postId  Integer?
+	post    Post?   @relation(fields: [postId], references: [id], onDelete: Cascade, onUpdate: SetNull)
+}
+```
+
+Verwenden Sie `SetNull` nur, wenn das lokale Feld optional ist.
+
+## One to many
+
+Dies ist die häufigste Beziehung: Ein übergeordneter Datensatz hat mehrere untergeordnete Datensätze.
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	name  String
+	posts Post[]
+}
+
+model Post {
+	id       Integer @id @default(autoincrement())
+	title    String
+	authorId Integer
+	author   User    @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}
+```
+
+Gedankliche Lesart:
+
+- Ein `User` kann mehrere `Posts` haben.
+- Jeder `Post` gehört zu einem einzigen `User`.
+
+## Many to many
+
+Bei Many-to-Many-Beziehungen haben beide Seiten Listen.
+
+```dinoco
+model User {
+	id    Integer @id @default(autoincrement())
+	name  String
+
+	roles Role[]
+}
+
+model Role {
+	id    Integer @id @default(autoincrement())
+	name  String
+
+	users User[]
+}
+```
+
+Gedankliche Lesart:
+
+- Ein `User` kann mehrere `Roles` haben.
+- Eine `Role` kann mehreren `Usern` gehören.
+
+## Self relation
+
+Eine Self-Relation tritt auf, wenn ein Model sich auf sich selbst bezieht.
+
+```dinoco
+model User {
+	id        Integer @id @default(autoincrement())
+	name      String
+	managerId Integer?
+	manager   User?   @relation(name: "UserManager", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+	reports   User[]  @relation(name: "UserManager")
+}
+```
+
+Gedankliche Lesart:
+
+- Ein Benutzer kann einen Manager haben.
+- Ein Benutzer kann mehrere Untergebene haben.
+
+## Praktische Tipps
+
+- Verwenden Sie `name`, wenn es mehr als eine Beziehung zwischen denselben Models gibt.
+- Verwenden Sie `onDelete: Cascade`, wenn das Kind ohne den Elternteil keinen Sinn ergibt.
+- Verwenden Sie `onDelete: SetNull`, wenn die Beziehung aufgehoben werden kann, ohne den untergeordneten Datensatz zu entfernen.
+- Verwenden Sie Self-Relations mit expliziten Namen, um die Lesbarkeit und Codegenerierung zu erleichtern.
+
+## Referenzschema für die Beispiele
+
+Die folgenden Beispiele verwenden das folgende Schema:
+
+```dinoco
+config {
+	database = "sqlite"
+	database_url = env("DATABASE_URL")
+}
+
+enum Role {
+	ADMIN
+	USER
+}
+
+model User {
+	id             String     @id @default(uuid())
+	username       String     @unique
+	role           Role       @default(USER)
+
+	profile        Profile?
+
+	followers      User[]     @relation(name: "UserFollows")
+	following      User[]     @relation(name: "UserFollows")
+
+	posts          Post[]     @relation(name: "PostAuthor")
+	comments       Comment[]  @relation(name: "CommentAuthor")
+
+	likedPosts     Post[]     @relation(name: "PostLikers")
+	likedComments  Comment[]  @relation(name: "CommentLikers")
+}
+
+model Profile {
+	id      String   @id @default(uuid())
+	bio     String?
+	userId  String   @unique
+	user    User     @relation(fields: [userId], references: [id])
+}
+
+model Post {
+	id        String     @id @default(uuid())
+	title     String
+	content   String
+
+	authorId  String
+	author    User       @relation(name: "PostAuthor", fields: [authorId], references: [id])
+
+	likers    User[]     @relation(name: "PostLikers")
+
+	comments  Comment[]
+
+	tags      Tag[]
+}
+
+model Comment {
+	id        String     @id @default(uuid())
+	text      String
+
+	parentId  String?
+	parent    Comment?   @relation(name: "CommentReplies", fields: [parentId], references: [id])
+	replies   Comment[]  @relation(name: "CommentReplies")
+
+	postId    String
+	post      Post       @relation(fields: [postId], references: [id])
+
+	authorId  String
+	author    User       @relation(name: "CommentAuthor", fields: [authorId], references: [id])
+
+	likers    User[]     @relation(name: "CommentLikers")
+}
+
+model Tag {
+	id     String  @id @default(uuid())
+	name   String  @unique
+
+	posts  Post[]
+}
+```
+
+## Beispiel für eine Abfrage mit allen möglichen Beziehungen ausgehend von User
+
+Wenn Sie vom Model `User` ausgehen und alle direkten Beziehungen in einer einzigen Leseabfrage laden möchten, können Sie `select::&lt;T&gt;()` mit mehreren `includes(...)` kombinieren.
+
+```rust
+use dinoco::{Extend, find_many};
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Profile)]
+struct ProfileView {
+	id: String,
+	bio: Option<String>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserRelationItem {
+	id: String,
+	username: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Tag)]
+struct TagView {
+	id: String,
+	name: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Comment)]
+struct CommentView {
+	id: String,
+	text: String,
+	replies: Vec<CommentReplyView>,
+	likers: Vec<UserRelationItem>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Comment)]
+struct CommentReplyView {
+	id: String,
+	text: String,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(Post)]
+struct PostView {
+	id: String,
+	title: String,
+	content: String,
+	likers: Vec<UserRelationItem>,
+	tags: Vec<TagView>,
+	comments: Vec<CommentView>,
+}
+
+#[derive(Debug, Clone, Extend)]
+#[extend(User)]
+struct UserWithAllRelations {
+	id: String,
+	username: String,
+	profile: Option<ProfileView>,
+	followers: Vec<UserRelationItem>,
+	following: Vec<UserRelationItem>,
+	posts: Vec<PostView>,
+	comments: Vec<CommentView>,
+	likedPosts: Vec<PostView>,
+	likedComments: Vec<CommentView>,
+}
+
+let users = find_many::<User>()
+	.select::<UserWithAllRelations>()
+	.includes(|user| user.profile())
+	.includes(|user| user.followers())
+	.includes(|user| user.following())
+	.includes(|user| {
+		user.posts()
+			.includes(|post| post.likers())
+			.includes(|post| post.tags())
+			.includes(|post| {
+				post.comments()
+					.includes(|comment| comment.replies())
+					.includes(|comment| comment.likers())
+			})
+	})
+	.includes(|user| {
+		user.comments()
+			.includes(|comment| comment.replies())
+			.includes(|comment| comment.likers())
+	})
+	.includes(|user| {
+		user.likedPosts()
+			.includes(|post| post.likers())
+			.includes(|post| post.tags())
+			.includes(|post| {
+				post.comments()
+					.includes(|comment| comment.replies())
+					.includes(|comment| comment.likers())
+			})
+	})
+	.includes(|user| {
+		user.likedComments()
+			.includes(|comment| comment.replies())
+			.includes(|comment| comment.likers())
+	})
+	.execute(&client)
+	.await?;
+```
+
+Dieses Muster ist nützlich, wenn Sie eine umfassende Benutzeransicht in einem einzigen beziehungsorientierten Lesevorgang erstellen möchten.
+
+## Beispiel für einen Insert mit Beziehung unter Verwendung von User und Profile
+
+Um einen Datensatz mit einer 1:1-Beziehung über die neue API einzufügen, platzieren Sie die Beziehung innerhalb eines Extend-Payloads, der mit `#[insertable]` markiert ist.
+
+```rust
+use dinoco::insert_into;
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+#[insertable]
+struct UserWithProfile {
+	id: String,
+	username: String,
+	role: Role,
+	profile: Option<Profile>,
+}
+
+let created_user = insert_into::<User>()
+	.values(UserWithProfile {
+		id: "user-1".to_string(),
+		username: "bia".to_string(),
+		role: Role::USER,
+		profile: Some(Profile {
+			id: "profile-1".to_string(),
+			bio: Some("Engenheira de software".to_string()),
+			userId: String::new(),
+		}),
+	})
+	.execute(&client)
+	.await?;
+```
+
+In diesem Ablauf:
+
+- Der `User` wird zuerst eingefügt.
+- Das zugehörige `Profile` wird anschließend erstellt.
+- Der `userId`-Schlüssel wird durch den Dinoco-Beziehungsfluss verknüpft.
+
+## Beispiel für insert_many mit verschachtelten Beziehungen
+
+Verwenden Sie `#[insertable]`, wenn Sie mehrere übergeordnete Datensätze einfügen und für jeden davon auch mehrere neue verknüpfte Datensätze einfügen möchten.
+
+```rust
+use dinoco::insert_many;
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithComments {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	comments: Vec<Comment>,
+}
+
+let posts = vec![
+	PostWithComments {
+		id: "post-1".to_string(),
+		title: "Primeiro post".to_string(),
+		content: "Conteudo do primeiro post".to_string(),
+		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-1".to_string(),
+				text: "Muito bom".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+			Comment {
+				id: "comment-2".to_string(),
+				text: "Gostei do exemplo".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-3".to_string(),
+			},
+		],
+	},
+	PostWithComments {
+		id: "post-2".to_string(),
+		title: "Segundo post".to_string(),
+		content: "Conteudo do segundo post".to_string(),
+		authorId: "user-1".to_string(),
+		comments: vec![
+			Comment {
+				id: "comment-3".to_string(),
+				text: "Quero mais detalhes".to_string(),
+				parentId: None,
+				postId: String::new(),
+				authorId: "user-2".to_string(),
+			},
+		],
+	},
+];
+
+insert_many::<Post>()
+	.values(posts)
+	.execute(&client)
+	.await?;
+```
+
+In diesem Ablauf:
+
+- Jeder `Post` wird eingefügt.
+- Dinoco erstellt die verschachtelten `Comments` und verknüpft jede Gruppe während des Schreibvorgangs mit dem richtigen `Post`.
+
+## Beispiel für insert_many mit verschachtelten Verbindungen
+
+Verwenden Sie das vom Codegen generierte Enum `PostConnection`, wenn Sie mehrere übergeordnete Datensätze einfügen und jeden davon mit mehreren bereits vorhandenen Datensätzen verbinden möchten.
+
+```rust
+use dinoco::insert_many;
+
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(Post)]
+#[insertable]
+struct PostWithTags {
+	id: String,
+	title: String,
+	content: String,
+	authorId: String,
+	tags: Vec<PostConnection>,
+}
+
+insert_many::<Post>()
+	.values(vec![
+		PostWithTags {
+			id: "post-10".to_string(),
+			title: "Rust e Dinoco".to_string(),
+			content: "Post sobre produtividade".to_string(),
+			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-1".to_string()),
+				PostConnection::Tag("tag-2".to_string()),
+			],
+		},
+		PostWithTags {
+			id: "post-11".to_string(),
+			title: "Relações avançadas".to_string(),
+			content: "Post sobre includes e relacoes".to_string(),
+			authorId: "user-1".to_string(),
+			tags: vec![
+				PostConnection::Tag("tag-2".to_string()),
+				PostConnection::Tag("tag-3".to_string()),
+			],
+		},
+	])
+	.execute(&client)
+	.await?;
+```
+
+In diesem Ablauf:
+
+- Die `Posts` werden eingefügt.
+- Die bereits vorhandenen `Tags` werden mit den entsprechenden Posts verbunden.
+- Jeder Payload definiert seine Verbindungen mithilfe des vom Codegen generierten Enums.
+
+## Nächste Schritte
+
+- [**Enums**](/v0.0.2/orm/enums): Erfahren Sie, wie Sie kontrollierte Werte im Schema darstellen.
+- [**Models**](/v0.0.2/orm/models): Erfahren Sie mehr über die Feldstruktur und Beispiele für Suche, Einfügen, Aktualisieren und Löschen mit der Dinoco API.

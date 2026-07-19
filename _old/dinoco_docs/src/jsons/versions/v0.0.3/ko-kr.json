@@ -1,0 +1,1116 @@
+{
+	"description": "Dinoco v0.0.2 버전 문서.",
+	"groups": [
+		{
+			"icon": "database",
+			"name": "Dinoco ORM",
+			"shortName": "orm",
+			"sections": [
+				{
+					"title": "시작하기",
+					"items": [
+						{
+							"shortName": "introduction-dinoco",
+							"name": "Dinoco 소개",
+							"contentPath": "v0.0.3/ko-kr/orm/introduction-to-dinoco.md",
+							"inPage": [
+								"Dinoco 소개",
+								{
+									"title": "Rust에서의 Prisma 경험",
+									"items": []
+								},
+								{
+									"title": "프로젝트의 기둥",
+									"items": []
+								},
+								{
+									"title": "우리는 어디에 위치하고 있나요?",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "first-steps",
+							"name": "첫 단계",
+							"contentPath": "v0.0.3/ko-kr/orm/first-steps.md",
+							"inPage": [
+								"첫 단계",
+								{
+									"title": "어떻게 작동하나요?",
+									"items": ["1. 스키마와 연결 정의", "2. 마이그레이션 생성", "3. DinocoClient로 쿼리"]
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "supported-databases",
+							"name": "개요",
+							"contentPath": "v0.0.3/ko-kr/orm/supported-databases.md",
+							"inPage": [
+								"개요",
+								{
+									"title": "지원되는 버전",
+									"items": []
+								},
+								{
+									"title": "연결 구성",
+									"items": ["SQLite"]
+								},
+								{
+									"title": "PostgreSQL 또는 MySQL",
+									"items": []
+								},
+								{
+									"title": "타입 매핑",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco 스키마",
+					"items": [
+						{
+							"shortName": "configuration",
+							"name": "구성",
+							"contentPath": "v0.0.3/ko-kr/orm/configuration.md",
+							"inPage": [
+								"구성",
+								{
+									"title": "`config {}`에 들어가는 내용",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "Redis 예시",
+									"items": []
+								},
+								{
+									"title": "복제본 예시",
+									"items": []
+								},
+								{
+									"title": "생성된 API에서 변경되는 사항",
+									"items": []
+								},
+								{
+									"title": "이 블록을 편집할 시기",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models",
+							"name": "모델",
+							"contentPath": "v0.0.3/ko-kr/orm/models.md",
+							"inPage": [
+								"모델",
+								{
+									"title": "모델이 나타내는 것",
+									"items": []
+								},
+								{
+									"title": "전체 예시",
+									"items": []
+								},
+								{
+									"title": "필드의 구조",
+									"items": []
+								},
+								{
+									"title": "필드 타입",
+									"items": ["스칼라 필드"]
+								},
+								{
+									"title": "타입 수정자",
+									"items": ["선택적 필드", "목록 필드"]
+								},
+								{
+									"title": "가장 일반적인 속성",
+									"items": ["`@id`", "`@default(...)`", "`@unique`"]
+								},
+								{
+									"title": "모델 데코레이터",
+									"items": ["`@@ids([...])`", "`@@table_name(\"...\")`"]
+								},
+								{
+									"title": "사용자 모델 예시",
+									"items": []
+								},
+								{
+									"title": "Dinoco API를 사용한 사용자 검색 예시",
+									"items": ["단일 레코드 검색", "여러 레코드 검색"]
+								},
+								{
+									"title": "Dinoco API를 사용한 사용자 생성 예시",
+									"items": []
+								},
+								{
+									"title": "Dinoco API를 사용한 사용자 업데이트 예시",
+									"items": []
+								},
+								{
+									"title": "Dinoco API를 사용한 사용자 삭제 예시",
+									"items": []
+								},
+								{
+									"title": "빠른 요약",
+									"items": []
+								},
+								{
+									"title": "새 모델을 생성할 시기",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "enums",
+							"name": "열거형",
+							"contentPath": "v0.0.3/ko-kr/orm/enums.md",
+							"inPage": [
+								"열거형",
+								{
+									"title": "열거형이란 무엇인가요?",
+									"items": []
+								},
+								{
+									"title": "모델에서의 사용",
+									"items": []
+								},
+								{
+									"title": "열거형을 사용할 시기",
+									"items": []
+								},
+								{
+									"title": "모범 사례",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "relations",
+							"name": "관계",
+							"contentPath": "v0.0.3/ko-kr/orm/relations.md",
+							"inPage": [
+								"관계",
+								{
+									"title": "@relation(...)",
+									"items": []
+								},
+								{
+									"title": "onDelete 및 onUpdate",
+									"items": []
+								},
+								{
+									"title": "일대다",
+									"items": []
+								},
+								{
+									"title": "다대다",
+									"items": []
+								},
+								{
+									"title": "자기 참조 관계",
+									"items": []
+								},
+								{
+									"title": "실용적인 팁",
+									"items": []
+								},
+								{
+									"title": "예시를 위한 참조 스키마",
+									"items": []
+								},
+								{
+									"title": "User에서 가능한 모든 관계를 포함한 검색 예시",
+									"items": []
+								},
+								{
+									"title": "User와 Profile을 사용한 관계 삽입 예시",
+									"items": []
+								},
+								{
+									"title": "중첩된 관계를 사용한 insert_many 예시",
+									"items": []
+								},
+								{
+									"title": "중첩된 연결을 사용한 insert_many 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco 코어",
+					"items": [
+						{
+							"shortName": "derives",
+							"name": "파생",
+							"contentPath": "v0.0.3/ko-kr/core/derives.md",
+							"inPage": [
+								"파생",
+								{
+									"title": "Dinoco의 파생이란 무엇인가요?",
+									"items": []
+								},
+								{
+									"title": "Derive Rowable",
+									"items": []
+								},
+								{
+									"title": "Derive Extend",
+									"items": []
+								},
+								{
+									"title": "Atributo #[insertable]",
+									"items": []
+								},
+								{
+									"title": "Rowable 예시",
+									"items": []
+								},
+								{
+									"title": "Extend 예시",
+									"items": []
+								},
+								{
+									"title": "#[insertable] 예시",
+									"items": []
+								},
+								{
+									"title": "각각을 사용할 시기",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "traits",
+							"name": "트레이트",
+							"contentPath": "v0.0.3/ko-kr/core/traits.md",
+							"inPage": [
+								"트레이트",
+								{
+									"title": "Dinoco의 트레이트란 무엇인가요?",
+									"items": []
+								},
+								{
+									"title": "Trait Model",
+									"items": []
+								},
+								{
+									"title": "Trait Projection",
+									"items": []
+								},
+								{
+									"title": "Trait InsertModel",
+									"items": []
+								},
+								{
+									"title": "Trait UpdateModel",
+									"items": []
+								},
+								{
+									"title": "Trait InsertPayload",
+									"items": []
+								},
+								{
+									"title": "Trait InsertConnectionPayload",
+									"items": []
+								},
+								{
+									"title": "모델에 의해 구현된 트레이트",
+									"items": []
+								},
+								{
+									"title": "트레이트와 파생을 함께 사용한 예시",
+									"items": []
+								},
+								{
+									"title": "각각을 사용할 시기",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "Dinoco 클라이언트",
+					"items": [
+						{
+							"shortName": "find-many",
+							"name": "find_many",
+							"contentPath": "v0.0.3/ko-kr/orm/find-many.md",
+							"inPage": [
+								"find_many",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "필터 예시",
+									"items": []
+								},
+								{
+									"title": "페이지네이션 및 정렬 예시",
+									"items": []
+								},
+								{
+									"title": "사용자 정의 선택 예시",
+									"items": []
+								},
+								{
+									"title": "간단한 포함 예시",
+									"items": []
+								},
+								{
+									"title": "필터링된 포함 예시",
+									"items": []
+								},
+								{
+									"title": "중첩된 포함 예시",
+									"items": []
+								},
+								{
+									"title": "관계 카운트 예시",
+									"items": []
+								},
+								{
+									"title": "주 데이터베이스에서 읽기 예시",
+									"items": []
+								},
+
+								{
+									"title": "캐시 예시",
+									"items": []
+								},
+								{
+									"title": "캐시 및 만료 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-first",
+							"name": "find_first",
+							"contentPath": "v0.0.3/ko-kr/orm/find-first.md",
+							"inPage": [
+								"find_first",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "선택 예시",
+									"items": []
+								},
+								{
+									"title": "관계 예시",
+									"items": []
+								},
+								{
+									"title": "정렬 예시",
+									"items": []
+								},
+								{
+									"title": "캐시 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "find-and-update",
+							"name": "find_and_update",
+							"contentPath": "v0.0.3/ko-kr/orm/find-and-update.md",
+							"inPage": [
+								"find_and_update",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
+									"title": "`ModelUpdate`에서 사용 가능한 작업",
+									"items": []
+								},
+								{
+									"title": "참고 사항",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-into",
+							"name": "insert_into",
+							"contentPath": "v0.0.3/ko-kr/orm/insert-into.md",
+							"inPage": [
+								"insert_into",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+
+								{
+									"title": "Extend #[insertable] 예시",
+									"items": []
+								},
+								{
+									"title": "중첩된 관계 예시",
+									"items": []
+								},
+								{
+									"title": "중첩된 연결 예시",
+									"items": []
+								},
+								{
+									"title": "ArticleConnection",
+									"items": []
+								},
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "간단한 예시",
+									"items": []
+								},
+								{
+									"title": "타입이 지정된 반환 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "insert-many",
+							"name": "insert_many",
+							"contentPath": "v0.0.3/ko-kr/orm/insert-many.md",
+							"inPage": [
+								"insert_many",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "간단한 예시",
+									"items": []
+								},
+								{
+									"title": "반환 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
+									"title": "중첩된 관계 예시",
+									"items": []
+								},
+								{
+									"title": "중첩된 연결 예시",
+									"items": []
+								},
+								{
+									"title": "ArticleConnection",
+									"items": []
+								},
+								{
+									"title": "Extend #[insertable] 예시",
+									"items": []
+								},
+								{
+									"title": "참고 사항",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update",
+							"name": "update",
+							"contentPath": "v0.0.3/ko-kr/orm/update.md",
+							"inPage": [
+								"update",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "필드 업데이트 예시",
+									"items": []
+								},
+								{
+									"title": "connect(...) 예시",
+									"items": []
+								},
+								{
+									"title": "disconnect(...) 예시",
+									"items": []
+								},
+								{
+									"title": "connect 및 disconnect에서 사용 가능한 필터",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "update-many",
+							"name": "update_many",
+							"contentPath": "v0.0.3/ko-kr/orm/update-many.md",
+							"inPage": [
+								"update_many",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "반환 예시",
+									"items": []
+								},
+								{
+									"title": "필터 예시",
+									"items": []
+								},
+								{
+									"title": "워커 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "count",
+							"name": "count",
+							"contentPath": "v0.0.3/ko-kr/orm/count.md",
+							"inPage": [
+								"count",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+								{
+									"title": "메서드 설명",
+									"items": []
+								},
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "부울 필터 예시",
+									"items": []
+								},
+								{
+									"title": "텍스트 필터 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete",
+							"name": "delete",
+							"contentPath": "v0.0.3/ko-kr/orm/delete.md",
+							"inPage": [
+								"delete",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "다른 필터 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "delete-many",
+							"name": "delete_many",
+							"contentPath": "v0.0.3/ko-kr/orm/delete-many.md",
+							"inPage": [
+								"delete_many",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+								{
+									"title": "반환",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "필터 없는 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "cache-client",
+							"name": "cache",
+							"contentPath": "v0.0.3/ko-kr/orm/cache-client.md",
+							"inPage": [
+								"cache",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+								{
+									"title": "사용 시기",
+									"items": []
+								},
+								{
+									"title": "작동 방식",
+									"items": []
+								},
+								{
+									"title": "사용 가능한 메서드",
+									"items": []
+								},
+								{
+									"title": "기본 예시",
+									"items": []
+								},
+								{
+									"title": "타입이 지정된 목록 예시",
+									"items": []
+								},
+								{
+									"title": "TTL 예시",
+									"items": []
+								},
+								{
+									"title": "무효화 예시",
+									"items": []
+								},
+								{
+									"title": "지원되는 타입",
+									"items": []
+								},
+								{
+									"title": "참고 사항",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "queues",
+							"name": "workers",
+							"contentPath": "v0.0.3/ko-kr/orm/queues.md",
+							"inPage": [
+								"queues",
+								{
+									"title": "수행할 수 있는 작업",
+									"items": []
+								},
+								{
+									"title": "작동 방식",
+									"items": []
+								},
+								{
+									"title": "큐잉 메서드",
+									"items": []
+								},
+								{
+									"title": "워커",
+									"items": []
+								},
+								{
+									"title": "Redis 구성",
+									"items": []
+								},
+								{
+									"title": "참고 사항",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "terminal",
+			"name": "Dinoco CLI",
+			"shortName": "cli",
+			"sections": [
+				{
+					"title": "설치",
+					"items": [
+						{
+							"shortName": "install",
+							"name": "설치",
+							"contentPath": "v0.0.3/ko-kr/cli/install.md",
+							"inPage": [
+								"설치",
+								{
+									"title": "설치",
+									"items": []
+								},
+								{
+									"title": "구성",
+									"items": []
+								}
+							]
+						}
+					]
+				},
+				{
+					"title": "명령어",
+					"items": [
+						{
+							"shortName": "init",
+							"name": "Init",
+							"contentPath": "v0.0.3/ko-kr/cli/init.md",
+							"inPage": [
+								"사용 방법?",
+								{
+									"title": "명령어가 하는 일",
+									"items": []
+								},
+								{
+									"title": "사용 시기",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "database-reset",
+							"name": "Database reset",
+							"contentPath": "v0.0.3/ko-kr/cli/database-reset.md",
+							"inPage": [
+								"사용 방법?",
+								{
+									"title": "명령어가 하는 일",
+									"items": []
+								},
+								{
+									"title": "주의 사항",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-generate",
+							"name": "Migrate generate",
+							"contentPath": "v0.0.3/ko-kr/cli/migrate-generate.md",
+							"inPage": [
+								"사용 방법?",
+								{
+									"title": "명령어가 하는 일",
+									"items": []
+								},
+								{
+									"title": "매개변수",
+									"items": ["--apply"]
+								},
+								{
+									"title": "적용하지 않는 사용 예시",
+									"items": []
+								},
+								{
+									"title": "즉시 적용하는 사용 예시",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-run",
+							"name": "Migrate run",
+							"contentPath": "v0.0.3/ko-kr/cli/migrate-run.md",
+							"inPage": [
+								"사용 방법?",
+								{
+									"title": "명령어가 하는 일",
+									"items": []
+								},
+								{
+									"title": "사용 시기",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "migrate-rollback",
+							"name": "Migrate rollback",
+							"contentPath": "v0.0.3/ko-kr/cli/migrate-rollback.md",
+							"inPage": [
+								"사용 방법?",
+								{
+									"title": "명령어가 하는 일",
+									"items": []
+								},
+								{
+									"title": "매개변수",
+									"items": []
+								},
+								{
+									"title": "사용 예시",
+									"items": []
+								},
+								{
+									"title": "사용 시기",
+									"items": []
+								},
+								{
+									"title": "주의 사항",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "models-generate",
+							"name": "Models generate",
+							"contentPath": "v0.0.3/ko-kr/cli/models-generate.md",
+							"inPage": [
+								"사용 방법?",
+								{
+									"title": "명령어가 하는 일",
+									"items": []
+								},
+								{
+									"title": "사용 시기",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						},
+						{
+							"shortName": "schema-restore",
+							"name": "Schema restore",
+							"contentPath": "v0.0.3/ko-kr/cli/schema-restore.md",
+							"inPage": [
+								"사용 방법?",
+								{
+									"title": "명령어가 하는 일",
+									"items": []
+								},
+								{
+									"title": "특정 마이그레이션에서 복원하는 예시",
+									"items": []
+								},
+								{
+									"title": "사용 시기",
+									"items": []
+								},
+								{
+									"title": "다음 단계",
+									"items": []
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "rocket",
+			"name": "Dinoco Supersonic",
+			"shortName": "supersonic",
+			"sections": [
+				{
+					"title": "소개",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "소개",
+							"contentPath": "v0.0.3/ko-kr/supersonic/introduction.md",
+							"inPage": ["소개"]
+						}
+					]
+				}
+			]
+		},
+		{
+			"icon": "box",
+			"name": "DinocoDB",
+			"shortName": "dinocodb",
+			"sections": [
+				{
+					"title": "소개",
+					"items": [
+						{
+							"shortName": "introduction",
+							"name": "소개",
+							"contentPath": "v0.0.3/ko-kr/dinocodb/introduction.md",
+							"inPage": ["소개"]
+						}
+					]
+				}
+			]
+		}
+	],
+	"locale": "ko-kr",
+	"name": "v0.0.3"
+}

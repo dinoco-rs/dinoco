@@ -1,0 +1,94 @@
+# update_many
+
+여러 레코드를 한 번에 업데이트하는 데 사용됩니다.
+
+---
+
+## 수행할 수 있는 작업
+
+- `.cond(...)`: 업데이트할 수 있는 레코드를 제한합니다.
+- `.values(Vec&lt;M&gt;)`: 일괄 업데이트에 사용되는 항목을 정의합니다.
+- `.returning::&lt;T&gt;()`: 업데이트된 레코드를 형식화된 목록으로 반환합니다.
+- `.execute(&client)`: 일괄 업데이트를 실행합니다.
+
+## 반환 값
+
+`.returning::&lt;T&gt;()`가 없으면 반환 값은 다음과 같습니다:
+
+```rust
+DinocoResult<()>
+```
+
+`.returning::&lt;T&gt;()`가 있으면 반환 값은 다음과 같이 변경됩니다:
+
+```rust
+DinocoResult<Vec<T>>
+```
+
+## 기본 예시
+
+```rust
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 1, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 2, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## 반환 값이 있는 예시
+
+```rust
+let updated = dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 2, name: "Ana Batch".to_string() },
+        User { id: 3, name: "Caio Batch".to_string() },
+    ])
+    .returning::<User>()
+    .execute(&client)
+    .await?;
+```
+
+## 필터가 있는 예시
+
+```rust
+dinoco::update_many::<User>()
+    .cond(|x| x.active.eq(true))
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .execute(&client)
+    .await?;
+```
+
+## 워커 예시
+
+```rust
+use database::*;
+
+let _worker = workers()
+    .on::<Vec<User>, _, _>("user.batch-updated", |job| async move {
+        println!("업데이트된 사용자: {}", job.data.len());
+        job.success();
+    })
+    .run()
+    .await?;
+
+dinoco::update_many::<User>()
+    .values(vec![
+        User { id: 10, email: "a@acme.com".into(), name: "Ana".into() },
+        User { id: 11, email: "b@acme.com".into(), name: "Bia".into() },
+    ])
+    .enqueue("user.batch-updated")
+    .execute(&client)
+    .await?;
+```
+
+워커에 대한 자세한 내용은 다음을 참조하세요: [**`queues`**](/v0.0.2/orm/queues).
+
+## 다음 단계
+
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): 조건이 있는 일반 업데이트.
+- [**`find_and_update::&lt;M&gt;()`**](/v0.0.1/orm/find-and-update): 단일 레코드의 원자적 업데이트.

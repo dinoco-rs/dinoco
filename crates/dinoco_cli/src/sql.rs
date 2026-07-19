@@ -1,0 +1,1213 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use dinoco_compiler::{AttributeArgument, AttributeValue, ModelField, Schema};
+use dinoco_engine::{
+    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CreateEnumMigration,
+    CreateTableMigration, DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropTableMigration,
+    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, ReferentialAction,
+    RenameColumnMigration,
+};
+
+use crate::db::{DatabaseEnum, DatabaseSchema, DatabaseTable};
+
+#[derive(Debug, Clone, Default)]
+pub struct MigrationPlan {
+    pub steps: Vec<MigrationStep>,
+    pub warnings: Vec<MigrationWarning>,
+}
+
+#[derive(Debug, Clone)]
+pub enum MigrationStep {
+    CreateEnum(CreateEnumMigration),
+    DropEnum(DropEnumMigration),
+    AlterEnum(AlterEnumMigration),
+    CreateTable(CreateTableMigration),
+    DropTable(DropTableMigration),
+    AddColumn(AddColumnMigration),
+    DropColumn(DropColumnMigration),
+    AlterColumn(AlterColumnMigration),
+    RenameColumn(RenameColumnMigration),
+    AddForeignKey(AddForeignKeyMigration),
+    DropForeignKey(DropForeignKeyMigration),
+}
+
+#[derive(Debug, Clone)]
+pub struct MigrationWarning {
+    pub message: String,
+    pub destructive: bool,
+}
+
+pub fn generate_create_table_migrations(schema: &Schema) -> Vec<CreateTableMigration> {
+    let mut migrations = schema
+        .models()
+        .map(|model| CreateTableMigration {
+            table: table_name(&model.name),
+            if_not_exists: true,
+            columns: model
+                .fields
+                .iter()
+                .filter(|field| !field.is_relation(schema))
+                .map(|field| migration_column(field, schema))
+                .collect(),
+            foreign_keys: relation_foreign_keys(&model.name, schema),
+        })
+        .collect::<Vec<_>>();
+
+    migrations.extend(generate_many_to_many_join_migrations(schema));
+    migrations
+}
+
+pub fn plan_schema_migration(schema: &Schema, current: &DatabaseSchema) -> MigrationPlan {
+    let desired = desired_database_schema(schema);
+    plan_database_migration(&desired, current)
+}
+
+pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchema) -> MigrationPlan {
+    let mut plan = MigrationPlan::default();
+    let current_tables = current.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
+    let desired_tables = desired.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
+    let current_enums = current.enums.iter().map(|item| (item.name.as_str(), item)).collect::<BTreeMap<_, _>>();
+    let desired_enums = desired.enums.iter().map(|item| (item.name.as_str(), item)).collect::<BTreeMap<_, _>>();
+
+    for (name, item) in &desired_enums {
+        match current_enums.get(name) {
+            None => plan.steps.push(MigrationStep::CreateEnum(CreateEnumMigration {
+                name: item.name.clone(),
+                values: item.values.clone(),
+            })),
+            Some(current) if current.values != item.values => {
+                let removed = current.values.iter().filter(|value| !item.values.contains(value)).collect::<Vec<_>>();
+                if !removed.is_empty() {
+                    plan.warnings.push(MigrationWarning {
+                        message: format!(
+                            "Enum `{}` removes values: {}. Existing rows may become invalid.",
+                            item.name,
+                            removed.into_iter().map(|value| value.as_str()).collect::<Vec<_>>().join(", ")
+                        ),
+                        destructive: true,
+                    });
+                }
+                plan.steps.push(MigrationStep::AlterEnum(AlterEnumMigration {
+                    name: item.name.clone(),
+                    current_values: current.values.clone(),
+                    desired_values: item.values.clone(),
+                }));
+            }
+            _ => {}
+        }
+    }
+
+    for (name, item) in &current_enums {
+        if !desired_enums.contains_key(name) {
+            plan.warnings.push(MigrationWarning {
+                message: format!("Enum `{}` will be dropped.", item.name),
+                destructive: true,
+            });
+            plan.steps.push(MigrationStep::DropEnum(DropEnumMigration { name: item.name.clone() }));
+        }
+    }
+
+    for (name, desired_table) in &desired_tables {
+        let Some(current_table) = current_tables.get(name) else {
+            plan.steps.push(MigrationStep::CreateTable(CreateTableMigration {
+                table: desired_table.name.clone(),
+                if_not_exists: false,
+                columns: desired_table.columns.clone(),
+                foreign_keys: desired_table.foreign_keys.clone(),
+            }));
+            continue;
+        };
+
+        diff_columns(&mut plan, current_table, desired_table);
+        diff_foreign_keys(&mut plan, current_table, desired_table);
+    }
+
+    for (name, current_table) in &current_tables {
+        if !desired_tables.contains_key(name) {
+            if current_table.row_count > 0 {
+                plan.warnings.push(MigrationWarning {
+                    message: format!(
+                        "Table `{}` with {} row(s) will be dropped.",
+                        current_table.name, current_table.row_count
+                    ),
+                    destructive: true,
+                });
+            }
+            plan.steps.push(MigrationStep::DropTable(DropTableMigration {
+                table: current_table.name.clone(),
+                if_exists: false,
+            }));
+        }
+    }
+
+    plan
+}
+
+fn desired_database_schema(schema: &Schema) -> DatabaseSchema {
+    DatabaseSchema {
+        tables: generate_create_table_migrations(schema)
+            .into_iter()
+            .map(|migration| DatabaseTable {
+                name: migration.table,
+                row_count: 0,
+                columns: migration.columns,
+                foreign_keys: migration.foreign_keys,
+            })
+            .collect(),
+        enums: schema
+            .enums()
+            .map(|item| DatabaseEnum { name: item.name.clone(), values: item.values.clone() })
+            .collect(),
+    }
+}
+
+fn diff_columns(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired_table: &DatabaseTable) {
+    let current_columns =
+        current_table.columns.iter().map(|column| (column.name.as_str(), column)).collect::<BTreeMap<_, _>>();
+    let desired_columns =
+        desired_table.columns.iter().map(|column| (column.name.as_str(), column)).collect::<BTreeMap<_, _>>();
+    let mut renamed_current = BTreeSet::new();
+    let mut renamed_desired = BTreeSet::new();
+
+    for (desired_name, desired_column) in
+        desired_columns.iter().filter(|(name, _)| !current_columns.contains_key(**name))
+    {
+        let candidates = current_columns
+            .iter()
+            .filter(|(name, current_column)| {
+                !desired_columns.contains_key(**name)
+                    && !renamed_current.contains(**name)
+                    && rename_compatible(current_column, desired_column)
+            })
+            .collect::<Vec<_>>();
+
+        if candidates.len() == 1 {
+            let (current_name, current_column) = candidates[0];
+            plan.warnings.push(MigrationWarning {
+                message: format!(
+                    "Column `{}.{}` looks like it was renamed to `{}`. Review the generated migration before applying it.",
+                    current_table.name, current_column.name, desired_column.name
+                ),
+                destructive: false,
+            });
+            plan.steps.push(MigrationStep::RenameColumn(RenameColumnMigration {
+                table: desired_table.name.clone(),
+                from: (*current_name).to_string(),
+                to: (*desired_name).to_string(),
+            }));
+            renamed_current.insert(*current_name);
+            renamed_desired.insert(*desired_name);
+        }
+    }
+
+    for (name, desired_column) in &desired_columns {
+        if renamed_desired.contains(name) {
+            continue;
+        }
+        let Some(current_column) = current_columns.get(name) else {
+            if current_table.row_count > 0 && !desired_column.nullable && desired_column.default.is_none() {
+                plan.warnings.push(MigrationWarning {
+                    message: format!(
+                        "Required column `{}.{}` will be added without a default while the table has {} row(s).",
+                        desired_table.name, desired_column.name, current_table.row_count
+                    ),
+                    destructive: true,
+                });
+            }
+            plan.steps.push(MigrationStep::AddColumn(AddColumnMigration {
+                table: desired_table.name.clone(),
+                column: (*desired_column).clone(),
+            }));
+            continue;
+        };
+
+        if !columns_equivalent(current_column, desired_column) {
+            if current_table.row_count > 0 {
+                let destructive = column_change_destructive(current_column, desired_column);
+                plan.warnings.push(MigrationWarning {
+                    message: column_change_warning(
+                        &desired_table.name,
+                        current_column,
+                        desired_column,
+                        current_table.row_count,
+                    ),
+                    destructive,
+                });
+            }
+            plan.steps.push(MigrationStep::AlterColumn(AlterColumnMigration {
+                table: desired_table.name.clone(),
+                current: (*current_column).clone(),
+                desired: (*desired_column).clone(),
+            }));
+        }
+    }
+
+    for (name, current_column) in &current_columns {
+        if renamed_current.contains(name) {
+            continue;
+        }
+        if !desired_columns.contains_key(name) {
+            if current_table.row_count > 0 {
+                plan.warnings.push(MigrationWarning {
+                    message: format!(
+                        "Column `{}.{}` will be dropped and its data will be lost.",
+                        current_table.name, current_column.name
+                    ),
+                    destructive: true,
+                });
+            }
+            plan.steps.push(MigrationStep::DropColumn(DropColumnMigration {
+                table: current_table.name.clone(),
+                column: current_column.name.clone(),
+            }));
+        }
+    }
+}
+
+fn rename_compatible(current: &MigrationColumn, desired: &MigrationColumn) -> bool {
+    column_types_equivalent(&current.ty, &desired.ty)
+        && current.primary_key == desired.primary_key
+        && current.nullable == desired.nullable
+        && normalize_default(&current.default) == normalize_default(&desired.default)
+}
+
+fn diff_foreign_keys(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired_table: &DatabaseTable) {
+    let current_keys = current_table
+        .foreign_keys
+        .iter()
+        .map(|foreign_key| (foreign_key.name.as_str(), foreign_key))
+        .collect::<BTreeMap<_, _>>();
+    let desired_keys = desired_table
+        .foreign_keys
+        .iter()
+        .map(|foreign_key| (foreign_key.name.as_str(), foreign_key))
+        .collect::<BTreeMap<_, _>>();
+
+    for (name, desired_key) in &desired_keys {
+        match current_keys.get(name) {
+            None => plan.steps.push(MigrationStep::AddForeignKey(AddForeignKeyMigration {
+                table: desired_table.name.clone(),
+                foreign_key: (*desired_key).clone(),
+            })),
+            Some(current_key) if *current_key != *desired_key => {
+                plan.warnings.push(MigrationWarning {
+                    message: format!(
+                        "Foreign key `{}` on `{}` will be recreated.",
+                        desired_key.name, desired_table.name
+                    ),
+                    destructive: false,
+                });
+                plan.steps.push(MigrationStep::DropForeignKey(DropForeignKeyMigration {
+                    table: desired_table.name.clone(),
+                    name: (*name).to_string(),
+                }));
+                plan.steps.push(MigrationStep::AddForeignKey(AddForeignKeyMigration {
+                    table: desired_table.name.clone(),
+                    foreign_key: (*desired_key).clone(),
+                }));
+            }
+            _ => {}
+        }
+    }
+
+    for (name, current_key) in &current_keys {
+        if !desired_keys.contains_key(name) {
+            plan.warnings.push(MigrationWarning {
+                message: format!("Foreign key `{}` on `{}` will be dropped.", current_key.name, current_table.name),
+                destructive: false,
+            });
+            plan.steps.push(MigrationStep::DropForeignKey(DropForeignKeyMigration {
+                table: current_table.name.clone(),
+                name: (*name).to_string(),
+            }));
+        }
+    }
+}
+
+fn columns_equivalent(left: &MigrationColumn, right: &MigrationColumn) -> bool {
+    column_types_equivalent(&left.ty, &right.ty)
+        && left.primary_key == right.primary_key
+        && left.nullable == right.nullable
+        && normalize_default(&left.default) == normalize_default(&right.default)
+}
+
+fn column_change_destructive(current: &MigrationColumn, desired: &MigrationColumn) -> bool {
+    !column_types_equivalent(&current.ty, &desired.ty) || (current.nullable && !desired.nullable)
+}
+
+fn column_change_warning(
+    table: &str,
+    current_column: &MigrationColumn,
+    desired_column: &MigrationColumn,
+    row_count: i64,
+) -> String {
+    if current_column.nullable && !desired_column.nullable {
+        return format!(
+            "Column `{}.{}` will become required while the table has {} row(s). Existing NULL values would make this migration fail; clean or backfill the data before applying it.",
+            table, desired_column.name, row_count
+        );
+    }
+
+    if !current_column.nullable && desired_column.nullable {
+        return format!(
+            "Column `{}.{}` will become optional while the table has {} row(s).",
+            table, desired_column.name, row_count
+        );
+    }
+
+    format!(
+        "Column `{}.{}` will change from `{}` to `{}` while the table has {} row(s).",
+        table,
+        desired_column.name,
+        describe_column(current_column),
+        describe_column(desired_column),
+        row_count
+    )
+}
+
+fn column_types_equivalent(left: &MigrationColumnType, right: &MigrationColumnType) -> bool {
+    left == right
+        || matches!(
+            (left, right),
+            (MigrationColumnType::String, MigrationColumnType::Text)
+                | (MigrationColumnType::Text, MigrationColumnType::String)
+        )
+}
+
+fn normalize_default(default: &Option<MigrationDefault>) -> Option<String> {
+    match default {
+        Some(MigrationDefault::String(value)) => Some(format!("string:{value}")),
+        Some(MigrationDefault::Boolean(value)) => Some(format!("bool:{value}")),
+        Some(MigrationDefault::Integer(value)) => Some(format!("int:{value}")),
+        Some(MigrationDefault::Float(value)) => Some(format!("float:{value}")),
+        Some(MigrationDefault::CurrentTimestamp) => Some("current_timestamp".to_string()),
+        Some(MigrationDefault::AutoIncrement) => Some("autoincrement".to_string()),
+        None => None,
+    }
+}
+
+fn describe_column(column: &MigrationColumn) -> String {
+    format!("{:?}, {}, default {:?}", column.ty, if column.nullable { "nullable" } else { "required" }, column.default)
+}
+
+fn migration_column(field: &ModelField, schema: &Schema) -> MigrationColumn {
+    MigrationColumn {
+        name: field.name.clone(),
+        ty: migration_type(field, schema),
+        primary_key: field.attributes.iter().any(|attr| attr.name == "id"),
+        nullable: field.ty.optional,
+        default: migration_default(field),
+    }
+}
+
+fn relation_foreign_keys(model_name: &str, schema: &Schema) -> Vec<MigrationForeignKey> {
+    let Some(model) = schema.models().find(|model| model.name == model_name) else {
+        return Vec::new();
+    };
+    let mut keys = Vec::new();
+
+    for field in &model.fields {
+        if !field.is_relation(schema) || field.ty.list {
+            continue;
+        }
+        let Some(relation) = field.attributes.iter().find(|attr| attr.name == "relation") else {
+            continue;
+        };
+        let Some(columns) = relation.argument("fields").and_then(array_idents) else {
+            continue;
+        };
+        let Some(references_columns) = relation.argument("references").and_then(array_idents) else {
+            continue;
+        };
+
+        let table = table_name(model_name);
+        keys.push(MigrationForeignKey {
+            name: relation
+                .argument("map")
+                .and_then(string_or_ident)
+                .unwrap_or_else(|| foreign_key_name(&table, &columns.iter().map(String::as_str).collect::<Vec<_>>())),
+            columns,
+            references_table: table_name(&field.ty.name),
+            references_columns,
+            on_update: relation
+                .argument("onUpdate")
+                .and_then(parse_referential_action)
+                .unwrap_or(ReferentialAction::NoAction),
+            on_delete: relation
+                .argument("onDelete")
+                .and_then(parse_referential_action)
+                .unwrap_or(ReferentialAction::NoAction),
+        });
+    }
+
+    keys
+}
+
+fn generate_many_to_many_join_migrations(schema: &Schema) -> Vec<CreateTableMigration> {
+    let mut seen = BTreeSet::new();
+    let mut migrations = Vec::new();
+
+    for model in schema.models() {
+        for field in &model.fields {
+            if !field.ty.list || !schema.models().any(|target| target.name == field.ty.name) {
+                continue;
+            }
+
+            if field
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "relation")
+                .and_then(|attr| attr.argument("fields"))
+                .is_some()
+            {
+                continue;
+            }
+
+            let left = model.name.as_str();
+            let right = field.ty.name.as_str();
+            let relation_name = field.attributes.iter().find(|attr| attr.name == "relation").and_then(relation_name);
+            let key = relation_key(left, right, relation_name.as_deref());
+            if !seen.insert(key) {
+                continue;
+            }
+
+            let left_column = if left == right { "a_id".to_string() } else { format!("{}_id", table_name(left)) };
+            let right_column = if left == right { "b_id".to_string() } else { format!("{}_id", table_name(right)) };
+            let join_table = many_to_many_table_name(left, right, relation_name.as_deref());
+
+            migrations.push(CreateTableMigration {
+                table: join_table.clone(),
+                if_not_exists: true,
+                columns: vec![
+                    MigrationColumn {
+                        name: left_column.clone(),
+                        ty: primary_column_type(schema, left),
+                        primary_key: false,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: right_column.clone(),
+                        ty: primary_column_type(schema, right),
+                        primary_key: false,
+                        nullable: false,
+                        default: None,
+                    },
+                ],
+                foreign_keys: vec![
+                    MigrationForeignKey {
+                        name: foreign_key_name(&join_table, &[left_column.as_str()]),
+                        columns: vec![left_column],
+                        references_table: table_name(left),
+                        references_columns: vec![primary_column_name(schema, left)],
+                        on_update: ReferentialAction::Cascade,
+                        on_delete: ReferentialAction::Cascade,
+                    },
+                    MigrationForeignKey {
+                        name: foreign_key_name(&join_table, &[right_column.as_str()]),
+                        columns: vec![right_column],
+                        references_table: table_name(right),
+                        references_columns: vec![primary_column_name(schema, right)],
+                        on_update: ReferentialAction::Cascade,
+                        on_delete: ReferentialAction::Cascade,
+                    },
+                ],
+            });
+        }
+    }
+
+    migrations
+}
+
+fn primary_column_type(schema: &Schema, model_name: &str) -> MigrationColumnType {
+    schema
+        .models()
+        .find(|model| model.name == model_name)
+        .and_then(|model| model.fields.iter().find(|field| field.attributes.iter().any(|attr| attr.name == "id")))
+        .map(|field| migration_type(field, schema))
+        .unwrap_or(MigrationColumnType::String)
+}
+
+fn primary_column_name(schema: &Schema, model_name: &str) -> String {
+    schema
+        .models()
+        .find(|model| model.name == model_name)
+        .and_then(|model| model.fields.iter().find(|field| field.attributes.iter().any(|attr| attr.name == "id")))
+        .map(|field| field.name.clone())
+        .unwrap_or_else(|| "id".to_string())
+}
+
+fn relation_key(left: &str, right: &str, relation_name: Option<&str>) -> String {
+    let mut names = [left, right];
+    names.sort();
+    relation_name
+        .map(|name| format!("{}:{}:{name}", names[0], names[1]))
+        .unwrap_or_else(|| format!("{}:{}", names[0], names[1]))
+}
+
+fn many_to_many_table_name(left: &str, right: &str, relation_name: Option<&str>) -> String {
+    let base = if left <= right {
+        format!("_{}_to_{}", table_name(left), table_name(right))
+    } else {
+        format!("_{}_to_{}", table_name(right), table_name(left))
+    };
+
+    relation_name.map(|name| format!("{base}_{}", table_name(name))).unwrap_or(base)
+}
+
+fn foreign_key_name(table: &str, columns: &[&str]) -> String {
+    format!("fk_{}_{}", table, columns.join("_"))
+}
+
+fn relation_name(attribute: &dinoco_compiler::Attribute) -> Option<String> {
+    attribute.argument("name").and_then(string_or_ident).or_else(|| {
+        attribute.arguments.iter().find_map(|argument| match argument {
+            AttributeArgument::Value(value) => string_or_ident(value),
+            _ => None,
+        })
+    })
+}
+
+fn array_idents(value: &AttributeValue) -> Option<Vec<String>> {
+    let AttributeValue::Array(values) = value else {
+        return None;
+    };
+    values
+        .iter()
+        .map(|value| match value {
+            AttributeValue::Ident(value) | AttributeValue::String(value) => Some(value.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn string_or_ident(value: &AttributeValue) -> Option<String> {
+    match value {
+        AttributeValue::String(value) | AttributeValue::Ident(value) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn parse_referential_action(value: &AttributeValue) -> Option<ReferentialAction> {
+    match string_or_ident(value)?.as_str() {
+        "Cascade" | "cascade" => Some(ReferentialAction::Cascade),
+        "Restrict" | "restrict" => Some(ReferentialAction::Restrict),
+        "NoAction" | "noAction" | "no_action" => Some(ReferentialAction::NoAction),
+        "SetNull" | "setNull" | "set_null" => Some(ReferentialAction::SetNull),
+        "SetDefault" | "setDefault" | "set_default" => Some(ReferentialAction::SetDefault),
+        _ => None,
+    }
+}
+
+fn migration_type(field: &ModelField, schema: &Schema) -> MigrationColumnType {
+    if let Some(item) = schema.enums().find(|item| item.name == field.ty.name) {
+        return MigrationColumnType::Enum { name: item.name.clone(), values: item.values.clone() };
+    }
+
+    match field.ty.name.as_str() {
+        "Boolean" => MigrationColumnType::Boolean,
+        "Integer" => MigrationColumnType::Integer,
+        "Float" => MigrationColumnType::Float,
+        "Json" => MigrationColumnType::Json,
+        "DateTime" => MigrationColumnType::DateTime,
+        "Date" => MigrationColumnType::Date,
+        _ => MigrationColumnType::String,
+    }
+}
+
+fn migration_default(field: &ModelField) -> Option<MigrationDefault> {
+    let attr = field.attributes.iter().find(|attr| attr.name == "default")?;
+    let value = attr.arguments.first()?;
+    let AttributeArgument::Value(value) = value else {
+        return None;
+    };
+
+    match value {
+        AttributeValue::Ident(value) if value == "true" => Some(MigrationDefault::Boolean(true)),
+        AttributeValue::Ident(value) if value == "false" => Some(MigrationDefault::Boolean(false)),
+        AttributeValue::Ident(value) => value
+            .parse::<i64>()
+            .map(MigrationDefault::Integer)
+            .or_else(|_| value.parse::<f64>().map(MigrationDefault::Float))
+            .ok()
+            .or_else(|| Some(MigrationDefault::String(value.clone()))),
+        AttributeValue::String(value) => Some(MigrationDefault::String(value.clone())),
+        AttributeValue::Call { name, .. } if name == "now" => Some(MigrationDefault::CurrentTimestamp),
+        AttributeValue::Call { name, .. } if name == "autoincrement" => Some(MigrationDefault::AutoIncrement),
+        _ => None,
+    }
+}
+
+fn table_name(name: &str) -> String {
+    let mut out = String::new();
+    for (index, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if index > 0 {
+                out.push('_');
+            }
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{DatabaseSchema, DatabaseTable};
+
+    #[test]
+    fn plan_detects_dropped_column_with_existing_rows_as_destructive() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "sqlite"
+                database_url = env("DATABASE_URL")
+            }
+
+            model User {
+                id    String @id
+                email String
+            }
+            "#,
+        )
+        .expect("schema");
+        let current = DatabaseSchema {
+            tables: vec![DatabaseTable {
+                name: "user".to_string(),
+                row_count: 2,
+                columns: vec![
+                    MigrationColumn {
+                        name: "id".to_string(),
+                        ty: MigrationColumnType::String,
+                        primary_key: true,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: "email".to_string(),
+                        ty: MigrationColumnType::String,
+                        primary_key: false,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: "password".to_string(),
+                        ty: MigrationColumnType::String,
+                        primary_key: false,
+                        nullable: false,
+                        default: None,
+                    },
+                ],
+                foreign_keys: Vec::new(),
+            }],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_schema_migration(&schema, &current);
+
+        assert!(
+            plan.steps
+                .iter()
+                .any(|step| matches!(step, MigrationStep::DropColumn(column) if column.column == "password"))
+        );
+        assert!(
+            plan.warnings.iter().any(|warning| warning.destructive && warning.message.contains("data will be lost"))
+        );
+    }
+
+    #[test]
+    fn plan_detects_added_required_column_on_populated_table_as_destructive() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "sqlite"
+                database_url = env("DATABASE_URL")
+            }
+
+            model User {
+                id     String @id
+                email  String
+                office String
+            }
+            "#,
+        )
+        .expect("schema");
+        let current = DatabaseSchema {
+            tables: vec![DatabaseTable {
+                name: "user".to_string(),
+                row_count: 1,
+                columns: vec![
+                    MigrationColumn {
+                        name: "id".to_string(),
+                        ty: MigrationColumnType::String,
+                        primary_key: true,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: "email".to_string(),
+                        ty: MigrationColumnType::String,
+                        primary_key: false,
+                        nullable: false,
+                        default: None,
+                    },
+                ],
+                foreign_keys: Vec::new(),
+            }],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_schema_migration(&schema, &current);
+
+        assert!(
+            plan.steps
+                .iter()
+                .any(|step| matches!(step, MigrationStep::AddColumn(column) if column.column.name == "office"))
+        );
+        assert!(
+            plan.warnings.iter().any(|warning| warning.destructive && warning.message.contains("without a default"))
+        );
+    }
+
+    #[test]
+    fn plan_detects_optional_field_becoming_required_as_destructive() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "sqlite"
+                database_url = env("DATABASE_URL")
+            }
+
+            model User {
+                id    String @id
+                email String
+            }
+            "#,
+        )
+        .expect("schema");
+        let current = DatabaseSchema {
+            tables: vec![DatabaseTable {
+                name: "user".to_string(),
+                row_count: 3,
+                columns: vec![string_column("id", true), nullable_string_column("email")],
+                foreign_keys: Vec::new(),
+            }],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_schema_migration(&schema, &current);
+
+        assert!(plan.steps.iter().any(
+            |step| matches!(step, MigrationStep::AlterColumn(column) if column.desired.name == "email" && !column.desired.nullable)
+        ));
+        assert!(
+            plan.warnings.iter().any(|warning| warning.destructive && warning.message.contains("will become required"))
+        );
+    }
+
+    #[test]
+    fn plan_detects_required_field_becoming_optional_as_safe_alter() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "sqlite"
+                database_url = env("DATABASE_URL")
+            }
+
+            model User {
+                id    String  @id
+                email String?
+            }
+            "#,
+        )
+        .expect("schema");
+        let current = DatabaseSchema {
+            tables: vec![DatabaseTable {
+                name: "user".to_string(),
+                row_count: 3,
+                columns: vec![string_column("id", true), string_column("email", false)],
+                foreign_keys: Vec::new(),
+            }],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_schema_migration(&schema, &current);
+
+        assert!(plan.steps.iter().any(
+            |step| matches!(step, MigrationStep::AlterColumn(column) if column.desired.name == "email" && column.desired.nullable)
+        ));
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|warning| !warning.destructive && warning.message.contains("will become optional"))
+        );
+    }
+
+    #[test]
+    fn plan_detects_enum_additions_and_removals() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "postgresql"
+                database_url = env("DATABASE_URL")
+            }
+
+            enum OfficeType {
+                admin
+                owner
+            }
+            "#,
+        )
+        .expect("schema");
+        let current = DatabaseSchema {
+            tables: Vec::new(),
+            enums: vec![DatabaseEnum {
+                name: "OfficeType".to_string(),
+                values: vec!["admin".to_string(), "member".to_string()],
+            }],
+        };
+
+        let plan = plan_schema_migration(&schema, &current);
+
+        assert!(
+            plan.steps.iter().any(|step| matches!(step, MigrationStep::AlterEnum(item) if item.name == "OfficeType"))
+        );
+        assert!(plan.warnings.iter().any(|warning| warning.destructive && warning.message.contains("removes values")));
+    }
+
+    #[test]
+    fn desired_schema_includes_enum_columns_defaults_and_many_to_many_join_tables() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "postgresql"
+                database_url = env("DATABASE_URL")
+            }
+
+            enum Role {
+                USER
+                ADMIN
+            }
+
+            model User {
+                id     Integer @id @default(autoincrement())
+                role   Role    @default(USER)
+                posts  Post[]
+            }
+
+            model Post {
+                id     Integer @id @default(autoincrement())
+                users  User[]
+            }
+            "#,
+        )
+        .expect("schema");
+
+        let migrations = generate_create_table_migrations(&schema);
+        let user = migrations.iter().find(|migration| migration.table == "user").expect("user table");
+        let role = user.columns.iter().find(|column| column.name == "role").expect("role column");
+
+        assert!(matches!(role.ty, MigrationColumnType::Enum { ref name, .. } if name == "Role"));
+        assert_eq!(role.default, Some(MigrationDefault::String("USER".to_string())));
+        assert!(migrations.iter().any(|migration| migration.table == "_post_to_user"));
+    }
+
+    #[test]
+    fn desired_schema_uses_relation_names_to_disambiguate_repeated_many_to_many_relations() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "postgresql"
+                database_url = env("DATABASE_URL")
+            }
+
+            model User {
+                id         Integer @id @default(autoincrement())
+                following  User[]  @relation(name: "following")
+                followers  User[]  @relation(name: "following")
+                blocked    User[]  @relation(name: "blocked")
+                blocked_by User[]  @relation(name: "blocked")
+            }
+            "#,
+        )
+        .expect("schema");
+
+        let migrations = generate_create_table_migrations(&schema);
+
+        assert!(migrations.iter().any(|migration| migration.table == "_user_to_user_following"));
+        assert!(migrations.iter().any(|migration| migration.table == "_user_to_user_blocked"));
+        assert_eq!(migrations.iter().filter(|migration| migration.table.starts_with("_user_to_user")).count(), 2);
+    }
+
+    #[test]
+    fn desired_schema_includes_relation_foreign_key_actions() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "postgresql"
+                database_url = env("DATABASE_URL")
+            }
+
+            model User {
+                id    Integer @id @default(autoincrement())
+                posts Post[]
+            }
+
+            model Post {
+                id      Integer @id @default(autoincrement())
+                user_id Integer?
+                user    User?   @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+            }
+            "#,
+        )
+        .expect("schema");
+
+        let migrations = generate_create_table_migrations(&schema);
+        let post = migrations.iter().find(|migration| migration.table == "post").expect("post table");
+        let foreign_key = post.foreign_keys.iter().find(|foreign_key| foreign_key.name == "fk_post_user_id").unwrap();
+
+        assert_eq!(foreign_key.on_delete, ReferentialAction::SetNull);
+        assert_eq!(foreign_key.on_update, ReferentialAction::Cascade);
+    }
+
+    #[test]
+    fn plan_detects_column_rename_without_data_loss() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "sqlite"
+                database_url = env("DATABASE_URL")
+            }
+
+            model User {
+                id        String @id
+                full_name String
+            }
+            "#,
+        )
+        .expect("schema");
+        let current = DatabaseSchema {
+            tables: vec![DatabaseTable {
+                name: "user".to_string(),
+                row_count: 5,
+                columns: vec![string_column("id", true), string_column("name", false)],
+                foreign_keys: Vec::new(),
+            }],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_schema_migration(&schema, &current);
+
+        assert!(plan.steps.iter().any(
+            |step| matches!(step, MigrationStep::RenameColumn(item) if item.from == "name" && item.to == "full_name")
+        ));
+        assert!(!plan.steps.iter().any(|step| matches!(step, MigrationStep::DropColumn(_))));
+        assert!(!plan.steps.iter().any(|step| matches!(step, MigrationStep::AddColumn(_))));
+        assert!(plan.warnings.iter().any(|warning| !warning.destructive && warning.message.contains("renamed")));
+    }
+
+    #[test]
+    fn plan_detects_relation_add_remove_and_referential_action_changes() {
+        let current_fk = MigrationForeignKey {
+            name: "fk_post_user_id".to_string(),
+            columns: vec!["user_id".to_string()],
+            references_table: "user".to_string(),
+            references_columns: vec!["id".to_string()],
+            on_update: ReferentialAction::NoAction,
+            on_delete: ReferentialAction::NoAction,
+        };
+        let desired_fk = MigrationForeignKey {
+            on_update: ReferentialAction::Cascade,
+            on_delete: ReferentialAction::SetNull,
+            ..current_fk.clone()
+        };
+
+        let current = DatabaseSchema {
+            tables: vec![
+                table("user", vec![integer_column("id", true)], vec![], 1),
+                table(
+                    "post",
+                    vec![integer_column("id", true), nullable_integer_column("user_id")],
+                    vec![current_fk],
+                    2,
+                ),
+                table(
+                    "old_relation",
+                    vec![integer_column("id", true), integer_column("user_id", false)],
+                    vec![MigrationForeignKey {
+                        name: "fk_old_relation_user_id".to_string(),
+                        columns: vec!["user_id".to_string()],
+                        references_table: "user".to_string(),
+                        references_columns: vec!["id".to_string()],
+                        on_update: ReferentialAction::NoAction,
+                        on_delete: ReferentialAction::NoAction,
+                    }],
+                    0,
+                ),
+            ],
+            enums: Vec::new(),
+        };
+        let desired = DatabaseSchema {
+            tables: vec![
+                table("user", vec![integer_column("id", true)], vec![], 0),
+                table(
+                    "post",
+                    vec![integer_column("id", true), nullable_integer_column("user_id")],
+                    vec![desired_fk],
+                    0,
+                ),
+                table("old_relation", vec![integer_column("id", true), integer_column("user_id", false)], vec![], 0),
+                table(
+                    "new_relation",
+                    vec![integer_column("id", true), integer_column("user_id", false)],
+                    vec![MigrationForeignKey {
+                        name: "fk_new_relation_user_id".to_string(),
+                        columns: vec!["user_id".to_string()],
+                        references_table: "user".to_string(),
+                        references_columns: vec!["id".to_string()],
+                        on_update: ReferentialAction::Restrict,
+                        on_delete: ReferentialAction::Cascade,
+                    }],
+                    0,
+                ),
+            ],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_database_migration(&desired, &current);
+
+        assert!(
+            plan.steps
+                .iter()
+                .any(|step| matches!(step, MigrationStep::DropForeignKey(item) if item.name == "fk_post_user_id"))
+        );
+        assert!(plan.steps.iter().any(
+            |step| matches!(step, MigrationStep::AddForeignKey(item) if item.foreign_key.name == "fk_post_user_id" && item.foreign_key.on_delete == ReferentialAction::SetNull)
+        ));
+        assert!(
+            plan.steps.iter().any(
+                |step| matches!(step, MigrationStep::DropForeignKey(item) if item.name == "fk_old_relation_user_id")
+            )
+        );
+        assert!(plan.steps.iter().any(
+            |step| matches!(step, MigrationStep::CreateTable(item) if item.table == "new_relation" && item.foreign_keys.len() == 1)
+        ));
+    }
+
+    #[test]
+    fn desired_schema_supports_all_relation_shapes() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "postgresql"
+                database_url = env("DATABASE_URL")
+            }
+
+            model User {
+                id         Integer @id @default(autoincrement())
+                manager_id Integer?
+                manager    User?   @relation(name: "management", fields: [manager_id], references: [id], onDelete: SetNull)
+                reports    User[]  @relation(name: "management")
+                posts      Post[]
+                profile    Profile?
+                groups     Group[]
+                following  User[]  @relation(name: "following")
+                followers  User[]  @relation(name: "following")
+            }
+
+            model Post {
+                id        Integer @id @default(autoincrement())
+                author_id Integer
+                author    User    @relation(fields: [author_id], references: [id], onDelete: Cascade)
+            }
+
+            model Profile {
+                id      Integer @id @default(autoincrement())
+                user_id Integer @unique
+                user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+            }
+
+            model Group {
+                id    Integer @id @default(autoincrement())
+                users User[]
+            }
+            "#,
+        )
+        .expect("schema");
+
+        let migrations = generate_create_table_migrations(&schema);
+        let user = migrations.iter().find(|migration| migration.table == "user").expect("user table");
+        let post = migrations.iter().find(|migration| migration.table == "post").expect("post table");
+        let profile = migrations.iter().find(|migration| migration.table == "profile").expect("profile table");
+
+        assert!(user.foreign_keys.iter().any(|fk| {
+            fk.name == "fk_user_manager_id"
+                && fk.references_table == "user"
+                && fk.on_delete == ReferentialAction::SetNull
+        }));
+        assert!(post.foreign_keys.iter().any(|fk| {
+            fk.name == "fk_post_author_id"
+                && fk.references_table == "user"
+                && fk.on_delete == ReferentialAction::Cascade
+        }));
+        assert!(profile.foreign_keys.iter().any(|fk| {
+            fk.name == "fk_profile_user_id"
+                && fk.references_table == "user"
+                && fk.on_delete == ReferentialAction::Cascade
+        }));
+        assert!(migrations.iter().any(|migration| migration.table == "_group_to_user"));
+        assert!(migrations.iter().any(|migration| migration.table == "_user_to_user_following"));
+    }
+
+    fn table(
+        name: &str,
+        columns: Vec<MigrationColumn>,
+        foreign_keys: Vec<MigrationForeignKey>,
+        row_count: i64,
+    ) -> DatabaseTable {
+        DatabaseTable { name: name.to_string(), row_count, columns, foreign_keys }
+    }
+
+    fn string_column(name: &str, primary_key: bool) -> MigrationColumn {
+        MigrationColumn {
+            name: name.to_string(),
+            ty: MigrationColumnType::String,
+            primary_key,
+            nullable: false,
+            default: None,
+        }
+    }
+
+    fn nullable_string_column(name: &str) -> MigrationColumn {
+        MigrationColumn {
+            name: name.to_string(),
+            ty: MigrationColumnType::String,
+            primary_key: false,
+            nullable: true,
+            default: None,
+        }
+    }
+
+    fn integer_column(name: &str, primary_key: bool) -> MigrationColumn {
+        MigrationColumn {
+            name: name.to_string(),
+            ty: MigrationColumnType::Integer,
+            primary_key,
+            nullable: false,
+            default: None,
+        }
+    }
+
+    fn nullable_integer_column(name: &str) -> MigrationColumn {
+        MigrationColumn {
+            name: name.to_string(),
+            ty: MigrationColumnType::Integer,
+            primary_key: false,
+            nullable: true,
+            default: None,
+        }
+    }
+}

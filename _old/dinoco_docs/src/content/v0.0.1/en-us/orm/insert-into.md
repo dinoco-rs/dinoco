@@ -1,0 +1,93 @@
+# insert_into
+
+Used to insert a record.
+
+---
+
+## What you can do
+
+- Pass values with `.values(item)`
+- Insert with relation via `.with_relation(related)`
+- Connect existing relation via `.with_connection(connected)`
+- Execute with `.execute(&client)`
+
+## Method descriptions
+
+- `.values(item)`: defines the record to be inserted.
+- `.with_relation(related)`: inserts a new related record along with the parent.
+- `.with_connection(connected)`: connects the inserted record to an existing item, typically in relation flows supported for connection.
+- `.returning::&lt;T&gt;()`: changes the return to a typed projection of the inserted item.
+- `.execute(&client)`: executes the write to the database.
+
+## Return
+
+Without `.returning::&lt;T&gt;()`, the return is:
+
+```rust
+DinocoResult<()>
+```
+
+With `.returning::&lt;T&gt;()`, the return becomes:
+
+```rust
+DinocoResult<T>
+```
+
+## Simple example
+
+```rust
+dinoco::insert_into::<User>()
+    .values(User {
+        id: "usr_1".to_string(),
+        email: "ana@acme.com".to_string(),
+        name: "Ana".to_string(),
+    })
+    .execute(&client)
+    .await?;
+```
+
+## Example with relation
+
+Use `.with_relation(...)` when the generated model supports inserting the parent and the related item together.
+
+```rust
+dinoco::insert_into::<User>()
+    .values(user)
+    .with_relation(profile)
+    .execute(&client)
+    .await?;
+```
+
+## Example with connection
+
+Use `.with_connection(...)` when you want to insert an item and connect an already existing relation.
+
+```rust
+dinoco::insert_into::<User>()
+    .values(new_user)
+    .with_connection(existing_team)
+    .execute(&client)
+    .await?;
+```
+
+## Example with typed return
+
+```rust
+#[derive(Debug, Clone, dinoco::Extend)]
+#[extend(User)]
+struct UserSummary {
+    id: i64,
+    name: String,
+}
+
+let created = dinoco::insert_into::<User>()
+    .values(User { id: 1, name: "Matheus".to_string() })
+    .returning::<UserSummary>()
+    .execute(&client)
+    .await?;
+```
+
+## Next steps
+
+- [**`insert_many::&lt;M&gt;()`**](/v0.0.1/orm/insert-many): batch insertion.
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): record update.

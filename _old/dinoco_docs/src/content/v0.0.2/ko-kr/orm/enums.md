@@ -1,0 +1,78 @@
+# 열거형
+
+열거형을 사용하면 Dinoco 스키마에서 필드를 알려진 고정된 값 집합으로 제한할 수 있습니다.
+
+값 예측 가능성, 유효성 검사 및 모델 간 재사용이 필요할 때 유용합니다.
+
+---
+
+## 열거형이란 무엇인가요?
+
+`enum`은 가능한 값의 닫힌 목록을 정의합니다.
+
+```dinoco
+enum Role {
+	USER
+	ADMIN
+}
+```
+
+이 경우 `Role`은 `USER` 또는 `ADMIN`만 가질 수 있습니다.
+
+## 모델에서 사용
+
+정의된 후, 열거형은 모든 모델에서 필드 유형으로 사용될 수 있습니다.
+
+```dinoco
+enum Role {
+	USER
+	ADMIN
+}
+
+model User {
+	id   Integer @id @default(autoincrement())
+	role Role    @default(USER)
+}
+```
+
+여기서:
+
+- `role`은 `Role` 열거형을 사용합니다.
+- `@default(USER)`는 필드의 기본값을 정의합니다.
+
+## 열거형 사용 시점
+
+열거형은 다음과 같은 값을 나타내는 데 유용합니다:
+
+- 사용자 역할
+- 게시물 상태
+- 워크플로우 단계
+- 결제 상황
+
+예시:
+
+```dinoco
+enum PostStatus {
+	DRAFT
+	REVIEW
+	PUBLISHED
+	ARCHIVED
+}
+
+model Post {
+	id     Integer    @id @default(autoincrement())
+	title  String
+	status PostStatus @default(DRAFT)
+}
+```
+
+## 모범 사례
+
+- 가능한 값이 알려져 있고 유한할 때 열거형을 사용하세요.
+- 열거형 이름은 PascalCase를, 값은 UPPER_CASE를 선호합니다.
+- 자연스러운 초기 상태가 있을 때 `@default(...)`를 사용하세요.
+
+## 다음 단계
+
+- [**관계**](/v0.0.1/orm/relations): `@relation`, `onDelete`, `onUpdate` 및 관계 유형을 확인하세요.
+- [**모델**](/v0.0.1/orm/models): 열거형이 필드 정의 및 주요 스키마에 어떻게 사용되는지 확인하세요.

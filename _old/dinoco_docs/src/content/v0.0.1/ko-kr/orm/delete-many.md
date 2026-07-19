@@ -1,0 +1,44 @@
+# delete_many
+
+하나 이상의 조건으로 여러 레코드를 삭제하는 데 사용됩니다.
+
+---
+
+## 수행할 수 있는 작업
+
+- `.cond(...)`: 일괄 삭제를 위한 필터를 추가합니다.
+- `.execute(&client)`: 일치하는 레코드 삭제를 실행합니다.
+
+## 반환
+
+`delete_many`의 반환 값은 다음과 같습니다:
+
+```rust
+DinocoResult<()>
+```
+
+## 기본 예시
+
+이는 조건에 맞는 레코드만 삭제합니다.
+
+```rust
+dinoco::delete_many::<Session>()
+    .cond(|w| w.expiresAt.lt(dinoco::Utc::now()))
+    .execute(&client)
+    .await?;
+```
+
+## 필터 없는 예시
+
+이는 테이블의 모든 데이터를 삭제합니다.
+
+```rust
+dinoco::delete_many::<TaskAssignees>()
+    .execute(&client)
+    .await?;
+```
+
+## 다음 단계
+
+- [**`delete::&lt;M&gt;()`**](/v0.0.1/orm/delete): 명시적 필터를 사용한 단일 삭제.
+- [**`find_many::&lt;M&gt;()`**](/v0.0.1/orm/find-many): 일괄 삭제 전에 목록을 가져옵니다.

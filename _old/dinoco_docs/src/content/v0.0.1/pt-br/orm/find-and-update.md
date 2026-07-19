@@ -1,0 +1,55 @@
+# find_and_update
+
+Usado para localizar um único registro, aplicar updates atômicos no banco e retornar o item atualizado.
+
+---
+
+## O que você pode fazer
+
+- `.cond(...)`
+- `.update(...)`
+- `.execute(&client)`
+
+## Descrição dos métodos
+
+- `.cond(...)`: define qual registro será localizado.
+- `.update(...)`: aplica uma operação atômica em um campo do model.
+- `.execute(&client)`: executa o update e retorna o registro atualizado.
+
+## Retorno
+
+O retorno de `find_and_update` é:
+
+```rust
+DinocoResult<M>
+```
+
+## Exemplo básico
+
+```rust
+let task = dinoco::find_and_update::<Task>()
+    .cond(|x| x.id.eq(task_id.clone()))
+    .update(|x| x.status.set(TaskStatus::REVIEW))
+    .execute(&client)
+    .await?;
+```
+
+## Operações disponíveis em `ModelUpdate`
+
+- `set(value)`
+- `increment(value)`
+- `decrement(value)`
+- `multiply(value)`
+- `division(value)`
+
+## Observações
+
+- O update é executado em um único `UPDATE`.
+- Se nenhuma linha bater na condição, o retorno será `DinocoError::RecordNotFound`.
+- A DSL de update não expõe relações.
+- Hoje o fluxo suporta chave primária simples para localizar e retornar o registro atualizado.
+
+## Próximos passos
+
+- [**`update::&lt;M&gt;()`**](/v0.0.1/orm/update): update tradicional.
+- [**`update_many::&lt;M&gt;()`**](/v0.0.1/orm/update-many): update em lote.
