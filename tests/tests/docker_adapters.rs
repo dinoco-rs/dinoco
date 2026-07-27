@@ -100,6 +100,30 @@ async fn mysql_adapter_detects_migration_changes_from_introspection() -> anyhow:
     assert_detection_plan(dinoco_cli::db::CliDatabase::Mysql(adapter)).await
 }
 
+#[tokio::test]
+async fn sqlite_preserves_unique_identity_boolean_and_composite_keys_in_introspection() -> anyhow::Result<()> {
+    let path = format!("/private/tmp/dinoco-constraints-{}-{}.sqlite", std::process::id(), monotonic());
+    let adapter = SqliteAdapter::new(path.clone()).await.map_err(anyhow::Error::msg)?;
+    seed_constraint_schema(&adapter).await?;
+    assert_constraint_introspection(dinoco_cli::db::CliDatabase::Sqlite(adapter)).await?;
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_preserves_unique_identity_boolean_and_composite_keys_in_introspection() -> anyhow::Result<()> {
+    let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
+    seed_constraint_schema(&adapter).await?;
+    assert_constraint_introspection(dinoco_cli::db::CliDatabase::Postgres(adapter)).await
+}
+
+#[tokio::test]
+async fn mysql_preserves_unique_identity_boolean_and_composite_keys_in_introspection() -> anyhow::Result<()> {
+    let adapter = MySqlAdapter::new(MYSQL_URL);
+    seed_constraint_schema(&adapter).await?;
+    assert_constraint_introspection(dinoco_cli::db::CliDatabase::Mysql(adapter)).await
+}
+
 async fn reset_schema<A>(adapter: &A) -> anyhow::Result<()>
 where
     A: DinocoAdapter + DinocoSqlCompiler,
@@ -157,6 +181,7 @@ where
         name: "id".to_string(),
         ty: MigrationColumnType::Integer,
         primary_key: true,
+        unique: false,
         nullable: false,
         default: None,
     };
@@ -209,6 +234,197 @@ where
     Ok(())
 }
 
+async fn seed_constraint_schema<A>(adapter: &A) -> anyhow::Result<()>
+where
+    A: DinocoAdapter + DinocoSqlCompiler,
+{
+    drop_table(adapter, "migration_constraints_join").await?;
+    drop_table(adapter, "migration_constraints_child").await?;
+    drop_table(adapter, "migration_constraints_parent").await?;
+    drop_table(adapter, "migration_constraints").await?;
+    for statement in adapter
+        .compile_drop_enum_migration(dinoco_engine::DropEnumMigration { name: "migration_constraint_role".to_string() })
+    {
+        adapter.execute(&statement, &[]).await?;
+    }
+    for statement in adapter.compile_create_enum_migration(dinoco_engine::CreateEnumMigration {
+        name: "migration_constraint_role".to_string(),
+        values: vec!["member".to_string(), "admin".to_string()],
+    }) {
+        adapter.execute(&statement, &[]).await?;
+    }
+
+    adapter
+        .execute(
+            &adapter.compile_create_table_migration(CreateTableMigration {
+                table: "migration_constraints".to_string(),
+                columns: vec![
+                    MigrationColumn {
+                        name: "id".to_string(),
+                        ty: MigrationColumnType::Integer,
+                        primary_key: true,
+                        unique: false,
+                        nullable: false,
+                        default: Some(MigrationDefault::AutoIncrement),
+                    },
+                    MigrationColumn {
+                        name: "owner_id".to_string(),
+                        ty: MigrationColumnType::Integer,
+                        primary_key: false,
+                        unique: true,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: "active".to_string(),
+                        ty: MigrationColumnType::Boolean,
+                        primary_key: false,
+                        unique: false,
+                        nullable: false,
+                        default: Some(MigrationDefault::Boolean(false)),
+                    },
+                    MigrationColumn {
+                        name: "role".to_string(),
+                        ty: MigrationColumnType::Enum {
+                            name: "migration_constraint_role".to_string(),
+                            values: vec!["member".to_string(), "admin".to_string()],
+                        },
+                        primary_key: false,
+                        unique: false,
+                        nullable: false,
+                        default: Some(MigrationDefault::String("member".to_string())),
+                    },
+                ],
+                foreign_keys: Vec::new(),
+                if_not_exists: false,
+            }),
+            &[],
+        )
+        .await?;
+    adapter
+        .execute(
+            &adapter.compile_create_table_migration(CreateTableMigration {
+                table: "migration_constraints_join".to_string(),
+                columns: vec![
+                    MigrationColumn {
+                        name: "left_id".to_string(),
+                        ty: MigrationColumnType::Integer,
+                        primary_key: true,
+                        unique: false,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: "right_id".to_string(),
+                        ty: MigrationColumnType::Integer,
+                        primary_key: true,
+                        unique: false,
+                        nullable: false,
+                        default: None,
+                    },
+                ],
+                foreign_keys: Vec::new(),
+                if_not_exists: false,
+            }),
+            &[],
+        )
+        .await?;
+    adapter
+        .execute(
+            &adapter.compile_create_table_migration(CreateTableMigration {
+                table: "migration_constraints_parent".to_string(),
+                columns: vec![
+                    MigrationColumn {
+                        name: "tenant_id".to_string(),
+                        ty: MigrationColumnType::Integer,
+                        primary_key: true,
+                        unique: false,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: "id".to_string(),
+                        ty: MigrationColumnType::Integer,
+                        primary_key: true,
+                        unique: false,
+                        nullable: false,
+                        default: None,
+                    },
+                ],
+                foreign_keys: Vec::new(),
+                if_not_exists: false,
+            }),
+            &[],
+        )
+        .await?;
+    adapter
+        .execute(
+            &adapter.compile_create_table_migration(CreateTableMigration {
+                table: "migration_constraints_child".to_string(),
+                columns: vec![
+                    primary(column("id", MigrationColumnType::Integer)),
+                    column("tenant_id", MigrationColumnType::Integer),
+                    column("parent_id", MigrationColumnType::Integer),
+                ],
+                foreign_keys: vec![MigrationForeignKey {
+                    name: "fk_migration_constraints_child_parent".to_string(),
+                    columns: vec!["tenant_id".to_string(), "parent_id".to_string()],
+                    references_table: "migration_constraints_parent".to_string(),
+                    references_columns: vec!["tenant_id".to_string(), "id".to_string()],
+                    on_update: ReferentialAction::Cascade,
+                    on_delete: ReferentialAction::Cascade,
+                }],
+                if_not_exists: false,
+            }),
+            &[],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn assert_constraint_introspection(db: dinoco_cli::db::CliDatabase) -> anyhow::Result<()> {
+    let is_sqlite = matches!(db, dinoco_cli::db::CliDatabase::Sqlite(_));
+    let is_postgres =
+        matches!(db, dinoco_cli::db::CliDatabase::Postgres(_) | dinoco_cli::db::CliDatabase::PgBouncer(_));
+    let schema = db.inspect_schema().await?;
+    let table = schema.tables.iter().find(|table| table.name == "migration_constraints").expect("constraint table");
+    let id = table.columns.iter().find(|column| column.name == "id").expect("identity column");
+    let owner = table.columns.iter().find(|column| column.name == "owner_id").expect("unique column");
+    let active = table.columns.iter().find(|column| column.name == "active").expect("boolean column");
+    assert!(id.primary_key);
+    assert_eq!(id.default, Some(MigrationDefault::AutoIncrement));
+    assert!(owner.unique);
+    assert_eq!(active.ty, MigrationColumnType::Boolean);
+    assert_eq!(active.default, Some(MigrationDefault::Boolean(false)));
+    let role = table.columns.iter().find(|column| column.name == "role").expect("enum column");
+    if is_sqlite {
+        assert_eq!(role.ty, MigrationColumnType::Text);
+    } else {
+        assert!(
+            matches!(
+                &role.ty,
+                MigrationColumnType::Enum { name, values }
+                    if (!is_postgres || name == "migration_constraint_role")
+                        && values == &["member".to_string(), "admin".to_string()]
+            ),
+            "{role:#?}"
+        );
+    }
+
+    let join =
+        schema.tables.iter().find(|table| table.name == "migration_constraints_join").expect("composite-key table");
+    assert_eq!(join.columns.iter().filter(|column| column.primary_key).count(), 2);
+    let child =
+        schema.tables.iter().find(|table| table.name == "migration_constraints_child").expect("composite-FK table");
+    let foreign_key = child.foreign_keys.first().expect("composite foreign key");
+    if !is_sqlite {
+        assert_eq!(foreign_key.name, "fk_migration_constraints_child_parent");
+    }
+    assert_eq!(foreign_key.columns, ["tenant_id", "parent_id"]);
+    assert_eq!(foreign_key.references_columns, ["tenant_id", "id"]);
+    Ok(())
+}
+
 async fn assert_detection_plan(db: dinoco_cli::db::CliDatabase) -> anyhow::Result<()> {
     let mut current = db.inspect_schema().await?;
     current.tables.retain(|table| table.name.starts_with("migration_detect_"));
@@ -224,6 +440,7 @@ async fn assert_detection_plan(db: dinoco_cli::db::CliDatabase) -> anyhow::Resul
         model MigrationDetectUser {
             id        Integer @id
             full_name String
+            posts     MigrationDetectPost[]
         }
 
         model MigrationDetectPost {

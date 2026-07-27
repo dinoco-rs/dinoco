@@ -40,16 +40,25 @@ pub struct MigrationWarning {
 pub fn generate_create_table_migrations(schema: &Schema) -> Vec<CreateTableMigration> {
     let mut migrations = schema
         .models()
-        .map(|model| CreateTableMigration {
-            table: table_name(&model.name),
-            if_not_exists: true,
-            columns: model
+        .map(|model| {
+            let relation_unique_columns = relation_unique_columns(model, schema);
+            let columns = model
                 .fields
                 .iter()
                 .filter(|field| !field.is_relation(schema))
-                .map(|field| migration_column(field, schema))
-                .collect(),
-            foreign_keys: relation_foreign_keys(&model.name, schema),
+                .map(|field| {
+                    let mut column = migration_column(field, schema);
+                    column.unique |= relation_unique_columns.contains(field.name.as_str());
+                    column
+                })
+                .collect();
+
+            CreateTableMigration {
+                table: table_name(&model.name),
+                if_not_exists: true,
+                columns,
+                foreign_keys: relation_foreign_keys(&model.name, schema),
+            }
         })
         .collect::<Vec<_>>();
 
@@ -122,28 +131,61 @@ pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchem
         diff_foreign_keys(&mut plan, current_table, desired_table);
     }
 
-    for (name, current_table) in &current_tables {
-        if !desired_tables.contains_key(name) {
-            if current_table.row_count > 0 {
-                plan.warnings.push(MigrationWarning {
-                    message: format!(
-                        "Table `{}` with {} row(s) will be dropped.",
-                        current_table.name, current_table.row_count
-                    ),
-                    destructive: true,
-                });
-            }
-            plan.steps.push(MigrationStep::DropTable(DropTableMigration {
+    let dropped_tables =
+        current_tables.keys().filter(|name| !desired_tables.contains_key(*name)).copied().collect::<BTreeSet<_>>();
+    for name in &dropped_tables {
+        let current_table = current_tables.get(name).expect("dropped table exists in current schema");
+        for foreign_key in &current_table.foreign_keys {
+            plan.steps.push(MigrationStep::DropForeignKey(DropForeignKeyMigration {
                 table: current_table.name.clone(),
-                if_exists: false,
+                name: foreign_key.name.clone(),
             }));
         }
+    }
+    for name in dropped_table_order(&current_tables, &dropped_tables) {
+        let current_table = current_tables.get(name.as_str()).expect("ordered dropped table exists");
+        plan.warnings.push(MigrationWarning {
+            message: format!(
+                "Table `{}` with {} row(s) will be dropped. Its schema and any data it contains cannot be recovered from this migration.",
+                current_table.name, current_table.row_count
+            ),
+            destructive: true,
+        });
+        plan.steps
+            .push(MigrationStep::DropTable(DropTableMigration { table: current_table.name.clone(), if_exists: false }));
     }
 
     plan
 }
 
-fn desired_database_schema(schema: &Schema) -> DatabaseSchema {
+fn dropped_table_order(
+    current_tables: &BTreeMap<&str, &DatabaseTable>,
+    dropped_tables: &BTreeSet<&str>,
+) -> Vec<String> {
+    let mut remaining = dropped_tables.iter().map(|name| (*name).to_string()).collect::<BTreeSet<_>>();
+    let mut ordered = Vec::with_capacity(remaining.len());
+
+    while !remaining.is_empty() {
+        let next = remaining
+            .iter()
+            .find(|candidate| {
+                !remaining.iter().any(|other| {
+                    other != *candidate
+                        && current_tables.get(other.as_str()).is_some_and(|table| {
+                            table.foreign_keys.iter().any(|foreign_key| foreign_key.references_table == **candidate)
+                        })
+                })
+            })
+            .cloned()
+            .unwrap_or_else(|| remaining.first().expect("remaining set is not empty").clone());
+        remaining.remove(&next);
+        ordered.push(next);
+    }
+
+    ordered
+}
+
+pub fn desired_database_schema(schema: &Schema) -> DatabaseSchema {
     DatabaseSchema {
         tables: generate_create_table_migrations(schema)
             .into_iter()
@@ -185,10 +227,10 @@ fn diff_columns(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired
             let (current_name, current_column) = candidates[0];
             plan.warnings.push(MigrationWarning {
                 message: format!(
-                    "Column `{}.{}` looks like it was renamed to `{}`. Review the generated migration before applying it.",
-                    current_table.name, current_column.name, desired_column.name
+                    "Column `{}.{}` looks like it was renamed to `{}`. Dinoco cannot prove that both fields have the same meaning; review the mapping before applying it.",
+                    current_table.name, current_column.name, desired_column.name,
                 ),
-                destructive: false,
+                destructive: true,
             });
             plan.steps.push(MigrationStep::RenameColumn(RenameColumnMigration {
                 table: desired_table.name.clone(),
@@ -247,15 +289,13 @@ fn diff_columns(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired
             continue;
         }
         if !desired_columns.contains_key(name) {
-            if current_table.row_count > 0 {
-                plan.warnings.push(MigrationWarning {
-                    message: format!(
-                        "Column `{}.{}` will be dropped and its data will be lost.",
-                        current_table.name, current_column.name
-                    ),
-                    destructive: true,
-                });
-            }
+            plan.warnings.push(MigrationWarning {
+                message: format!(
+                    "Column `{}.{}` will be dropped from a table with {} row(s); its schema and any stored data will be lost.",
+                    current_table.name, current_column.name, current_table.row_count
+                ),
+                destructive: true,
+            });
             plan.steps.push(MigrationStep::DropColumn(DropColumnMigration {
                 table: current_table.name.clone(),
                 column: current_column.name.clone(),
@@ -267,8 +307,9 @@ fn diff_columns(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired
 fn rename_compatible(current: &MigrationColumn, desired: &MigrationColumn) -> bool {
     column_types_equivalent(&current.ty, &desired.ty)
         && current.primary_key == desired.primary_key
+        && current.unique == desired.unique
         && current.nullable == desired.nullable
-        && normalize_default(&current.default) == normalize_default(&desired.default)
+        && defaults_equivalent(current, desired)
 }
 
 fn diff_foreign_keys(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired_table: &DatabaseTable) {
@@ -327,12 +368,19 @@ fn diff_foreign_keys(plan: &mut MigrationPlan, current_table: &DatabaseTable, de
 fn columns_equivalent(left: &MigrationColumn, right: &MigrationColumn) -> bool {
     column_types_equivalent(&left.ty, &right.ty)
         && left.primary_key == right.primary_key
+        && left.unique == right.unique
         && left.nullable == right.nullable
-        && normalize_default(&left.default) == normalize_default(&right.default)
+        && defaults_equivalent(left, right)
 }
 
 fn column_change_destructive(current: &MigrationColumn, desired: &MigrationColumn) -> bool {
-    !column_types_equivalent(&current.ty, &desired.ty) || (current.nullable && !desired.nullable)
+    !column_types_equivalent(&current.ty, &desired.ty)
+        || (current.nullable && !desired.nullable)
+        || (!current.unique && desired.unique)
+}
+
+fn defaults_equivalent(left: &MigrationColumn, right: &MigrationColumn) -> bool {
+    normalize_default(&left.default) == normalize_default(&right.default)
 }
 
 fn column_change_warning(
@@ -387,7 +435,13 @@ fn normalize_default(default: &Option<MigrationDefault>) -> Option<String> {
 }
 
 fn describe_column(column: &MigrationColumn) -> String {
-    format!("{:?}, {}, default {:?}", column.ty, if column.nullable { "nullable" } else { "required" }, column.default)
+    format!(
+        "{:?}, {}, {}, default {:?}",
+        column.ty,
+        if column.nullable { "nullable" } else { "required" },
+        if column.unique { "unique" } else { "not unique" },
+        column.default
+    )
 }
 
 fn migration_column(field: &ModelField, schema: &Schema) -> MigrationColumn {
@@ -395,9 +449,27 @@ fn migration_column(field: &ModelField, schema: &Schema) -> MigrationColumn {
         name: field.name.clone(),
         ty: migration_type(field, schema),
         primary_key: field.attributes.iter().any(|attr| attr.name == "id"),
+        unique: field.attributes.iter().any(|attr| attr.name == "unique"),
         nullable: field.ty.optional,
         default: migration_default(field),
     }
+}
+
+fn relation_unique_columns<'a>(model: &'a dinoco_compiler::Model, schema: &Schema) -> BTreeSet<&'a str> {
+    model
+        .fields
+        .iter()
+        .filter(|field| {
+            !field.ty.list
+                && field.is_relation(schema)
+                && field.attributes.iter().any(|attribute| attribute.name == "unique")
+        })
+        .filter_map(|field| field.attributes.iter().find(|attribute| attribute.name == "relation"))
+        .filter_map(|relation| relation.argument("fields"))
+        .filter_map(array_idents)
+        .flatten()
+        .filter_map(|name| model.fields.iter().find(|field| field.name == name).map(|field| field.name.as_str()))
+        .collect()
 }
 
 fn relation_foreign_keys(model_name: &str, schema: &Schema) -> Vec<MigrationForeignKey> {
@@ -449,9 +521,12 @@ fn generate_many_to_many_join_migrations(schema: &Schema) -> Vec<CreateTableMigr
 
     for model in schema.models() {
         for field in &model.fields {
-            if !field.ty.list || !schema.models().any(|target| target.name == field.ty.name) {
+            if !field.ty.list {
                 continue;
             }
+            let Some(target) = schema.models().find(|target| target.name == field.ty.name) else {
+                continue;
+            };
 
             if field
                 .attributes
@@ -465,15 +540,25 @@ fn generate_many_to_many_join_migrations(schema: &Schema) -> Vec<CreateTableMigr
 
             let left = model.name.as_str();
             let right = field.ty.name.as_str();
-            let relation_name = field.attributes.iter().find(|attr| attr.name == "relation").and_then(relation_name);
-            let key = relation_key(left, right, relation_name.as_deref());
+            let relation_label = field.attributes.iter().find(|attr| attr.name == "relation").and_then(relation_name);
+            let has_list_opposite = target.fields.iter().any(|candidate| {
+                (model.name != target.name || candidate.name != field.name)
+                    && candidate.ty.list
+                    && candidate.ty.name == model.name
+                    && candidate.attributes.iter().find(|attr| attr.name == "relation").and_then(relation_name)
+                        == relation_label
+            });
+            if !has_list_opposite {
+                continue;
+            }
+            let key = relation_key(left, right, relation_label.as_deref());
             if !seen.insert(key) {
                 continue;
             }
 
             let left_column = if left == right { "a_id".to_string() } else { format!("{}_id", table_name(left)) };
             let right_column = if left == right { "b_id".to_string() } else { format!("{}_id", table_name(right)) };
-            let join_table = many_to_many_table_name(left, right, relation_name.as_deref());
+            let join_table = many_to_many_table_name(left, right, relation_label.as_deref());
 
             migrations.push(CreateTableMigration {
                 table: join_table.clone(),
@@ -482,14 +567,16 @@ fn generate_many_to_many_join_migrations(schema: &Schema) -> Vec<CreateTableMigr
                     MigrationColumn {
                         name: left_column.clone(),
                         ty: primary_column_type(schema, left),
-                        primary_key: false,
+                        primary_key: true,
+                        unique: false,
                         nullable: false,
                         default: None,
                     },
                     MigrationColumn {
                         name: right_column.clone(),
                         ty: primary_column_type(schema, right),
-                        primary_key: false,
+                        primary_key: true,
+                        unique: false,
                         nullable: false,
                         default: None,
                     },
@@ -683,6 +770,7 @@ mod tests {
                         name: "id".to_string(),
                         ty: MigrationColumnType::String,
                         primary_key: true,
+                        unique: false,
                         nullable: false,
                         default: None,
                     },
@@ -690,6 +778,7 @@ mod tests {
                         name: "email".to_string(),
                         ty: MigrationColumnType::String,
                         primary_key: false,
+                        unique: false,
                         nullable: false,
                         default: None,
                     },
@@ -697,6 +786,7 @@ mod tests {
                         name: "password".to_string(),
                         ty: MigrationColumnType::String,
                         primary_key: false,
+                        unique: false,
                         nullable: false,
                         default: None,
                     },
@@ -744,6 +834,7 @@ mod tests {
                         name: "id".to_string(),
                         ty: MigrationColumnType::String,
                         primary_key: true,
+                        unique: false,
                         nullable: false,
                         default: None,
                     },
@@ -751,6 +842,7 @@ mod tests {
                         name: "email".to_string(),
                         ty: MigrationColumnType::String,
                         primary_key: false,
+                        unique: false,
                         nullable: false,
                         default: None,
                     },
@@ -943,6 +1035,31 @@ mod tests {
     }
 
     #[test]
+    fn relation_field_unique_is_materialized_on_its_single_foreign_key_column() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            model User {
+                id      Integer  @id
+                profile Profile?
+            }
+
+            model Profile {
+                id      Integer @id
+                user_id Integer?
+                user    User?   @unique @relation(fields: [user_id], references: [id])
+            }
+            "#,
+        )
+        .expect("one-to-one schema");
+
+        let profile = generate_create_table_migrations(&schema)
+            .into_iter()
+            .find(|migration| migration.table == "profile")
+            .expect("profile table");
+        assert!(profile.columns.iter().any(|column| column.name == "user_id" && column.unique));
+    }
+
+    #[test]
     fn desired_schema_includes_relation_foreign_key_actions() {
         let schema = dinoco_compiler::compile(
             r#"
@@ -1006,7 +1123,7 @@ mod tests {
         ));
         assert!(!plan.steps.iter().any(|step| matches!(step, MigrationStep::DropColumn(_))));
         assert!(!plan.steps.iter().any(|step| matches!(step, MigrationStep::AddColumn(_))));
-        assert!(plan.warnings.iter().any(|warning| !warning.destructive && warning.message.contains("renamed")));
+        assert!(plan.warnings.iter().any(|warning| warning.destructive && warning.message.contains("renamed")));
     }
 
     #[test]
@@ -1158,8 +1275,22 @@ mod tests {
                 && fk.references_table == "user"
                 && fk.on_delete == ReferentialAction::Cascade
         }));
-        assert!(migrations.iter().any(|migration| migration.table == "_group_to_user"));
-        assert!(migrations.iter().any(|migration| migration.table == "_user_to_user_following"));
+        assert!(
+            profile.columns.iter().any(|column| column.name == "user_id" && column.unique),
+            "one-to-one relation uniqueness must be materialized in the database"
+        );
+        assert!(
+            !migrations.iter().any(|migration| migration.table == "_post_to_user"),
+            "one-to-many list sides must not create an implicit join table"
+        );
+        for join_table in ["_group_to_user", "_user_to_user_following"] {
+            let join = migrations.iter().find(|migration| migration.table == join_table).expect("many-to-many table");
+            assert_eq!(
+                join.columns.iter().filter(|column| column.primary_key).count(),
+                2,
+                "implicit many-to-many tables need a composite primary key"
+            );
+        }
     }
 
     fn table(
@@ -1176,6 +1307,7 @@ mod tests {
             name: name.to_string(),
             ty: MigrationColumnType::String,
             primary_key,
+            unique: false,
             nullable: false,
             default: None,
         }
@@ -1186,6 +1318,7 @@ mod tests {
             name: name.to_string(),
             ty: MigrationColumnType::String,
             primary_key: false,
+            unique: false,
             nullable: true,
             default: None,
         }
@@ -1196,6 +1329,7 @@ mod tests {
             name: name.to_string(),
             ty: MigrationColumnType::Integer,
             primary_key,
+            unique: false,
             nullable: false,
             default: None,
         }
@@ -1206,6 +1340,7 @@ mod tests {
             name: name.to_string(),
             ty: MigrationColumnType::Integer,
             primary_key: false,
+            unique: false,
             nullable: true,
             default: None,
         }

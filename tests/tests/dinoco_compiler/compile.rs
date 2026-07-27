@@ -25,6 +25,7 @@ fn compile_parses_config_enums_models_and_relations() {
         model UserToken {
             id      String  @id @default(uuid())
             userId  String?
+            user    User?   @relation(fields: [userId], references: [id])
         }
         "#,
     )
@@ -88,7 +89,8 @@ fn compile_accepts_relations_enum_defaults_and_snowflake_config() {
 
             profile    Profile?
             posts      Post[]
-            friends    User[]
+            friends     User[] @relation(name: "Friendships")
+            friended_by User[] @relation(name: "Friendships")
         }
 
         model Profile {

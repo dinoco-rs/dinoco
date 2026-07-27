@@ -142,7 +142,21 @@ impl DinocoSqlCompiler for MySqlAdapter {
 
     fn compile_create_table_migration(&self, migration: CreateTableMigration) -> String {
         let if_not_exists = if migration.if_not_exists { " IF NOT EXISTS" } else { "" };
-        let mut definitions = migration.columns.iter().map(compile_migration_column).collect::<Vec<_>>();
+        let primary_key_columns = migration
+            .columns
+            .iter()
+            .filter(|column| column.primary_key)
+            .map(|column| column.name.clone())
+            .collect::<Vec<_>>();
+        let inline_primary_key = primary_key_columns.len() <= 1;
+        let mut definitions = migration
+            .columns
+            .iter()
+            .map(|column| compile_migration_column(column, inline_primary_key))
+            .collect::<Vec<_>>();
+        if !inline_primary_key {
+            definitions.push(format!("PRIMARY KEY ({})", primary_key_columns.join(", ")));
+        }
         definitions.extend(migration.foreign_keys.iter().map(compile_foreign_key));
 
         format!("CREATE TABLE{if_not_exists} {} (\n    {}\n);", migration.table, definitions.join(",\n    "))
@@ -154,7 +168,7 @@ impl DinocoSqlCompiler for MySqlAdapter {
     }
 
     fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String {
-        format!("ALTER TABLE {} ADD COLUMN {};", migration.table, compile_migration_column(&migration.column))
+        format!("ALTER TABLE {} ADD COLUMN {};", migration.table, compile_migration_column(&migration.column, true))
     }
 
     fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String {
@@ -162,7 +176,11 @@ impl DinocoSqlCompiler for MySqlAdapter {
     }
 
     fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String> {
-        vec![format!("ALTER TABLE {} MODIFY COLUMN {};", migration.table, compile_migration_column(&migration.desired))]
+        vec![format!(
+            "ALTER TABLE {} MODIFY COLUMN {};",
+            migration.table,
+            compile_migration_column(&migration.desired, true)
+        )]
     }
 
     fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String> {
@@ -190,21 +208,25 @@ impl DinocoSqlCompiler for MySqlAdapter {
     }
 }
 
-fn compile_migration_column(column: &MigrationColumn) -> String {
+fn compile_migration_column(column: &MigrationColumn, inline_primary_key: bool) -> String {
     let mut parts = vec![column.name.clone(), migration_type(&column.ty)];
 
-    if column.primary_key {
+    if column.primary_key && inline_primary_key {
         parts.push("PRIMARY KEY".to_string());
+    }
+
+    if column.unique && !column.primary_key {
+        parts.push("UNIQUE".to_string());
     }
 
     if !column.nullable {
         parts.push("NOT NULL".to_string());
     }
 
-    if let Some(default) = &column.default {
-        if let Some(default) = migration_default(default) {
-            parts.push(default);
-        }
+    if let Some(default) = &column.default
+        && let Some(default) = migration_default(default)
+    {
+        parts.push(default);
     }
 
     parts.join(" ")

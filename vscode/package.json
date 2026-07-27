@@ -1,7 +1,7 @@
 {
 	"name": "dinoco-vscode",
 	"displayName": "Dinoco",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"description": "Intelligent language support and database workflows for Dinoco schemas.",
 	"publisher": "dinoco-rs",
 	"license": "Apache-2.0",
@@ -31,7 +31,7 @@
 		"Other"
 	],
 	"engines": {
-		"vscode": "^1.85.0"
+		"vscode": "^1.91.0"
 	},
 	"extensionKind": [
 		"workspace"
@@ -191,11 +191,15 @@
 		}
 	},
 	"dependencies": {
-		"vscode-languageclient": "^9.0.1"
+		"vscode-languageclient": "^10.1.0"
+	},
+	"overrides": {
+		"brace-expansion": "5.0.8",
+		"fast-uri": "3.1.4"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.0",
-		"@types/vscode": "^1.85.0",
+		"@types/vscode": "^1.91.0",
 		"@vscode/vsce": "^3.7.1",
 		"esbuild": "^0.25.0",
 		"typescript": "^5.9.3"

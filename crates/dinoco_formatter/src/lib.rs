@@ -105,7 +105,9 @@ mod tests {
 }
 
 model AdminToken {
-    id String @id
+    id         String @id
+    account_id String?
+    account    AdminAccount? @relation(fields: [account_id], references: [id])
 }"#;
 
         let formatted = format_from_raw(raw).expect("format");
@@ -126,7 +128,9 @@ model AdminToken {
 }
 
 model AdminToken {
-    id String @id
+    id         String @id
+    account_id String?
+    account    AdminAccount? @relation(fields: [account_id], references: [id])
 }"#;
 
         let formatted = format_from_raw(raw).expect("format");
@@ -145,7 +149,9 @@ model AdminToken {
 }
 
 model AdminToken {
-    id String @id
+    id         String @id
+    account_id String?
+    account    AdminAccount? @relation(fields: [account_id], references: [id])
 }"#;
 
         let formatted = format_from_raw(raw).expect("format");

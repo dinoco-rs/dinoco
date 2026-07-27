@@ -13,7 +13,7 @@ import {
 } from 'vscode-languageclient/node';
 
 let client: LanguageClient | undefined;
-let outputChannel: vscode.OutputChannel | undefined;
+let outputChannel: vscode.LogOutputChannel | undefined;
 let status: vscode.StatusBarItem | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
@@ -21,7 +21,7 @@ let stateSubscription: vscode.Disposable | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     extensionContext = context;
-    outputChannel = vscode.window.createOutputChannel('Dinoco Language Server');
+    outputChannel = vscode.window.createOutputChannel('Dinoco Language Server', { log: true });
     status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
     status.command = 'dinoco.openSchema';
 

@@ -4,7 +4,7 @@ use dinoco_engine::{
 };
 
 pub fn column(name: &str, ty: MigrationColumnType) -> MigrationColumn {
-    MigrationColumn { name: name.to_string(), ty, primary_key: false, nullable: false, default: None }
+    MigrationColumn { name: name.to_string(), ty, primary_key: false, unique: false, nullable: false, default: None }
 }
 
 pub fn primary(mut column: MigrationColumn) -> MigrationColumn {

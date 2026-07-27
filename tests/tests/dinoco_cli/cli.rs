@@ -2,11 +2,7 @@ use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dinoco_engine::{
-    DinocoAdapter, DinocoSqlCompiler, DinocoValue, InsertQuery, MigrationColumnType, SqliteAdapter,
-    rusqlite::Connection,
-};
-use dinoco_tests::{column, create_table, primary};
+use dinoco_engine::{DinocoAdapter, DinocoSqlCompiler, DinocoValue, InsertQuery, SqliteAdapter, rusqlite::Connection};
 
 #[test]
 fn init_creates_english_colored_schema() {
@@ -71,23 +67,18 @@ fn migrate_generate_sqlite_creates_migration_and_models() {
 async fn migrate_generate_detects_and_applies_destructive_column_drop_when_confirmed() {
     let project = temp_project("drop-column");
     fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
-    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("schema");
+    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA_WITH_PASSWORD).expect("initial schema");
 
     let db_path = project.join("dev.sqlite");
-    let adapter = SqliteAdapter::new(db_path.to_string_lossy().to_string()).await.map_err(anyhow::Error::msg).unwrap();
-    adapter.execute(&adapter.compile_create_migrations_table(), &[]).await.expect("migrations table");
-    create_table(
-        &adapter,
-        "user",
-        vec![
-            primary(column("id", MigrationColumnType::String)),
-            column("email", MigrationColumnType::String),
-            column("password", MigrationColumnType::String),
-        ],
-    )
-    .await
-    .expect("user table");
+    let initial = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate"])
+        .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .current_dir(&project)
+        .output()
+        .expect("initial migration");
+    assert!(initial.status.success(), "stderr: {}", String::from_utf8_lossy(&initial.stderr));
 
+    let adapter = SqliteAdapter::new(db_path.to_string_lossy().to_string()).await.map_err(anyhow::Error::msg).unwrap();
     let (insert_sql, insert_params) = adapter.compile_insert_query(InsertQuery {
         table: "user",
         fields: vec!["id", "email", "password"],
@@ -100,6 +91,7 @@ async fn migrate_generate_detects_and_applies_destructive_column_drop_when_confi
     });
     adapter.execute(&insert_sql, &insert_params).await.expect("seed user");
     drop(adapter);
+    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("updated schema");
 
     let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
         .args(["migrate", "generate"])
@@ -136,6 +128,19 @@ config {
 model User {
     id    String @id @default(uuid())
     email String
+}
+"#;
+
+const SQLITE_SCHEMA_WITH_PASSWORD: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model User {
+    id       String @id @default(uuid())
+    email    String
+    password String
 }
 "#;
 

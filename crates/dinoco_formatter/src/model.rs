@@ -28,7 +28,7 @@ pub(crate) fn format_model_with_layout(
     blank_lines: Option<&[bool]>,
 ) -> String {
     let indent = config.indent();
-    let widths = grouped_field_widths(&model.fields);
+    let widths = grouped_field_widths(&model.fields, blank_lines);
     let mut out = format!("model {} {{\n", model.name);
 
     for (index, field) in model.fields.iter().enumerate() {
@@ -36,7 +36,7 @@ pub(crate) fn format_model_with_layout(
             out.push('\n');
         }
         let type_string = format_field_type(&field.ty);
-        let (name_width, type_width) = widths;
+        let (name_width, type_width) = widths[index];
 
         out.push_str(&indent);
         out.push_str(&format!("{:<width$}", field.name, width = name_width));

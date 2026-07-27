@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_compiler"
-version = "1.0.5"
+version = "1.0.6"
 edition = "2024"
 license = "Apache-2.0"
 description = "The Dinoco schema compiler for parsing, validating, and analyzing database schemas."

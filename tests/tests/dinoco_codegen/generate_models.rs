@@ -150,6 +150,7 @@ fn codegen_reverses_explicit_list_relation_keys_for_the_derive() {
         model UserToken {
             id      String @id @default(uuid())
             user_id String?
+            user    User?  @relation(fields: [user_id], references: [id])
         }
         "#,
     )

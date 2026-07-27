@@ -161,16 +161,18 @@ pub struct AlterEnumMigration {
     pub desired_values: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MigrationColumn {
     pub name: String,
     pub ty: MigrationColumnType,
     pub primary_key: bool,
+    #[serde(default)]
+    pub unique: bool,
     pub nullable: bool,
     pub default: Option<MigrationDefault>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MigrationForeignKey {
     pub name: String,
     pub columns: Vec<String>,
@@ -180,7 +182,7 @@ pub struct MigrationForeignKey {
     pub on_delete: ReferentialAction,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ReferentialAction {
     Cascade,
     Restrict,
@@ -189,7 +191,7 @@ pub enum ReferentialAction {
     SetDefault,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MigrationColumnType {
     String,
     Boolean,
@@ -202,7 +204,7 @@ pub enum MigrationColumnType {
     Enum { name: String, values: Vec<String> },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum MigrationDefault {
     String(String),
     Boolean(bool),

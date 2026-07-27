@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
-use deadpool_sqlite::{Config, Pool, Runtime};
+use deadpool_sqlite::{Config, Hook, HookError, Pool, Runtime};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, ValueRef};
 
 mod compiler;
@@ -21,7 +21,31 @@ impl DinocoAdapter for SqliteAdapter {
             std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
         }
         let cfg = Config::new(&path);
-        let Ok(pool) = cfg.create_pool(Runtime::Tokio1) else { return Err("Pool error".to_string()) };
+        let pool = cfg
+            .builder(Runtime::Tokio1)
+            .map_err(|err| err.to_string())?
+            .post_create(Hook::async_fn(|connection, _| {
+                Box::pin(async move {
+                    match connection
+                        .interact(|conn| -> rusqlite::Result<bool> {
+                            conn.pragma_update(None, "foreign_keys", true)?;
+                            conn.pragma_query_value(None, "foreign_keys", |row| row.get::<_, bool>(0))
+                        })
+                        .await
+                    {
+                        Ok(Ok(true)) => Ok(()),
+                        Ok(Ok(false)) => Err(HookError::message(
+                            "SQLite did not enable foreign key enforcement for a new connection",
+                        )),
+                        Ok(Err(err)) => Err(HookError::Backend(err)),
+                        Err(err) => Err(HookError::message(format!(
+                            "failed to configure SQLite foreign key enforcement: {err}"
+                        ))),
+                    }
+                })
+            }))
+            .build()
+            .map_err(|err| err.to_string())?;
 
         Ok(Self { path, pool: Arc::new(pool) })
     }
@@ -99,7 +123,11 @@ impl DinocoAdapter for SqliteAdapter {
 }
 
 fn normalize_sqlite_path(path: String) -> String {
-    if path == ":memory:" || path.starts_with('/') || path.starts_with("file:") || path.starts_with("dinoco/") {
+    if path == ":memory:"
+        || std::path::Path::new(&path).is_absolute()
+        || path.starts_with("file:")
+        || path.starts_with("dinoco/")
+    {
         path
     } else {
         format!("dinoco/{path}")

@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -909,7 +909,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco-example-actix-web"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco-example-axum"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_cli"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "anyhow",
  "clap",
@@ -941,12 +941,16 @@ dependencies = [
  "dinoco_formatter",
  "dotenvy",
  "inquire",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
  "tokio",
 ]
 
 [[package]]
 name = "dinoco_codegen"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "anyhow",
  "dinoco_compiler",
@@ -954,7 +958,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_compiler"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "pest",
  "pest_derive",
@@ -962,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_derives"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -972,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_engine"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -984,6 +988,7 @@ dependencies = [
  "mysql_async",
  "mysql_common",
  "rusqlite",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-postgres",
@@ -991,14 +996,14 @@ dependencies = [
 
 [[package]]
 name = "dinoco_formatter"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "dinoco_compiler",
 ]
 
 [[package]]
 name = "dinoco_tests"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "anyhow",
  "clap",
@@ -1016,7 +1021,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_vscode"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "dinoco_compiler",
  "dinoco_formatter",
@@ -1089,6 +1094,12 @@ name = "fallible-streaming-iterator"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
+
+[[package]]
+name = "fastrand"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "find-msvc-tools"
@@ -1709,6 +1720,12 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
+
+[[package]]
+name = "linux-raw-sys"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "litemap"
@@ -2377,6 +2394,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustix"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
+dependencies = [
+ "bitflags 2.13.0",
+ "errno",
+ "libc",
+ "linux-raw-sys",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2680,6 +2710,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "tempfile"
+version = "3.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
+dependencies = [
+ "fastrand",
+ "getrandom 0.4.3",
+ "once_cell",
+ "rustix",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

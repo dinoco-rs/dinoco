@@ -153,7 +153,7 @@ impl DinocoSqlCompiler for SqliteAdapter {
         format!(
             "ALTER TABLE {} ADD COLUMN {};",
             migration.table,
-            compile_migration_column(&migration.column, DatabaseDialect::Sqlite)
+            compile_migration_column(&migration.column, DatabaseDialect::Sqlite, true)
         )
     }
 
@@ -206,8 +206,21 @@ enum DatabaseDialect {
 
 fn compile_create_table_migration(migration: CreateTableMigration, dialect: DatabaseDialect) -> String {
     let if_not_exists = if migration.if_not_exists { " IF NOT EXISTS" } else { "" };
-    let mut definitions =
-        migration.columns.iter().map(|column| compile_migration_column(column, dialect)).collect::<Vec<_>>();
+    let primary_key_columns = migration
+        .columns
+        .iter()
+        .filter(|column| column.primary_key)
+        .map(|column| column.name.clone())
+        .collect::<Vec<_>>();
+    let inline_primary_key = primary_key_columns.len() <= 1;
+    let mut definitions = migration
+        .columns
+        .iter()
+        .map(|column| compile_migration_column(column, dialect, inline_primary_key))
+        .collect::<Vec<_>>();
+    if !inline_primary_key {
+        definitions.push(format!("PRIMARY KEY ({})", primary_key_columns.join(", ")));
+    }
     definitions.extend(migration.foreign_keys.iter().map(compile_foreign_key));
 
     format!("CREATE TABLE{if_not_exists} {} (\n    {}\n);", migration.table, definitions.join(",\n    "))
@@ -235,21 +248,25 @@ fn referential_action(action: ReferentialAction) -> &'static str {
     }
 }
 
-fn compile_migration_column(column: &MigrationColumn, dialect: DatabaseDialect) -> String {
+fn compile_migration_column(column: &MigrationColumn, dialect: DatabaseDialect, inline_primary_key: bool) -> String {
     let mut parts = vec![column.name.clone(), migration_type(&column.ty, dialect).to_string()];
 
-    if column.primary_key {
+    if column.primary_key && inline_primary_key {
         parts.push("PRIMARY KEY".to_string());
+    }
+
+    if column.unique && !column.primary_key {
+        parts.push("UNIQUE".to_string());
     }
 
     if !column.nullable {
         parts.push("NOT NULL".to_string());
     }
 
-    if let Some(default) = &column.default {
-        if let Some(default) = migration_default(default, dialect) {
-            parts.push(default);
-        }
+    if let Some(default) = &column.default
+        && let Some(default) = migration_default(default, dialect)
+    {
+        parts.push(default);
     }
 
     parts.join(" ")

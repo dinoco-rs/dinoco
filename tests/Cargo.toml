@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_tests"
-version = "1.0.5"
+version = "1.0.6"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
@@ -11,16 +11,16 @@ colored = "3"
 dotenvy = "0.15"
 inquire = "0.7"
 tokio = { version = "1.50", features = ["full"] }
-dinoco = { path = "../dinoco", version = "1.0.5" }
-dinoco_cli = { path = "../dinoco_cli", version = "1.0.5" }
-dinoco_compiler = { path = "../dinoco_compiler", version = "1.0.5" }
-dinoco_formatter = { path = "../dinoco_formatter", version = "1.0.5" }
-dinoco_codegen = { path = "../dinoco_codegen", version = "1.0.5" }
-dinoco_engine = { path = "../dinoco_engine", version = "1.0.5" }
+dinoco = { path = "../crates/dinoco", version = "1.0.6" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "1.0.6" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "1.0.6" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "1.0.6" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "1.0.6" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "1.0.6" }
 
 [[bin]]
 name = "dinoco_cli"
-path = "../dinoco_cli/src/main.rs"
+path = "../crates/dinoco_cli/src/main.rs"
 
 [[test]]
 name = "dinoco_sqlite_flow"
@@ -73,6 +73,14 @@ path = "tests/dinoco_engine/query_builder.rs"
 [[test]]
 name = "dinoco_engine_window_functions"
 path = "tests/dinoco_engine/window_functions.rs"
+
+[[test]]
+name = "migration_state"
+path = "tests/migration_state.rs"
+
+[[test]]
+name = "migration_details"
+path = "tests/migration_details.rs"
 
 [[test]]
 name = "dinoco_formatter_format"

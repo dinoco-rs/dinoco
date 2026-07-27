@@ -6,9 +6,9 @@ members = [
 	"crates/dinoco_compiler",
 	"crates/dinoco_engine",
 	"crates/dinoco_formatter",
-	"crates/dinoco_vscode",
+	"vscode",
 	"crates/dinoco_derives",
-	"crates/dinoco_tests",
+	"tests",
 	"examples/axum",
 	"examples/actix-web",
 ]
