@@ -8,4 +8,6 @@ dinoco_*/dinoco
 */src/database
 !dinoco_databases/src/database
 
+.DS_Store
+
 *.sqlite

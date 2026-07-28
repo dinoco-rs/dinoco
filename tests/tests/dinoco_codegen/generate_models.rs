@@ -81,19 +81,74 @@ fn codegen_respects_uuid_snowflake_enum_defaults_and_implicit_relations() {
 
     assert!(models.contains("pub id: ::dinoco::Uuid"));
     assert!(models.contains("pub sequence: ::dinoco::Snowflake"));
-    assert!(models.contains("#[derive(Debug, Clone, PartialEq, Eq, Default)]"));
-    assert!(models.contains("#[default]\n    USER,"));
+    assert!(models.contains("#[derive(Debug, Clone, PartialEq, Eq, Default, ::dinoco::DinocoEnum)]"));
+    assert!(models.contains("#[dinoco(value = \"USER\")]"));
+    assert!(models.contains("#[default]\n    #[dinoco(value = \"USER\")]\n    USER,"));
     assert!(models.contains("pub createdAt: ::dinoco::chrono::DateTime<::dinoco::chrono::Utc>"));
     assert!(models.contains("pub birthday: ::dinoco::chrono::NaiveDate"));
     assert!(models.contains("pub metadata: ::dinoco::serde_json::Value"));
     assert!(models.contains("#[dinoco(default = Role::USER)]"));
     assert!(models.contains("#[dinoco(many_to_many)]"));
+    assert!(models.contains("pub struct PostUser"));
+    assert!(models.contains("#[dinoco(table_name = \"_post_to_user\")]"));
+    assert!(models.contains("pub post_id: ::dinoco::Uuid"));
+    assert!(models.contains("pub user_id: ::dinoco::Uuid"));
     assert!(!models.contains("dinoco_engine"));
 
     let dinoco_mod = dinoco_codegen::render_dinoco_mod(&schema);
     assert!(dinoco_mod.contains("::dinoco::DinocoClient"));
     assert!(dinoco_mod.contains("::dinoco::anyhow::Result"));
     assert!(!dinoco_mod.contains("dinoco_engine"));
+}
+
+#[test]
+fn codegen_preserves_uuid_and_snowflake_types_on_relation_keys() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        config {
+            database = "sqlite"
+            database_url = env("DATABASE_URL")
+            snowflake_node_id = env("SNOWFLAKE_NODE_ID")
+        }
+
+        model Organization {
+            id      String   @id @default(uuid())
+            members Member[]
+        }
+
+        model Member {
+            id              String        @id @default(uuid())
+            organization_id String?
+            organization    Organization? @relation(fields: [organization_id], references: [id])
+        }
+
+        model Account {
+            id       Integer   @id @default(snowflake())
+            sessions Session[]
+            systems  System[]
+        }
+
+        model Session {
+            id         Integer  @id @default(snowflake())
+            account_id Integer
+            account    Account  @relation(fields: [account_id], references: [id])
+        }
+
+        model System {
+            id       Integer   @id @default(snowflake())
+            accounts Account[]
+        }
+        "#,
+    )
+    .expect("schema");
+
+    let models = dinoco_codegen::render_models(&schema);
+
+    assert!(models.contains("pub organization_id: Option<::dinoco::Uuid>"));
+    assert!(models.contains("pub account_id: ::dinoco::Snowflake"));
+    assert!(models.contains("pub struct AccountSystem"));
+    assert!(models.contains("pub account_id: ::dinoco::Snowflake"));
+    assert!(models.contains("pub system_id: ::dinoco::Snowflake"));
 }
 
 #[test]
@@ -185,8 +240,7 @@ fn codegen_qualifies_try_from_error_when_enum_has_error_variant() {
     let models = dinoco_codegen::render_models_mod(&schema);
 
     assert!(models.contains("Error,"));
-    assert!(models.contains(
-        "fn try_from(value: ::dinoco::mysql_async::Value) -> Result<Self, ::dinoco::mysql_common::value::convert::FromValueError>"
-    ));
-    assert!(!models.contains("Result<Self, Self::Error>"));
+    assert!(models.contains("::dinoco::DinocoEnum"));
+    assert!(models.contains("#[dinoco(value = \"error\")]"));
+    assert!(!models.contains("impl ::core::convert::TryFrom<::dinoco::mysql_async::Value>"));
 }

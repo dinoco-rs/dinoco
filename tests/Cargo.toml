@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_tests"
-version = "1.0.6"
+version = "1.0.7"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
@@ -11,12 +11,12 @@ colored = "3"
 dotenvy = "0.15"
 inquire = "0.7"
 tokio = { version = "1.50", features = ["full"] }
-dinoco = { path = "../crates/dinoco", version = "1.0.6" }
-dinoco_cli = { path = "../crates/dinoco_cli", version = "1.0.6" }
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "1.0.6" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "1.0.6" }
-dinoco_codegen = { path = "../crates/dinoco_codegen", version = "1.0.6" }
-dinoco_engine = { path = "../crates/dinoco_engine", version = "1.0.6" }
+dinoco = { path = "../crates/dinoco", version = "1.0.7" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "1.0.7" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "1.0.7" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "1.0.7" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "1.0.7" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "1.0.7" }
 
 [[bin]]
 name = "dinoco_cli"

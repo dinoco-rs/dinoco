@@ -1,6 +1,6 @@
 use dinoco_engine::{
-    CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, MigrationColumn, MigrationColumnType, MigrationDefault,
-    MigrationForeignKey, ReferentialAction, SqliteAdapter,
+    CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, FindQuery, InsertQuery, MigrationColumn,
+    MigrationColumnType, MigrationDefault, MigrationForeignKey, ReferentialAction, SqliteAdapter,
 };
 
 #[tokio::test]
@@ -33,6 +33,53 @@ async fn sqlite_adapter_compiles_migration_sql() -> anyhow::Result<()> {
     assert!(sql.contains("CREATE TABLE IF NOT EXISTS account"));
     assert!(sql.contains("id TEXT PRIMARY KEY NOT NULL"));
     assert!(sql.contains("is_active BOOLEAN NOT NULL DEFAULT 0"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_quotes_reserved_identifiers_in_migrations_and_queries() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let sql = adapter.compile_create_table_migration(CreateTableMigration {
+        table: "systems".to_string(),
+        if_not_exists: true,
+        columns: vec![
+            MigrationColumn {
+                name: "id".to_string(),
+                ty: MigrationColumnType::Integer,
+                primary_key: true,
+                unique: false,
+                nullable: false,
+                default: None,
+            },
+            MigrationColumn {
+                name: "group".to_string(),
+                ty: MigrationColumnType::String,
+                primary_key: false,
+                unique: false,
+                nullable: false,
+                default: None,
+            },
+        ],
+        foreign_keys: Vec::new(),
+    });
+
+    assert!(sql.contains("\"group\" TEXT NOT NULL"), "{sql}");
+    adapter.execute(&sql, &[]).await?;
+
+    let (insert, params) = adapter.compile_insert_query(InsertQuery {
+        table: "systems",
+        fields: vec!["id", "group"],
+        rows: vec![vec![1_i64.into(), "admin".into()]],
+        returning: None,
+    });
+    assert!(insert.contains("(id, \"group\")"), "{insert}");
+    adapter.execute(&insert, &params).await?;
+
+    let (select, params) = adapter.compile_find_query(FindQuery::new(&["id", "group"], "systems", -1, -1));
+    assert!(select.contains("SELECT id, \"group\" FROM systems"), "{select}");
+    let rows = adapter.query::<dinoco_engine::SingleIdRow>(&select, &params).await?;
+    assert_eq!(rows.len(), 1);
 
     Ok(())
 }

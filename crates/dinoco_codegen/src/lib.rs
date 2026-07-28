@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -14,6 +15,12 @@ pub fn generate_models(schema: &Schema) -> anyhow::Result<()> {
     for model in schema.models() {
         fs::write(format!("dinoco/models/{}.rs", to_snake_case(&model.name)), render_model_file(&model, schema))?;
     }
+    for join in implicit_many_to_many_joins(schema) {
+        fs::write(
+            format!("dinoco/models/{}.rs", to_snake_case(&join.rust_name)),
+            render_many_to_many_join_file(&join, schema),
+        )?;
+    }
     fs::write("dinoco/mod.rs", render_dinoco_mod(schema))?;
     Ok(())
 }
@@ -25,78 +32,37 @@ pub fn render_models(schema: &Schema) -> String {
         out.push('\n');
         out.push_str(&render_model_file(&model, schema));
     }
+    for join in implicit_many_to_many_joins(schema) {
+        out.push('\n');
+        out.push_str(&render_many_to_many_join_file(&join, schema));
+    }
     out
 }
 
 pub fn render_models_mod(schema: &Schema) -> String {
     let mut out = String::new();
     for item in schema.enums() {
-        out.push_str("#[derive(Debug, Clone, PartialEq, Eq, Default)]\n");
+        out.push_str("#[derive(Debug, Clone, PartialEq, Eq, Default, ::dinoco::DinocoEnum)]\n");
         out.push_str(&format!("pub enum {} {{\n", item.name));
         for (index, value) in item.values.iter().enumerate() {
             if index == 0 {
                 out.push_str("    #[default]\n");
             }
+            out.push_str(&format!("    #[dinoco(value = \"{}\")]\n", escape_rust_string(value)));
             out.push_str("    ");
             out.push_str(&to_pascal_case(value));
             out.push_str(",\n");
         }
         out.push_str("}\n\n");
-        out.push_str(&format!("impl ::core::convert::From<&{}> for ::dinoco::DinocoValue {{\n", item.name));
-        out.push_str("    fn from(value: &");
-        out.push_str(&item.name);
-        out.push_str(") -> Self {\n");
-        out.push_str("        match value {\n");
-        for value in &item.values {
-            out.push_str(&format!(
-                "            {}::{} => ::dinoco::DinocoValue::Enum(\"{}\".to_string(), \"{}\".to_string()),\n",
-                item.name,
-                to_pascal_case(value),
-                item.name,
-                value
-            ));
-        }
-        out.push_str("        }\n    }\n}\n\n");
-        out.push_str(&format!("impl ::dinoco::rusqlite::types::FromSql for {} {{\n", item.name));
-        out.push_str("    fn column_result(value: ::dinoco::rusqlite::types::ValueRef<'_>) -> ::dinoco::rusqlite::types::FromSqlResult<Self> {\n");
-        out.push_str("        let value = <String as ::dinoco::rusqlite::types::FromSql>::column_result(value)?;\n");
-        out.push_str("        match value.as_str() {\n");
-        for value in &item.values {
-            out.push_str(&format!("            \"{}\" => Ok(Self::{}),\n", value, to_pascal_case(value)));
-        }
-        out.push_str("            _ => Err(::dinoco::rusqlite::types::FromSqlError::InvalidType),\n");
-        out.push_str("        }\n    }\n}\n\n");
-        out.push_str(&format!("impl<'a> ::dinoco::tokio_postgres::types::FromSql<'a> for {} {{\n", item.name));
-        out.push_str("    fn from_sql(ty: &::dinoco::tokio_postgres::types::Type, raw: &'a [u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {\n");
-        out.push_str("        let value = <String as ::dinoco::tokio_postgres::types::FromSql>::from_sql(ty, raw)?;\n");
-        out.push_str("        match value.as_str() {\n");
-        for value in &item.values {
-            out.push_str(&format!("            \"{}\" => Ok(Self::{}),\n", value, to_pascal_case(value)));
-        }
-        out.push_str("            _ => Err(format!(\"unknown enum value `{}`\", value).into()),\n");
-        out.push_str("        }\n    }\n");
-        out.push_str("    fn accepts(ty: &::dinoco::tokio_postgres::types::Type) -> bool { <String as ::dinoco::tokio_postgres::types::FromSql>::accepts(ty) }\n");
-        out.push_str("}\n\n");
-        out.push_str(&format!("impl ::dinoco::mysql_common::prelude::FromValue for {} {{\n", item.name));
-        out.push_str("    type Intermediate = Self;\n");
-        out.push_str("}\n\n");
-        out.push_str(&format!("impl ::core::convert::TryFrom<::dinoco::mysql_async::Value> for {} {{\n", item.name));
-        out.push_str("    type Error = ::dinoco::mysql_common::value::convert::FromValueError;\n");
-        out.push_str("    fn try_from(value: ::dinoco::mysql_async::Value) -> Result<Self, ::dinoco::mysql_common::value::convert::FromValueError> {\n");
-        out.push_str("        let raw = value.clone();\n");
-        out.push_str(
-            "        let value = <String as ::dinoco::mysql_common::prelude::FromValue>::from_value_opt(value)?;\n",
-        );
-        out.push_str("        match value.as_str() {\n");
-        for value in &item.values {
-            out.push_str(&format!("            \"{}\" => Ok(Self::{}),\n", value, to_pascal_case(value)));
-        }
-        out.push_str("            _ => Err(::dinoco::mysql_common::value::convert::FromValueError(raw)),\n");
-        out.push_str("        }\n    }\n}\n\n");
     }
 
     for model in schema.models() {
         let module = to_snake_case(&model.name);
+        out.push_str(&format!("mod {module};\n"));
+        out.push_str(&format!("pub use {module}::*;\n"));
+    }
+    for join in implicit_many_to_many_joins(schema) {
+        let module = to_snake_case(&join.rust_name);
         out.push_str(&format!("mod {module};\n"));
         out.push_str(&format!("pub use {module}::*;\n"));
     }
@@ -121,7 +87,7 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
         out.push_str("    pub ");
         out.push_str(&field.name);
         out.push_str(": ");
-        out.push_str(&rust_type(field, schema));
+        out.push_str(&rust_type(model, field, schema));
         out.push_str(",\n\n");
     }
     out.push_str("}\n");
@@ -179,10 +145,31 @@ pub fn render_schema_snapshot(schema: &Schema) -> String {
     dinoco_formatter_like(schema)
 }
 
-fn rust_type(field: &ModelField, schema: &Schema) -> String {
-    let base = if has_default_call(field, "uuid") {
+pub fn render_many_to_many_join_file(join: &ManyToManyJoin, schema: &Schema) -> String {
+    let mut out = String::new();
+    out.push_str("#[allow(unused_imports)]\n");
+    out.push_str("use super::*;\n");
+    out.push_str("use dinoco::Entity;\n\n");
+    out.push_str("#[derive(Debug, Entity)]\n");
+    out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", escape_rust_string(&join.table_name)));
+    out.push_str(&format!("pub struct {} {{\n", join.rust_name));
+    out.push_str("    #[dinoco(primary_key)]\n");
+    out.push_str(&format!("    pub {}: {},\n\n", join.left_column, model_primary_rust_type(schema, &join.left_model)));
+    out.push_str("    #[dinoco(primary_key)]\n");
+    out.push_str(&format!(
+        "    pub {}: {},\n\n",
+        join.right_column,
+        model_primary_rust_type(schema, &join.right_model)
+    ));
+    out.push_str("}\n");
+    out
+}
+
+fn rust_type(model: &Model, field: &ModelField, schema: &Schema) -> String {
+    let relation_default = referenced_relation_default(model, field, schema);
+    let base = if has_default_call(field, "uuid") || relation_default == Some("uuid") {
         "::dinoco::Uuid".to_string()
-    } else if has_default_call(field, "snowflake") {
+    } else if has_default_call(field, "snowflake") || relation_default == Some("snowflake") {
         "::dinoco::Snowflake".to_string()
     } else {
         match field.ty.name.as_str() {
@@ -206,6 +193,56 @@ fn rust_type(field: &ModelField, schema: &Schema) -> String {
     } else {
         base
     }
+}
+
+fn referenced_relation_default<'a>(model: &'a Model, field: &ModelField, schema: &'a Schema) -> Option<&'a str> {
+    for relation_field in &model.fields {
+        if !relation_field.is_relation(schema) || relation_field.ty.list {
+            continue;
+        }
+        let Some(relation) = relation_field.attributes.iter().find(|attr| attr.name == "relation") else {
+            continue;
+        };
+        let Some(local_fields) = relation.argument("fields").and_then(array_idents) else {
+            continue;
+        };
+        let Some(references) = relation.argument("references").and_then(array_idents) else {
+            continue;
+        };
+
+        for (local, reference) in local_fields.iter().zip(references.iter()) {
+            if local != &field.name {
+                continue;
+            }
+
+            let Some(target) = schema.models().find(|candidate| candidate.name == relation_field.ty.name) else {
+                continue;
+            };
+            let Some(referenced) = target.fields.iter().find(|candidate| candidate.name == *reference) else {
+                continue;
+            };
+
+            if has_default_call(referenced, "uuid") {
+                return Some("uuid");
+            }
+            if has_default_call(referenced, "snowflake") {
+                return Some("snowflake");
+            }
+        }
+    }
+
+    None
+}
+
+fn model_primary_rust_type(schema: &Schema, model_name: &str) -> String {
+    let Some(model) = schema.models().find(|model| model.name == model_name) else {
+        return "String".to_string();
+    };
+    let Some(field) = model.fields.iter().find(|field| field.attributes.iter().any(|attr| attr.name == "id")) else {
+        return "String".to_string();
+    };
+
+    rust_type(model, field, schema)
 }
 
 fn has_default_call(field: &ModelField, name: &str) -> bool {
@@ -350,6 +387,20 @@ fn first_array_ident(value: &AttributeValue) -> Option<String> {
     })
 }
 
+fn array_idents(value: &AttributeValue) -> Option<Vec<String>> {
+    let AttributeValue::Array(values) = value else {
+        return None;
+    };
+
+    values
+        .iter()
+        .map(|value| match value {
+            AttributeValue::Ident(value) | AttributeValue::String(value) => Some(value.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn relation_name(attribute: &dinoco_compiler::Attribute) -> Option<String> {
     attribute.argument("name").and_then(string_or_ident).or_else(|| {
         attribute.arguments.iter().find_map(|argument| match argument {
@@ -417,6 +468,97 @@ fn to_snake_case(value: &str) -> String {
         }
     }
     out
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManyToManyJoin {
+    pub rust_name: String,
+    pub table_name: String,
+    pub left_model: String,
+    pub right_model: String,
+    pub left_column: String,
+    pub right_column: String,
+}
+
+fn implicit_many_to_many_joins(schema: &Schema) -> Vec<ManyToManyJoin> {
+    let mut seen = BTreeSet::new();
+    let mut joins = Vec::new();
+    let model_names = schema.models().map(|model| model.name.as_str()).collect::<BTreeSet<_>>();
+
+    for model in schema.models() {
+        for field in &model.fields {
+            if !field.ty.list {
+                continue;
+            }
+            let Some(target) = schema.models().find(|target| target.name == field.ty.name) else {
+                continue;
+            };
+            if field
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "relation")
+                .and_then(|attr| attr.argument("fields"))
+                .is_some()
+            {
+                continue;
+            }
+
+            let relation_label = field.attributes.iter().find(|attr| attr.name == "relation").and_then(relation_name);
+            let has_opposite = target.fields.iter().any(|candidate| {
+                (model.name != target.name || candidate.name != field.name)
+                    && candidate.ty.list
+                    && candidate.ty.name == model.name
+                    && candidate.attributes.iter().find(|attr| attr.name == "relation").and_then(relation_name)
+                        == relation_label
+            });
+            if !has_opposite {
+                continue;
+            }
+
+            let mut names = [model.name.as_str(), target.name.as_str()];
+            names.sort();
+            let key = relation_label
+                .as_deref()
+                .map(|name| format!("{}:{}:{name}", names[0], names[1]))
+                .unwrap_or_else(|| format!("{}:{}", names[0], names[1]));
+            if !seen.insert(key) {
+                continue;
+            }
+
+            let table_name = many_to_many_table_name(names[0], names[1], relation_label.as_deref());
+            let mut rust_name = format!("{}{}", names[0], names[1]);
+            if let Some(label) = relation_label.as_deref() {
+                rust_name.push_str(&to_pascal_case(label));
+            }
+            if model_names.contains(rust_name.as_str()) {
+                rust_name.push_str("Relation");
+            }
+
+            joins.push(ManyToManyJoin {
+                rust_name,
+                table_name,
+                left_model: names[0].to_string(),
+                right_model: names[1].to_string(),
+                left_column: if names[0] == names[1] {
+                    "a_id".to_string()
+                } else {
+                    format!("{}_id", to_snake_case(names[0]))
+                },
+                right_column: if names[0] == names[1] {
+                    "b_id".to_string()
+                } else {
+                    format!("{}_id", to_snake_case(names[1]))
+                },
+            });
+        }
+    }
+
+    joins
+}
+
+fn many_to_many_table_name(left: &str, right: &str, relation_name: Option<&str>) -> String {
+    let base = format!("_{}_to_{}", to_snake_case(left), to_snake_case(right));
+    relation_name.map(|name| format!("{base}_{}", to_snake_case(name))).unwrap_or(base)
 }
 
 #[allow(dead_code)]

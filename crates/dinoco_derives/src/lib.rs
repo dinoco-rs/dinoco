@@ -12,6 +12,146 @@ pub fn derive_entity(input: TokenStream) -> TokenStream {
     }
 }
 
+#[proc_macro_derive(DinocoEnum, attributes(dinoco))]
+pub fn derive_dinoco_enum(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    match expand_dinoco_enum(input) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    let name = input.ident;
+    let Data::Enum(data) = input.data else {
+        return Err(syn::Error::new_spanned(name, "DinocoEnum can only be derived for enums"));
+    };
+
+    let mut variants = Vec::new();
+
+    for variant in data.variants {
+        if !matches!(variant.fields, Fields::Unit) {
+            return Err(syn::Error::new_spanned(variant, "DinocoEnum only supports unit variants"));
+        }
+
+        let mut value = None;
+        for attr in &variant.attrs {
+            if !attr.path().is_ident("dinoco") {
+                continue;
+            }
+
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("value") {
+                    value = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+
+                Err(meta.error("unknown DinocoEnum variant attribute"))
+            })?;
+        }
+
+        let ident = variant.ident;
+        variants.push((ident.clone(), value.unwrap_or_else(|| ident.to_string())));
+    }
+
+    if variants.is_empty() {
+        return Err(syn::Error::new_spanned(name, "DinocoEnum requires at least one variant"));
+    }
+
+    let enum_name = name.to_string();
+    let value_arms = variants.iter().map(|(variant, value)| {
+        quote! {
+            #name::#variant => ::dinoco::DinocoValue::Enum(
+                ::std::string::String::from(#enum_name),
+                ::std::string::String::from(#value),
+            ),
+        }
+    });
+    let sqlite_arms = variants.iter().map(|(variant, value)| {
+        quote! { #value => ::core::result::Result::Ok(Self::#variant), }
+    });
+    let postgres_arms = variants.iter().map(|(variant, value)| {
+        quote! { #value => ::core::result::Result::Ok(Self::#variant), }
+    });
+    let mysql_arms = variants.iter().map(|(variant, value)| {
+        quote! { #value => ::core::result::Result::Ok(Self::#variant), }
+    });
+
+    Ok(quote! {
+        impl ::core::convert::From<&#name> for ::dinoco::DinocoValue {
+            fn from(value: &#name) -> Self {
+                match value {
+                    #(#value_arms)*
+                }
+            }
+        }
+
+        impl ::dinoco::rusqlite::types::FromSql for #name {
+            fn column_result(
+                value: ::dinoco::rusqlite::types::ValueRef<'_>,
+            ) -> ::dinoco::rusqlite::types::FromSqlResult<Self> {
+                let value =
+                    <::std::string::String as ::dinoco::rusqlite::types::FromSql>::column_result(value)?;
+                match value.as_str() {
+                    #(#sqlite_arms)*
+                    _ => ::core::result::Result::Err(
+                        ::dinoco::rusqlite::types::FromSqlError::InvalidType,
+                    ),
+                }
+            }
+        }
+
+        impl<'a> ::dinoco::tokio_postgres::types::FromSql<'a> for #name {
+            fn from_sql(
+                ty: &::dinoco::tokio_postgres::types::Type,
+                raw: &'a [u8],
+            ) -> ::core::result::Result<
+                Self,
+                ::std::boxed::Box<dyn ::std::error::Error + Sync + Send>,
+            > {
+                let value =
+                    <::std::string::String as ::dinoco::tokio_postgres::types::FromSql>::from_sql(ty, raw)?;
+                match value.as_str() {
+                    #(#postgres_arms)*
+                    _ => ::core::result::Result::Err(
+                        ::std::format!("unknown enum value `{}`", value).into(),
+                    ),
+                }
+            }
+
+            fn accepts(ty: &::dinoco::tokio_postgres::types::Type) -> bool {
+                <::std::string::String as ::dinoco::tokio_postgres::types::FromSql>::accepts(ty)
+            }
+        }
+
+        impl ::dinoco::mysql_common::prelude::FromValue for #name {
+            type Intermediate = Self;
+        }
+
+        impl ::core::convert::TryFrom<::dinoco::mysql_async::Value> for #name {
+            type Error = ::dinoco::mysql_common::value::convert::FromValueError;
+
+            fn try_from(
+                value: ::dinoco::mysql_async::Value,
+            ) -> ::core::result::Result<
+                Self,
+                ::dinoco::mysql_common::value::convert::FromValueError,
+            > {
+                let raw = value.clone();
+                let value =
+                    <::std::string::String as ::dinoco::mysql_common::prelude::FromValue>::from_value_opt(value)?;
+                match value.as_str() {
+                    #(#mysql_arms)*
+                    _ => ::core::result::Result::Err(
+                        ::dinoco::mysql_common::value::convert::FromValueError(raw),
+                    ),
+                }
+            }
+        }
+    })
+}
+
 #[proc_macro_derive(EntityExtend, attributes(extend))]
 pub fn derive_entity_extend(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -903,6 +1043,7 @@ struct ParsedField {
     primary_key: bool,
     default_value: Option<DefaultValue>,
     auto_generate: Option<AutoGenerate>,
+    many_to_many: bool,
 }
 
 enum DefaultValue {
@@ -934,6 +1075,7 @@ impl ParsedField {
         let mut primary_key = false;
         let mut default_value = None;
         let mut auto_generate = None;
+        let mut many_to_many = false;
 
         for attr in &field.attrs {
             if !attr.path().is_ident("dinoco") {
@@ -946,8 +1088,14 @@ impl ParsedField {
                     return Ok(());
                 }
 
-                if meta.path.is_ident("one_to_many") || meta.path.is_ident("many_to_many") {
+                if meta.path.is_ident("one_to_many") {
                     relation_kind = Some(FieldKind::HasMany);
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("many_to_many") {
+                    relation_kind = Some(FieldKind::HasMany);
+                    many_to_many = true;
                     return Ok(());
                 }
 
@@ -1016,6 +1164,7 @@ impl ParsedField {
                 primary_key,
                 default_value,
                 auto_generate,
+                many_to_many,
             });
         }
 
@@ -1040,6 +1189,7 @@ impl ParsedField {
                     primary_key,
                     default_value,
                     auto_generate,
+                    many_to_many,
                 });
             }
         }
@@ -1065,6 +1215,7 @@ impl ParsedField {
                     primary_key,
                     default_value,
                     auto_generate,
+                    many_to_many,
                 });
             }
         }
@@ -1085,6 +1236,7 @@ impl ParsedField {
             primary_key,
             default_value,
             auto_generate,
+            many_to_many,
         })
     }
 }
@@ -1197,6 +1349,10 @@ fn infer_belongs_to_foreign_key(relation_name: &str, scalar_fields: &[ParsedFiel
 }
 
 fn should_insert_nested_relation(field: &ParsedField, scalar_fields: &[ParsedField]) -> bool {
+    if field.many_to_many {
+        return false;
+    }
+
     match field.kind {
         FieldKind::HasMany => true,
         FieldKind::BelongsTo => {
@@ -1237,8 +1393,9 @@ fn insert_model_field_value(field: &ParsedField) -> proc_macro2::TokenStream {
             }
         }
         Some(AutoGenerate::Snowflake) => {
+            let ty = &field.ty;
             quote! {
-                if self.#ident == ::core::default::Default::default() {
+                if self.#ident == <#ty as ::core::default::Default>::default() {
                     ::dinoco::new_snowflake_id()
                 } else {
                     self.#ident.clone()

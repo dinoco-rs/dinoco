@@ -8,7 +8,8 @@ use crate::{
 
 impl DinocoSqlCompiler for SqliteAdapter {
     fn compile_find_query(&self, query: FindQuery) -> (String, Vec<DinocoValue>) {
-        let mut sql = format!("SELECT {} FROM {}", query.fields.join(", "), query.from);
+        let fields = query.fields.iter().map(|field| sql_identifier(field)).collect::<Vec<_>>().join(", ");
+        let mut sql = format!("SELECT {fields} FROM {}", sql_identifier(query.from));
         let params = append_find_tail(&mut sql, query.conditions, query.order_by, query.limit, query.skip, None);
 
         (sql, params)
@@ -19,11 +20,12 @@ impl DinocoSqlCompiler for SqliteAdapter {
         let row_placeholders = format!("({})", vec!["?"; fields_len].join(", "));
         let placeholders = vec![row_placeholders; query.rows.len()].join(", ");
         let params = query.rows.into_iter().flatten().collect::<Vec<_>>();
-        let mut sql = format!("INSERT INTO {} ({}) VALUES {placeholders}", query.table, query.fields.join(", "));
+        let fields = query.fields.iter().map(|field| sql_identifier(field)).collect::<Vec<_>>().join(", ");
+        let mut sql = format!("INSERT INTO {} ({fields}) VALUES {placeholders}", sql_identifier(query.table));
 
         if let Some(returning) = query.returning {
             sql.push_str(" RETURNING ");
-            sql.push_str(&returning.join(", "));
+            sql.push_str(&returning.iter().map(|field| sql_identifier(field)).collect::<Vec<_>>().join(", "));
         }
 
         (sql, params)
@@ -32,33 +34,34 @@ impl DinocoSqlCompiler for SqliteAdapter {
     fn compile_update_query(&self, query: UpdateQuery) -> (String, Vec<DinocoValue>) {
         let sets = query.sets.iter().filter(|set| set.operation == crate::UpdateOperation::Set).collect::<Vec<_>>();
         let mut params = sets.iter().map(|set| set.value.clone()).collect::<Vec<_>>();
-        let set_sql = sets.iter().map(|set| format!("{} = ?", set.field)).collect::<Vec<_>>().join(", ");
-        let mut sql = format!("UPDATE {} SET {set_sql}", query.table);
+        let set_sql =
+            sets.iter().map(|set| format!("{} = ?", sql_identifier(set.field))).collect::<Vec<_>>().join(", ");
+        let mut sql = format!("UPDATE {} SET {set_sql}", sql_identifier(query.table));
 
         params.extend(append_conditions(&mut sql, query.conditions, None));
 
         if let Some(returning) = query.returning {
             sql.push_str(" RETURNING ");
-            sql.push_str(&returning.join(", "));
+            sql.push_str(&returning.iter().map(|field| sql_identifier(field)).collect::<Vec<_>>().join(", "));
         }
 
         (sql, params)
     }
 
     fn compile_delete_query(&self, query: DeleteQuery) -> (String, Vec<DinocoValue>) {
-        let mut sql = format!("DELETE FROM {}", query.table);
+        let mut sql = format!("DELETE FROM {}", sql_identifier(query.table));
         let params = append_conditions(&mut sql, query.conditions, None);
 
         if let Some(returning) = query.returning {
             sql.push_str(" RETURNING ");
-            sql.push_str(&returning.join(", "));
+            sql.push_str(&returning.iter().map(|field| sql_identifier(field)).collect::<Vec<_>>().join(", "));
         }
 
         (sql, params)
     }
 
     fn compile_count_query(&self, query: CountQuery) -> (String, Vec<DinocoValue>) {
-        let mut sql = format!("SELECT COUNT(*) FROM {}", query.table);
+        let mut sql = format!("SELECT COUNT(*) FROM {}", sql_identifier(query.table));
         let params = append_conditions(&mut sql, query.conditions, None);
 
         (sql, params)
@@ -76,12 +79,10 @@ impl DinocoSqlCompiler for SqliteAdapter {
 
     fn compile_relation_batch_query(&self, query: RelationBatchQuery) -> (String, Vec<DinocoValue>) {
         let fields =
-            query.query.fields.iter().map(|field| format!("{}.{}", query.query.from, field)).collect::<Vec<_>>();
+            query.query.fields.iter().map(|field| qualify_field(field, Some(query.query.from))).collect::<Vec<_>>();
         let mut select_fields = fields.join(", ");
         select_fields.push_str(", ");
-        select_fields.push_str(query.query.from);
-        select_fields.push('.');
-        select_fields.push_str(query.relation_key_field);
+        select_fields.push_str(&qualify_field(query.relation_key_field, Some(query.query.from)));
         select_fields.push_str(" AS __dinoco_relation_key");
 
         if query.query.limit >= 0 || query.query.skip >= 0 {
@@ -210,7 +211,7 @@ fn compile_create_table_migration(migration: CreateTableMigration, dialect: Data
         .columns
         .iter()
         .filter(|column| column.primary_key)
-        .map(|column| column.name.clone())
+        .map(|column| sql_identifier(&column.name))
         .collect::<Vec<_>>();
     let inline_primary_key = primary_key_columns.len() <= 1;
     let mut definitions = migration
@@ -223,16 +224,20 @@ fn compile_create_table_migration(migration: CreateTableMigration, dialect: Data
     }
     definitions.extend(migration.foreign_keys.iter().map(compile_foreign_key));
 
-    format!("CREATE TABLE{if_not_exists} {} (\n    {}\n);", migration.table, definitions.join(",\n    "))
+    format!(
+        "CREATE TABLE{if_not_exists} {} (\n    {}\n);",
+        sql_identifier(&migration.table),
+        definitions.join(",\n    ")
+    )
 }
 
 fn compile_foreign_key(foreign_key: &MigrationForeignKey) -> String {
     format!(
         "CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON UPDATE {} ON DELETE {}",
-        foreign_key.name,
-        foreign_key.columns.join(", "),
-        foreign_key.references_table,
-        foreign_key.references_columns.join(", "),
+        sql_identifier(&foreign_key.name),
+        foreign_key.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", "),
+        sql_identifier(&foreign_key.references_table),
+        foreign_key.references_columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", "),
         referential_action(foreign_key.on_update),
         referential_action(foreign_key.on_delete),
     )
@@ -249,7 +254,7 @@ fn referential_action(action: ReferentialAction) -> &'static str {
 }
 
 fn compile_migration_column(column: &MigrationColumn, dialect: DatabaseDialect, inline_primary_key: bool) -> String {
-    let mut parts = vec![column.name.clone(), migration_type(&column.ty, dialect).to_string()];
+    let mut parts = vec![sql_identifier(&column.name), migration_type(&column.ty, dialect).to_string()];
 
     if column.primary_key && inline_primary_key {
         parts.push("PRIMARY KEY".to_string());
@@ -381,10 +386,10 @@ fn append_row_window(
 
 fn relation_join_fields(query: &RelationJoinQuery) -> Vec<String> {
     let mut fields =
-        query.query.fields.iter().map(|field| format!("{}.{}", query.child_table, field)).collect::<Vec<_>>();
+        query.query.fields.iter().map(|field| qualify_field(field, Some(query.child_table))).collect::<Vec<_>>();
 
-    fields.push(format!("{}.{}", query.child_table, query.child_field));
-    fields.push(format!("{}.{} AS __dinoco_relation_key", query.parent_table, query.parent_field));
+    fields.push(qualify_field(query.child_field, Some(query.child_table)));
+    fields.push(format!("{} AS __dinoco_relation_key", qualify_field(query.parent_field, Some(query.parent_table))));
 
     fields
 }
@@ -556,7 +561,39 @@ fn relation_partition_order_by(table: &str, order_by: Option<FindOrderBy>, fallb
 
 fn qualify_field(field: &str, qualifier: Option<&str>) -> String {
     match qualifier {
-        Some(qualifier) if !field.contains('.') => format!("{qualifier}.{field}"),
-        _ => field.to_string(),
+        Some(qualifier) if !field.contains('.') => {
+            format!("{}.{}", sql_identifier(qualifier), sql_identifier(field))
+        }
+        _ if field.contains('.') => field.split('.').map(sql_identifier).collect::<Vec<_>>().join("."),
+        _ => sql_identifier(field),
     }
+}
+
+fn sql_identifier(identifier: &str) -> String {
+    if is_reserved_identifier(identifier) {
+        format!("\"{}\"", identifier.replace('"', "\"\""))
+    } else {
+        identifier.to_string()
+    }
+}
+
+fn is_reserved_identifier(identifier: &str) -> bool {
+    matches!(
+        identifier.to_ascii_lowercase().as_str(),
+        "group"
+            | "order"
+            | "select"
+            | "table"
+            | "where"
+            | "from"
+            | "limit"
+            | "offset"
+            | "primary"
+            | "references"
+            | "constraint"
+            | "index"
+            | "unique"
+            | "default"
+            | "check"
+    )
 }

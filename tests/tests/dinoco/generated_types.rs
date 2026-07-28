@@ -1,4 +1,13 @@
-use dinoco::{Entity, chrono, serde_json};
+use dinoco::{DinocoEnum, Entity, Snowflake, chrono, serde_json};
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, DinocoEnum)]
+enum GeneratedStatus {
+    #[default]
+    #[dinoco(value = "waiting")]
+    Waiting,
+    #[dinoco(value = "in-progress")]
+    InProgress,
+}
 
 #[derive(Debug, Entity)]
 #[dinoco(table_name = "generated_scalar_fixture")]
@@ -41,6 +50,36 @@ struct SecondChildFixture {
     parent: Option<CountParentFixture>,
 }
 
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "snow_account")]
+struct SnowAccount {
+    #[dinoco(primary_key, auto_generate = snowflake)]
+    id: Snowflake,
+
+    #[dinoco(many_to_many)]
+    systems: Vec<SnowSystem>,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "snow_system")]
+struct SnowSystem {
+    #[dinoco(primary_key, auto_generate = snowflake)]
+    id: Snowflake,
+
+    #[dinoco(many_to_many)]
+    accounts: Vec<SnowAccount>,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "_snow_account_to_snow_system")]
+struct SnowAccountSystem {
+    #[dinoco(primary_key)]
+    account_id: Snowflake,
+
+    #[dinoco(primary_key)]
+    system_id: Snowflake,
+}
+
 #[test]
 fn generated_scalar_types_satisfy_entity_adapter_bounds() {
     let _ = GeneratedScalarFixture::new(
@@ -57,4 +96,15 @@ fn generated_scalar_types_satisfy_entity_adapter_bounds() {
     let result = CountParentFixtureCount::default();
     let _: Option<i64> = result.first_children;
     let _: Option<i64> = result.second_children;
+
+    let account = SnowAccount::new();
+    assert_ne!(account.id, 0);
+    assert!(account.systems.is_empty());
+
+    let link = SnowAccountSystem::new(account.id, SnowSystem::new().id);
+    let _: Snowflake = link.account_id;
+    let _: Snowflake = link.system_id;
+
+    let value = dinoco::DinocoValue::from(&GeneratedStatus::InProgress);
+    assert_eq!(value, dinoco::DinocoValue::Enum("GeneratedStatus".to_string(), "in-progress".to_string()));
 }

@@ -2,7 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
-const version = 'v1.0.0';
+const version = 'v1.0.7';
 const locales = ['en-us', 'pt-br'];
 const contentRoot = path.join(process.cwd(), 'src', 'content');
 const navigationRoot = path.join(process.cwd(), 'src', 'jsons', 'versions', version);

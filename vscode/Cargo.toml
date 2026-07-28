@@ -1,13 +1,13 @@
 [package]
 name = "dinoco_vscode"
-version = "1.0.6"
+version = "1.0.7"
 edition = "2024"
 license = "Apache-2.0"
 description = "Language server components for Dinoco editor and VS Code integration."
 repository = "https://github.com/dinoco-rs/dinoco"
 
 [dependencies]
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "1.0.6" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "1.0.6" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "1.0.7" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "1.0.7" }
 tokio = { version = "1.50", features = ["io-std", "macros", "rt-multi-thread", "sync"] }
 tower-lsp = "0.20"

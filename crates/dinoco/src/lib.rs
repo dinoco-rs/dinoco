@@ -8,7 +8,7 @@ mod update;
 
 pub use anyhow;
 pub use async_trait::async_trait;
-pub use dinoco_derives::{Entity, EntityExtend, Extend};
+pub use dinoco_derives::{DinocoEnum, Entity, EntityExtend, Extend};
 pub use dinoco_engine::*;
 
 pub use count::*;
