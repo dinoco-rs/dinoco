@@ -6,7 +6,7 @@ use crate::{
 };
 
 type TransactionAny = Box<dyn Any + Send>;
-type TransactionFinish = Box<dyn FnOnce(RawTransactionOutput) -> anyhow::Result<TransactionAny> + Send>;
+type TransactionFinish = Box<dyn FnOnce(RawTransactionOutput) -> anyhow::Result<TransactionAny> + Send + Sync>;
 
 pub struct TransactionResults {
     values: Vec<Option<TransactionValue>>,
@@ -302,7 +302,7 @@ impl TransactionCommand {
     where
         M: DinocoRowModel,
         T: Send + 'static,
-        F: FnOnce(Vec<M>) -> anyhow::Result<T> + Send + 'static,
+        F: FnOnce(Vec<M>) -> anyhow::Result<T> + Send + Sync + 'static,
     {
         let finish = Box::new(move |raw| {
             let RawTransactionOutput::Rows(rows) = raw else {

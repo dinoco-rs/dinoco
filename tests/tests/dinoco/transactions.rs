@@ -1,6 +1,6 @@
 use dinoco::{
-    Entity, Transaction, Transcation, count, delete, find_and_update, find_first, insert_into, transaction,
-    transactions, update,
+    Entity, Transaction, Transcation, count, delete, delete_many, find_and_update, find_first, find_many, insert_into,
+    insert_many, transaction, transactions, update, update_many,
 };
 use dinoco_engine::{Backend, DinocoAdapter, DinocoClient, MigrationColumnType, SqliteAdapter};
 use dinoco_tests::{column, create_table, primary};
@@ -117,4 +117,52 @@ async fn client(name: &str) -> anyhow::Result<(DinocoClient, String)> {
 
 fn monotonic() -> u128 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+}
+
+#[allow(dead_code)]
+fn public_operation_futures_are_send(client: &DinocoClient) {
+    fn assert_send<T: Send>(_: T) {}
+
+    let account = Account::new("account-1".to_string(), "send@dinoco.rs".to_string());
+
+    assert_send(find_first::<Account>().execute(client));
+    assert_send(find_many::<Account>().execute(client));
+    assert_send(count::<Account>().execute(client));
+    assert_send(insert_into::<Account>().values(&account).execute(client));
+    assert_send(insert_into::<Account>().values(&account).returning::<Account>().execute(client));
+    assert_send(insert_many::<Account>().values([&account]).execute(client));
+    assert_send(insert_many::<Account>().values([&account]).returning::<Account>().execute(client));
+    assert_send(
+        update::<Account>()
+            .where_(|item| item.id.eq("account-1"))
+            .update(|item| item.email.set("updated@dinoco.rs"))
+            .execute(client),
+    );
+    assert_send(
+        update::<Account>()
+            .where_(|item| item.id.eq("account-1"))
+            .update(|item| item.email.set("updated@dinoco.rs"))
+            .returning::<Account>()
+            .execute(client),
+    );
+    assert_send(update_many::<Account>().update(|item| item.email.set("updated@dinoco.rs")).execute(client));
+    assert_send(
+        update_many::<Account>()
+            .update(|item| item.email.set("updated@dinoco.rs"))
+            .returning::<Account>()
+            .execute(client),
+    );
+    assert_send(
+        find_and_update::<Account>()
+            .where_(|item| item.id.eq("account-1"))
+            .update(|item| item.email.set("updated@dinoco.rs"))
+            .execute(client),
+    );
+    assert_send(delete::<Account>().where_(|item| item.id.eq("account-1")).execute(client));
+    assert_send(delete::<Account>().where_(|item| item.id.eq("account-1")).returning::<Account>().execute(client));
+    assert_send(delete_many::<Account>().execute(client));
+    assert_send(delete_many::<Account>().returning::<Account>().execute(client));
+
+    let batch = transaction![find_first::<Account>()];
+    assert_send(transactions(batch).execute(client));
 }
