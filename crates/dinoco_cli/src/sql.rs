@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use dinoco_compiler::{AttributeArgument, AttributeValue, ModelField, Schema};
+use dinoco_compiler::{AttributeArgument, AttributeValue, ConfigValue, Model, ModelField, Schema};
 use dinoco_engine::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CreateEnumMigration,
-    CreateTableMigration, DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropTableMigration,
-    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, ReferentialAction,
-    RenameColumnMigration,
+    CreateIndexMigration, CreateTableMigration, DropColumnMigration, DropEnumMigration, DropForeignKeyMigration,
+    DropIndexMigration, DropTableMigration, MigrationColumn, MigrationColumnType, MigrationDefault,
+    MigrationForeignKey, MigrationIndex, MigrationIndexKind, ReferentialAction, RenameColumnMigration,
 };
 
 use crate::db::{DatabaseEnum, DatabaseSchema, DatabaseTable};
@@ -29,6 +29,8 @@ pub enum MigrationStep {
     RenameColumn(RenameColumnMigration),
     AddForeignKey(AddForeignKeyMigration),
     DropForeignKey(DropForeignKeyMigration),
+    CreateIndex(CreateIndexMigration),
+    DropIndex(DropIndexMigration),
 }
 
 #[derive(Debug, Clone)]
@@ -47,14 +49,14 @@ pub fn generate_create_table_migrations(schema: &Schema) -> Vec<CreateTableMigra
                 .iter()
                 .filter(|field| !field.is_relation(schema))
                 .map(|field| {
-                    let mut column = migration_column(field, schema);
+                    let mut column = migration_column(model, field, schema);
                     column.unique |= relation_unique_columns.contains(field.name.as_str());
                     column
                 })
                 .collect();
 
             CreateTableMigration {
-                table: table_name(&model.name),
+                table: model_table_name(model),
                 if_not_exists: true,
                 columns,
                 foreign_keys: relation_foreign_keys(&model.name, schema),
@@ -124,11 +126,19 @@ pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchem
                 columns: desired_table.columns.clone(),
                 foreign_keys: desired_table.foreign_keys.clone(),
             }));
+            plan.steps.extend(
+                desired_table.indexes.iter().filter(|index| !index_is_primary_key(index, desired_table)).cloned().map(
+                    |index| {
+                        MigrationStep::CreateIndex(CreateIndexMigration { table: desired_table.name.clone(), index })
+                    },
+                ),
+            );
             continue;
         };
 
         diff_columns(&mut plan, current_table, desired_table);
         diff_foreign_keys(&mut plan, current_table, desired_table);
+        diff_indexes(&mut plan, current_table, desired_table);
     }
 
     let dropped_tables =
@@ -190,6 +200,7 @@ pub fn desired_database_schema(schema: &Schema) -> DatabaseSchema {
         tables: generate_create_table_migrations(schema)
             .into_iter()
             .map(|migration| DatabaseTable {
+                indexes: table_indexes(&migration, schema),
                 name: migration.table,
                 row_count: 0,
                 columns: migration.columns,
@@ -365,6 +376,70 @@ fn diff_foreign_keys(plan: &mut MigrationPlan, current_table: &DatabaseTable, de
     }
 }
 
+fn diff_indexes(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired_table: &DatabaseTable) {
+    let current_indexes =
+        current_table.indexes.iter().map(|index| (index.name.as_str(), index)).collect::<BTreeMap<_, _>>();
+    let mut matched_current = BTreeSet::new();
+    let mut scheduled_drops = BTreeSet::new();
+
+    for desired_index in &desired_table.indexes {
+        if let Some(current_index) = current_indexes.get(desired_index.name.as_str())
+            && current_index.columns == desired_index.columns
+            && current_index.kind == desired_index.kind
+        {
+            matched_current.insert(current_index.name.clone());
+            continue;
+        }
+
+        if desired_index.automatic
+            && let Some(current_index) = current_table.indexes.iter().find(|index| {
+                !matched_current.contains(&index.name)
+                    && index.columns == desired_index.columns
+                    && index.kind == desired_index.kind
+            })
+        {
+            matched_current.insert(current_index.name.clone());
+            continue;
+        }
+
+        if index_is_primary_key(desired_index, current_table) {
+            continue;
+        }
+
+        if let Some(current_index) = current_indexes.get(desired_index.name.as_str()) {
+            scheduled_drops.insert(current_index.name.clone());
+            plan.steps.push(MigrationStep::DropIndex(DropIndexMigration {
+                table: current_table.name.clone(),
+                index: (*current_index).clone(),
+            }));
+        }
+        plan.steps.push(MigrationStep::CreateIndex(CreateIndexMigration {
+            table: desired_table.name.clone(),
+            index: desired_index.clone(),
+        }));
+    }
+
+    for current_index in &current_table.indexes {
+        if !matched_current.contains(&current_index.name) && !scheduled_drops.contains(&current_index.name) {
+            plan.steps.push(MigrationStep::DropIndex(DropIndexMigration {
+                table: current_table.name.clone(),
+                index: current_index.clone(),
+            }));
+        }
+    }
+}
+
+pub(crate) fn index_is_primary_key(index: &MigrationIndex, table: &DatabaseTable) -> bool {
+    if !index.automatic || index.kind != MigrationIndexKind::Standard {
+        return false;
+    }
+
+    let primary_key_columns =
+        table.columns.iter().filter(|column| column.primary_key).map(|column| column.name.as_str()).collect::<Vec<_>>();
+
+    !primary_key_columns.is_empty() && index.columns.iter().map(String::as_str).eq(primary_key_columns)
+}
+
 fn columns_equivalent(left: &MigrationColumn, right: &MigrationColumn) -> bool {
     column_types_equivalent(&left.ty, &right.ty)
         && left.primary_key == right.primary_key
@@ -444,12 +519,16 @@ fn describe_column(column: &MigrationColumn) -> String {
     )
 }
 
-fn migration_column(field: &ModelField, schema: &Schema) -> MigrationColumn {
+fn migration_column(model: &Model, field: &ModelField, schema: &Schema) -> MigrationColumn {
     MigrationColumn {
         name: field.name.clone(),
         ty: migration_type(field, schema),
-        primary_key: field.attributes.iter().any(|attr| attr.name == "id"),
-        unique: field.attributes.iter().any(|attr| attr.name == "unique"),
+        primary_key: is_primary_key_field(model, field),
+        unique: field.attributes.iter().any(|attr| attr.name == "unique")
+            || model
+                .attributes("uniques")
+                .filter_map(|attribute| attribute.field_names())
+                .any(|fields| fields.as_slice() == [field.name.as_str()]),
         nullable: field.ty.optional,
         default: migration_default(field),
     }
@@ -492,14 +571,19 @@ fn relation_foreign_keys(model_name: &str, schema: &Schema) -> Vec<MigrationFore
             continue;
         };
 
-        let table = table_name(model_name);
+        let table = model_table_name(model);
+        let references_table = schema
+            .models()
+            .find(|candidate| candidate.name == field.ty.name)
+            .map(model_table_name)
+            .unwrap_or_else(|| table_name(&field.ty.name));
         keys.push(MigrationForeignKey {
             name: relation
                 .argument("map")
                 .and_then(string_or_ident)
                 .unwrap_or_else(|| foreign_key_name(&table, &columns.iter().map(String::as_str).collect::<Vec<_>>())),
             columns,
-            references_table: table_name(&field.ty.name),
+            references_table,
             references_columns,
             on_update: relation
                 .argument("onUpdate")
@@ -513,6 +597,161 @@ fn relation_foreign_keys(model_name: &str, schema: &Schema) -> Vec<MigrationFore
     }
 
     keys
+}
+
+fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<MigrationIndex> {
+    let mut indexes = Vec::new();
+    let mut seen_names = BTreeSet::new();
+
+    if let Some(model) = schema.models().find(|model| model_table_name(model) == migration.table) {
+        for field in &model.fields {
+            if let Some(attribute) = field.attributes.iter().find(|attribute| attribute.name == "index") {
+                let columns = vec![field.name.clone()];
+                let name = attribute
+                    .argument("map")
+                    .and_then(string_or_ident)
+                    .unwrap_or_else(|| index_name(&migration.table, &[field.name.as_str()]));
+                push_index(&mut indexes, &mut seen_names, name, columns, false, MigrationIndexKind::Standard);
+            }
+
+            if fulltext_indexes_supported(schema)
+                && field.attributes.iter().any(|attribute| attribute.name == "fulltext")
+            {
+                push_index(
+                    &mut indexes,
+                    &mut seen_names,
+                    format!("{}_fulltext", index_name(&migration.table, &[field.name.as_str()])),
+                    vec![field.name.clone()],
+                    false,
+                    MigrationIndexKind::FullText,
+                );
+            }
+        }
+
+        for attribute in model.attributes("indexes") {
+            let columns =
+                attribute.field_names().unwrap_or_default().into_iter().map(str::to_string).collect::<Vec<_>>();
+            let column_refs = columns.iter().map(String::as_str).collect::<Vec<_>>();
+            push_index(
+                &mut indexes,
+                &mut seen_names,
+                index_name(&migration.table, &column_refs),
+                columns,
+                false,
+                MigrationIndexKind::Standard,
+            );
+        }
+
+        for attribute in model.attributes("uniques") {
+            let columns =
+                attribute.field_names().unwrap_or_default().into_iter().map(str::to_string).collect::<Vec<_>>();
+            if columns.len() <= 1 {
+                continue;
+            }
+            let column_refs = columns.iter().map(String::as_str).collect::<Vec<_>>();
+            push_index(
+                &mut indexes,
+                &mut seen_names,
+                unique_index_name(&migration.table, &column_refs),
+                columns,
+                false,
+                MigrationIndexKind::Unique,
+            );
+        }
+
+        if fulltext_indexes_supported(schema) {
+            for attribute in model.attributes("fulltexts") {
+                let columns =
+                    attribute.field_names().unwrap_or_default().into_iter().map(str::to_string).collect::<Vec<_>>();
+                let column_refs = columns.iter().map(String::as_str).collect::<Vec<_>>();
+                push_index(
+                    &mut indexes,
+                    &mut seen_names,
+                    format!("{}_fulltext", index_name(&migration.table, &column_refs)),
+                    columns,
+                    false,
+                    MigrationIndexKind::FullText,
+                );
+            }
+        }
+    }
+
+    let primary_key_columns = migration
+        .columns
+        .iter()
+        .filter(|column| column.primary_key)
+        .map(|column| column.name.clone())
+        .collect::<Vec<_>>();
+    if !primary_key_columns.is_empty() {
+        let column_refs = primary_key_columns.iter().map(String::as_str).collect::<Vec<_>>();
+        let name = index_name(&migration.table, &column_refs);
+        push_index(&mut indexes, &mut seen_names, name, primary_key_columns, true, MigrationIndexKind::Standard);
+    }
+
+    for foreign_key in &migration.foreign_keys {
+        let columns = foreign_key.columns.clone();
+        let column_refs = columns.iter().map(String::as_str).collect::<Vec<_>>();
+        let name = index_name(&migration.table, &column_refs);
+        push_index(&mut indexes, &mut seen_names, name, columns, true, MigrationIndexKind::Standard);
+    }
+
+    indexes
+}
+
+fn push_index(
+    indexes: &mut Vec<MigrationIndex>,
+    seen_names: &mut BTreeSet<String>,
+    mut name: String,
+    columns: Vec<String>,
+    automatic: bool,
+    kind: MigrationIndexKind,
+) {
+    if let Some(existing) =
+        indexes.iter_mut().find(|index| index.name == name && index.columns == columns && index.kind == kind)
+    {
+        existing.automatic |= automatic;
+        return;
+    }
+    if seen_names.contains(&name) {
+        let base = name.clone();
+        let mut suffix = 2;
+        while seen_names.contains(&name) {
+            name = format!("{base}_{suffix}");
+            suffix += 1;
+        }
+    }
+    seen_names.insert(name.clone());
+    indexes.push(MigrationIndex { name, columns, automatic, kind });
+}
+
+fn fulltext_indexes_supported(schema: &Schema) -> bool {
+    !schema
+        .config()
+        .and_then(|config| config.entries.iter().find(|entry| entry.key == "database"))
+        .and_then(|entry| match &entry.value {
+            ConfigValue::String(value) | ConfigValue::Ident(value) => Some(value.as_str()),
+            _ => None,
+        })
+        .is_some_and(|database| database == "sqlite")
+}
+
+fn is_primary_key_field(model: &Model, field: &ModelField) -> bool {
+    field.attributes.iter().any(|attribute| attribute.name == "id")
+        || model
+            .attribute("ids")
+            .and_then(|attribute| attribute.field_names())
+            .is_some_and(|fields| fields.contains(&field.name.as_str()))
+}
+
+fn model_table_name(model: &Model) -> String {
+    model
+        .attribute("table_name")
+        .and_then(|attribute| attribute.arguments.first())
+        .and_then(|argument| match argument {
+            AttributeArgument::Value(AttributeValue::String(value)) => Some(value.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| table_name(&model.name))
 }
 
 fn generate_many_to_many_join_migrations(schema: &Schema) -> Vec<CreateTableMigration> {
@@ -644,6 +883,14 @@ fn many_to_many_table_name(left: &str, right: &str, relation_name: Option<&str>)
 
 fn foreign_key_name(table: &str, columns: &[&str]) -> String {
     format!("fk_{}_{}", table, columns.join("_"))
+}
+
+fn index_name(table: &str, columns: &[&str]) -> String {
+    format!("idx_{}_{}", table, columns.join("_"))
+}
+
+fn unique_index_name(table: &str, columns: &[&str]) -> String {
+    format!("uq_{}_{}", table, columns.join("_"))
 }
 
 fn relation_name(attribute: &dinoco_compiler::Attribute) -> Option<String> {
@@ -792,6 +1039,7 @@ mod tests {
                     },
                 ],
                 foreign_keys: Vec::new(),
+                indexes: Vec::new(),
             }],
             enums: Vec::new(),
         };
@@ -848,6 +1096,7 @@ mod tests {
                     },
                 ],
                 foreign_keys: Vec::new(),
+                indexes: Vec::new(),
             }],
             enums: Vec::new(),
         };
@@ -886,6 +1135,7 @@ mod tests {
                 row_count: 3,
                 columns: vec![string_column("id", true), nullable_string_column("email")],
                 foreign_keys: Vec::new(),
+                indexes: Vec::new(),
             }],
             enums: Vec::new(),
         };
@@ -922,6 +1172,7 @@ mod tests {
                 row_count: 3,
                 columns: vec![string_column("id", true), string_column("email", false)],
                 foreign_keys: Vec::new(),
+                indexes: Vec::new(),
             }],
             enums: Vec::new(),
         };
@@ -1112,6 +1363,7 @@ mod tests {
                 row_count: 5,
                 columns: vec![string_column("id", true), string_column("name", false)],
                 foreign_keys: Vec::new(),
+                indexes: Vec::new(),
             }],
             enums: Vec::new(),
         };
@@ -1299,7 +1551,7 @@ mod tests {
         foreign_keys: Vec<MigrationForeignKey>,
         row_count: i64,
     ) -> DatabaseTable {
-        DatabaseTable { name: name.to_string(), row_count, columns, foreign_keys }
+        DatabaseTable { name: name.to_string(), row_count, columns, foreign_keys, indexes: Vec::new() }
     }
 
     fn string_column(name: &str, primary_key: bool) -> MigrationColumn {

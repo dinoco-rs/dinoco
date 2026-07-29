@@ -1,6 +1,7 @@
 use dinoco_engine::{
-    CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, FindQuery, InsertQuery, MigrationColumn,
-    MigrationColumnType, MigrationDefault, MigrationForeignKey, ReferentialAction, SqliteAdapter,
+    CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, DropIndexMigration, FindQuery,
+    InsertQuery, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex,
+    MigrationIndexKind, ReferentialAction, SqliteAdapter,
 };
 
 #[tokio::test]
@@ -110,6 +111,45 @@ async fn sqlite_adapter_compiles_foreign_key_actions() -> anyhow::Result<()> {
 
     assert!(sql.contains("CONSTRAINT fk_post_user_id FOREIGN KEY (user_id) REFERENCES user (id)"));
     assert!(sql.contains("ON UPDATE RESTRICT ON DELETE CASCADE"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_adapter_compiles_and_applies_indexes() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    adapter
+        .execute(
+            &adapter.compile_create_table_migration(CreateTableMigration {
+                table: "account".to_string(),
+                if_not_exists: false,
+                columns: vec![MigrationColumn {
+                    name: "email".to_string(),
+                    ty: MigrationColumnType::String,
+                    primary_key: false,
+                    unique: false,
+                    nullable: false,
+                    default: None,
+                }],
+                foreign_keys: Vec::new(),
+            }),
+            &[],
+        )
+        .await?;
+    let index = MigrationIndex {
+        name: "idx_account_email".to_string(),
+        columns: vec!["email".to_string()],
+        automatic: false,
+        kind: MigrationIndexKind::Standard,
+    };
+    let create = adapter
+        .compile_create_index_migration(CreateIndexMigration { table: "account".to_string(), index: index.clone() });
+    assert_eq!(create, "CREATE INDEX idx_account_email ON account (email);");
+    adapter.execute(&create, &[]).await?;
+
+    let drop = adapter.compile_drop_index_migration(DropIndexMigration { table: "account".to_string(), index });
+    assert_eq!(drop, "DROP INDEX idx_account_email;");
+    adapter.execute(&drop, &[]).await?;
 
     Ok(())
 }

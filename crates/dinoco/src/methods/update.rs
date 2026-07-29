@@ -1,8 +1,10 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, UpdateQuery, UpdateSet};
+use dinoco_engine::{
+    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, TransactionCommand, UpdateQuery, UpdateSet,
+};
 
-use crate::{execute_relation_update_sets, split_update_sets};
+use crate::{IntoTransactionOperation, execute_relation_update_sets, split_update_sets};
 
 pub struct Update<M> {
     sets: Vec<UpdateSet>,
@@ -89,5 +91,64 @@ where
         let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: Some(S::FIELDS) };
 
         client.backend.update_returning::<S>(query).await
+    }
+}
+
+impl<M> IntoTransactionOperation for Update<M>
+where
+    M: DinocoEntity,
+{
+    fn into_transaction_operation(self) -> TransactionCommand {
+        if self.sets.is_empty() {
+            return TransactionCommand::invalid(format!(
+                "update::<{}>() requires at least one .update(...) call.",
+                M::TABLE_NAME
+            ));
+        }
+
+        let (sets, connects, disconnects) = split_update_sets(self.sets);
+        if !connects.is_empty() || !disconnects.is_empty() {
+            return TransactionCommand::invalid(format!(
+                "update::<{}>() connect/disconnect is not supported inside a transaction batch yet.",
+                M::TABLE_NAME
+            ));
+        }
+
+        TransactionCommand::update(UpdateQuery {
+            table: M::TABLE_NAME,
+            sets,
+            conditions: self.conditions,
+            returning: None,
+        })
+    }
+}
+
+impl<M, S> IntoTransactionOperation for UpdateReturning<M, S>
+where
+    M: DinocoEntity,
+    S: DinocoProjection<M> + DinocoRowModel,
+{
+    fn into_transaction_operation(self) -> TransactionCommand {
+        if self.sets.is_empty() {
+            return TransactionCommand::invalid(format!(
+                "update::<{}>() requires at least one .update(...) call.",
+                M::TABLE_NAME
+            ));
+        }
+
+        let (sets, connects, disconnects) = split_update_sets(self.sets);
+        if !connects.is_empty() || !disconnects.is_empty() {
+            return TransactionCommand::invalid(format!(
+                "update::<{}>().returning::<T>() does not support connect/disconnect.",
+                M::TABLE_NAME
+            ));
+        }
+
+        TransactionCommand::update_returning::<S>(UpdateQuery {
+            table: M::TABLE_NAME,
+            sets,
+            conditions: self.conditions,
+            returning: Some(S::FIELDS),
+        })
     }
 }

@@ -14,7 +14,7 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
 
         model User {
             id      String      @id @default(uuid())
-            email   String
+            email   String @fulltext
             office  OfficeType
             tokens  UserToken[] @relation(fields: [id], references: [userId])
         }
@@ -37,11 +37,38 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     assert!(models.contains("#[derive(Debug, Entity)]"));
     assert!(models.contains("pub struct User"));
     assert!(models.contains("#[dinoco(primary_key, auto_generate = uuid)]"));
+    assert!(models.contains("#[dinoco(fulltext)]\n    pub email: String"));
     assert!(models.contains("pub tokens: Vec<UserToken>"));
     assert!(models.contains("pub user: Option<User>"));
     assert!(dinoco_mod.contains("pub mod models;"));
     assert!(dinoco_mod.contains("pub async fn connect()"));
     assert!(dinoco_mod.contains("PostgresAdapter::direct"));
+}
+
+#[test]
+fn codegen_preserves_composite_primary_and_fulltext_capabilities() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Article {
+            tenantId String
+            id       String
+            title    String
+            body     String?
+
+            @@ids([tenantId, id])
+            @@fulltexts([title, body])
+            @@table_name("search_articles")
+        }
+        "#,
+    )
+    .expect("composite schema");
+
+    let models = dinoco_codegen::render_models(&schema);
+    assert!(models.contains("#[dinoco(table_name = \"search_articles\")]"));
+    assert!(models.contains("#[dinoco(primary_key)]\n    pub tenantId: String"));
+    assert!(models.contains("#[dinoco(primary_key)]\n    pub id: String"));
+    assert!(models.contains("#[dinoco(fulltext = \"title,body\")]\n    pub title: String"));
+    assert!(models.contains("#[dinoco(fulltext = \"title,body\")]\n    pub body: Option<String>"));
 }
 
 #[test]

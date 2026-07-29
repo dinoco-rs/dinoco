@@ -1108,7 +1108,7 @@ fn empty_table_and_column_drops_are_still_destructive() {
 }
 
 fn table(name: &str, columns: Vec<MigrationColumn>) -> DatabaseTable {
-    DatabaseTable { name: name.to_string(), row_count: 0, columns, foreign_keys: Vec::new() }
+    DatabaseTable { name: name.to_string(), row_count: 0, columns, foreign_keys: Vec::new(), indexes: Vec::new() }
 }
 
 fn assert_default(table: &DatabaseTable, column: &str, expected: Option<MigrationDefault>) {

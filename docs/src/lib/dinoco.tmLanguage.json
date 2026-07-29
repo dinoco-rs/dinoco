@@ -78,6 +78,7 @@
       "patterns": [
         { "include": "#comments" },
         { "include": "#strings" },
+        { "include": "#model-attribute" },
         { "include": "#relation-attribute" },
         { "include": "#attributes" },
         {
@@ -96,6 +97,22 @@
             "3": { "name": "keyword.operator.type-modifier.dinoco" }
           }
         }
+      ]
+    },
+    "model-attribute": {
+      "name": "meta.attribute.model.dinoco",
+      "begin": "(@@)(ids|uniques|indexes|fulltexts|table_name)\\s*(\\()",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.annotation.dinoco" },
+        "2": { "name": "entity.name.function.attribute.dinoco" },
+        "3": { "name": "punctuation.section.arguments.begin.dinoco" }
+      },
+      "end": "(\\))",
+      "endCaptures": { "1": { "name": "punctuation.section.arguments.end.dinoco" } },
+      "patterns": [
+        { "include": "#strings" },
+        { "name": "variable.other.member.reference.dinoco", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" },
+        { "name": "punctuation.separator.arguments.dinoco", "match": "[\\[\\],]" }
       ]
     },
     "relation-attribute": {
@@ -119,7 +136,7 @@
     "attributes": {
       "patterns": [
         {
-          "match": "(@)(id|unique)\\b",
+          "match": "(@)(id|unique|index|fulltext)\\b",
           "captures": {
             "1": { "name": "punctuation.definition.annotation.dinoco" },
             "2": { "name": "entity.name.function.attribute.dinoco" }

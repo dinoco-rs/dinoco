@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_tests"
-version = "1.0.7"
+version = "1.0.8"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
@@ -11,12 +11,13 @@ colored = "3"
 dotenvy = "0.15"
 inquire = "0.7"
 tokio = { version = "1.50", features = ["full"] }
-dinoco = { path = "../crates/dinoco", version = "1.0.7" }
-dinoco_cli = { path = "../crates/dinoco_cli", version = "1.0.7" }
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "1.0.7" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "1.0.7" }
-dinoco_codegen = { path = "../crates/dinoco_codegen", version = "1.0.7" }
-dinoco_engine = { path = "../crates/dinoco_engine", version = "1.0.7" }
+dinoco = { path = "../crates/dinoco", version = "1.0.8" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "1.0.8" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "1.0.8" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "1.0.8" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "1.0.8" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "1.0.8" }
+dinoco_vscode = { path = "../vscode", version = "1.0.8" }
 
 [[bin]]
 name = "dinoco_cli"
@@ -49,6 +50,10 @@ path = "tests/dinoco/generated_types.rs"
 [[test]]
 name = "dinoco_deferred_features"
 path = "tests/dinoco/deferred_features.rs"
+
+[[test]]
+name = "dinoco_transactions"
+path = "tests/dinoco/transactions.rs"
 
 [[test]]
 name = "dinoco_cli_commands"

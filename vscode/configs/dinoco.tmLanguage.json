@@ -63,7 +63,7 @@
 		"model_decorators": {
 			"patterns": [
 				{
-					"begin": "(@@)(ids)(\\s*\\()",
+					"begin": "(@@)(ids|uniques|indexes|fulltexts)(\\s*\\()",
 					"beginCaptures": {
 						"1": { "name": "punctuation.definition.decorator.dinoco" },
 						"2": { "name": "entity.name.function.decorator.dinoco" },

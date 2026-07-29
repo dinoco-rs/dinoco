@@ -1,9 +1,10 @@
 use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
-    CreateEnumMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue, DropColumnMigration,
-    DropEnumMigration, DropForeignKeyMigration, DropTableMigration, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, ReferentialAction, RelationBatchQuery,
-    RelationCountQuery, RelationJoinQuery, RenameColumnMigration, SqliteAdapter, UpdateQuery,
+    CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
+    DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
+    FindOrderBy, FindQuery, FindWhere, InsertQuery, MigrationColumn, MigrationColumnType, MigrationDefault,
+    MigrationForeignKey, MigrationIndexKind, ReferentialAction, RelationBatchQuery, RelationCountQuery,
+    RelationJoinQuery, RenameColumnMigration, SqliteAdapter, UpdateQuery,
 };
 
 impl DinocoSqlCompiler for SqliteAdapter {
@@ -185,6 +186,27 @@ impl DinocoSqlCompiler for SqliteAdapter {
             "-- SQLite cannot drop foreign key `{}` on `{}` in place. Rebuild the table manually or create a custom migration.",
             migration.name, migration.table
         )]
+    }
+
+    fn compile_create_index_migration(&self, migration: CreateIndexMigration) -> String {
+        if migration.index.kind == MigrationIndexKind::FullText {
+            return format!(
+                "-- SQLite does not support native full-text indexes for `{}.{}`; Dinoco uses LIKE fallback queries.",
+                migration.table,
+                migration.index.columns.join(", ")
+            );
+        }
+        let unique = if migration.index.kind == MigrationIndexKind::Unique { "UNIQUE " } else { "" };
+        format!(
+            "CREATE {unique}INDEX {} ON {} ({});",
+            sql_identifier(&migration.index.name),
+            sql_identifier(&migration.table),
+            migration.index.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", ")
+        )
+    }
+
+    fn compile_drop_index_migration(&self, migration: DropIndexMigration) -> String {
+        format!("DROP INDEX {};", sql_identifier(&migration.index.name))
     }
 
     fn compile_create_enum_migration(&self, _migration: CreateEnumMigration) -> Vec<String> {
@@ -504,6 +526,28 @@ fn collect_conditions(
                 sql_conditions.push(format!("{} LIKE ?", qualify_field(field, qualifier)));
                 params.push(value);
             }
+            FindWhere::FullText(fields, value) => {
+                let value = match value {
+                    DinocoValue::String(value) => DinocoValue::String(format!("%{value}%")),
+                    value => value,
+                };
+                if fields.is_empty() {
+                    sql_conditions.push("1 = 0".to_string());
+                } else if let [field] = fields {
+                    sql_conditions.push(format!("{} LIKE ?", qualify_field(field, qualifier)));
+                    params.push(value);
+                } else {
+                    sql_conditions.push(format!(
+                        "({})",
+                        fields
+                            .iter()
+                            .map(|field| format!("{} LIKE ?", qualify_field(field, qualifier)))
+                            .collect::<Vec<_>>()
+                            .join(" OR ")
+                    ));
+                    params.extend((0..fields.len()).map(|_| value.clone()));
+                }
+            }
             FindWhere::Between(field, start, end) => {
                 sql_conditions.push(format!(
                     "{} >= ? AND {} <= ?",
@@ -528,8 +572,35 @@ fn collect_conditions(
             FindWhere::NotNull(field) => {
                 sql_conditions.push(format!("{} IS NOT NULL", qualify_field(field, qualifier)));
             }
+            FindWhere::And(conditions) => {
+                push_condition_group(sql_conditions, params, conditions, qualifier, "AND", "1 = 1");
+            }
+            FindWhere::Or(conditions) => {
+                push_condition_group(sql_conditions, params, conditions, qualifier, "OR", "1 = 0");
+            }
+            FindWhere::Not(condition) => {
+                let mut nested = Vec::new();
+                collect_conditions(&mut nested, params, vec![*condition], qualifier);
+                let expression = if nested.is_empty() { "1 = 1".to_string() } else { nested.join(" AND ") };
+                sql_conditions.push(format!("NOT ({expression})"));
+            }
         }
     }
+}
+
+fn push_condition_group(
+    sql_conditions: &mut Vec<String>,
+    params: &mut Vec<DinocoValue>,
+    conditions: Vec<FindWhere>,
+    qualifier: Option<&str>,
+    operator: &str,
+    empty_expression: &str,
+) {
+    let mut nested = Vec::new();
+    collect_conditions(&mut nested, params, conditions, qualifier);
+    let expression =
+        if nested.is_empty() { empty_expression.to_string() } else { nested.join(&format!(" {operator} ")) };
+    sql_conditions.push(format!("({expression})"));
 }
 
 fn append_order_by(sql: &mut String, order_by: Option<FindOrderBy>, qualifier: Option<&str>) {

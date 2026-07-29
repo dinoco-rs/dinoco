@@ -2,14 +2,33 @@ use std::marker::PhantomData;
 
 use dinoco_engine::{DinocoValue, FindWhere};
 
-pub struct Field<T> {
+/// Capability generated only for fields declared with `@fulltext`.
+///
+/// Regular string fields intentionally do not expose full-text search.
+pub struct FullTextField;
+
+pub struct Field<T, Capability = ()> {
     name: &'static str,
-    marker: PhantomData<fn() -> T>,
+    fulltext_fields: &'static [&'static str],
+    marker: PhantomData<fn() -> (T, Capability)>,
 }
 
-impl<T> Field<T> {
+impl<T, Capability> Clone for Field<T, Capability> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T, Capability> Copy for Field<T, Capability> {}
+
+impl<T, Capability> Field<T, Capability> {
     pub const fn new(name: &'static str) -> Self {
-        Self { name, marker: PhantomData }
+        Self { name, fulltext_fields: &[], marker: PhantomData }
+    }
+
+    #[doc(hidden)]
+    pub const fn new_fulltext(name: &'static str, fulltext_fields: &'static [&'static str]) -> Self {
+        Self { name, fulltext_fields, marker: PhantomData }
     }
 
     pub fn eq<V>(self, value: V) -> FindWhere
@@ -74,7 +93,7 @@ impl<T> Field<T> {
 macro_rules! impl_string_field {
     ($($ty:ty),* $(,)?) => {
         $(
-            impl Field<$ty> {
+            impl<Capability> Field<$ty, Capability> {
                 pub fn like<V>(self, value: V) -> FindWhere
                 where
                     V: AsRef<str>,
@@ -116,6 +135,24 @@ macro_rules! impl_between_field {
 }
 
 impl_string_field!(String, Option<String>);
+
+impl Field<String, FullTextField> {
+    pub fn fulltext<V>(self, value: V) -> FindWhere
+    where
+        V: AsRef<str>,
+    {
+        FindWhere::FullText(self.fulltext_fields, DinocoValue::String(value.as_ref().to_string()))
+    }
+}
+
+impl Field<Option<String>, FullTextField> {
+    pub fn fulltext<V>(self, value: V) -> FindWhere
+    where
+        V: AsRef<str>,
+    {
+        FindWhere::FullText(self.fulltext_fields, DinocoValue::String(value.as_ref().to_string()))
+    }
+}
 impl_between_field!(
     i8,
     i16,

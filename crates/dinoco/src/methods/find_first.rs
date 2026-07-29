@@ -1,13 +1,16 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere};
+use dinoco_engine::{
+    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, WhereComplex,
+};
 
-use crate::{IncludeLoader, IntoIncludeLoader, load_includes};
+use crate::{IncludeLoader, IntoIncludeLoader, IntoTransactionOperation, load_includes};
 
 pub struct FindFirst<M, S = M> {
     query: FindQuery,
     includes: Vec<Box<dyn IncludeLoader<S>>>,
     read_primary: bool,
+    complex_where: bool,
 
     select_marker: PhantomData<S>,
     marker: PhantomData<M>,
@@ -22,7 +25,19 @@ where
     where
         F: FnOnce(M::Where) -> FindWhere,
     {
-        self.query.conditions.push(callback(M::Where::default()));
+        if !self.complex_where {
+            self.query.conditions.push(callback(M::Where::default()));
+        }
+
+        self
+    }
+
+    pub fn where_complex<F>(mut self, callback: F) -> Self
+    where
+        F: FnOnce(M::Where, WhereComplex) -> FindWhere,
+    {
+        self.query.conditions = vec![callback(M::Where::default(), WhereComplex)];
+        self.complex_where = true;
 
         self
     }
@@ -47,6 +62,7 @@ where
             query: self.query,
             includes: Vec::new(),
             read_primary: self.read_primary,
+            complex_where: self.complex_where,
             select_marker: PhantomData,
             marker: PhantomData,
         }
@@ -81,7 +97,24 @@ pub fn find_first<M: DinocoEntity + DinocoRowModel>() -> FindFirst<M> {
         query: FindQuery::new(M::FIELDS, M::TABLE_NAME, 1, -1),
         includes: Vec::new(),
         read_primary: false,
+        complex_where: false,
         select_marker: PhantomData,
         marker: PhantomData,
+    }
+}
+
+impl<M, S> IntoTransactionOperation for FindFirst<M, S>
+where
+    M: DinocoEntity + DinocoRowModel,
+    S: DinocoRowModel,
+{
+    fn into_transaction_operation(self) -> dinoco_engine::TransactionCommand {
+        if !self.includes.is_empty() {
+            return dinoco_engine::TransactionCommand::invalid(
+                "find_first().includes(...) is not supported inside a transaction batch yet.",
+            );
+        }
+
+        dinoco_engine::TransactionCommand::find_first::<S>(self.query)
     }
 }

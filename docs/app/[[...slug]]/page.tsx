@@ -50,7 +50,7 @@ export async function generateMetadata({ params }: DocsRoutePageProps): Promise<
 
 	if (resolved === undefined) {
 		return {
-			title: 'Dinoco v1.0.7 documentation',
+			title: 'Dinoco v1.0.8 documentation',
 		};
 	}
 

@@ -144,6 +144,18 @@ pub struct DropForeignKeyMigration {
 }
 
 #[derive(Debug, Clone)]
+pub struct CreateIndexMigration {
+    pub table: String,
+    pub index: MigrationIndex,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropIndexMigration {
+    pub table: String,
+    pub index: MigrationIndex,
+}
+
+#[derive(Debug, Clone)]
 pub struct CreateEnumMigration {
     pub name: String,
     pub values: Vec<String>,
@@ -180,6 +192,24 @@ pub struct MigrationForeignKey {
     pub references_columns: Vec<String>,
     pub on_update: ReferentialAction,
     pub on_delete: ReferentialAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MigrationIndex {
+    pub name: String,
+    pub columns: Vec<String>,
+    #[serde(default)]
+    pub automatic: bool,
+    #[serde(default)]
+    pub kind: MigrationIndexKind,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum MigrationIndexKind {
+    #[default]
+    Standard,
+    Unique,
+    FullText,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -224,12 +254,44 @@ pub enum FindWhere {
     Lt(&'static str, DinocoValue),
     Lte(&'static str, DinocoValue),
     Like(&'static str, DinocoValue),
+    FullText(&'static [&'static str], DinocoValue),
     Between(&'static str, DinocoValue, DinocoValue),
 
     Batch(&'static str, Vec<DinocoValue>),
 
     Null(&'static str),
     NotNull(&'static str),
+
+    And(Vec<FindWhere>),
+    Or(Vec<FindWhere>),
+    Not(Box<FindWhere>),
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WhereComplex;
+
+impl WhereComplex {
+    pub fn and<I>(self, conditions: I) -> FindWhere
+    where
+        I: IntoIterator<Item = FindWhere>,
+    {
+        FindWhere::And(conditions.into_iter().collect())
+    }
+
+    pub fn or(self, left: FindWhere, right: FindWhere) -> FindWhere {
+        FindWhere::Or(vec![left, right])
+    }
+
+    pub fn or_many<I>(self, conditions: I) -> FindWhere
+    where
+        I: IntoIterator<Item = FindWhere>,
+    {
+        FindWhere::Or(conditions.into_iter().collect())
+    }
+
+    pub fn not(self, condition: FindWhere) -> FindWhere {
+        FindWhere::Not(Box::new(condition))
+    }
 }
 
 impl FindQuery {

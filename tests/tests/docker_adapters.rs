@@ -1,13 +1,15 @@
-use dinoco::{Entity, EntityExtend, find_first, find_many, insert_into, insert_many};
+use dinoco::{Entity, EntityExtend, count, find_first, find_many, insert_into, insert_many, transaction, transactions};
 use dinoco_engine::{
-    Backend, CreateTableMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler, MigrationColumn,
-    MigrationColumnType, MigrationDefault, MigrationForeignKey, MySqlAdapter, PostgresAdapter, ReferentialAction,
-    SqliteAdapter,
+    Backend, CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler,
+    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex, MigrationIndexKind,
+    MySqlAdapter, PostgresAdapter, ReferentialAction, SqliteAdapter,
 };
 use dinoco_tests::{column, create_table, default, drop_table, nullable, primary};
 
 const POSTGRES_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
 const MYSQL_URL: &str = "mysql://root:root@localhost:3306/mysql";
+static POSTGRES_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static MYSQL_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug, Entity)]
 #[dinoco(table_name = "all_methods_user")]
@@ -42,6 +44,23 @@ pub struct UserPost {
     post_id: String,
 }
 
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "adapter_transaction_account")]
+pub struct TransactionAccount {
+    id: String,
+    email: String,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "adapter_fulltext_document")]
+pub struct FullTextDocument {
+    id: String,
+    #[dinoco(fulltext = "body,title")]
+    title: String,
+    #[dinoco(fulltext = "body,title")]
+    body: String,
+}
+
 #[derive(Debug, EntityExtend)]
 #[extend(User)]
 pub struct UserSelect {
@@ -61,6 +80,7 @@ async fn sqlite_adapter_runs_all_dinoco_methods() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn postgres_adapter_runs_all_dinoco_methods() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
     let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
     reset_schema(&adapter).await?;
     run_all_methods(DinocoClient::new(Backend::Postgres(adapter))).await
@@ -68,9 +88,54 @@ async fn postgres_adapter_runs_all_dinoco_methods() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn mysql_adapter_runs_all_dinoco_methods() -> anyhow::Result<()> {
+    let _guard = MYSQL_TEST_LOCK.lock().await;
     let adapter = MySqlAdapter::new(MYSQL_URL);
     reset_schema(&adapter).await?;
     run_all_methods(DinocoClient::new(Backend::Mysql(adapter))).await
+}
+
+#[tokio::test]
+async fn sqlite_adapter_commits_and_rolls_back_transaction_batches() -> anyhow::Result<()> {
+    let path = format!("/private/tmp/dinoco-adapter-transactions-{}-{}.sqlite", std::process::id(), monotonic());
+    let adapter = SqliteAdapter::new(path.clone()).await.map_err(anyhow::Error::msg)?;
+    reset_transaction_schema(&adapter).await?;
+    run_transactions(DinocoClient::new(Backend::Sqlite(adapter))).await?;
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_adapter_commits_and_rolls_back_transaction_batches() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
+    let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
+    reset_transaction_schema(&adapter).await?;
+    run_transactions(DinocoClient::new(Backend::Postgres(adapter))).await
+}
+
+#[tokio::test]
+async fn mysql_adapter_commits_and_rolls_back_transaction_batches() -> anyhow::Result<()> {
+    let _guard = MYSQL_TEST_LOCK.lock().await;
+    let adapter = MySqlAdapter::new(MYSQL_URL);
+    reset_transaction_schema(&adapter).await?;
+    run_transactions(DinocoClient::new(Backend::Mysql(adapter))).await
+}
+
+#[tokio::test]
+async fn postgres_adapter_creates_introspects_and_queries_fulltext_indexes() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
+    let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
+    reset_fulltext_schema(&adapter).await?;
+    assert_fulltext_index(dinoco_cli::db::CliDatabase::Postgres(PostgresAdapter::direct(POSTGRES_URL).await?)).await?;
+    run_fulltext_query(DinocoClient::new(Backend::Postgres(adapter))).await
+}
+
+#[tokio::test]
+async fn mysql_adapter_creates_introspects_and_queries_fulltext_indexes() -> anyhow::Result<()> {
+    let _guard = MYSQL_TEST_LOCK.lock().await;
+    let adapter = MySqlAdapter::new(MYSQL_URL);
+    reset_fulltext_schema(&adapter).await?;
+    assert_fulltext_index(dinoco_cli::db::CliDatabase::Mysql(MySqlAdapter::new(MYSQL_URL))).await?;
+    run_fulltext_query(DinocoClient::new(Backend::Mysql(adapter))).await
 }
 
 #[tokio::test]
@@ -86,6 +151,7 @@ async fn sqlite_adapter_detects_migration_changes_from_introspection() -> anyhow
 
 #[tokio::test]
 async fn postgres_adapter_detects_migration_changes_from_introspection() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
     let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
     reset_detection_schema(&adapter).await?;
     seed_detection_schema(&adapter).await?;
@@ -94,6 +160,7 @@ async fn postgres_adapter_detects_migration_changes_from_introspection() -> anyh
 
 #[tokio::test]
 async fn mysql_adapter_detects_migration_changes_from_introspection() -> anyhow::Result<()> {
+    let _guard = MYSQL_TEST_LOCK.lock().await;
     let adapter = MySqlAdapter::new(MYSQL_URL);
     reset_detection_schema(&adapter).await?;
     seed_detection_schema(&adapter).await?;
@@ -112,6 +179,7 @@ async fn sqlite_preserves_unique_identity_boolean_and_composite_keys_in_introspe
 
 #[tokio::test]
 async fn postgres_preserves_unique_identity_boolean_and_composite_keys_in_introspection() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
     let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
     seed_constraint_schema(&adapter).await?;
     assert_constraint_introspection(dinoco_cli::db::CliDatabase::Postgres(adapter)).await
@@ -119,6 +187,7 @@ async fn postgres_preserves_unique_identity_boolean_and_composite_keys_in_intros
 
 #[tokio::test]
 async fn mysql_preserves_unique_identity_boolean_and_composite_keys_in_introspection() -> anyhow::Result<()> {
+    let _guard = MYSQL_TEST_LOCK.lock().await;
     let adapter = MySqlAdapter::new(MYSQL_URL);
     seed_constraint_schema(&adapter).await?;
     assert_constraint_introspection(dinoco_cli::db::CliDatabase::Mysql(adapter)).await
@@ -161,6 +230,19 @@ where
     .await?;
 
     Ok(())
+}
+
+async fn reset_transaction_schema<A>(adapter: &A) -> anyhow::Result<()>
+where
+    A: DinocoAdapter + DinocoSqlCompiler,
+{
+    drop_table(adapter, "adapter_transaction_account").await?;
+    create_table(
+        adapter,
+        "adapter_transaction_account",
+        vec![primary(column("id", MigrationColumnType::String)), column("email", MigrationColumnType::String)],
+    )
+    .await
 }
 
 async fn reset_detection_schema<A>(adapter: &A) -> anyhow::Result<()>
@@ -379,6 +461,34 @@ where
             &[],
         )
         .await?;
+    adapter
+        .execute(
+            &adapter.compile_create_index_migration(CreateIndexMigration {
+                table: "migration_constraints_child".to_string(),
+                index: MigrationIndex {
+                    name: "idx_migration_constraints_child_parent".to_string(),
+                    columns: vec!["tenant_id".to_string(), "parent_id".to_string()],
+                    automatic: false,
+                    kind: MigrationIndexKind::Standard,
+                },
+            }),
+            &[],
+        )
+        .await?;
+    adapter
+        .execute(
+            &adapter.compile_create_index_migration(CreateIndexMigration {
+                table: "migration_constraints_child".to_string(),
+                index: MigrationIndex {
+                    name: "uq_migration_constraints_child_parent".to_string(),
+                    columns: vec!["tenant_id".to_string(), "parent_id".to_string()],
+                    automatic: false,
+                    kind: MigrationIndexKind::Unique,
+                },
+            }),
+            &[],
+        )
+        .await?;
     Ok(())
 }
 
@@ -422,6 +532,135 @@ async fn assert_constraint_introspection(db: dinoco_cli::db::CliDatabase) -> any
     }
     assert_eq!(foreign_key.columns, ["tenant_id", "parent_id"]);
     assert_eq!(foreign_key.references_columns, ["tenant_id", "id"]);
+    assert!(child.indexes.iter().any(|index| {
+        index.name == "idx_migration_constraints_child_parent"
+            && index.columns == ["tenant_id".to_string(), "parent_id".to_string()]
+    }));
+    assert!(child.indexes.iter().any(|index| {
+        index.name == "uq_migration_constraints_child_parent"
+            && index.columns == ["tenant_id".to_string(), "parent_id".to_string()]
+            && index.kind == MigrationIndexKind::Unique
+    }));
+    Ok(())
+}
+
+async fn reset_fulltext_schema<A>(adapter: &A) -> anyhow::Result<()>
+where
+    A: DinocoAdapter + DinocoSqlCompiler,
+{
+    adapter
+        .execute(
+            &adapter.compile_drop_table_migration(dinoco_engine::DropTableMigration {
+                table: "adapter_fulltext_document".to_string(),
+                if_exists: true,
+            }),
+            &[],
+        )
+        .await?;
+    adapter
+        .execute(
+            &adapter.compile_create_table_migration(CreateTableMigration {
+                table: "adapter_fulltext_document".to_string(),
+                columns: vec![
+                    MigrationColumn {
+                        name: "id".to_string(),
+                        ty: MigrationColumnType::String,
+                        primary_key: true,
+                        unique: false,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: "title".to_string(),
+                        ty: MigrationColumnType::String,
+                        primary_key: false,
+                        unique: false,
+                        nullable: false,
+                        default: None,
+                    },
+                    MigrationColumn {
+                        name: "body".to_string(),
+                        ty: MigrationColumnType::String,
+                        primary_key: false,
+                        unique: false,
+                        nullable: false,
+                        default: None,
+                    },
+                ],
+                foreign_keys: Vec::new(),
+                if_not_exists: false,
+            }),
+            &[],
+        )
+        .await?;
+    adapter
+        .execute(
+            &adapter.compile_create_index_migration(CreateIndexMigration {
+                table: "adapter_fulltext_document".to_string(),
+                index: MigrationIndex {
+                    name: "idx_adapter_fulltext_document_body_title_fulltext".to_string(),
+                    columns: vec!["body".to_string(), "title".to_string()],
+                    automatic: false,
+                    kind: MigrationIndexKind::FullText,
+                },
+            }),
+            &[],
+        )
+        .await?;
+    Ok(())
+}
+
+async fn assert_fulltext_index(db: dinoco_cli::db::CliDatabase) -> anyhow::Result<()> {
+    let schema = db.inspect_schema().await?;
+    let table = schema.tables.iter().find(|table| table.name == "adapter_fulltext_document").expect("fulltext table");
+    assert!(table.indexes.iter().any(|index| {
+        index.name == "idx_adapter_fulltext_document_body_title_fulltext"
+            && index.columns == ["body".to_string(), "title".to_string()]
+            && index.kind == MigrationIndexKind::FullText
+    }));
+    Ok(())
+}
+
+async fn run_fulltext_query(client: DinocoClient) -> anyhow::Result<()> {
+    insert_many::<FullTextDocument>()
+        .values(vec![
+            FullTextDocument::new(
+                "document-1".to_string(),
+                "Rust libraries".to_string(),
+                "Dinoco makes Rust queries delightful".to_string(),
+            ),
+            FullTextDocument::new(
+                "document-2".to_string(),
+                "Database notes".to_string(),
+                "A completely unrelated database record".to_string(),
+            ),
+        ])
+        .execute(&client)
+        .await?;
+
+    let document = find_first::<FullTextDocument>()
+        .where_(|x| x.title.fulltext("dinoco"))
+        .execute(&client)
+        .await?
+        .expect("native full-text find_first");
+    assert_eq!(document.id, "document-1");
+
+    let documents = find_many::<FullTextDocument>()
+        .where_complex(|x, m| m.and([x.title.fulltext("dinoco"), m.not(x.body.fulltext("unrelated"))]))
+        .execute(&client)
+        .await?;
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].id, "document-1");
+
+    let updated = dinoco::find_and_update::<FullTextDocument>()
+        .where_(|x| x.body.fulltext("delightful"))
+        .update(|x| x.body.set("Dinoco fulltext works across every find".to_string()))
+        .execute(&client)
+        .await?;
+    assert_eq!(updated.id, "document-1");
+
+    let documents = find_many::<FullTextDocument>().where_(|x| x.body.fulltext("fulltext")).execute(&client).await?;
+    assert_eq!(documents.len(), 1);
     Ok(())
 }
 
@@ -522,6 +761,24 @@ async fn run_all_methods(client: DinocoClient) -> anyhow::Result<()> {
     assert_eq!(find_many::<User>().where_(|x| x.email.like("dinoco")).execute(&client).await?.len(), 4);
     assert_eq!(find_many::<User>().where_(|x| x.email.starts_with("many")).execute(&client).await?.len(), 2);
     assert_eq!(
+        find_many::<User>()
+            .where_(|x| x.email.eq("ignored-before@dinoco.rs"))
+            .where_complex(|x, m| {
+                m.or(
+                    m.and([x.email.eq("a@dinoco.rs"), x.age.eq(21)]),
+                    m.or(
+                        m.and([x.email.eq("many-a@dinoco.rs"), x.office.eq("admin")]),
+                        m.and([x.email.eq("many-b@dinoco.rs"), m.not(x.age.lt(0))]),
+                    ),
+                )
+            })
+            .where_(|x| x.email.eq("ignored-after@dinoco.rs"))
+            .execute(&client)
+            .await?
+            .len(),
+        3
+    );
+    assert_eq!(
         find_first::<User>().where_(|x| x.email.ends_with("@dinoco.rs")).execute(&client).await?.unwrap().age,
         21
     );
@@ -613,6 +870,43 @@ async fn run_all_methods(client: DinocoClient) -> anyhow::Result<()> {
     assert_eq!(deleted_tokens.len(), 2);
     dinoco::delete_many::<User>().where_(|x| x.office.batch(vec!["manager", "owner"])).execute(&client).await?;
     assert_eq!(dinoco::count::<User>().execute(&client).await?.total, 0);
+
+    Ok(())
+}
+
+async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
+    let account = TransactionAccount::new("committed".to_string(), "commit@dinoco.rs".to_string());
+    let mut committed = transactions(transaction![
+        insert_into::<TransactionAccount>().values(&account),
+        find_first::<TransactionAccount>()
+            .where_(|item| item.id.eq("ignored-before"))
+            .where_complex(|item, m| m.and([item.id.eq("committed"), m.not(item.email.eq("blocked@dinoco.rs"))]))
+            .where_(|item| item.id.eq("ignored-after")),
+        count::<TransactionAccount>(),
+    ])
+    .execute(&client)
+    .await?;
+    committed.take::<()>(0)?;
+    assert_eq!(
+        committed.take::<Option<TransactionAccount>>(1)?.expect("transaction account").email,
+        "commit@dinoco.rs"
+    );
+    assert_eq!(committed.take::<TransactionAccountCount>(2)?.total, 1);
+
+    let first = TransactionAccount::new("duplicate".to_string(), "first@dinoco.rs".to_string());
+    let duplicate = TransactionAccount::new("duplicate".to_string(), "second@dinoco.rs".to_string());
+    assert!(
+        transactions(transaction![
+            insert_into::<TransactionAccount>().values(&first),
+            insert_into::<TransactionAccount>().values(&duplicate),
+        ])
+        .execute(&client)
+        .await
+        .is_err()
+    );
+    assert!(
+        find_first::<TransactionAccount>().where_(|item| item.id.eq("duplicate")).execute(&client).await?.is_none()
+    );
 
     Ok(())
 }

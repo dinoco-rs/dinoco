@@ -220,6 +220,27 @@ fn validate_models(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
         let Some(model_index) = index.model(&model.name) else {
             continue;
         };
+        let primary_key_declarations =
+            model.fields.iter().filter(|field| field.attributes.iter().any(|attribute| attribute.name == "id")).count()
+                + model.attributes("ids").count();
+        if primary_key_declarations == 0 {
+            diagnostics.push(diagnostic(
+                model_index.body_range,
+                DiagnosticSeverity::ERROR,
+                "dinoco.missingPrimaryKey",
+                format!("Model `{}` must declare exactly one primary key using @id or @@ids([...])", model.name),
+            ));
+        } else if primary_key_declarations > 1 {
+            diagnostics.push(diagnostic(
+                model_index.body_range,
+                DiagnosticSeverity::ERROR,
+                "dinoco.multiplePrimaryKeys",
+                format!(
+                    "Model `{}` declares multiple primary keys; use exactly one @id or one @@ids([...])",
+                    model.name
+                ),
+            ));
+        }
         let mut seen = HashSet::new();
 
         for field in &model.fields {
@@ -603,8 +624,8 @@ fn validate_one_to_one_diagnostics(
             DiagnosticSeverity::ERROR,
             "dinoco.compositeRelationUnique",
             format!(
-                "Composite one-to-one relation `{}.{}` cannot place @unique on the relation field; declare @unique \
-                 on each local foreign-key field so the database constraint can be generated explicitly",
+                "Composite one-to-one relation `{}.{}` cannot place @unique on the relation field; declare \
+                 @@uniques([...]) for the complete local foreign-key tuple",
                 owner_model.name, owner_field.name
             ),
         ));
@@ -660,18 +681,22 @@ fn validate_owner_diagnostics(
         return;
     }
 
-    for (reference_name, reference) in references.iter().zip(&reference_fields) {
-        if !reference.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique")) {
-            diagnostics.push(diagnostic(
-                relation_argument_value_range(field_index, "references", reference_name),
-                DiagnosticSeverity::ERROR,
-                "dinoco.referenceMustBeUnique",
-                format!(
-                    "Relation `{}.{}` references `{}.{}`, which must declare @id or @unique.",
-                    model.name, field.name, target.name, reference.name
-                ),
-            ));
-        }
+    if !model_has_unique_key(target, references) {
+        diagnostics.push(diagnostic(
+            references
+                .first()
+                .map_or(field_index.range, |name| relation_argument_value_range(field_index, "references", name)),
+            DiagnosticSeverity::ERROR,
+            "dinoco.referenceMustBeUnique",
+            format!(
+                "Relation `{}.{}` references `{}.[{}]`, which must declare @id or @unique, or match @@ids([...]) or \
+                 @@uniques([...]).",
+                model.name,
+                field.name,
+                target.name,
+                references.join(", ")
+            ),
+        ));
     }
 
     let optional = local_fields.iter().any(|local| local.ty.optional);
@@ -795,12 +820,31 @@ fn relation_mapping(field: &ModelField) -> RelationMapping<'_> {
 }
 
 fn relation_field_is_unique(model: &Model, field: &ModelField, fields: &[&str]) -> bool {
-    field.attributes.iter().any(|attribute| attribute.name == "unique")
-        || fields.iter().all(|name| {
-            model.fields.iter().find(|candidate| candidate.name == **name).is_some_and(|candidate| {
-                candidate.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
-            })
+    field.attributes.iter().any(|attribute| attribute.name == "unique") || model_has_unique_key(model, fields)
+}
+
+fn model_has_unique_key(model: &Model, fields: &[&str]) -> bool {
+    if fields.len() == 1
+        && model.fields.iter().find(|field| field.name == fields[0]).is_some_and(|field| {
+            field.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
         })
+    {
+        return true;
+    }
+    if fields.iter().all(|name| {
+        model.fields.iter().find(|field| field.name == *name).is_some_and(|field| {
+            field.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
+        })
+    }) {
+        return true;
+    }
+
+    model
+        .attributes
+        .iter()
+        .filter(|attribute| matches!(attribute.name.as_str(), "ids" | "uniques"))
+        .filter_map(Attribute::field_names)
+        .any(|candidate| candidate.iter().copied().eq(fields.iter().copied()))
 }
 
 fn field_relation_name(field: &ModelField) -> Option<&str> {

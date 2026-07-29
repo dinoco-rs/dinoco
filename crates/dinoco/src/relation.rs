@@ -5,7 +5,7 @@ use std::pin::Pin;
 
 use dinoco_engine::{
     DinocoClient, DinocoEntity, DinocoMysql, DinocoPostgres, DinocoProjection, DinocoRowModel, DinocoSqlite,
-    DinocoValue, FindOrderBy, FindQuery, FindWhere, RelationBatchQuery, RelationJoinQuery,
+    DinocoValue, FindOrderBy, FindQuery, FindWhere, RelationBatchQuery, RelationJoinQuery, WhereComplex,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +63,7 @@ pub struct HasMany<M, C, CS = C> {
     child_field: &'static str,
     query: FindQuery,
     includes: Vec<Box<dyn IncludeLoader<CS>>>,
+    complex_where: bool,
     marker: PhantomData<fn() -> (M, C, CS)>,
 }
 
@@ -72,6 +73,7 @@ pub struct BelongsTo<M, C, CS = C> {
     child_field: &'static str,
     query: FindQuery,
     includes: Vec<Box<dyn IncludeLoader<CS>>>,
+    complex_where: bool,
     marker: PhantomData<fn() -> (M, C, CS)>,
 }
 
@@ -86,6 +88,7 @@ where
             child_field,
             query: FindQuery::new(C::FIELDS, C::TABLE_NAME, -1, -1),
             includes: Vec::new(),
+            complex_where: false,
             marker: PhantomData,
         }
     }
@@ -102,6 +105,7 @@ where
             child_field,
             query: FindQuery::new(C::FIELDS, C::TABLE_NAME, -1, -1),
             includes: Vec::new(),
+            complex_where: false,
             marker: PhantomData,
         }
     }
@@ -120,7 +124,19 @@ where
     where
         F: FnOnce(C::Where) -> FindWhere,
     {
-        self.query.conditions.push(callback(C::Where::default()));
+        if !self.complex_where {
+            self.query.conditions.push(callback(C::Where::default()));
+        }
+
+        self
+    }
+
+    pub fn where_complex<F>(mut self, callback: F) -> Self
+    where
+        F: FnOnce(C::Where, WhereComplex) -> FindWhere,
+    {
+        self.query.conditions = vec![callback(C::Where::default(), WhereComplex)];
+        self.complex_where = true;
 
         self
     }
@@ -137,6 +153,7 @@ where
             child_field: self.child_field,
             query: self.query,
             includes: Vec::new(),
+            complex_where: self.complex_where,
             marker: PhantomData,
         }
     }
@@ -186,7 +203,19 @@ where
     where
         F: FnOnce(C::Where) -> FindWhere,
     {
-        self.query.conditions.push(callback(C::Where::default()));
+        if !self.complex_where {
+            self.query.conditions.push(callback(C::Where::default()));
+        }
+
+        self
+    }
+
+    pub fn where_complex<F>(mut self, callback: F) -> Self
+    where
+        F: FnOnce(C::Where, WhereComplex) -> FindWhere,
+    {
+        self.query.conditions = vec![callback(C::Where::default(), WhereComplex)];
+        self.complex_where = true;
 
         self
     }
@@ -203,6 +232,7 @@ where
             child_field: self.child_field,
             query: self.query,
             includes: Vec::new(),
+            complex_where: self.complex_where,
             marker: PhantomData,
         }
     }

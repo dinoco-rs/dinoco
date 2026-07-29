@@ -40,7 +40,7 @@ read_replicas = [env("DATABASE_REPLICA_URL")]
 fn formatter_aligns_types_inside_each_contiguous_field_group() {
     let raw = r#"
 model Teste {
-id String
+id String @id
 
 document String
 email String
@@ -52,7 +52,7 @@ email String
     assert_eq!(
         formatted,
         r#"model Teste {
-    id  String
+    id  String  @id
 
     document  String
     email     String
@@ -92,7 +92,7 @@ email String @default("test@example.com")
 fn formatter_is_idempotent_with_multiple_field_groups() {
     let raw = r#"
 model Teste {
-id String
+id String @id
 
 
 document String
@@ -105,4 +105,34 @@ email String
 
     assert_eq!(once, twice);
     assert_eq!(once.matches("\n\n").count(), 1);
+}
+
+#[test]
+fn formatter_moves_model_attributes_after_all_fields() {
+    let raw = r#"
+model Article {
+@@indexes([tenantId,id])
+tenantId String
+@@fulltexts([title,body])
+id String
+title String
+@@uniques([tenantId,id])
+body String?
+@@ids([tenantId,id])
+}
+"#;
+
+    let formatted = dinoco_formatter::format_from_raw(raw).expect("format model attributes");
+    let body_position = formatted.find("body").expect("body");
+    let ids_position = formatted.find("@@ids").expect("@@ids");
+    let uniques_position = formatted.find("@@uniques").expect("@@uniques");
+    let indexes_position = formatted.find("@@indexes").expect("@@indexes");
+    let fulltexts_position = formatted.find("@@fulltexts").expect("@@fulltexts");
+
+    assert!(body_position < indexes_position);
+    assert!(body_position < fulltexts_position);
+    assert!(body_position < uniques_position);
+    assert!(body_position < ids_position);
+    assert!(formatted.contains("\n\n    @@indexes([tenantId, id])"));
+    assert_eq!(formatted, dinoco_formatter::format_from_raw(&formatted).expect("idempotent format"));
 }

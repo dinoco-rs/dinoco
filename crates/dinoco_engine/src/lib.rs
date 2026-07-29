@@ -1,6 +1,7 @@
 mod backends;
 mod query;
 mod traits;
+mod transaction;
 mod value;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -8,6 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub use backends::*;
 pub use query::*;
 pub use traits::*;
+pub use transaction::*;
 pub use value::*;
 
 pub use rusqlite::Row as SqliteRow;

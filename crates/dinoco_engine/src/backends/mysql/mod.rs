@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
 use mysql_async::prelude::Queryable;
-use mysql_async::{Pool, Value};
+use mysql_async::{Pool, TxOpts, Value};
 
 mod compiler;
 
-use crate::{DinocoAdapter, DinocoRowModel, DinocoValue};
+use crate::{
+    CompiledTransactionCommand, DinocoAdapter, DinocoRowModel, DinocoValue, RawTransactionOutput,
+    TransactionCommandKind, TransactionResults,
+};
 
 pub struct MySqlAdapter {
     pub url: String,
@@ -57,11 +60,71 @@ impl MySqlAdapter {
         Self { url, pool: Arc::new(pool) }
     }
 
+    pub(crate) async fn execute_compiled_transaction(
+        &self,
+        commands: Vec<CompiledTransactionCommand>,
+    ) -> anyhow::Result<TransactionResults> {
+        let mut conn = self.pool.get_conn().await.context("Failed to get mysql connection from pool")?;
+        let mut transaction = conn.start_transaction(TxOpts::default()).await?;
+        let mut values = Vec::with_capacity(commands.len());
+
+        for command in commands {
+            let execution =
+                execute_transaction_command(&mut transaction, &command).await.and_then(|raw| command.finish(raw));
+
+            match execution {
+                Ok(value) => values.push(value),
+                Err(error) => {
+                    transaction.rollback().await.context("Failed to roll back mysql transaction")?;
+                    return Err(error);
+                }
+            }
+        }
+
+        transaction.commit().await?;
+        Ok(TransactionResults::new(values))
+    }
+
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         let mut conn = self.pool.get_conn().await.context("Failed to get mysql connection from pool")?;
         let count = conn.exec_first::<i64, _, _>(query, mysql_params(params)).await?.unwrap_or_default();
 
         Ok(count)
+    }
+}
+
+async fn execute_transaction_command(
+    transaction: &mut mysql_async::Transaction<'_>,
+    command: &CompiledTransactionCommand,
+) -> anyhow::Result<RawTransactionOutput> {
+    if command.sql.is_empty() {
+        return match command.kind {
+            TransactionCommandKind::Rows => Ok(RawTransactionOutput::Rows(Vec::new())),
+            TransactionCommandKind::Execute => Ok(RawTransactionOutput::Affected(0)),
+            TransactionCommandKind::Count => Ok(RawTransactionOutput::Count(0)),
+        };
+    }
+
+    match command.kind {
+        TransactionCommandKind::Rows => {
+            let decoder =
+                command.decoder.ok_or_else(|| anyhow!("Dinoco transaction query is missing its mysql row decoder."))?;
+            let rows = transaction.exec::<mysql_async::Row, _, _>(&command.sql, mysql_params(&command.params)).await?;
+            let values = rows
+                .iter()
+                .map(|row| (decoder.mysql)(row).ok_or_else(|| anyhow!("Failed to parse mysql transaction row")))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            Ok(RawTransactionOutput::Rows(values))
+        }
+        TransactionCommandKind::Execute => {
+            transaction.exec_drop(&command.sql, mysql_params(&command.params)).await?;
+            Ok(RawTransactionOutput::Affected(transaction.affected_rows() as usize))
+        }
+        TransactionCommandKind::Count => {
+            let total =
+                transaction.exec_first::<i64, _, _>(&command.sql, mysql_params(&command.params)).await?.unwrap_or(0);
+            Ok(RawTransactionOutput::Count(total))
+        }
     }
 }
 

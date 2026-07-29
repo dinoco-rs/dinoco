@@ -11,6 +11,11 @@ pub fn complete(source: &str, index: &DocumentIndex, position: Position) -> Comp
     let prefix = line_prefix(source, position);
     let block = index.block_at(position);
 
+    for attribute in ["ids", "uniques", "indexes", "fulltexts"] {
+        if open_call_fragment(prefix, &format!("@@{attribute}(")).is_some() {
+            return CompletionResponse::Array(model_attribute_field_completions(index, block));
+        }
+    }
     if let Some(fragment) = open_call_fragment(prefix, "@relation(") {
         return CompletionResponse::Array(relation_completions(index, block, position, fragment));
     }
@@ -28,6 +33,26 @@ pub fn complete(source: &str, index: &DocumentIndex, position: Position) -> Comp
 
 pub fn signature(source: &str, position: Position) -> Option<SignatureHelp> {
     let prefix = line_prefix(source, position);
+    for (attribute, description) in [
+        ("ids", "Defines the model's composite primary key."),
+        ("uniques", "Creates a composite unique constraint."),
+        ("indexes", "Creates a composite standard database index."),
+        ("fulltexts", "Creates one composite full-text index for String fields."),
+    ] {
+        if open_call_fragment(prefix, &format!("@@{attribute}(")).is_some() {
+            return Some(SignatureHelp {
+                signatures: vec![SignatureInformation {
+                    label: format!("@@{attribute}([fields])"),
+                    documentation: Some(Documentation::MarkupContent(markdown(description))),
+                    parameters: Some(vec![parameter("fields", "Ordered model fields included in this declaration.")]),
+                    active_parameter: Some(0),
+                }],
+                active_signature: Some(0),
+                active_parameter: None,
+            });
+        }
+    }
+
     if let Some(fragment) = open_call_fragment(prefix, "@relation(") {
         return Some(SignatureHelp {
             signatures: vec![SignatureInformation {
@@ -195,6 +220,9 @@ fn model_completions(prefix: &str, index: &DocumentIndex) -> Vec<CompletionItem>
         ];
     }
 
+    if current_word(trimmed).starts_with("@@") || trimmed.ends_with("@@") {
+        return model_attribute_completions();
+    }
     if current_word(trimmed).starts_with('@') || trimmed.ends_with('@') {
         return field_attribute_completions();
     }
@@ -219,6 +247,48 @@ fn model_completions(prefix: &str, index: &DocumentIndex) -> Vec<CompletionItem>
     }
 
     if trimmed.split_whitespace().count() >= 2 { field_attribute_completions() } else { Vec::new() }
+}
+
+fn model_attribute_completions() -> Vec<CompletionItem> {
+    vec![
+        snippet("@@ids", CompletionItemKind::FUNCTION, "Composite primary key", "ids([${1:id}, ${2:tenant_id}])"),
+        snippet(
+            "@@uniques",
+            CompletionItemKind::FUNCTION,
+            "Composite unique constraint",
+            "uniques([${1:field_a}, ${2:field_b}])",
+        ),
+        snippet(
+            "@@indexes",
+            CompletionItemKind::FUNCTION,
+            "Composite database index",
+            "indexes([${1:field_a}, ${2:field_b}])",
+        ),
+        snippet(
+            "@@fulltexts",
+            CompletionItemKind::FUNCTION,
+            "Composite full-text index",
+            "fulltexts([${1:title}, ${2:body}])",
+        ),
+        snippet(
+            "@@table_name",
+            CompletionItemKind::FUNCTION,
+            "Mapped database table name",
+            "table_name(\"${1:table_name}\")",
+        ),
+    ]
+}
+
+fn model_attribute_field_completions(
+    index: &DocumentIndex,
+    block: Option<&crate::document::BlockInfo>,
+) -> Vec<CompletionItem> {
+    block
+        .into_iter()
+        .flat_map(|model| &model.fields)
+        .filter(|field| index.model(&field.ty.name).is_none())
+        .map(|field| value(&field.name.name, CompletionItemKind::FIELD, &field.display_type(), &field.name.name))
+        .collect()
 }
 
 fn relation_completions(
@@ -321,6 +391,8 @@ fn field_attribute_completions() -> Vec<CompletionItem> {
     vec![
         value("@id", CompletionItemKind::PROPERTY, "Primary key", "id"),
         value("@unique", CompletionItemKind::PROPERTY, "Unique constraint", "unique"),
+        value("@index", CompletionItemKind::PROPERTY, "Database index", "index"),
+        value("@fulltext", CompletionItemKind::PROPERTY, "Full-text search index", "fulltext"),
         snippet("@default", CompletionItemKind::FUNCTION, "Default value", "default(${1})"),
         snippet(
             "@relation",

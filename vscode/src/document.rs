@@ -67,6 +67,7 @@ pub struct BlockInfo {
     pub range: Range,
     pub body_range: Range,
     pub fields: Vec<FieldInfo>,
+    pub attributes: Vec<AttributeInfo>,
     pub values: Vec<Symbol>,
     pub entries: Vec<Symbol>,
 }
@@ -74,6 +75,10 @@ pub struct BlockInfo {
 impl BlockInfo {
     pub fn field(&self, name: &str) -> Option<&FieldInfo> {
         self.fields.iter().find(|field| field.name.name == name)
+    }
+
+    pub fn attribute(&self, name: &str) -> Option<&AttributeInfo> {
+        self.attributes.iter().find(|attribute| attribute.name.name == name)
     }
 }
 
@@ -243,6 +248,18 @@ impl DocumentIndex {
                     }
                 }
             }
+
+            for attribute in &block.attributes {
+                if matches!(attribute.name.name.as_str(), "ids" | "uniques" | "indexes" | "fulltexts")
+                    && attribute
+                        .arguments
+                        .iter()
+                        .flat_map(|argument| &argument.values)
+                        .any(|value| value.range == token.range)
+                {
+                    return Some(ResolvedSymbol::Field { model: model_name.clone(), field: token.name });
+                }
+            }
         }
 
         if self.is_named_type(&token.name) { Some(ResolvedSymbol::Type(token.name)) } else { None }
@@ -333,6 +350,23 @@ impl DocumentIndex {
                                     .map(|symbol| symbol.range),
                             );
                         }
+                    }
+                }
+            }
+
+            if let ResolvedSymbol::Field { model, field } = target
+                && model == model_name
+            {
+                for attribute in &block.attributes {
+                    if matches!(attribute.name.name.as_str(), "ids" | "uniques" | "indexes" | "fulltexts") {
+                        ranges.extend(
+                            attribute
+                                .arguments
+                                .iter()
+                                .flat_map(|argument| &argument.values)
+                                .filter(|value| value.name == *field)
+                                .map(|value| value.range),
+                        );
                     }
                 }
             }
@@ -504,10 +538,15 @@ fn parse_blocks(tokens: &[Token]) -> Vec<BlockInfo> {
         };
         let close = matching_token(tokens, open, "{", "}").unwrap_or(tokens.len().saturating_sub(1));
         let body_end = close.max(open + 1);
-        let (fields, values, entries) = match kind {
-            BlockKind::Model => (parse_fields(tokens, open + 1, body_end), Vec::new(), Vec::new()),
-            BlockKind::Enum => (Vec::new(), parse_enum_values(tokens, open + 1, body_end), Vec::new()),
-            BlockKind::Config => (Vec::new(), Vec::new(), parse_config_entries(tokens, open + 1, body_end)),
+        let (fields, attributes, values, entries) = match kind {
+            BlockKind::Model => (
+                parse_fields(tokens, open + 1, body_end),
+                parse_model_attributes(tokens, open + 1, body_end),
+                Vec::new(),
+                Vec::new(),
+            ),
+            BlockKind::Enum => (Vec::new(), Vec::new(), parse_enum_values(tokens, open + 1, body_end), Vec::new()),
+            BlockKind::Config => (Vec::new(), Vec::new(), Vec::new(), parse_config_entries(tokens, open + 1, body_end)),
         };
 
         blocks.push(BlockInfo {
@@ -516,6 +555,7 @@ fn parse_blocks(tokens: &[Token]) -> Vec<BlockInfo> {
             range: Range::new(tokens[cursor].range.start, tokens[close].range.end),
             body_range: Range::new(tokens[open].range.end, tokens[close].range.start),
             fields,
+            attributes,
             values,
             entries,
         });
@@ -523,6 +563,41 @@ fn parse_blocks(tokens: &[Token]) -> Vec<BlockInfo> {
     }
 
     blocks
+}
+
+fn parse_model_attributes(tokens: &[Token], start: usize, end: usize) -> Vec<AttributeInfo> {
+    let mut attributes = Vec::new();
+    let mut cursor = start;
+
+    while cursor + 2 < end {
+        if !tokens[cursor].is_symbol("@")
+            || !tokens[cursor + 1].is_symbol("@")
+            || tokens[cursor + 2].kind != TokenKind::Ident
+        {
+            cursor += 1;
+            continue;
+        }
+
+        let attribute_start = cursor;
+        let name_index = cursor + 2;
+        cursor += 3;
+        let mut arguments = Vec::new();
+        let mut last = name_index;
+        if cursor < end && tokens[cursor].is_symbol("(") {
+            let close = matching_token(tokens, cursor, "(", ")").unwrap_or(end.saturating_sub(1));
+            arguments = parse_attribute_arguments(tokens, cursor + 1, close);
+            cursor = close.saturating_add(1);
+            last = close;
+        }
+
+        attributes.push(AttributeInfo {
+            name: tokens[name_index].as_value_symbol(),
+            range: Range::new(tokens[attribute_start].range.start, tokens[last].range.end),
+            arguments,
+        });
+    }
+
+    attributes
 }
 
 fn block_kind(token: &Token) -> Option<BlockKind> {

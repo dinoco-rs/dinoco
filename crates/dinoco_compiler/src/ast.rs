@@ -62,6 +62,17 @@ pub struct EnumDef {
 pub struct Model {
     pub name: String,
     pub fields: Vec<ModelField>,
+    pub attributes: Vec<Attribute>,
+}
+
+impl Model {
+    pub fn attribute(&self, name: &str) -> Option<&Attribute> {
+        self.attributes.iter().find(|attribute| attribute.name == name)
+    }
+
+    pub fn attributes(&self, name: &str) -> impl Iterator<Item = &Attribute> {
+        self.attributes.iter().filter(move |attribute| attribute.name == name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -104,6 +115,20 @@ impl Attribute {
             AttributeArgument::Named { key, value } if key == name => Some(value),
             _ => None,
         })
+    }
+
+    pub fn field_names(&self) -> Option<Vec<&str>> {
+        let [AttributeArgument::Value(AttributeValue::Array(values))] = self.arguments.as_slice() else {
+            return None;
+        };
+
+        values
+            .iter()
+            .map(|value| match value {
+                AttributeValue::Ident(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 }
 

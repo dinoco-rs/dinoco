@@ -4,6 +4,7 @@ mod insert;
 mod methods;
 mod order_by;
 mod relation;
+mod transaction;
 mod update;
 
 pub use anyhow;
@@ -17,4 +18,5 @@ pub use insert::*;
 pub use methods::*;
 pub use order_by::*;
 pub use relation::*;
+pub use transaction::*;
 pub use update::*;

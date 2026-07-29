@@ -2,9 +2,10 @@ use async_trait::async_trait;
 
 use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
-    CreateEnumMigration, CreateTableMigration, DeadpoolPostgresRow, DeleteQuery, DinocoValue, DropColumnMigration,
-    DropEnumMigration, DropForeignKeyMigration, DropTableMigration, FindQuery, InsertQuery, MysqlRow, PostgresRow,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, SqliteRow, UpdateQuery,
+    CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeadpoolPostgresRow, DeleteQuery, DinocoValue,
+    DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, FindQuery,
+    InsertQuery, MysqlRow, PostgresRow, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
+    RenameColumnMigration, SqliteRow, UpdateQuery,
 };
 
 #[async_trait]
@@ -54,6 +55,8 @@ pub trait DinocoSqlCompiler {
     fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String>;
     fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String>;
     fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String>;
+    fn compile_create_index_migration(&self, migration: CreateIndexMigration) -> String;
+    fn compile_drop_index_migration(&self, migration: DropIndexMigration) -> String;
     fn compile_create_enum_migration(&self, migration: CreateEnumMigration) -> Vec<String>;
     fn compile_drop_enum_migration(&self, migration: DropEnumMigration) -> Vec<String>;
     fn compile_alter_enum_migration(&self, migration: AlterEnumMigration) -> Vec<String>;

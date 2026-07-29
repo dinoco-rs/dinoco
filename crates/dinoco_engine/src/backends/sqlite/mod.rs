@@ -6,7 +6,10 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, 
 
 mod compiler;
 
-use crate::{DinocoAdapter, DinocoSqlite, DinocoValue};
+use crate::{
+    CompiledTransactionCommand, DinocoAdapter, DinocoSqlite, DinocoValue, RawTransactionOutput, TransactionCommandKind,
+    TransactionResults,
+};
 
 pub struct SqliteAdapter {
     pub path: String,
@@ -135,6 +138,40 @@ fn normalize_sqlite_path(path: String) -> String {
 }
 
 impl SqliteAdapter {
+    pub(crate) async fn execute_compiled_transaction(
+        &self,
+        commands: Vec<CompiledTransactionCommand>,
+    ) -> anyhow::Result<TransactionResults> {
+        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
+
+        conn.interact(move |conn| -> anyhow::Result<TransactionResults> {
+            let transaction = conn.transaction()?;
+            let execution = (|| {
+                let mut values = Vec::with_capacity(commands.len());
+
+                for command in commands {
+                    let raw = execute_transaction_command(&transaction, &command)?;
+                    values.push(command.finish(raw)?);
+                }
+
+                Ok(values)
+            })();
+
+            match execution {
+                Ok(values) => {
+                    transaction.commit()?;
+                    Ok(TransactionResults::new(values))
+                }
+                Err(error) => {
+                    transaction.rollback().context("Failed to roll back sqlite transaction")?;
+                    Err(error)
+                }
+            }
+        })
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?
+    }
+
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
         let query_owned = query.to_string();
@@ -149,6 +186,47 @@ impl SqliteAdapter {
         })
         .await
         .map_err(|err| anyhow!(err.to_string()))?
+    }
+}
+
+fn execute_transaction_command(
+    transaction: &rusqlite::Transaction<'_>,
+    command: &CompiledTransactionCommand,
+) -> anyhow::Result<RawTransactionOutput> {
+    if command.sql.is_empty() {
+        return match command.kind {
+            TransactionCommandKind::Rows => Ok(RawTransactionOutput::Rows(Vec::new())),
+            TransactionCommandKind::Execute => Ok(RawTransactionOutput::Affected(0)),
+            TransactionCommandKind::Count => Ok(RawTransactionOutput::Count(0)),
+        };
+    }
+
+    let params_refs = command.params.iter().map(|param| param as &dyn rusqlite::ToSql).collect::<Vec<_>>();
+
+    match command.kind {
+        TransactionCommandKind::Rows => {
+            let decoder = command
+                .decoder
+                .ok_or_else(|| anyhow!("Dinoco transaction query is missing its sqlite row decoder."))?;
+            let mut statement = transaction.prepare_cached(&command.sql)?;
+            let mut rows = statement.query(params_refs.as_slice())?;
+            let mut values = Vec::new();
+
+            while let Some(row) = rows.next()? {
+                values.push((decoder.sqlite)(row).ok_or_else(|| anyhow!("Failed to parse sqlite transaction row"))?);
+            }
+
+            Ok(RawTransactionOutput::Rows(values))
+        }
+        TransactionCommandKind::Execute => {
+            let mut statement = transaction.prepare_cached(&command.sql)?;
+            Ok(RawTransactionOutput::Affected(statement.execute(params_refs.as_slice())?))
+        }
+        TransactionCommandKind::Count => {
+            let mut statement = transaction.prepare_cached(&command.sql)?;
+            let total = statement.query_row(params_refs.as_slice(), |row| row.get(0))?;
+            Ok(RawTransactionOutput::Count(total))
+        }
     }
 }
 

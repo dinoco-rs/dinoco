@@ -215,13 +215,22 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let where_fields = scalar_fields.iter().map(|field| {
         let ident = &field.ident;
         let ty = &field.ty;
-        quote! { pub #ident: ::dinoco::Field<#ty> }
+        if !field.fulltext.is_empty() {
+            quote! { pub #ident: ::dinoco::Field<#ty, ::dinoco::FullTextField> }
+        } else {
+            quote! { pub #ident: ::dinoco::Field<#ty> }
+        }
     });
 
     let where_defaults = scalar_fields.iter().map(|field| {
         let ident = &field.ident;
         let name = &field.name;
-        quote! { #ident: ::dinoco::Field::new(#name) }
+        if field.fulltext.is_empty() {
+            quote! { #ident: ::dinoco::Field::new(#name) }
+        } else {
+            let fields = field.fulltext.iter().map(|field| LitStr::new(field, ident.span()));
+            quote! { #ident: ::dinoco::Field::new_fulltext(#name, &[#(#fields),*]) }
+        }
     });
 
     let order_by_fields = scalar_fields.iter().map(|field| {
@@ -1041,6 +1050,7 @@ struct ParsedField {
     references: Option<String>,
     is_option: bool,
     primary_key: bool,
+    fulltext: Vec<String>,
     default_value: Option<DefaultValue>,
     auto_generate: Option<AutoGenerate>,
     many_to_many: bool,
@@ -1073,6 +1083,7 @@ impl ParsedField {
         let mut foreign_key = None;
         let mut references = None;
         let mut primary_key = false;
+        let mut fulltext = Vec::new();
         let mut default_value = None;
         let mut auto_generate = None;
         let mut many_to_many = false;
@@ -1126,6 +1137,25 @@ impl ParsedField {
                     return Ok(());
                 }
 
+                if meta.path.is_ident("fulltext") {
+                    if meta.input.peek(syn::Token![=]) {
+                        let value = meta.value()?.parse::<LitStr>()?;
+                        fulltext = value
+                            .value()
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|field| !field.is_empty())
+                            .map(ToString::to_string)
+                            .collect();
+                        if fulltext.is_empty() {
+                            return Err(meta.error("fulltext requires at least one field"));
+                        }
+                    } else {
+                        fulltext = vec![name.clone()];
+                    }
+                    return Ok(());
+                }
+
                 if meta.path.is_ident("default") {
                     let value = meta.value()?.parse::<syn::Expr>()?;
                     default_value = Some(DefaultValue::Expr(value));
@@ -1162,6 +1192,7 @@ impl ParsedField {
                 references,
                 is_option: false,
                 primary_key,
+                fulltext,
                 default_value,
                 auto_generate,
                 many_to_many,
@@ -1187,6 +1218,7 @@ impl ParsedField {
                     references,
                     is_option: false,
                     primary_key,
+                    fulltext,
                     default_value,
                     auto_generate,
                     many_to_many,
@@ -1213,6 +1245,7 @@ impl ParsedField {
                     references,
                     is_option: true,
                     primary_key,
+                    fulltext,
                     default_value,
                     auto_generate,
                     many_to_many,
@@ -1234,6 +1267,7 @@ impl ParsedField {
             references,
             is_option: option_inner(&field.ty).is_some(),
             primary_key,
+            fulltext,
             default_value,
             auto_generate,
             many_to_many,

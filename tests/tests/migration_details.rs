@@ -2,9 +2,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dinoco_cli::db::{CliDatabase, DatabaseSchema, DatabaseTable};
 use dinoco_cli::sql::{
-    MigrationStep, generate_create_table_migrations, plan_database_migration, plan_schema_migration,
+    MigrationStep, desired_database_schema, generate_create_table_migrations, plan_database_migration,
+    plan_schema_migration,
 };
-use dinoco_engine::{DinocoAdapter, DinocoSqlCompiler, MigrationColumn, MigrationColumnType, SqliteAdapter};
+use dinoco_engine::{
+    CreateIndexMigration, DinocoAdapter, DinocoSqlCompiler, MigrationColumn, MigrationColumnType, SqliteAdapter,
+};
 
 #[tokio::test]
 async fn sqlite_introspection_preserves_typed_defaults_without_false_diffs() -> anyhow::Result<()> {
@@ -42,6 +45,69 @@ async fn sqlite_introspection_preserves_typed_defaults_without_false_diffs() -> 
     Ok(())
 }
 
+#[tokio::test]
+async fn sqlite_introspection_preserves_explicit_and_relation_indexes_without_false_diffs() -> anyhow::Result<()> {
+    let path = temp_database("indexes");
+    let adapter = SqliteAdapter::new(path.to_string_lossy().to_string()).await.map_err(anyhow::Error::msg)?;
+    let schema = dinoco_compiler::compile(
+        r#"
+        model User {
+            id    Integer @id @default(autoincrement())
+            posts Post[]
+        }
+
+        model Post {
+            id      Integer @id @default(autoincrement())
+            title   String  @index
+            user_id Integer
+            user    User @relation(fields: [user_id], references: [id])
+        }
+        "#,
+    )?;
+    let desired = desired_database_schema(&schema);
+
+    for migration in generate_create_table_migrations(&schema) {
+        adapter.execute(&adapter.compile_create_table_migration(migration), &[]).await?;
+    }
+    for table in &desired.tables {
+        for index in &table.indexes {
+            let primary_key_columns = table
+                .columns
+                .iter()
+                .filter(|column| column.primary_key)
+                .map(|column| column.name.as_str())
+                .collect::<Vec<_>>();
+            if index.automatic && index.columns.iter().map(String::as_str).eq(primary_key_columns) {
+                continue;
+            }
+            adapter
+                .execute(
+                    &adapter.compile_create_index_migration(CreateIndexMigration {
+                        table: table.name.clone(),
+                        index: index.clone(),
+                    }),
+                    &[],
+                )
+                .await?;
+        }
+    }
+
+    let current = CliDatabase::Sqlite(adapter).inspect_schema().await?;
+    let post = current.tables.iter().find(|table| table.name == "post").expect("post table");
+    assert!(post.indexes.iter().any(|index| index.name == "idx_post_title"));
+    assert!(
+        post.indexes
+            .iter()
+            .any(|index| { index.name == "idx_post_user_id" && index.columns == ["user_id".to_string()] })
+    );
+    let unchanged = plan_schema_migration(&schema, &current);
+    assert!(unchanged.steps.is_empty(), "introspected indexes should match the desired schema: {unchanged:#?}");
+
+    drop(current);
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
 #[test]
 fn dropping_an_empty_table_is_still_destructive() {
     let current = DatabaseSchema {
@@ -57,6 +123,7 @@ fn dropping_an_empty_table_is_still_destructive() {
                 default: None,
             }],
             foreign_keys: Vec::new(),
+            indexes: Vec::new(),
         }],
         enums: Vec::new(),
     };

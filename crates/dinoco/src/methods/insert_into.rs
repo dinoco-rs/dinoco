@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoClient, DinocoProjection, DinocoRowModel};
+use dinoco_engine::{DinocoClient, DinocoProjection, DinocoRowModel, InsertQuery, TransactionCommand};
 
 use crate::{
-    DinocoInsertable, InsertPayload, execute_insert_models_returning, execute_insert_payloads,
-    execute_insert_payloads_returning, reload_inserted,
+    DinocoInsertable, InsertPayload, IntoTransactionOperation, execute_insert_models_returning,
+    execute_insert_payloads, execute_insert_payloads_returning, reload_inserted,
 };
 
 pub struct Insert<M, V = M> {
@@ -73,5 +73,58 @@ where
 
         rows.pop()
             .ok_or_else(|| anyhow::anyhow!("Record from table '{}' could not be loaded after insert.", M::TABLE_NAME))
+    }
+}
+
+impl<M, V> IntoTransactionOperation for Insert<M, V>
+where
+    M: DinocoInsertable + DinocoProjection<M> + DinocoRowModel + 'static,
+    V: InsertPayload<M>,
+{
+    fn into_transaction_operation(self) -> TransactionCommand {
+        let item = self.item.expect("insert_into().values(...) must be called before adding it to a transaction");
+
+        if V::HAS_NESTED {
+            return TransactionCommand::invalid(
+                "Nested relation inserts are not supported inside a transaction batch yet.",
+            );
+        }
+
+        let model = item.dinoco_insert_model();
+        TransactionCommand::insert(InsertQuery {
+            table: M::TABLE_NAME,
+            fields: M::INSERT_FIELDS.to_vec(),
+            rows: vec![model.dinoco_insert_values()],
+            returning: None,
+        })
+    }
+}
+
+impl<M, V, S> IntoTransactionOperation for InsertReturning<M, V, S>
+where
+    M: DinocoInsertable + DinocoProjection<M> + DinocoRowModel + 'static,
+    V: InsertPayload<M>,
+    S: DinocoProjection<M> + DinocoRowModel,
+{
+    fn into_transaction_operation(self) -> TransactionCommand {
+        let item =
+            self.item.expect("insert_into().values(...).returning() must be called before adding it to a transaction");
+
+        if V::HAS_NESTED {
+            return TransactionCommand::invalid(
+                "Nested relation inserts are not supported inside a transaction batch yet.",
+            );
+        }
+
+        let model = item.dinoco_insert_model();
+        TransactionCommand::insert_returning::<S>(
+            InsertQuery {
+                table: M::TABLE_NAME,
+                fields: M::INSERT_FIELDS.to_vec(),
+                rows: vec![model.dinoco_insert_values()],
+                returning: Some(S::FIELDS),
+            },
+            format!("Record from table '{}' could not be returned after insert.", M::TABLE_NAME),
+        )
     }
 }

@@ -1,9 +1,10 @@
 use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
-    CreateEnumMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue, DropColumnMigration,
-    DropEnumMigration, DropForeignKeyMigration, DropTableMigration, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MySqlAdapter, ReferentialAction,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, UpdateQuery,
+    CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
+    DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
+    FindOrderBy, FindQuery, FindWhere, InsertQuery, MigrationColumn, MigrationColumnType, MigrationDefault,
+    MigrationForeignKey, MigrationIndexKind, MySqlAdapter, ReferentialAction, RelationBatchQuery, RelationCountQuery,
+    RelationJoinQuery, RenameColumnMigration, UpdateQuery,
 };
 
 impl DinocoSqlCompiler for MySqlAdapter {
@@ -198,6 +199,24 @@ impl DinocoSqlCompiler for MySqlAdapter {
 
     fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String> {
         vec![format!("ALTER TABLE {} DROP FOREIGN KEY {};", migration.table, migration.name)]
+    }
+
+    fn compile_create_index_migration(&self, migration: CreateIndexMigration) -> String {
+        let index_type = match migration.index.kind {
+            MigrationIndexKind::Standard => "",
+            MigrationIndexKind::Unique => "UNIQUE ",
+            MigrationIndexKind::FullText => "FULLTEXT ",
+        };
+        format!(
+            "CREATE {index_type}INDEX {} ON {} ({});",
+            sql_identifier(&migration.index.name),
+            sql_identifier(&migration.table),
+            migration.index.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", ")
+        )
+    }
+
+    fn compile_drop_index_migration(&self, migration: DropIndexMigration) -> String {
+        format!("DROP INDEX {} ON {};", sql_identifier(&migration.index.name), sql_identifier(&migration.table))
     }
 
     fn compile_create_enum_migration(&self, _migration: CreateEnumMigration) -> Vec<String> {
@@ -489,6 +508,11 @@ fn collect_conditions(
                 sql_conditions.push(format!("{} LIKE ?", qualify_field(field, qualifier)));
                 params.push(value);
             }
+            FindWhere::FullText(fields, value) => {
+                let fields = fields.iter().map(|field| qualify_field(field, qualifier)).collect::<Vec<_>>().join(", ");
+                sql_conditions.push(format!("MATCH ({fields}) AGAINST (? IN NATURAL LANGUAGE MODE)"));
+                params.push(value);
+            }
             FindWhere::Between(field, start, end) => {
                 sql_conditions.push(format!(
                     "{} >= ? AND {} <= ?",
@@ -513,8 +537,35 @@ fn collect_conditions(
             FindWhere::NotNull(field) => {
                 sql_conditions.push(format!("{} IS NOT NULL", qualify_field(field, qualifier)));
             }
+            FindWhere::And(conditions) => {
+                push_condition_group(sql_conditions, params, conditions, qualifier, "AND", "1 = 1");
+            }
+            FindWhere::Or(conditions) => {
+                push_condition_group(sql_conditions, params, conditions, qualifier, "OR", "1 = 0");
+            }
+            FindWhere::Not(condition) => {
+                let mut nested = Vec::new();
+                collect_conditions(&mut nested, params, vec![*condition], qualifier);
+                let expression = if nested.is_empty() { "1 = 1".to_string() } else { nested.join(" AND ") };
+                sql_conditions.push(format!("NOT ({expression})"));
+            }
         }
     }
+}
+
+fn push_condition_group(
+    sql_conditions: &mut Vec<String>,
+    params: &mut Vec<DinocoValue>,
+    conditions: Vec<FindWhere>,
+    qualifier: Option<&str>,
+    operator: &str,
+    empty_expression: &str,
+) {
+    let mut nested = Vec::new();
+    collect_conditions(&mut nested, params, conditions, qualifier);
+    let expression =
+        if nested.is_empty() { empty_expression.to_string() } else { nested.join(&format!(" {operator} ")) };
+    sql_conditions.push(format!("({expression})"));
 }
 
 fn append_order_by(sql: &mut String, order_by: Option<FindOrderBy>, qualifier: Option<&str>) {

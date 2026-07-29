@@ -1,7 +1,10 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DeleteQuery, DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere};
+use dinoco_engine::{
+    DeleteQuery, DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, TransactionCommand,
+};
 
+use crate::IntoTransactionOperation;
 pub struct DeleteNeedsWhere;
 pub struct DeleteReady;
 
@@ -74,5 +77,28 @@ where
         let query = DeleteQuery { table: M::TABLE_NAME, conditions: self.conditions, returning: Some(S::FIELDS) };
 
         client.backend.delete_returning::<S>(query).await
+    }
+}
+
+impl<M> IntoTransactionOperation for Delete<M, DeleteReady>
+where
+    M: DinocoEntity,
+{
+    fn into_transaction_operation(self) -> TransactionCommand {
+        TransactionCommand::delete(DeleteQuery { table: M::TABLE_NAME, conditions: self.conditions, returning: None })
+    }
+}
+
+impl<M, S> IntoTransactionOperation for DeleteReturning<M, S>
+where
+    M: DinocoEntity,
+    S: DinocoProjection<M> + DinocoRowModel,
+{
+    fn into_transaction_operation(self) -> TransactionCommand {
+        TransactionCommand::delete_returning::<S>(DeleteQuery {
+            table: M::TABLE_NAME,
+            conditions: self.conditions,
+            returning: Some(S::FIELDS),
+        })
     }
 }

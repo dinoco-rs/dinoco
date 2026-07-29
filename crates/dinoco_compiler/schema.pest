@@ -13,8 +13,9 @@ env_call = { "env" ~ "(" ~ string_literal ~ ")" }
 enum_block = { "enum" ~ ident ~ "{" ~ enum_value* ~ "}" }
 enum_value = { ident }
 
-model_block = { "model" ~ ident ~ "{" ~ model_field* ~ "}" }
+model_block = { "model" ~ ident ~ "{" ~ (model_field | model_attribute)* ~ "}" }
 model_field = { ident ~ field_type ~ field_optional? ~ field_list? ~ attribute* }
+model_attribute = { "@@" ~ ident ~ ("(" ~ attribute_arguments? ~ ")")? }
 field_type = { ident }
 field_optional = { "?" }
 field_list = { "[" ~ "]" }

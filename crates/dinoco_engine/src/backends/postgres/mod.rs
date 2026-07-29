@@ -8,7 +8,10 @@ use tokio_postgres::{Config, NoTls};
 
 mod compiler;
 
-use crate::{DinocoAdapter, DinocoRowModel, DinocoValue};
+use crate::{
+    CompiledTransactionCommand, DinocoAdapter, DinocoRowModel, DinocoValue, RawTransactionOutput,
+    TransactionCommandKind, TransactionResults,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub enum PostgresMode {
@@ -109,6 +112,31 @@ impl PostgresAdapter {
         Ok(Self { url, pool: Arc::new(pool), mode })
     }
 
+    pub(crate) async fn execute_compiled_transaction(
+        &self,
+        commands: Vec<CompiledTransactionCommand>,
+    ) -> anyhow::Result<TransactionResults> {
+        let mut conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
+        let transaction = conn.transaction().await?;
+        let mut values = Vec::with_capacity(commands.len());
+
+        for command in commands {
+            let execution =
+                execute_transaction_command(&transaction, &command).await.and_then(|raw| command.finish(raw));
+
+            match execution {
+                Ok(value) => values.push(value),
+                Err(error) => {
+                    transaction.rollback().await.context("Failed to roll back postgres transaction")?;
+                    return Err(error);
+                }
+            }
+        }
+
+        transaction.commit().await?;
+        Ok(TransactionResults::new(values))
+    }
+
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
         let params = postgres_params(params);
@@ -122,6 +150,44 @@ impl PostgresAdapter {
         };
 
         Ok(row.try_get(0)?)
+    }
+}
+
+async fn execute_transaction_command(
+    transaction: &tokio_postgres::Transaction<'_>,
+    command: &CompiledTransactionCommand,
+) -> anyhow::Result<RawTransactionOutput> {
+    if command.sql.is_empty() {
+        return match command.kind {
+            TransactionCommandKind::Rows => Ok(RawTransactionOutput::Rows(Vec::new())),
+            TransactionCommandKind::Execute => Ok(RawTransactionOutput::Affected(0)),
+            TransactionCommandKind::Count => Ok(RawTransactionOutput::Count(0)),
+        };
+    }
+
+    let params = postgres_params(&command.params);
+    let params = postgres_param_refs(&params);
+
+    match command.kind {
+        TransactionCommandKind::Rows => {
+            let decoder = command
+                .decoder
+                .ok_or_else(|| anyhow!("Dinoco transaction query is missing its postgres row decoder."))?;
+            let rows = transaction.query(command.sql.as_str(), &params).await?;
+            let values = rows
+                .iter()
+                .map(|row| (decoder.postgres)(row).ok_or_else(|| anyhow!("Failed to parse postgres transaction row")))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            Ok(RawTransactionOutput::Rows(values))
+        }
+        TransactionCommandKind::Execute => {
+            let affected = transaction.execute(command.sql.as_str(), &params).await?;
+            Ok(RawTransactionOutput::Affected(affected as usize))
+        }
+        TransactionCommandKind::Count => {
+            let row = transaction.query_one(command.sql.as_str(), &params).await?;
+            Ok(RawTransactionOutput::Count(row.try_get(0)?))
+        }
     }
 }
 

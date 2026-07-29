@@ -71,7 +71,15 @@ async fn sqlite_crud_relations_and_count_work_end_to_end() -> anyhow::Result<()>
     user.tokens = vec![UserToken::new()];
     insert_into::<User>().values(&user).execute(&client).await?;
 
-    let users = find_many::<User>().includes(|x| x.tokens()).execute(&client).await?;
+    let users = find_many::<User>()
+        .includes(|x| {
+            x.tokens()
+                .where_(|token| token.is_expired.eq(true))
+                .where_complex(|token, m| m.or(token.is_expired.eq(false), token.id.eq("missing")))
+                .where_(|token| token.is_expired.eq(true))
+        })
+        .execute(&client)
+        .await?;
     assert_eq!(users.len(), 1);
     assert_eq!(users[0].tokens.len(), 1);
 

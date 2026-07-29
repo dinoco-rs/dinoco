@@ -585,6 +585,13 @@ fn attribute_description(name: &str) -> Option<&'static str> {
     match name {
         "id" => Some("`@id` marks this field as the model's primary key."),
         "unique" => Some("`@unique` creates a unique constraint for this field."),
+        "index" => Some("`@index` creates a standard database index for this field."),
+        "fulltext" => Some("`@fulltext` enables native full-text search for this String field."),
+        "ids" => Some("`@@ids([...])` defines the model's composite primary key."),
+        "uniques" => Some("`@@uniques([...])` creates a composite unique constraint."),
+        "indexes" => Some("`@@indexes([...])` creates a composite standard index."),
+        "fulltexts" => Some("`@@fulltexts([...])` creates a composite full-text index for String fields."),
+        "table_name" => Some("`@@table_name(\"...\")` maps the model to a database table name."),
         "default" => Some("`@default(...)` supplies a literal, enum, or generated default value."),
         "relation" => {
             Some("`@relation(...)` defines foreign keys, references, relation names, and referential actions.")

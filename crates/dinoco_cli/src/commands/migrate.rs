@@ -92,7 +92,19 @@ pub async fn generate() -> anyhow::Result<()> {
         .as_ref()
         .map(|history| &history.expected)
         .or_else(|| server_history.as_ref().and_then(|history| history.expected.as_ref()));
-    let history_drift = history_expected.map(|expected| plan_database_migration(expected, &current));
+    let history_drift = history_expected.map(|expected| {
+        if server_history.as_ref().is_some_and(|history| !history.tracks_indexes) {
+            let mut compatible_expected = expected.clone();
+            for table in &mut compatible_expected.tables {
+                if let Some(current_table) = current.tables.iter().find(|current| current.name == table.name) {
+                    table.indexes = current_table.indexes.clone();
+                }
+            }
+            plan_database_migration(&compatible_expected, &current)
+        } else {
+            plan_database_migration(expected, &current)
+        }
+    });
     let untracked_sqlite_schema = history
         .as_ref()
         .map(|history| history.applied.is_empty() && (!current.tables.is_empty() || !current.enums.is_empty()))
@@ -279,6 +291,16 @@ async fn inspect_shadow_schema(
         // key with ALTER TABLE. Keep constraints inline in the shadow schema.
         shadow.execute(&shadow.compile_create_table_migration(migration)).await?;
     }
+    for table in desired_database_schema(schema).tables {
+        for index in table.indexes.iter().filter(|index| !crate::sql::index_is_primary_key(index, &table)).cloned() {
+            shadow
+                .execute(&shadow.compile_create_index_migration(dinoco_engine::CreateIndexMigration {
+                    table: table.name.clone(),
+                    index,
+                }))
+                .await?;
+        }
+    }
     let inspected = shadow.inspect_schema().await?;
     drop(shadow);
     drop(shadow_file);
@@ -301,6 +323,7 @@ struct SqliteMigrationHistory {
 struct ServerMigrationHistory {
     history_exists: bool,
     expected: Option<crate::db::DatabaseSchema>,
+    tracks_indexes: bool,
     applied: BTreeSet<String>,
     legacy_checksums: Vec<(String, String)>,
     validated: BTreeMap<String, ValidatedMigration>,
@@ -354,14 +377,18 @@ async fn inspect_server_migration_history(
             anyhow::bail!("Migration schema snapshot metadata is inconsistent for: {}.", orphaned.join(", "));
         }
     }
+    let mut tracks_indexes = true;
     let expected = if let Some(latest) = applied.last() {
         match schema_snapshots.as_ref() {
             Some(snapshots) => {
                 let snapshot = snapshots
                     .get(latest)
                     .with_context(|| format!("Applied migration `{latest}` has no canonical schema snapshot"))?;
+                let snapshot_value: serde_json::Value = serde_json::from_str(snapshot)
+                    .with_context(|| format!("canonical schema snapshot for migration `{latest}` is invalid"))?;
+                tracks_indexes = snapshot_tracks_indexes(&snapshot_value);
                 Some(
-                    serde_json::from_str(snapshot)
+                    serde_json::from_value(snapshot_value)
                         .with_context(|| format!("canonical schema snapshot for migration `{latest}` is invalid"))?,
                 )
             }
@@ -401,7 +428,14 @@ async fn inspect_server_migration_history(
         validated.insert(name, ValidatedMigration { execution_sql, checksum, generated });
     }
 
-    Ok(Some(ServerMigrationHistory { history_exists, expected, applied, legacy_checksums, validated }))
+    Ok(Some(ServerMigrationHistory { history_exists, expected, tracks_indexes, applied, legacy_checksums, validated }))
+}
+
+fn snapshot_tracks_indexes(snapshot: &serde_json::Value) -> bool {
+    snapshot
+        .get("tables")
+        .and_then(serde_json::Value::as_array)
+        .map_or(true, |tables| tables.is_empty() || tables.iter().all(|table| table.get("indexes").is_some()))
 }
 
 fn validate_history_shape(
@@ -612,6 +646,8 @@ fn describe_drift_step(step: &MigrationStep) -> String {
             format!("Missing foreign key `{}.{}`", item.table, item.foreign_key.name)
         }
         MigrationStep::DropForeignKey(item) => format!("Unexpected foreign key `{}.{}`", item.table, item.name),
+        MigrationStep::CreateIndex(item) => format!("Missing index `{}.{}`", item.table, item.index.name),
+        MigrationStep::DropIndex(item) => format!("Unexpected index `{}.{}`", item.table, item.index.name),
     }
 }
 
@@ -619,7 +655,9 @@ fn ensure_drift_is_repairable(drift: &MigrationPlan) -> anyhow::Result<()> {
     let unsupported = drift
         .steps
         .iter()
-        .filter(|step| !matches!(step, MigrationStep::CreateTable(_)))
+        .filter(|step| {
+            !matches!(step, MigrationStep::CreateTable(_) | MigrationStep::CreateIndex(_) | MigrationStep::DropIndex(_))
+        })
         .map(describe_drift_step)
         .collect::<Vec<_>>();
     if !unsupported.is_empty() {
@@ -1434,12 +1472,14 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     let mut alter_enums = Vec::new();
     let mut drop_enums = Vec::new();
     let mut drop_foreign_keys = Vec::new();
+    let mut drop_indexes = Vec::new();
     let mut create_tables = Vec::new();
     let mut rename_columns = Vec::new();
     let mut add_columns = Vec::new();
     let mut alter_columns = Vec::new();
     let mut drop_columns = Vec::new();
     let mut add_foreign_keys = Vec::new();
+    let mut create_indexes = Vec::new();
     let mut drop_tables = Vec::new();
 
     for step in plan.steps {
@@ -1448,6 +1488,7 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
             MigrationStep::AlterEnum(item) => alter_enums.push(item),
             MigrationStep::DropEnum(item) => drop_enums.push(item),
             MigrationStep::DropForeignKey(item) => drop_foreign_keys.push(item),
+            MigrationStep::DropIndex(item) => drop_indexes.push(item),
             MigrationStep::CreateTable(mut item) => {
                 if !db.is_sqlite() {
                     let table = item.table.clone();
@@ -1462,6 +1503,7 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
             MigrationStep::AlterColumn(item) => alter_columns.push(item),
             MigrationStep::DropColumn(item) => drop_columns.push(item),
             MigrationStep::AddForeignKey(item) => add_foreign_keys.push(item),
+            MigrationStep::CreateIndex(item) => create_indexes.push(item),
             MigrationStep::DropTable(item) => drop_tables.push(item),
         }
     }
@@ -1469,6 +1511,9 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     let mut statements = Vec::new();
     for item in drop_foreign_keys {
         statements.extend(db.compile_drop_foreign_key_migration(item));
+    }
+    for item in drop_indexes {
+        statements.push(db.compile_drop_index_migration(item));
     }
     for item in create_enums {
         statements.extend(db.compile_create_enum_migration(item));
@@ -1490,6 +1535,9 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     }
     for item in drop_columns {
         statements.push(db.compile_drop_column_migration(item));
+    }
+    for item in create_indexes {
+        statements.push(db.compile_create_index_migration(item));
     }
     for item in add_foreign_keys {
         statements.extend(db.compile_add_foreign_key_migration(item));
@@ -1547,6 +1595,14 @@ fn compile_down_plan(
 
     let migration_name = migration_name.replace('\'', "''");
     let mut statements = Vec::new();
+    let created_tables = plan
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            MigrationStep::CreateTable(table) => Some(table.table.as_str()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
     if !db.is_sqlite() {
         for step in &plan.steps {
             if let MigrationStep::CreateTable(table) = step {
@@ -1557,6 +1613,14 @@ fn compile_down_plan(
                     }));
                 }
             }
+        }
+    }
+    for step in &plan.steps {
+        if let MigrationStep::AddForeignKey(migration) = step {
+            statements.extend(db.compile_drop_foreign_key_migration(dinoco_engine::DropForeignKeyMigration {
+                table: migration.table.clone(),
+                name: migration.foreign_key.name.clone(),
+            }));
         }
     }
     for table in created_table_drop_order(plan) {
@@ -1609,17 +1673,26 @@ fn compile_down_plan(
                     to: migration.from.clone(),
                 }));
             }
-            MigrationStep::AddForeignKey(migration) => {
-                statements.extend(db.compile_drop_foreign_key_migration(dinoco_engine::DropForeignKeyMigration {
-                    table: migration.table.clone(),
-                    name: migration.foreign_key.name.clone(),
-                }));
-            }
+            MigrationStep::AddForeignKey(_) => {}
             MigrationStep::DropForeignKey(migration) => {
                 statements.push(format!(
                     "-- Dropping foreign key `{}.{}` is not reversible without the previous relation definition.",
                     migration.table, migration.name
                 ));
+            }
+            MigrationStep::CreateIndex(migration) => {
+                if !created_tables.contains(migration.table.as_str()) {
+                    statements.push(db.compile_drop_index_migration(dinoco_engine::DropIndexMigration {
+                        table: migration.table.clone(),
+                        index: migration.index.clone(),
+                    }));
+                }
+            }
+            MigrationStep::DropIndex(migration) => {
+                statements.push(db.compile_create_index_migration(dinoco_engine::CreateIndexMigration {
+                    table: migration.table.clone(),
+                    index: migration.index.clone(),
+                }));
             }
         }
     }
@@ -1730,6 +1803,8 @@ fn describe_step(step: &MigrationStep) -> String {
         MigrationStep::RenameColumn(item) => format!("Rename column `{}.{}` to `{}`", item.table, item.from, item.to),
         MigrationStep::AddForeignKey(item) => format!("Add foreign key `{}.{}`", item.table, item.foreign_key.name),
         MigrationStep::DropForeignKey(item) => format!("Drop foreign key `{}.{}`", item.table, item.name),
+        MigrationStep::CreateIndex(item) => format!("Create index `{}.{}`", item.table, item.index.name),
+        MigrationStep::DropIndex(item) => format!("Drop index `{}.{}`", item.table, item.index.name),
     }
 }
 

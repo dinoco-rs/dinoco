@@ -1,9 +1,10 @@
 use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
-    CreateEnumMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue, DropColumnMigration,
-    DropEnumMigration, DropForeignKeyMigration, DropTableMigration, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, ReferentialAction, RelationBatchQuery,
-    RelationCountQuery, RelationJoinQuery, RenameColumnMigration, UpdateQuery,
+    CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
+    DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
+    FindOrderBy, FindQuery, FindWhere, InsertQuery, MigrationColumn, MigrationColumnType, MigrationDefault,
+    MigrationForeignKey, MigrationIndexKind, ReferentialAction, RelationBatchQuery, RelationCountQuery,
+    RelationJoinQuery, RenameColumnMigration, UpdateQuery,
 };
 
 use super::{PgBouncerAdapter, PostgresAdapter};
@@ -79,6 +80,14 @@ impl DinocoSqlCompiler for PostgresAdapter {
 
     fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String> {
         compile_drop_foreign_key_migration(migration)
+    }
+
+    fn compile_create_index_migration(&self, migration: CreateIndexMigration) -> String {
+        compile_create_index_migration(migration)
+    }
+
+    fn compile_drop_index_migration(&self, migration: DropIndexMigration) -> String {
+        compile_drop_index_migration(migration)
     }
 
     fn compile_create_enum_migration(&self, migration: CreateEnumMigration) -> Vec<String> {
@@ -165,6 +174,14 @@ impl DinocoSqlCompiler for PgBouncerAdapter {
 
     fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String> {
         compile_drop_foreign_key_migration(migration)
+    }
+
+    fn compile_create_index_migration(&self, migration: CreateIndexMigration) -> String {
+        compile_create_index_migration(migration)
+    }
+
+    fn compile_drop_index_migration(&self, migration: DropIndexMigration) -> String {
+        compile_drop_index_migration(migration)
     }
 
     fn compile_create_enum_migration(&self, migration: CreateEnumMigration) -> Vec<String> {
@@ -268,6 +285,34 @@ fn compile_add_foreign_key_migration(migration: AddForeignKeyMigration) -> Vec<S
 
 fn compile_drop_foreign_key_migration(migration: DropForeignKeyMigration) -> Vec<String> {
     vec![format!("ALTER TABLE {} DROP CONSTRAINT IF EXISTS {};", migration.table, migration.name)]
+}
+
+fn compile_create_index_migration(migration: CreateIndexMigration) -> String {
+    if migration.index.kind == MigrationIndexKind::FullText {
+        let document = migration
+            .index
+            .columns
+            .iter()
+            .map(|column| format!("COALESCE({}, '')", sql_identifier(column)))
+            .collect::<Vec<_>>()
+            .join(" || ' ' || ");
+        return format!(
+            "CREATE INDEX {} ON {} USING GIN (to_tsvector('simple', {document}));",
+            sql_identifier(&migration.index.name),
+            sql_identifier(&migration.table),
+        );
+    }
+    let unique = if migration.index.kind == MigrationIndexKind::Unique { "UNIQUE " } else { "" };
+    format!(
+        "CREATE {unique}INDEX {} ON {} ({});",
+        sql_identifier(&migration.index.name),
+        sql_identifier(&migration.table),
+        migration.index.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", ")
+    )
+}
+
+fn compile_drop_index_migration(migration: DropIndexMigration) -> String {
+    format!("DROP INDEX {};", sql_identifier(&migration.index.name))
 }
 
 fn compile_foreign_key(foreign_key: &MigrationForeignKey) -> String {
@@ -709,6 +754,17 @@ fn collect_conditions(
             FindWhere::Like(field, value) => {
                 push_binary(sql_conditions, params, field, "LIKE", value, qualifier, placeholders)
             }
+            FindWhere::FullText(fields, value) => {
+                let placeholder = placeholders.next();
+                let document = fields
+                    .iter()
+                    .map(|field| format!("COALESCE({}, '')", qualify_field(field, qualifier)))
+                    .collect::<Vec<_>>()
+                    .join(" || ' ' || ");
+                sql_conditions
+                    .push(format!("to_tsvector('simple', {document}) @@ plainto_tsquery('simple', {placeholder})"));
+                params.push(value);
+            }
             FindWhere::Between(field, start, end) => {
                 let start_placeholder = placeholders.next();
                 let end_placeholder = placeholders.next();
@@ -732,8 +788,36 @@ fn collect_conditions(
             FindWhere::NotNull(field) => {
                 sql_conditions.push(format!("{} IS NOT NULL", qualify_field(field, qualifier)));
             }
+            FindWhere::And(conditions) => {
+                push_condition_group(sql_conditions, params, conditions, qualifier, placeholders, "AND", "1 = 1");
+            }
+            FindWhere::Or(conditions) => {
+                push_condition_group(sql_conditions, params, conditions, qualifier, placeholders, "OR", "1 = 0");
+            }
+            FindWhere::Not(condition) => {
+                let mut nested = Vec::new();
+                collect_conditions(&mut nested, params, vec![*condition], qualifier, placeholders);
+                let expression = if nested.is_empty() { "1 = 1".to_string() } else { nested.join(" AND ") };
+                sql_conditions.push(format!("NOT ({expression})"));
+            }
         }
     }
+}
+
+fn push_condition_group(
+    sql_conditions: &mut Vec<String>,
+    params: &mut Vec<DinocoValue>,
+    conditions: Vec<FindWhere>,
+    qualifier: Option<&str>,
+    placeholders: &mut Placeholder,
+    operator: &str,
+    empty_expression: &str,
+) {
+    let mut nested = Vec::new();
+    collect_conditions(&mut nested, params, conditions, qualifier, placeholders);
+    let expression =
+        if nested.is_empty() { empty_expression.to_string() } else { nested.join(&format!(" {operator} ")) };
+    sql_conditions.push(format!("({expression})"));
 }
 
 fn push_binary(

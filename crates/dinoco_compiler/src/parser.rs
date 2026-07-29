@@ -57,8 +57,11 @@ fn parse_config_entry(pair: Pair<'_, Rule>) -> CompileResult<ConfigEntry> {
 pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
     validate_declarations(schema)?;
     validate_config_values(schema)?;
+    validate_model_attributes(schema)?;
+    validate_index_attributes(schema)?;
     validate_relation_attributes(schema)?;
     validate_relation_pairs(schema)?;
+    validate_primary_keys(schema)?;
 
     let mut uses_snowflake = false;
 
@@ -207,7 +210,7 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
 
             let mut attributes = HashSet::new();
             for attribute in &field.attributes {
-                if matches!(attribute.name.as_str(), "id" | "unique" | "default" | "relation")
+                if matches!(attribute.name.as_str(), "id" | "unique" | "default" | "relation" | "index" | "fulltext")
                     && !attributes.insert(attribute.name.as_str())
                 {
                     return schema_error(format!(
@@ -216,6 +219,268 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
                     ));
                 }
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_index_attributes(schema: &Schema) -> CompileResult<()> {
+    let mut mapped_names = HashSet::new();
+
+    for model in schema.models() {
+        let composite_indexes = model
+            .attributes("indexes")
+            .flat_map(|attribute| attribute.field_names().unwrap_or_default())
+            .collect::<HashSet<_>>();
+        let composite_fulltexts = model
+            .attributes("fulltexts")
+            .flat_map(|attribute| attribute.field_names().unwrap_or_default())
+            .collect::<HashSet<_>>();
+        if let Some(field) = composite_indexes.intersection(&composite_fulltexts).next() {
+            return schema_error(format!(
+                "Field `{}.{field}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because both \
+                 declare an index",
+                model.name
+            ));
+        }
+
+        for field in &model.fields {
+            if let Some(fulltext) = field.attributes.iter().find(|attribute| attribute.name == "fulltext") {
+                if field.ty.name != "String" || field.ty.list || field.is_relation(schema) {
+                    return schema_error(format!(
+                        "Field `{}.{}` uses @fulltext, but full-text search is only supported on String fields",
+                        model.name, field.name
+                    ));
+                }
+                if !fulltext.arguments.is_empty() {
+                    return schema_error(format!(
+                        "@fulltext on `{}.{}` does not accept arguments",
+                        model.name, field.name
+                    ));
+                }
+                if field.attributes.iter().any(|attribute| attribute.name == "index")
+                    || composite_indexes.contains(field.name.as_str())
+                {
+                    return schema_error(format!(
+                        "Field `{}.{}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because \
+                         both declare an index",
+                        model.name, field.name
+                    ));
+                }
+            }
+
+            if composite_fulltexts.contains(field.name.as_str())
+                && field.attributes.iter().any(|attribute| attribute.name == "index")
+            {
+                return schema_error(format!(
+                    "Field `{}.{}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because both \
+                     declare an index",
+                    model.name, field.name
+                ));
+            }
+
+            let Some(index) = field.attributes.iter().find(|attribute| attribute.name == "index") else {
+                continue;
+            };
+
+            if field.is_relation(schema) || field.ty.list {
+                return schema_error(format!(
+                    "Field `{}.{}` uses @index, but indexes must be declared on scalar or enum fields",
+                    model.name, field.name
+                ));
+            }
+
+            if index.arguments.len() > 1 {
+                return schema_error(format!(
+                    "@index on `{}.{}` accepts only the optional `map` argument",
+                    model.name, field.name
+                ));
+            }
+
+            let Some(argument) = index.arguments.first() else {
+                continue;
+            };
+            let AttributeArgument::Named { key, value } = argument else {
+                return schema_error(format!(
+                    "@index on `{}.{}` accepts only `map: \"index_name\"`",
+                    model.name, field.name
+                ));
+            };
+            if key != "map" {
+                return schema_error(format!(
+                    "@index on `{}.{}` does not support `{key}`; use `map: \"index_name\"`",
+                    model.name, field.name
+                ));
+            }
+            let Some(name) = attribute_string_or_ident(value) else {
+                return schema_error(format!(
+                    "@index map on `{}.{}` must be a string or identifier",
+                    model.name, field.name
+                ));
+            };
+            if name.trim().is_empty() {
+                return schema_error(format!("@index map on `{}.{}` cannot be empty", model.name, field.name));
+            }
+            if !mapped_names.insert(name) {
+                return schema_error(format!("Index name `{name}` is declared more than once"));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_model_attributes(schema: &Schema) -> CompileResult<()> {
+    for model in schema.models() {
+        let known = ["ids", "uniques", "indexes", "fulltexts", "table_name"];
+        for attribute in &model.attributes {
+            if !known.contains(&attribute.name.as_str()) {
+                return schema_error(format!(
+                    "Unknown model attribute `@@{}` on model `{}`",
+                    attribute.name, model.name
+                ));
+            }
+        }
+
+        let ids = model.attributes("ids").collect::<Vec<_>>();
+        if ids.len() > 1 {
+            return schema_error(format!(
+                "Model `{}` declares @@ids more than once; exactly one primary key is allowed",
+                model.name
+            ));
+        }
+        if model.attributes("table_name").count() > 1 {
+            return schema_error(format!("Model `{}` declares @@table_name more than once", model.name));
+        }
+
+        if let Some(table_name) = model.attribute("table_name") {
+            let [AttributeArgument::Value(AttributeValue::String(name))] = table_name.arguments.as_slice() else {
+                return schema_error(format!(
+                    "@@table_name on model `{}` requires exactly one non-empty string",
+                    model.name
+                ));
+            };
+            if name.trim().is_empty() {
+                return schema_error(format!("@@table_name on model `{}` cannot be empty", model.name));
+            }
+        }
+
+        let mut fulltext_fields = model
+            .fields
+            .iter()
+            .filter(|field| field.attributes.iter().any(|attribute| attribute.name == "fulltext"))
+            .map(|field| field.name.as_str())
+            .collect::<HashSet<_>>();
+        let mut declarations = HashSet::new();
+
+        for attribute in &model.attributes {
+            if !matches!(attribute.name.as_str(), "ids" | "uniques" | "indexes" | "fulltexts") {
+                continue;
+            }
+
+            let Some(fields) = attribute.field_names() else {
+                return schema_error(format!(
+                    "@@{} on model `{}` requires exactly one array of field identifiers",
+                    attribute.name, model.name
+                ));
+            };
+            if fields.is_empty() {
+                return schema_error(format!("@@{} on model `{}` cannot be empty", attribute.name, model.name));
+            }
+
+            let mut seen = HashSet::new();
+            for name in &fields {
+                if !seen.insert(*name) {
+                    return schema_error(format!(
+                        "@@{} on model `{}` contains duplicate field `{name}`",
+                        attribute.name, model.name
+                    ));
+                }
+                let Some(field) = model.fields.iter().find(|field| field.name == *name) else {
+                    return schema_error(format!(
+                        "@@{} on model `{}` refers to missing field `{name}`",
+                        attribute.name, model.name
+                    ));
+                };
+                if field.ty.list || field.is_relation(schema) {
+                    return schema_error(format!(
+                        "@@{} on model `{}` may only contain scalar or enum fields; `{name}` is a relation/list",
+                        attribute.name, model.name
+                    ));
+                }
+                if attribute.name == "ids" && field.ty.optional {
+                    return schema_error(format!(
+                        "Composite primary key field `{}.{name}` must be required",
+                        model.name
+                    ));
+                }
+                if attribute.name == "fulltexts" && field.ty.name != "String" {
+                    return schema_error(format!(
+                        "@@fulltexts on model `{}` may only contain String fields; `{name}` is `{}`",
+                        model.name, field.ty.name
+                    ));
+                }
+            }
+
+            let signature = format!("{}:{}", attribute.name, fields.join(","));
+            if !declarations.insert(signature) {
+                return schema_error(format!(
+                    "Model `{}` declares @@{}([{}]) more than once",
+                    model.name,
+                    attribute.name,
+                    fields.join(", ")
+                ));
+            }
+
+            if attribute.name == "fulltexts" {
+                for name in fields {
+                    if !fulltext_fields.insert(name) {
+                        return schema_error(format!(
+                            "Field `{}.{name}` belongs to more than one full-text index",
+                            model.name
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_primary_keys(schema: &Schema) -> CompileResult<()> {
+    for model in schema.models() {
+        let field_ids = model
+            .fields
+            .iter()
+            .filter(|field| field.attributes.iter().any(|attribute| attribute.name == "id"))
+            .collect::<Vec<_>>();
+        let primary_key_declarations = field_ids.len() + model.attributes("ids").count();
+
+        match primary_key_declarations {
+            0 => {
+                return schema_error(format!(
+                    "Model `{}` must declare exactly one primary key using @id or @@ids([...])",
+                    model.name
+                ));
+            }
+            1 => {}
+            _ => {
+                return schema_error(format!(
+                    "Model `{}` declares multiple primary keys; use exactly one @id or one @@ids([...])",
+                    model.name
+                ));
+            }
+        }
+
+        if let [field] = field_ids.as_slice()
+            && (field.ty.optional || field.ty.list || field.is_relation(schema))
+        {
+            return schema_error(format!(
+                "Primary key `{}.{}` must be a required scalar or enum field",
+                model.name, field.name
+            ));
         }
     }
 
@@ -491,8 +756,8 @@ fn validate_one_to_one_pair(
         && owner_definition.fields.as_ref().is_some_and(|fields| fields.len() != 1)
     {
         return schema_error(format!(
-            "Composite one-to-one relation `{}.{}` cannot place @unique on the relation field; declare @unique on \
-             each local foreign-key field so the database constraint can be generated explicitly",
+            "Composite one-to-one relation `{}.{}` cannot place @unique on the relation field; declare \
+             @@uniques([...]) for the complete local foreign-key tuple",
             owner_model.name, owner_field.name
         ));
     }
@@ -611,15 +876,18 @@ fn validate_key_field_names<'a>(
                 reference.ty.name
             ));
         }
-        if require_unique_reference
-            && !reference.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
-        {
-            return schema_error(format!(
-                "Relation `{}.{}` references `{}.{}`, which must declare @id or @unique",
-                model.name, field.name, target.name, reference.name
-            ));
-        }
         local_fields.push(local);
+    }
+
+    if require_unique_reference && !model_has_unique_key(target, references) {
+        return schema_error(format!(
+            "Relation `{}.{}` references `{}.[{}]`, which must declare @id or @unique, or match @@ids([...]) or \
+             @@uniques([...])",
+            model.name,
+            field.name,
+            target.name,
+            references.join(", ")
+        ));
     }
 
     Ok(local_fields)
@@ -653,13 +921,31 @@ fn validate_many_to_many_id(schema: &Schema, model: &Model) -> CompileResult<()>
 
 fn relation_is_unique(model: &Model, field: &ModelField, definition: &RelationDefinition) -> bool {
     field.attributes.iter().any(|attribute| attribute.name == "unique")
-        || definition.fields.as_ref().is_some_and(|fields| {
-            fields.iter().all(|name| {
-                model.fields.iter().find(|candidate| candidate.name == *name).is_some_and(|candidate| {
-                    candidate.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
-                })
-            })
+        || definition.fields.as_ref().is_some_and(|fields| model_has_unique_key(model, fields))
+}
+
+fn model_has_unique_key(model: &Model, fields: &[String]) -> bool {
+    if fields.len() == 1
+        && model.fields.iter().find(|field| field.name == fields[0]).is_some_and(|field| {
+            field.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
         })
+    {
+        return true;
+    }
+    if fields.iter().all(|name| {
+        model.fields.iter().find(|field| field.name == *name).is_some_and(|field| {
+            field.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
+        })
+    }) {
+        return true;
+    }
+
+    model
+        .attributes
+        .iter()
+        .filter(|attribute| matches!(attribute.name.as_str(), "ids" | "uniques"))
+        .filter_map(Attribute::field_names)
+        .any(|candidate| candidate.iter().copied().eq(fields.iter().map(String::as_str)))
 }
 
 fn relation_definition(model: &Model, field: &ModelField) -> CompileResult<RelationDefinition> {
@@ -873,12 +1159,18 @@ fn parse_enum(pair: Pair<'_, Rule>) -> CompileResult<EnumDef> {
 fn parse_model(pair: Pair<'_, Rule>) -> CompileResult<Model> {
     let mut inner = pair.into_inner();
     let name = expect_rule(&mut inner, Rule::ident, "expected model name")?.as_str().to_string();
-    let fields = inner
-        .filter(|pair| pair.as_rule() == Rule::model_field)
-        .map(parse_model_field)
-        .collect::<CompileResult<Vec<_>>>()?;
+    let mut fields = Vec::new();
+    let mut attributes = Vec::new();
 
-    Ok(Model { name, fields })
+    for pair in inner {
+        match pair.as_rule() {
+            Rule::model_field => fields.push(parse_model_field(pair)?),
+            Rule::model_attribute => attributes.push(parse_attribute(pair)?),
+            _ => return Err(pair_error(&pair, "unexpected model token")),
+        }
+    }
+
+    Ok(Model { name, fields, attributes })
 }
 
 fn parse_model_field(pair: Pair<'_, Rule>) -> CompileResult<ModelField> {

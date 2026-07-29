@@ -8,7 +8,7 @@ pub use sqlite::*;
 
 use crate::{
     CountQuery, DeleteQuery, DinocoAdapter, DinocoRowModel, DinocoSqlCompiler, FindQuery, InsertQuery,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, UpdateQuery,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, TransactionCommand, TransactionResults, UpdateQuery,
 };
 
 pub enum Backend {
@@ -19,6 +19,36 @@ pub enum Backend {
 }
 
 impl Backend {
+    pub async fn execute_transaction(&self, commands: Vec<TransactionCommand>) -> anyhow::Result<TransactionResults> {
+        match self {
+            Backend::Sqlite(adapter) => {
+                let commands =
+                    commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
+                adapter.execute_compiled_transaction(commands).await
+            }
+            Backend::Postgres(adapter) => {
+                let commands =
+                    commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
+                adapter.execute_compiled_transaction(commands).await
+            }
+            Backend::PgBouncer(adapter) => {
+                let commands =
+                    commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
+                adapter.inner().execute_compiled_transaction(commands).await
+            }
+            Backend::Mysql(adapter) => {
+                if commands.iter().any(TransactionCommand::has_returning_write) {
+                    anyhow::bail!(
+                        "MySQL transaction batches do not support `.returning::<T>()` or `find_and_update::<T>()` yet."
+                    );
+                }
+                let commands =
+                    commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
+                adapter.execute_compiled_transaction(commands).await
+            }
+        }
+    }
+
     pub async fn query<M>(&self, query: FindQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,

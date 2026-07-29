@@ -54,6 +54,17 @@ pub(crate) fn format_model_with_layout(
         out.push('\n');
     }
 
+    if !model.attributes.is_empty() {
+        if !model.fields.is_empty() {
+            out.push('\n');
+        }
+        for attribute in &model.attributes {
+            out.push_str(&indent);
+            out.push_str(&format_attribute(attribute, "@@"));
+            out.push('\n');
+        }
+    }
+
     out.push('}');
     out
 }
@@ -73,17 +84,17 @@ pub fn format_field_type(field_type: &FieldType) -> String {
 }
 
 fn format_attributes(attributes: &[Attribute]) -> String {
-    attributes.iter().map(format_attribute).collect::<Vec<_>>().join(" ")
+    attributes.iter().map(|attribute| format_attribute(attribute, "@")).collect::<Vec<_>>().join(" ")
 }
 
-fn format_attribute(attribute: &Attribute) -> String {
+fn format_attribute(attribute: &Attribute, prefix: &str) -> String {
     if attribute.arguments.is_empty() {
-        return format!("@{}", attribute.name);
+        return format!("{prefix}{}", attribute.name);
     }
 
     let arguments = attribute.arguments.iter().map(format_attribute_argument).collect::<Vec<_>>();
 
-    format!("@{}({})", attribute.name, arguments.join(", "))
+    format!("{prefix}{}({})", attribute.name, arguments.join(", "))
 }
 
 pub(crate) fn field_type_len(field: &ModelField) -> usize {

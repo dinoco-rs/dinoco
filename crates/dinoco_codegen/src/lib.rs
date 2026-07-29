@@ -76,7 +76,7 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
     out.push_str("use super::*;\n");
     out.push_str("use dinoco::Entity;\n\n");
     out.push_str("#[derive(Debug, Entity)]\n");
-    out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", to_snake_case(&model.name)));
+    out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", escape_rust_string(&model_table_name(model))));
     out.push_str(&format!("pub struct {} {{\n", model.name));
     for field in &model.fields {
         for attr in field_attributes(model, field, schema) {
@@ -238,7 +238,7 @@ fn model_primary_rust_type(schema: &Schema, model_name: &str) -> String {
     let Some(model) = schema.models().find(|model| model.name == model_name) else {
         return "String".to_string();
     };
-    let Some(field) = model.fields.iter().find(|field| field.attributes.iter().any(|attr| attr.name == "id")) else {
+    let Some(field) = model.fields.iter().find(|field| is_primary_key_field(model, field)) else {
         return "String".to_string();
     };
 
@@ -261,8 +261,18 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
     let mut attrs = Vec::new();
     let mut dinoco_attrs = Vec::new();
 
-    if field.attributes.iter().any(|attr| attr.name == "id") {
+    if is_primary_key_field(model, field) {
         dinoco_attrs.push("primary_key".to_string());
+    }
+
+    if field.attributes.iter().any(|attr| attr.name == "fulltext") {
+        dinoco_attrs.push("fulltext".to_string());
+    } else if let Some(fields) = model
+        .attributes("fulltexts")
+        .filter_map(|attribute| attribute.field_names())
+        .find(|fields| fields.contains(&field.name.as_str()))
+    {
+        dinoco_attrs.push(format!("fulltext = \"{}\"", fields.join(",")));
     }
 
     if let Some(default) = field.attributes.iter().find(|attr| attr.name == "default") {
@@ -339,6 +349,25 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
     }
 
     attrs
+}
+
+fn is_primary_key_field(model: &Model, field: &ModelField) -> bool {
+    field.attributes.iter().any(|attribute| attribute.name == "id")
+        || model
+            .attribute("ids")
+            .and_then(|attribute| attribute.field_names())
+            .is_some_and(|fields| fields.contains(&field.name.as_str()))
+}
+
+fn model_table_name(model: &Model) -> String {
+    model
+        .attribute("table_name")
+        .and_then(|attribute| attribute.arguments.first())
+        .and_then(|argument| match argument {
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::String(value)) => Some(value.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| to_snake_case(&model.name))
 }
 
 fn inverse_relation_fields(model: &Model, field: &ModelField, schema: &Schema) -> Option<(String, String)> {

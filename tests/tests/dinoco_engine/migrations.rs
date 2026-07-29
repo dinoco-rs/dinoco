@@ -1,6 +1,7 @@
 use dinoco_engine::{
-    CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, MigrationColumn, MigrationColumnType, MigrationDefault,
-    MySqlAdapter, PostgresAdapter, SqliteAdapter,
+    CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, DropIndexMigration, MigrationColumn,
+    MigrationColumnType, MigrationDefault, MigrationIndex, MigrationIndexKind, MySqlAdapter, PostgresAdapter,
+    SqliteAdapter,
 };
 
 fn migration() -> CreateTableMigration {
@@ -157,6 +158,100 @@ async fn adapters_compile_schema_types_with_expected_database_types() -> anyhow:
     assert!(mysql_sql.contains("date_value DATE"));
     assert!(mysql_sql.contains("json_value JSON"));
     assert!(mysql_sql.contains("enum_value ENUM('admin', 'member')"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn adapters_compile_index_migrations_with_their_dialect() -> anyhow::Result<()> {
+    let index = MigrationIndex {
+        name: "idx_post_tenant_author".to_string(),
+        columns: vec!["tenant_id".to_string(), "author_id".to_string()],
+        automatic: false,
+        kind: MigrationIndexKind::Standard,
+    };
+    let create = CreateIndexMigration { table: "post".to_string(), index: index.clone() };
+    let drop = DropIndexMigration { table: "post".to_string(), index };
+
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    assert_eq!(
+        sqlite.compile_create_index_migration(create.clone()),
+        "CREATE INDEX idx_post_tenant_author ON post (tenant_id, author_id);"
+    );
+    assert_eq!(sqlite.compile_drop_index_migration(drop.clone()), "DROP INDEX idx_post_tenant_author;");
+
+    let postgres = PostgresAdapter::direct("postgres://postgres:postgres@localhost:5432/postgres").await?;
+    assert_eq!(
+        postgres.compile_create_index_migration(create.clone()),
+        "CREATE INDEX idx_post_tenant_author ON post (tenant_id, author_id);"
+    );
+    assert_eq!(postgres.compile_drop_index_migration(drop.clone()), "DROP INDEX idx_post_tenant_author;");
+
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost:3306/mysql");
+    assert_eq!(
+        mysql.compile_create_index_migration(create),
+        "CREATE INDEX idx_post_tenant_author ON post (tenant_id, author_id);"
+    );
+    assert_eq!(mysql.compile_drop_index_migration(drop), "DROP INDEX idx_post_tenant_author ON post;");
+
+    let fulltext = CreateIndexMigration {
+        table: "post".to_string(),
+        index: MigrationIndex {
+            name: "idx_post_body_fulltext".to_string(),
+            columns: vec!["body".to_string()],
+            automatic: false,
+            kind: MigrationIndexKind::FullText,
+        },
+    };
+    assert!(sqlite.compile_create_index_migration(fulltext.clone()).contains("LIKE fallback"));
+    assert_eq!(
+        postgres.compile_create_index_migration(fulltext.clone()),
+        "CREATE INDEX idx_post_body_fulltext ON post USING GIN (to_tsvector('simple', COALESCE(body, '')));"
+    );
+    assert_eq!(
+        mysql.compile_create_index_migration(fulltext),
+        "CREATE FULLTEXT INDEX idx_post_body_fulltext ON post (body);"
+    );
+
+    let unique = CreateIndexMigration {
+        table: "post".to_string(),
+        index: MigrationIndex {
+            name: "uq_post_tenant_slug".to_string(),
+            columns: vec!["tenant_id".to_string(), "slug".to_string()],
+            automatic: false,
+            kind: MigrationIndexKind::Unique,
+        },
+    };
+    assert_eq!(
+        sqlite.compile_create_index_migration(unique.clone()),
+        "CREATE UNIQUE INDEX uq_post_tenant_slug ON post (tenant_id, slug);"
+    );
+    assert_eq!(
+        postgres.compile_create_index_migration(unique.clone()),
+        "CREATE UNIQUE INDEX uq_post_tenant_slug ON post (tenant_id, slug);"
+    );
+    assert_eq!(
+        mysql.compile_create_index_migration(unique),
+        "CREATE UNIQUE INDEX uq_post_tenant_slug ON post (tenant_id, slug);"
+    );
+
+    let composite_fulltext = CreateIndexMigration {
+        table: "post".to_string(),
+        index: MigrationIndex {
+            name: "idx_post_title_body_fulltext".to_string(),
+            columns: vec!["title".to_string(), "body".to_string()],
+            automatic: false,
+            kind: MigrationIndexKind::FullText,
+        },
+    };
+    assert_eq!(
+        postgres.compile_create_index_migration(composite_fulltext.clone()),
+        "CREATE INDEX idx_post_title_body_fulltext ON post USING GIN (to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(body, '')));"
+    );
+    assert_eq!(
+        mysql.compile_create_index_migration(composite_fulltext),
+        "CREATE FULLTEXT INDEX idx_post_title_body_fulltext ON post (title, body);"
+    );
 
     Ok(())
 }

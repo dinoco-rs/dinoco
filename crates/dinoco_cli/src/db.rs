@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use dinoco_engine::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CreateEnumMigration,
-    CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, DropColumnMigration, DropEnumMigration,
-    DropForeignKeyMigration, DropTableMigration, MigrationColumn, MigrationColumnType, MigrationForeignKey,
-    MySqlAdapter, PgBouncerAdapter, PostgresAdapter, ReferentialAction, RenameColumnMigration, SqliteAdapter,
+    CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, DropColumnMigration,
+    DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, MigrationColumn,
+    MigrationColumnType, MigrationForeignKey, MigrationIndex, MigrationIndexKind, MySqlAdapter, PgBouncerAdapter,
+    PostgresAdapter, ReferentialAction, RenameColumnMigration, SqliteAdapter,
 };
 use dinoco_engine::{
     mysql_async::{TxOpts, prelude::Queryable},
@@ -37,6 +38,8 @@ pub struct DatabaseTable {
     pub row_count: i64,
     pub columns: Vec<MigrationColumn>,
     pub foreign_keys: Vec<MigrationForeignKey>,
+    #[serde(default)]
+    pub indexes: Vec<MigrationIndex>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -514,6 +517,24 @@ impl CliDatabase {
             Self::PgBouncer(adapter) => adapter.compile_drop_foreign_key_migration(migration),
             Self::Mysql(adapter) => adapter.compile_drop_foreign_key_migration(migration),
             Self::Sqlite(adapter) => adapter.compile_drop_foreign_key_migration(migration),
+        }
+    }
+
+    pub fn compile_create_index_migration(&self, migration: CreateIndexMigration) -> String {
+        match self {
+            Self::Postgres(adapter) => adapter.compile_create_index_migration(migration),
+            Self::PgBouncer(adapter) => adapter.compile_create_index_migration(migration),
+            Self::Mysql(adapter) => adapter.compile_create_index_migration(migration),
+            Self::Sqlite(adapter) => adapter.compile_create_index_migration(migration),
+        }
+    }
+
+    pub fn compile_drop_index_migration(&self, migration: DropIndexMigration) -> String {
+        match self {
+            Self::Postgres(adapter) => adapter.compile_drop_index_migration(migration),
+            Self::PgBouncer(adapter) => adapter.compile_drop_index_migration(migration),
+            Self::Mysql(adapter) => adapter.compile_drop_index_migration(migration),
+            Self::Sqlite(adapter) => adapter.compile_drop_index_migration(migration),
         }
     }
 
@@ -1035,8 +1056,9 @@ async fn inspect_sqlite(adapter: &SqliteAdapter) -> anyhow::Result<DatabaseSchem
                 column.unique = unique_columns.contains(column.name.as_str());
             }
             let foreign_keys = sqlite_foreign_keys(conn, &table_name)?;
+            let indexes = sqlite_indexes(conn, &table_name)?;
 
-            tables.push(DatabaseTable { name: table_name, row_count, columns, foreign_keys });
+            tables.push(DatabaseTable { name: table_name, row_count, columns, foreign_keys, indexes });
         }
 
         Ok(DatabaseSchema { tables, enums: Vec::new() })
@@ -1137,6 +1159,31 @@ fn sqlite_unique_columns(
     Ok(unique_columns)
 }
 
+fn sqlite_indexes(conn: &rusqlite::Connection, table_name: &str) -> rusqlite::Result<Vec<MigrationIndex>> {
+    let mut index_stmt =
+        conn.prepare("SELECT name, [unique] FROM pragma_index_list(?1) WHERE origin = 'c' ORDER BY name")?;
+    let index_names = index_stmt
+        .query_map([table_name], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut indexes = Vec::new();
+
+    for (name, unique) in index_names {
+        let mut columns_stmt = conn.prepare("SELECT name FROM pragma_index_info(?1) ORDER BY seqno")?;
+        let columns =
+            columns_stmt.query_map([name.as_str()], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
+        if !columns.is_empty() && !(unique == 1 && columns.len() == 1) {
+            indexes.push(MigrationIndex {
+                name,
+                columns,
+                automatic: false,
+                kind: if unique == 1 { MigrationIndexKind::Unique } else { MigrationIndexKind::Standard },
+            });
+        }
+    }
+
+    Ok(indexes)
+}
+
 async fn inspect_postgres(adapter: &PostgresAdapter) -> anyhow::Result<DatabaseSchema> {
     let conn = adapter.pool.get().await.context("failed to get postgres connection from pool")?;
     let table_rows = conn
@@ -1212,8 +1259,9 @@ async fn inspect_postgres(adapter: &PostgresAdapter) -> anyhow::Result<DatabaseS
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
         let foreign_keys = postgres_foreign_keys(&conn, &table_name).await?;
+        let indexes = postgres_indexes(&conn, &table_name, &columns).await?;
 
-        tables.push(DatabaseTable { name: table_name, row_count, columns, foreign_keys });
+        tables.push(DatabaseTable { name: table_name, row_count, columns, foreign_keys, indexes });
     }
 
     let enum_rows = conn
@@ -1284,6 +1332,105 @@ async fn postgres_foreign_keys(
     Ok(grouped)
 }
 
+async fn postgres_indexes(
+    conn: &dinoco_engine::deadpool_postgres::Client,
+    table_name: &str,
+    columns: &[MigrationColumn],
+) -> anyhow::Result<Vec<MigrationIndex>> {
+    let rows = conn
+        .query(
+            "SELECT i.relname, a.attname, ix.indisunique
+             FROM pg_class t
+             JOIN pg_namespace n ON n.oid = t.relnamespace
+             JOIN pg_index ix ON ix.indrelid = t.oid
+             JOIN pg_class i ON i.oid = ix.indexrelid
+             JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS key(attnum, ordinality) ON true
+             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = key.attnum
+             LEFT JOIN pg_constraint c ON c.conindid = i.oid
+             WHERE n.nspname = 'public'
+               AND t.relname = $1
+               AND NOT ix.indisprimary
+               AND ix.indpred IS NULL
+               AND key.attnum > 0
+               AND c.oid IS NULL
+             ORDER BY i.relname, key.ordinality",
+            &[&table_name],
+        )
+        .await?;
+    let mut indexes: Vec<MigrationIndex> = Vec::new();
+
+    for row in rows {
+        let name: String = row.try_get(0)?;
+        let column: String = row.try_get(1)?;
+        let unique: bool = row.try_get(2)?;
+        if let Some(index) = indexes.iter_mut().find(|index| index.name == name) {
+            index.columns.push(column);
+        } else {
+            indexes.push(MigrationIndex {
+                name,
+                columns: vec![column],
+                automatic: false,
+                kind: if unique { MigrationIndexKind::Unique } else { MigrationIndexKind::Standard },
+            });
+        }
+    }
+    indexes.retain(|index| index.kind != MigrationIndexKind::Unique || index.columns.len() > 1);
+
+    let fulltext_rows = conn
+        .query(
+            "SELECT i.relname, pg_get_indexdef(i.oid)
+             FROM pg_class t
+             JOIN pg_namespace n ON n.oid = t.relnamespace
+             JOIN pg_index ix ON ix.indrelid = t.oid
+             JOIN pg_class i ON i.oid = ix.indexrelid
+             JOIN pg_am am ON am.oid = i.relam
+             LEFT JOIN pg_constraint c ON c.conindid = i.oid
+             WHERE n.nspname = 'public'
+               AND t.relname = $1
+               AND am.amname = 'gin'
+               AND ix.indexprs IS NOT NULL
+               AND ix.indpred IS NULL
+               AND c.oid IS NULL
+             ORDER BY i.relname",
+            &[&table_name],
+        )
+        .await?;
+
+    for row in fulltext_rows {
+        let name: String = row.try_get(0)?;
+        let definition: String = row.try_get(1)?;
+        let indexed_columns = postgres_fulltext_columns(&definition, columns);
+        if !indexed_columns.is_empty() {
+            indexes.push(MigrationIndex {
+                name,
+                columns: indexed_columns,
+                automatic: false,
+                kind: MigrationIndexKind::FullText,
+            });
+        }
+    }
+
+    Ok(indexes)
+}
+
+fn postgres_fulltext_columns(definition: &str, columns: &[MigrationColumn]) -> Vec<String> {
+    let mut columns = columns
+        .iter()
+        .filter_map(|column| {
+            let plain = format!("COALESCE({},", column.name);
+            let quoted = format!("COALESCE(\"{}\",", column.name.replace('"', "\"\""));
+            definition
+                .find(&plain)
+                .into_iter()
+                .chain(definition.find(&quoted))
+                .min()
+                .map(|position| (position, column.name.clone()))
+        })
+        .collect::<Vec<_>>();
+    columns.sort_by_key(|(position, _)| *position);
+    columns.into_iter().map(|(_, column)| column).collect()
+}
+
 async fn inspect_pgbouncer(adapter: &PgBouncerAdapter) -> anyhow::Result<DatabaseSchema> {
     inspect_postgres(adapter.inner()).await
 }
@@ -1341,12 +1488,14 @@ async fn inspect_mysql(adapter: &MySqlAdapter) -> anyhow::Result<DatabaseSchema>
             })
             .collect();
         let foreign_keys = mysql_foreign_keys(&mut conn, &table_name).await?;
+        let indexes = mysql_indexes(&mut conn, &table_name).await?;
 
         tables.push(DatabaseTable {
             name: table_name,
             row_count: row_count.unwrap_or_default(),
             columns,
             foreign_keys,
+            indexes,
         });
     }
 
@@ -1393,6 +1542,50 @@ async fn mysql_foreign_keys(
     }
 
     Ok(grouped)
+}
+
+async fn mysql_indexes(
+    conn: &mut dinoco_engine::mysql_async::Conn,
+    table_name: &str,
+) -> anyhow::Result<Vec<MigrationIndex>> {
+    let rows: Vec<dinoco_engine::mysql_async::Row> = conn
+        .exec(
+            "SELECT index_name AS name, column_name AS column_name, index_type AS index_type,
+                    non_unique AS non_unique
+             FROM information_schema.statistics
+             WHERE table_schema = DATABASE()
+               AND table_name = ?
+               AND index_name <> 'PRIMARY'
+             ORDER BY index_name, seq_in_index",
+            (table_name.to_string(),),
+        )
+        .await?;
+    let mut indexes: Vec<MigrationIndex> = Vec::new();
+
+    for mut row in rows {
+        let name = row.take::<String, _>("name").unwrap_or_default();
+        let column = row.take::<String, _>("column_name").unwrap_or_default();
+        let index_type = row.take::<String, _>("index_type").unwrap_or_default();
+        let unique = row.take::<u8, _>("non_unique").unwrap_or(1) == 0;
+        let kind = if index_type.eq_ignore_ascii_case("FULLTEXT") {
+            MigrationIndexKind::FullText
+        } else if unique {
+            MigrationIndexKind::Unique
+        } else {
+            MigrationIndexKind::Standard
+        };
+        if name.is_empty() || column.is_empty() {
+            continue;
+        }
+        if let Some(index) = indexes.iter_mut().find(|index| index.name == name) {
+            index.columns.push(column);
+        } else {
+            indexes.push(MigrationIndex { name, columns: vec![column], automatic: false, kind });
+        }
+    }
+    indexes.retain(|index| index.kind != MigrationIndexKind::Unique || index.columns.len() > 1);
+
+    Ok(indexes)
 }
 
 fn parse_column_type(raw: &str) -> MigrationColumnType {
