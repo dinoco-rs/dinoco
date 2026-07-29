@@ -42,7 +42,10 @@ pub fn render_models(schema: &Schema) -> String {
 pub fn render_models_mod(schema: &Schema) -> String {
     let mut out = String::new();
     for item in schema.enums() {
-        out.push_str("#[derive(Debug, Clone, PartialEq, Eq, Default, ::dinoco::DinocoEnum)]\n");
+        out.push_str(
+            "#[derive(Debug, Clone, PartialEq, Eq, Default, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize, ::dinoco::DinocoEnum)]\n",
+        );
+        out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
         out.push_str(&format!("pub enum {} {{\n", item.name));
         for (index, value) in item.values.iter().enumerate() {
             if index == 0 {

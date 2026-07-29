@@ -7,9 +7,9 @@ import { DOCS_LOCALE_COOKIE, DOCS_THEME_COOKIE, resolveDocsLocale, resolveDocsTh
 import { cookies } from 'next/headers';
 
 export const metadata: Metadata = {
-	description: 'Dinoco v1.0.9 documentation for schemas, migrations, typed Rust queries, relations, and database adapters.',
+	description: 'Dinoco v1.1.0 documentation for schemas, migrations, typed Rust queries, relations, and database adapters.',
 	title: {
-		default: 'Dinoco v1.0.9 documentation',
+		default: 'Dinoco v1.1.0 documentation',
 		template: '%s | Dinoco',
 	},
 };

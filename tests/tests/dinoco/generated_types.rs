@@ -1,6 +1,7 @@
 use dinoco::{DinocoEnum, Entity, Snowflake, chrono, serde_json};
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, DinocoEnum)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize, DinocoEnum)]
+#[serde(crate = "::dinoco::serde")]
 enum GeneratedStatus {
     #[default]
     #[dinoco(value = "waiting")]
@@ -107,4 +108,11 @@ fn generated_scalar_types_satisfy_entity_adapter_bounds() {
 
     let value = dinoco::DinocoValue::from(&GeneratedStatus::InProgress);
     assert_eq!(value, dinoco::DinocoValue::Enum("GeneratedStatus".to_string(), "in-progress".to_string()));
+
+    let json = serde_json::to_string(&GeneratedStatus::InProgress).expect("serialize generated enum");
+    assert_eq!(json, "\"InProgress\"");
+    assert_eq!(
+        serde_json::from_str::<GeneratedStatus>(&json).expect("deserialize generated enum"),
+        GeneratedStatus::InProgress
+    );
 }

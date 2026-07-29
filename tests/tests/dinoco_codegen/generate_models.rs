@@ -108,7 +108,10 @@ fn codegen_respects_uuid_snowflake_enum_defaults_and_implicit_relations() {
 
     assert!(models.contains("pub id: ::dinoco::Uuid"));
     assert!(models.contains("pub sequence: ::dinoco::Snowflake"));
-    assert!(models.contains("#[derive(Debug, Clone, PartialEq, Eq, Default, ::dinoco::DinocoEnum)]"));
+    assert!(models.contains(
+        "#[derive(Debug, Clone, PartialEq, Eq, Default, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize, ::dinoco::DinocoEnum)]"
+    ));
+    assert!(models.contains("#[serde(crate = \"::dinoco::serde\")]"));
     assert!(models.contains("#[dinoco(value = \"USER\")]"));
     assert!(models.contains("#[default]\n    #[dinoco(value = \"USER\")]\n    USER,"));
     assert!(models.contains("pub createdAt: ::dinoco::chrono::DateTime<::dinoco::chrono::Utc>"));
