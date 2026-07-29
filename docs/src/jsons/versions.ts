@@ -1,6 +1,4 @@
 import v1_1_0 from './versions/v1.1.0';
-import v1_0_9 from './versions/v1.0.9';
-import v1_0_8 from './versions/v1.0.8';
 
 export type DocsLocale = 'en-us' | 'pt-br';
 export const SUPPORTED_LOCALES: DocsLocale[] = ['en-us', 'pt-br'];
@@ -97,11 +95,7 @@ function normalizeLocalizedRecord<T>(record: Partial<Record<RawDocsLocale, T>>):
 	) as Partial<Record<DocsLocale, T>>;
 }
 
-const versionsData: DocsVersionData[] = [
-	v1_1_0 as DocsVersionData,
-	v1_0_9 as DocsVersionData,
-	v1_0_8 as DocsVersionData,
-];
+const versionsData: DocsVersionData[] = [v1_1_0 as DocsVersionData];
 
 export const versions: DocsVersion[] = versionsData.map(version => ({
 	...version,
@@ -110,15 +104,15 @@ export const versions: DocsVersion[] = versionsData.map(version => ({
 		...group,
 		localizedNames: normalizeLocalizedRecord(group.localizedNames ?? {}),
 		languages: Object.fromEntries(
-				Object.entries(normalizeLocalizedRecord(group.languages)).map(([locale, sections]) => [
-					locale,
-					(sections ?? []).map(section => ({
-						...section,
-						items: section.items.map(mapItem),
-					})),
-				]),
-			) as Partial<Record<DocsLocale, DocsSection[]>>,
-		})),
+			Object.entries(normalizeLocalizedRecord(group.languages)).map(([locale, sections]) => [
+				locale,
+				(sections ?? []).map(section => ({
+					...section,
+					items: section.items.map(mapItem),
+				})),
+			]),
+		) as Partial<Record<DocsLocale, DocsSection[]>>,
+	})),
 }));
 
 export type ResolvedDocsPath = {
