@@ -14,6 +14,7 @@ use crate::{
 pub struct MySqlAdapter {
     pub url: String,
     pub pool: Arc<Pool>,
+    with_logger: bool,
 }
 
 #[async_trait::async_trait]
@@ -57,7 +58,15 @@ impl MySqlAdapter {
         let url = url.into();
         let pool = Pool::new(url.as_str());
 
-        Self { url, pool: Arc::new(pool) }
+        Self { url, pool: Arc::new(pool), with_logger: false }
+    }
+
+    pub(crate) fn set_logger(&mut self, enabled: bool) {
+        self.with_logger = enabled;
+    }
+
+    pub(crate) fn logger_enabled(&self) -> bool {
+        self.with_logger
     }
 
     pub(crate) async fn execute_compiled_transaction(

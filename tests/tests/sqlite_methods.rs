@@ -145,6 +145,66 @@ async fn sqlite_crud_relations_and_count_work_end_to_end() -> anyhow::Result<()>
     Ok(())
 }
 
+#[tokio::test]
+async fn replicas_serve_finds_while_primary_reads_and_find_and_update_stay_on_primary() -> anyhow::Result<()> {
+    let suffix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+    let primary_path = format!("/private/tmp/dinoco-primary-{}-{suffix}.sqlite", std::process::id());
+    let replica_path = format!("/private/tmp/dinoco-replica-{}-{suffix}.sqlite", std::process::id());
+    let primary_adapter = SqliteAdapter::new(primary_path.clone()).await.map_err(anyhow::Error::msg)?;
+    let replica_adapter = SqliteAdapter::new(replica_path.clone()).await.map_err(anyhow::Error::msg)?;
+
+    for adapter in [&primary_adapter, &replica_adapter] {
+        create_table(
+            adapter,
+            "user",
+            vec![
+                primary(column("id", MigrationColumnType::String)),
+                column("email", MigrationColumnType::String),
+                column("office", MigrationColumnType::String),
+            ],
+        )
+        .await?;
+    }
+    primary_adapter
+        .execute(
+            "INSERT INTO user (id, email, office) VALUES (?, ?, ?)",
+            &["primary-id".into(), "primary@dinoco.rs".into(), "primary-before".into()],
+        )
+        .await?;
+    replica_adapter
+        .execute(
+            "INSERT INTO user (id, email, office) VALUES (?, ?, ?)",
+            &["replica-id".into(), "replica@dinoco.rs".into(), "replica-value".into()],
+        )
+        .await?;
+
+    let client =
+        DinocoClient::new(Backend::Sqlite(primary_adapter)).with_read_replicas(vec![Backend::Sqlite(replica_adapter)]);
+
+    let regular = find_first::<User>().execute(&client).await?.expect("replica row");
+    assert_eq!(regular.email, "replica@dinoco.rs");
+
+    let primary_read = find_first::<User>().read_in_primary().execute(&client).await?.expect("primary row");
+    assert_eq!(primary_read.email, "primary@dinoco.rs");
+
+    let updated = dinoco::find_and_update::<User>()
+        .where_(|x| x.email.eq("primary@dinoco.rs"))
+        .update(|x| x.office.set("primary-after".to_string()))
+        .execute(&client)
+        .await?;
+    assert_eq!(updated.office, "primary-after");
+
+    let replica_after = find_first::<User>().execute(&client).await?.expect("unchanged replica row");
+    assert_eq!(replica_after.office, "replica-value");
+    let primary_after = find_first::<User>().read_in_primary().execute(&client).await?.expect("updated primary row");
+    assert_eq!(primary_after.office, "primary-after");
+
+    drop(client);
+    let _ = std::fs::remove_file(primary_path);
+    let _ = std::fs::remove_file(replica_path);
+    Ok(())
+}
+
 async fn adapter_count(client: &DinocoClient, sql: &str) -> anyhow::Result<i64> {
     match &client.backend {
         Backend::Sqlite(adapter) => adapter.query_count(sql, &[]).await,

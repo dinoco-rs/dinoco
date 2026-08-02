@@ -616,6 +616,9 @@ fn config_description(name: &str) -> Option<&'static str> {
         "database_url" => Some("Primary database URL. It must be loaded through `env(...)`."),
         "read_replicas" => Some("Optional environment-backed URLs used in round-robin reads."),
         "snowflake_node_id" => Some("Environment-backed node ID required by `snowflake()`."),
+        "with_logger" => Some("Enables SQL query logging when set to `true`. Defaults to `false`."),
+        "min_connection" => Some("Minimum PostgreSQL Direct pool size. Defaults to `2`."),
+        "max_connection" => Some("Maximum PostgreSQL Direct pool size. Defaults to `10`."),
         "env" => Some("Reads a configuration value from an environment variable."),
         _ => None,
     }

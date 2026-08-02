@@ -5,6 +5,32 @@ use std::path::Path;
 use dinoco_compiler::{AttributeValue, ConfigValue, Model, ModelField, Schema};
 
 pub fn generate_models(schema: &Schema) -> anyhow::Result<()> {
+    generate_models_for_workspace(schema, None)
+}
+
+pub fn generate_models_for_workspace(schema: &Schema, workspace: Option<&str>) -> anyhow::Result<()> {
+    let marker = Path::new("dinoco/.models-workspace");
+    let generated_workspace = fs::read_to_string(marker).ok();
+    let requested_workspace = workspace.unwrap_or("");
+    let workspace_changed = generated_workspace
+        .as_deref()
+        .map(|generated| generated.trim() != requested_workspace)
+        .unwrap_or(workspace.is_some());
+    if workspace_changed {
+        let models = Path::new("dinoco/models");
+        if models.exists() {
+            fs::remove_dir_all(models)?;
+        }
+        let generated_mod = Path::new("dinoco/mod.rs");
+        if generated_mod.exists() {
+            fs::remove_file(generated_mod)?;
+        }
+        let stale_flat_file = Path::new("dinoco/models.rs");
+        if stale_flat_file.exists() {
+            fs::remove_file(stale_flat_file)?;
+        }
+    }
+
     fs::create_dir_all("dinoco/models")?;
     let stale_flat_file = Path::new("dinoco/models.rs");
     if stale_flat_file.exists() {
@@ -21,7 +47,9 @@ pub fn generate_models(schema: &Schema) -> anyhow::Result<()> {
             render_many_to_many_join_file(&join, schema),
         )?;
     }
-    fs::write("dinoco/mod.rs", render_dinoco_mod(schema))?;
+    let migrations = runtime_migrations(workspace)?;
+    fs::write("dinoco/mod.rs", render_dinoco_mod_with_migrations(schema, &migrations))?;
+    fs::write(marker, requested_workspace)?;
     Ok(())
 }
 
@@ -98,6 +126,10 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
 }
 
 pub fn render_dinoco_mod(schema: &Schema) -> String {
+    render_dinoco_mod_with_migrations(schema, &[])
+}
+
+fn render_dinoco_mod_with_migrations(schema: &Schema, migrations: &[(String, String)]) -> String {
     let config = schema.config();
     let database = config
         .and_then(|config| config.entries.iter().find(|entry| entry.key == "database"))
@@ -120,6 +152,16 @@ pub fn render_dinoco_mod(schema: &Schema) -> String {
             _ => None,
         })
         .unwrap_or("DATABASE_URL");
+    let with_logger = config
+        .and_then(|config| config.entries.iter().find(|entry| entry.key == "with_logger"))
+        .and_then(|entry| match &entry.value {
+            ConfigValue::Boolean(value) => Some(*value),
+            _ => None,
+        })
+        .unwrap_or(false);
+    let min_connection = config_integer(config, "min_connection").unwrap_or(2);
+    let max_connection = config_integer(config, "max_connection").unwrap_or(10);
+    let read_replica_envs = config_env_array(config, "read_replicas");
 
     let mut out = String::new();
     out.push_str("pub mod models;\n\n");
@@ -128,20 +170,115 @@ pub fn render_dinoco_mod(schema: &Schema) -> String {
     out.push_str(&format!("    let database_url = std::env::var(\"{database_url_env}\")?;\n"));
     match database {
         "postgresql" | "postgres" if connection == "pgbouncer" => out.push_str(
-            "    let adapter = ::dinoco::PgBouncerAdapter::new(database_url).await?;\n    Ok(::dinoco::DinocoClient::new(::dinoco::Backend::PgBouncer(adapter)))\n",
+            "    let adapter = ::dinoco::PgBouncerAdapter::new(database_url).await?;\n    let client = ::dinoco::DinocoClient::new(::dinoco::Backend::PgBouncer(adapter));\n",
         ),
-        "postgresql" | "postgres" => out.push_str(
-            "    let adapter = ::dinoco::PostgresAdapter::direct(database_url).await?;\n    Ok(::dinoco::DinocoClient::new(::dinoco::Backend::Postgres(adapter)))\n",
-        ),
+        "postgresql" | "postgres" => out.push_str(&format!(
+            "    let adapter = ::dinoco::PostgresAdapter::direct_with_pool(database_url, {min_connection}, {max_connection}).await?;\n    let client = ::dinoco::DinocoClient::new(::dinoco::Backend::Postgres(adapter));\n"
+        )),
         "mysql" => out.push_str(
-            "    let adapter = ::dinoco::MySqlAdapter::new(database_url);\n    Ok(::dinoco::DinocoClient::new(::dinoco::Backend::Mysql(adapter)))\n",
+            "    let adapter = ::dinoco::MySqlAdapter::new(database_url);\n    let client = ::dinoco::DinocoClient::new(::dinoco::Backend::Mysql(adapter));\n",
         ),
         _ => out.push_str(
-            "    let adapter = <::dinoco::SqliteAdapter as ::dinoco::DinocoAdapter>::new(database_url).await.map_err(::dinoco::anyhow::Error::msg)?;\n    Ok(::dinoco::DinocoClient::new(::dinoco::Backend::Sqlite(adapter)))\n",
+            "    let adapter = <::dinoco::SqliteAdapter as ::dinoco::DinocoAdapter>::new(database_url).await.map_err(::dinoco::anyhow::Error::msg)?;\n    let client = ::dinoco::DinocoClient::new(::dinoco::Backend::Sqlite(adapter));\n",
         ),
     }
+    out.push_str("    let read_replicas = vec![\n");
+    for env_name in read_replica_envs {
+        let env_name = escape_rust_string(env_name);
+        match database {
+            "postgresql" | "postgres" if connection == "pgbouncer" => out.push_str(&format!(
+                "        ::dinoco::Backend::PgBouncer(::dinoco::PgBouncerAdapter::new(std::env::var(\"{env_name}\")?).await?),\n"
+            )),
+            "postgresql" | "postgres" => out.push_str(&format!(
+                "        ::dinoco::Backend::Postgres(::dinoco::PostgresAdapter::direct_with_pool(std::env::var(\"{env_name}\")?, {min_connection}, {max_connection}).await?),\n"
+            )),
+            "mysql" => out.push_str(&format!(
+                "        ::dinoco::Backend::Mysql(::dinoco::MySqlAdapter::new(std::env::var(\"{env_name}\")?)),\n"
+            )),
+            _ => out.push_str(&format!(
+                "        ::dinoco::Backend::Sqlite(<::dinoco::SqliteAdapter as ::dinoco::DinocoAdapter>::new(std::env::var(\"{env_name}\")?).await.map_err(::dinoco::anyhow::Error::msg)?),\n"
+            )),
+        }
+    }
+    out.push_str("    ];\n");
+    out.push_str(&format!("    Ok(client.with_read_replicas(read_replicas).with_logger({with_logger}))\n"));
     out.push_str("}\n");
+    out.push_str("\npub const MIGRATIONS: &[::dinoco::runtime::Migration<'static>] = &[\n");
+    for (name, include_path) in migrations {
+        out.push_str(&format!(
+            "    ::dinoco::runtime::Migration::new(\"{}\", include_str!(\"{}\")),\n",
+            escape_rust_string(name),
+            escape_rust_string(include_path)
+        ));
+    }
+    out.push_str(
+        "];
+
+pub async fn migrate(
+    client: &::dinoco::DinocoClient,
+) -> ::dinoco::anyhow::Result<::dinoco::runtime::MigrationReport> {
+    ::dinoco::runtime::run_migrations(client, MIGRATIONS).await
+}
+",
+    );
     out
+}
+
+fn config_integer(config: Option<&dinoco_compiler::ConfigBlock>, key: &str) -> Option<i64> {
+    config?.entries.iter().find(|entry| entry.key == key).and_then(|entry| match &entry.value {
+        ConfigValue::Integer(value) => Some(*value),
+        _ => None,
+    })
+}
+
+fn config_env_array<'a>(config: Option<&'a dinoco_compiler::ConfigBlock>, key: &str) -> Vec<&'a str> {
+    config
+        .and_then(|config| config.entries.iter().find(|entry| entry.key == key))
+        .and_then(|entry| match &entry.value {
+            ConfigValue::Array(values) => Some(values),
+            _ => None,
+        })
+        .into_iter()
+        .flatten()
+        .filter_map(|value| match value {
+            ConfigValue::Env(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn runtime_migrations(workspace: Option<&str>) -> anyhow::Result<Vec<(String, String)>> {
+    let relative_root = workspace
+        .map_or_else(|| Path::new("migrations").to_path_buf(), |workspace| Path::new("migrations").join(workspace));
+    let root = Path::new("dinoco").join(&relative_root);
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut migrations = fs::read_dir(&root)?
+        .map(|entry| -> anyhow::Result<_> {
+            let path = entry?.path();
+            if !path.is_dir() {
+                return Ok(None);
+            }
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| anyhow::anyhow!("invalid runtime migration directory name"))?
+                .to_string();
+            let up = path.join("up.sql");
+            if !up.is_file() {
+                anyhow::bail!("runtime migration `{name}` is missing {}", up.display());
+            }
+            let include_path = relative_root.join(&name).join("up.sql").to_string_lossy().replace('\\', "/");
+            Ok(Some((name, include_path)))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    migrations.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(migrations)
 }
 
 pub fn render_schema_snapshot(schema: &Schema) -> String {
@@ -457,11 +594,14 @@ fn dinoco_formatter_like(schema: &Schema) -> String {
             out.push_str("    ");
             out.push_str(&entry.key);
             out.push_str(" = ");
-            out.push_str(match &entry.value {
-                ConfigValue::String(value) | ConfigValue::Ident(value) => value,
-                ConfigValue::Env(value) => value,
-                ConfigValue::Array(_) => "[]",
-            });
+            let value = match &entry.value {
+                ConfigValue::String(value) | ConfigValue::Ident(value) => value.clone(),
+                ConfigValue::Env(value) => value.clone(),
+                ConfigValue::Array(_) => "[]".to_string(),
+                ConfigValue::Boolean(value) => value.to_string(),
+                ConfigValue::Integer(value) => value.to_string(),
+            };
+            out.push_str(&value);
             out.push('\n');
         }
         out.push_str("}\n\n");

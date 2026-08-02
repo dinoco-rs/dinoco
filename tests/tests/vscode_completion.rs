@@ -63,3 +63,57 @@ fn diagnostics_report_missing_and_multiple_primary_keys() {
             .any(|item| { item.code == Some(NumberOrString::String("dinoco.multiplePrimaryKeys".to_string())) })
     );
 }
+
+#[test]
+fn config_completion_exposes_logger_and_postgres_pool_settings() {
+    let source = "config {\n    \n}";
+    let index = DocumentIndex::new(source);
+    let CompletionResponse::Array(items) = complete(source, &index, Position::new(1, 4)) else {
+        panic!("config completion should return an item array");
+    };
+
+    for label in ["with_logger", "min_connection", "max_connection"] {
+        assert!(items.iter().any(|item| item.label == label), "missing {label}");
+    }
+}
+
+#[test]
+fn diagnostics_report_ambiguous_and_invalid_pool_configs() {
+    let mixed = r#"
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+    workspace {
+        dev {
+            database = "postgresql"
+            database_url = env("DEV_DATABASE_URL")
+        }
+    }
+}
+"#;
+    let diagnostics = analyze(mixed, &DocumentIndex::new(mixed));
+    assert!(
+        diagnostics
+            .iter()
+            .filter(|item| item.code == Some(NumberOrString::String("dinoco.ambiguousConfig".to_string())))
+            .count()
+            >= 2,
+        "{diagnostics:#?}"
+    );
+
+    let invalid_pool = r#"
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+    with_logger = true
+    min_connection = 20
+    max_connection = 10
+}
+"#;
+    let diagnostics = analyze(invalid_pool, &DocumentIndex::new(invalid_pool));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|item| { item.code == Some(NumberOrString::String("dinoco.invalidPoolRange".to_string())) })
+    );
+}

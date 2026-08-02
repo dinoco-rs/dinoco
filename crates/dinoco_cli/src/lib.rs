@@ -4,7 +4,7 @@ pub mod schema;
 pub mod sql;
 pub mod ui;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "dinoco")]
@@ -29,15 +29,21 @@ enum Commands {
 #[derive(Subcommand)]
 enum MigrateCommands {
     #[command(about = "Compile the schema, create a migration, apply it, and generate models")]
-    Generate,
+    Generate(WorkspaceArgs),
     #[command(about = "Apply all pending migrations")]
-    Run,
+    Run(WorkspaceArgs),
 }
 
 #[derive(Subcommand)]
 enum ModelsCommands {
     #[command(about = "Generate Rust models without creating a migration")]
-    Generate,
+    Generate(WorkspaceArgs),
+}
+
+#[derive(Args)]
+struct WorkspaceArgs {
+    #[arg(short = 'w', long, value_name = "NAME", help = "Use the named workspace from schema.dinoco")]
+    workspace: Option<String>,
 }
 
 pub async fn run() -> anyhow::Result<()> {
@@ -47,9 +53,9 @@ pub async fn run() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Init => commands::init::run()?,
-        Commands::Migrate(MigrateCommands::Generate) => commands::migrate::generate().await?,
-        Commands::Migrate(MigrateCommands::Run) => commands::migrate::run().await?,
-        Commands::Models(ModelsCommands::Generate) => commands::models::generate().await?,
+        Commands::Migrate(MigrateCommands::Generate(args)) => commands::migrate::generate(args.workspace).await?,
+        Commands::Migrate(MigrateCommands::Run(args)) => commands::migrate::run(args.workspace).await?,
+        Commands::Models(ModelsCommands::Generate(args)) => commands::models::generate(args.workspace).await?,
     }
 
     Ok(())

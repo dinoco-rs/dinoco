@@ -158,11 +158,27 @@ fn config_completions(prefix: &str) -> Vec<CompletionItem> {
                 "Environment-backed read replicas",
                 "[env(\"${1:DATABASE_REPLICA_URL}\")]",
             )],
+            "with_logger" => vec![
+                value("true", CompletionItemKind::VALUE, "Enable SQL query logging", "true"),
+                value("false", CompletionItemKind::VALUE, "Disable SQL query logging", "false"),
+            ],
+            "min_connection" => {
+                vec![value("2", CompletionItemKind::VALUE, "Default minimum PostgreSQL Direct connections", "2")]
+            }
+            "max_connection" => {
+                vec![value("10", CompletionItemKind::VALUE, "Default maximum PostgreSQL Direct connections", "10")]
+            }
             _ => Vec::new(),
         };
     }
 
     vec![
+        snippet(
+            "workspace",
+            CompletionItemKind::MODULE,
+            "Named database configurations",
+            "workspace {\n    ${1:dev} {\n        database = \"${2|postgresql,mysql,sqlite|}\"\n        database_url = env(\"${3:DATABASE_URL}\")\n    }\n}",
+        ),
         snippet(
             "database",
             CompletionItemKind::PROPERTY,
@@ -187,6 +203,19 @@ fn config_completions(prefix: &str) -> Vec<CompletionItem> {
             CompletionItemKind::PROPERTY,
             "Snowflake node ID",
             "snowflake_node_id = env(\"${1:SNOWFLAKE_NODE_ID}\")",
+        ),
+        snippet("with_logger", CompletionItemKind::PROPERTY, "SQL query logging", "with_logger = ${1|true,false|}"),
+        snippet(
+            "min_connection",
+            CompletionItemKind::PROPERTY,
+            "Minimum PostgreSQL Direct pool size",
+            "min_connection = ${1:2}",
+        ),
+        snippet(
+            "max_connection",
+            CompletionItemKind::PROPERTY,
+            "Maximum PostgreSQL Direct pool size",
+            "max_connection = ${1:10}",
         ),
     ]
 }

@@ -64,6 +64,86 @@ fn migrate_generate_sqlite_creates_migration_and_models() {
 }
 
 #[test]
+fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
+    let project = temp_project("workspaces");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
+    fs::write(project.join("dinoco/schema.dinoco"), WORKSPACE_SCHEMA).expect("workspace schema");
+
+    let dev_db = project.join("dev.sqlite");
+    let dev_replica_db = project.join("dev-replica.sqlite");
+    let prod_db = project.join("prod.sqlite");
+    let dev = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate", "--workspace", "dev"])
+        .env("DEV_DATABASE_URL", &dev_db)
+        .env("DEV_REPLICA_DATABASE_URL", &dev_replica_db)
+        .current_dir(&project)
+        .output()
+        .expect("dev migration should run");
+    assert!(dev.status.success(), "stderr: {}", String::from_utf8_lossy(&dev.stderr));
+    assert!(project.join("dinoco/migrations/dev").is_dir());
+    assert!(!project.join("dinoco/migrations/prod").exists());
+    assert!(project.join("dinoco/models/user.rs").exists());
+    assert!(dev_db.exists(), "the selected workspace primary must be used");
+    assert!(!prod_db.exists(), "an unselected workspace database must not be opened");
+    assert!(!dev_replica_db.exists(), "migration commands must not open read replicas");
+    let dev_connection = Connection::open(&dev_db).expect("dev primary");
+    assert!(table_exists(&dev_connection, "user"));
+    drop(dev_connection);
+    let generated = fs::read_to_string(project.join("dinoco/mod.rs")).expect("generated mod");
+    assert!(generated.contains("DEV_DATABASE_URL"));
+    assert!(generated.contains("DEV_REPLICA_DATABASE_URL"));
+    assert!(!generated.contains("PROD_REPLICA_DATABASE_URL"));
+    assert!(generated.contains("migrations/dev/"));
+    assert!(generated.contains("pub async fn migrate("));
+
+    fs::write(project.join("dinoco/schema.dinoco"), WORKSPACE_ACCOUNT_SCHEMA).expect("updated workspace schema");
+    let prod_replica_db = project.join("prod-replica.sqlite");
+    let prod = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate", "-w", "prod"])
+        .env("PROD_DATABASE_URL", &prod_db)
+        .env("PROD_REPLICA_DATABASE_URL", &prod_replica_db)
+        .current_dir(&project)
+        .output()
+        .expect("prod migration should run");
+    assert!(prod.status.success(), "stderr: {}", String::from_utf8_lossy(&prod.stderr));
+    assert!(project.join("dinoco/migrations/prod").is_dir());
+    assert!(project.join("dinoco/migrations/dev").is_dir());
+    assert!(project.join("dinoco/models/account.rs").exists());
+    assert!(prod_db.exists(), "the selected prod primary must be used");
+    assert!(!prod_replica_db.exists(), "prod migrations must not open the prod replica");
+    assert!(!project.join("dinoco/models/user.rs").exists(), "switching workspaces must remove stale generated models");
+    let generated = fs::read_to_string(project.join("dinoco/mod.rs")).expect("generated mod");
+    assert!(generated.contains("PROD_DATABASE_URL"));
+    assert!(generated.contains("PROD_REPLICA_DATABASE_URL"));
+    assert!(!generated.contains("DEV_REPLICA_DATABASE_URL"));
+    assert!(generated.contains("migrations/prod/"));
+    assert!(!generated.contains("migrations/dev/"));
+
+    let models = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["models", "generate", "-w", "dev"])
+        .current_dir(&project)
+        .output()
+        .expect("dev models should run");
+    assert!(models.status.success(), "stderr: {}", String::from_utf8_lossy(&models.stderr));
+    let generated = fs::read_to_string(project.join("dinoco/mod.rs")).expect("generated mod");
+    assert!(generated.contains("DEV_DATABASE_URL"));
+    assert!(generated.contains("DEV_REPLICA_DATABASE_URL"));
+    assert!(!generated.contains("PROD_REPLICA_DATABASE_URL"));
+    assert!(generated.contains("migrations/dev/"));
+    assert!(!generated.contains("migrations/prod/"));
+
+    let run = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "run", "--workspace", "dev"])
+        .env("DEV_DATABASE_URL", &dev_db)
+        .env("DEV_REPLICA_DATABASE_URL", &dev_replica_db)
+        .current_dir(&project)
+        .output()
+        .expect("dev migrate run should run");
+    assert!(run.status.success(), "stderr: {}", String::from_utf8_lossy(&run.stderr));
+    assert!(!dev_replica_db.exists(), "migrate run must continue using only the workspace primary");
+}
+
+#[test]
 fn migrate_generate_sqlite_creates_explicit_and_foreign_key_indexes() {
     let project = temp_project("indexes");
     fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
@@ -210,6 +290,50 @@ model User {
 }
 "#;
 
+const WORKSPACE_SCHEMA: &str = r#"
+config {
+    workspace {
+        dev {
+            database = "sqlite"
+            database_url = env("DEV_DATABASE_URL")
+            read_replicas = [env("DEV_REPLICA_DATABASE_URL")]
+        }
+
+        prod {
+            database = "sqlite"
+            database_url = env("PROD_DATABASE_URL")
+            read_replicas = [env("PROD_REPLICA_DATABASE_URL")]
+        }
+    }
+}
+
+model User {
+    id String @id @default(uuid())
+}
+"#;
+
+const WORKSPACE_ACCOUNT_SCHEMA: &str = r#"
+config {
+    workspace {
+        dev {
+            database = "sqlite"
+            database_url = env("DEV_DATABASE_URL")
+            read_replicas = [env("DEV_REPLICA_DATABASE_URL")]
+        }
+
+        prod {
+            database = "sqlite"
+            database_url = env("PROD_DATABASE_URL")
+            read_replicas = [env("PROD_REPLICA_DATABASE_URL")]
+        }
+    }
+}
+
+model Account {
+    id String @id @default(uuid())
+}
+"#;
+
 const SQLITE_INDEX_SCHEMA: &str = r#"
 config {
     database = "sqlite"
@@ -270,4 +394,12 @@ fn temp_project(name: &str) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!("dinoco-cli-{name}-{}-{nanos}", std::process::id()));
     fs::create_dir_all(&path).expect("temp project");
     path
+}
+
+fn table_exists(connection: &Connection, table: &str) -> bool {
+    connection
+        .query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)", [table], |row| {
+            row.get(0)
+        })
+        .expect("table existence query")
 }

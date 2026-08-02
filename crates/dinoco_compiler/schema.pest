@@ -4,11 +4,13 @@ COMMENT = _{ "#" ~ (!("\n" | "\r") ~ ANY)* | "//" ~ (!("\n" | "\r") ~ ANY)* }
 schema = { SOI ~ item* ~ EOI }
 item = _{ config_block | enum_block | model_block }
 
-config_block = { "config" ~ "{" ~ config_entry* ~ "}" }
+config_block = { "config" ~ "{" ~ (config_entry | workspace_block)* ~ "}" }
 config_entry = { ident ~ "=" ~ config_value }
-config_value = { config_array | env_call | string_literal | ident }
+config_value = { config_array | env_call | string_literal | boolean_literal | number_literal | ident }
 config_array = { "[" ~ (config_value ~ ("," ~ config_value)* ~ ","?)? ~ "]" }
 env_call = { "env" ~ "(" ~ string_literal ~ ")" }
+workspace_block = { "workspace" ~ "{" ~ workspace_entry+ ~ "}" }
+workspace_entry = { ident ~ "{" ~ config_entry* ~ "}" }
 
 enum_block = { "enum" ~ ident ~ "{" ~ enum_value* ~ "}" }
 enum_value = { ident }

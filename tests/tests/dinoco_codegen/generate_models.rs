@@ -41,8 +41,39 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     assert!(models.contains("pub tokens: Vec<UserToken>"));
     assert!(models.contains("pub user: Option<User>"));
     assert!(dinoco_mod.contains("pub mod models;"));
+    assert!(dinoco_mod.contains("pub const MIGRATIONS:"));
+    assert!(dinoco_mod.contains("pub async fn migrate("));
+    let connect = dinoco_mod.split("pub const MIGRATIONS:").next().expect("connect section");
+    assert!(!connect.contains("run_migrations"), "connect must not apply migrations automatically");
     assert!(dinoco_mod.contains("pub async fn connect()"));
-    assert!(dinoco_mod.contains("PostgresAdapter::direct"));
+    assert!(dinoco_mod.contains("PostgresAdapter::direct_with_pool(database_url, 2, 10)"));
+    assert!(dinoco_mod.contains("with_read_replicas(read_replicas)"));
+    assert!(dinoco_mod.contains("with_logger(false)"));
+}
+
+#[test]
+fn codegen_applies_logger_and_custom_postgres_pool_settings() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        config {
+            database = "postgresql"
+            connection = "direct"
+            database_url = env("DATABASE_URL")
+            with_logger = true
+            min_connection = 4
+            max_connection = 24
+            read_replicas = [env("DATABASE_REPLICA_1"), env("DATABASE_REPLICA_2")]
+        }
+        "#,
+    )
+    .expect("schema");
+
+    let dinoco_mod = dinoco_codegen::render_dinoco_mod(&schema);
+    assert!(dinoco_mod.contains("PostgresAdapter::direct_with_pool(database_url, 4, 24)"));
+    assert!(dinoco_mod.contains("PostgresAdapter::direct_with_pool(std::env::var(\"DATABASE_REPLICA_1\")?, 4, 24)"));
+    assert!(dinoco_mod.contains("PostgresAdapter::direct_with_pool(std::env::var(\"DATABASE_REPLICA_2\")?, 4, 24)"));
+    assert!(dinoco_mod.contains("with_read_replicas(read_replicas).with_logger(true)"));
+    assert!(dinoco_mod.contains("with_logger(true)"));
 }
 
 #[test]

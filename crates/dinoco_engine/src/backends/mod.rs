@@ -7,8 +7,9 @@ pub use postgres::*;
 pub use sqlite::*;
 
 use crate::{
-    CountQuery, DeleteQuery, DinocoAdapter, DinocoRowModel, DinocoSqlCompiler, FindQuery, InsertQuery,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, TransactionCommand, TransactionResults, UpdateQuery,
+    CompiledTransactionCommand, CountQuery, DeleteQuery, DinocoAdapter, DinocoRowModel, DinocoSqlCompiler, FindQuery,
+    InsertQuery, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, TransactionCommand, TransactionResults,
+    UpdateQuery,
 };
 
 pub enum Backend {
@@ -19,21 +20,54 @@ pub enum Backend {
 }
 
 impl Backend {
+    pub fn set_logger(&mut self, enabled: bool) {
+        match self {
+            Backend::Sqlite(adapter) => adapter.set_logger(enabled),
+            Backend::Postgres(adapter) => adapter.set_logger(enabled),
+            Backend::PgBouncer(adapter) => adapter.set_logger(enabled),
+            Backend::Mysql(adapter) => adapter.set_logger(enabled),
+        }
+    }
+
+    pub fn logger_enabled(&self) -> bool {
+        match self {
+            Backend::Sqlite(adapter) => adapter.logger_enabled(),
+            Backend::Postgres(adapter) => adapter.logger_enabled(),
+            Backend::PgBouncer(adapter) => adapter.logger_enabled(),
+            Backend::Mysql(adapter) => adapter.logger_enabled(),
+        }
+    }
+
+    fn log_query(&self, sql: &str, params: &[crate::DinocoValue]) {
+        if self.logger_enabled() {
+            println!("SQL: {}, params: {:#?}", sql, params);
+        }
+    }
+
+    fn log_transaction(&self, commands: &[CompiledTransactionCommand]) {
+        for command in commands {
+            self.log_query(&command.sql, &command.params);
+        }
+    }
+
     pub async fn execute_transaction(&self, commands: Vec<TransactionCommand>) -> anyhow::Result<TransactionResults> {
         match self {
             Backend::Sqlite(adapter) => {
                 let commands =
                     commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
+                self.log_transaction(&commands);
                 adapter.execute_compiled_transaction(commands).await
             }
             Backend::Postgres(adapter) => {
                 let commands =
                     commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
+                self.log_transaction(&commands);
                 adapter.execute_compiled_transaction(commands).await
             }
             Backend::PgBouncer(adapter) => {
                 let commands =
                     commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
+                self.log_transaction(&commands);
                 adapter.inner().execute_compiled_transaction(commands).await
             }
             Backend::Mysql(adapter) => {
@@ -44,6 +78,7 @@ impl Backend {
                 }
                 let commands =
                     commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
+                self.log_transaction(&commands);
                 adapter.execute_compiled_transaction(commands).await
             }
         }
@@ -57,28 +92,28 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_find_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_find_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_find_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::Mysql(adapter) => {
                 let (sql, params) = adapter.compile_find_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
@@ -99,7 +134,7 @@ impl Backend {
                 let mut params = params.to_vec();
                 params.extend(extra_params);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_optional::<M>(&sql, &params).await
             }
@@ -108,7 +143,7 @@ impl Backend {
                 let mut params = params.to_vec();
                 params.extend(extra_params);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_optional::<M>(&sql, &params).await
             }
@@ -117,7 +152,7 @@ impl Backend {
                 let mut params = params.to_vec();
                 params.extend(extra_params);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_optional::<M>(&sql, &params).await
             }
@@ -126,7 +161,7 @@ impl Backend {
                 let mut params = params.to_vec();
                 params.extend(extra_params);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_optional::<M>(&sql, &params).await
             }
@@ -141,28 +176,28 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_relation_batch_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_relation_batch_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_relation_batch_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::Mysql(adapter) => {
                 let (sql, params) = adapter.compile_relation_batch_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
@@ -174,28 +209,28 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_insert_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_insert_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_insert_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::Mysql(adapter) => {
                 let (sql, params) = adapter.compile_insert_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
@@ -210,21 +245,21 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_insert_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_insert_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_insert_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
@@ -232,7 +267,7 @@ impl Backend {
                 let Some(returning) = query.returning else {
                     let (sql, params) = adapter.compile_insert_query(query);
 
-                    println!("SQL: {}, params: {:#?}", sql, params);
+                    self.log_query(&sql, &params);
 
                     return adapter.query::<M>(&sql, &params).await;
                 };
@@ -248,7 +283,7 @@ impl Backend {
                 let table = insert_query.table;
                 let (sql, params) = adapter.compile_insert_query(insert_query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await?;
 
@@ -262,7 +297,7 @@ impl Backend {
                 };
                 let (sql, params) = adapter.compile_find_query(find);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
@@ -274,28 +309,28 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_update_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_update_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_update_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::Mysql(adapter) => {
                 let (sql, params) = adapter.compile_update_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
@@ -310,21 +345,21 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_update_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_update_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_update_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
@@ -332,7 +367,7 @@ impl Backend {
                 let Some(returning) = query.returning else {
                     let (sql, params) = adapter.compile_update_query(query);
 
-                    println!("SQL: {}, params: {:#?}", sql, params);
+                    self.log_query(&sql, &params);
 
                     return adapter.query::<M>(&sql, &params).await;
                 };
@@ -348,7 +383,7 @@ impl Backend {
                 };
                 let (sql, params) = adapter.compile_find_query(id_lookup);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 let ids = adapter
                     .query::<crate::SingleIdRow>(&sql, &params)
@@ -362,7 +397,7 @@ impl Backend {
                 let table = update_query.table;
                 let (sql, params) = adapter.compile_update_query(update_query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await?;
 
@@ -380,7 +415,7 @@ impl Backend {
                 };
                 let (sql, params) = adapter.compile_find_query(find);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
@@ -392,28 +427,28 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_delete_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_delete_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_delete_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
             Backend::Mysql(adapter) => {
                 let (sql, params) = adapter.compile_delete_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await
             }
@@ -428,21 +463,21 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_delete_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_delete_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_delete_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query::<M>(&sql, &params).await
             }
@@ -450,7 +485,7 @@ impl Backend {
                 let Some(returning) = query.returning else {
                     let (sql, params) = adapter.compile_delete_query(query);
 
-                    println!("SQL: {}, params: {:#?}", sql, params);
+                    self.log_query(&sql, &params);
 
                     return adapter.query::<M>(&sql, &params).await;
                 };
@@ -465,14 +500,14 @@ impl Backend {
                 };
                 let (sql, params) = adapter.compile_find_query(find);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 let rows = adapter.query::<M>(&sql, &params).await?;
                 let mut delete_query = query;
                 delete_query.returning = None;
                 let (sql, params) = adapter.compile_delete_query(delete_query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.execute(&sql, &params).await?;
 
@@ -486,28 +521,28 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_count_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_count(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_count_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_count(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_count_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_count(&sql, &params).await
             }
             Backend::Mysql(adapter) => {
                 let (sql, params) = adapter.compile_count_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_count(&sql, &params).await
             }
@@ -519,28 +554,28 @@ impl Backend {
             Backend::Sqlite(adapter) => {
                 let (sql, params) = adapter.compile_relation_count_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_count(&sql, &params).await
             }
             Backend::Postgres(adapter) => {
                 let (sql, params) = adapter.compile_relation_count_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_count(&sql, &params).await
             }
             Backend::PgBouncer(adapter) => {
                 let (sql, params) = adapter.compile_relation_count_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_count(&sql, &params).await
             }
             Backend::Mysql(adapter) => {
                 let (sql, params) = adapter.compile_relation_count_query(query);
 
-                println!("SQL: {}, params: {:#?}", sql, params);
+                self.log_query(&sql, &params);
 
                 adapter.query_count(&sql, &params).await
             }

@@ -633,6 +633,8 @@ async fn concurrent_conflicting_migrations_reject_the_loser_without_mixing_schem
         database: Database::Sqlite,
         postgres_connection: PostgresConnection::Direct,
         database_url: db_path.to_string_lossy().to_string(),
+        min_connection: 2,
+        max_connection: 10,
     };
     let first_db = CliDatabase::connect(&config).await.expect("first sqlite adapter");
     let second_db = CliDatabase::connect(&config).await.expect("second sqlite adapter");
@@ -694,6 +696,8 @@ async fn later_legacy_checksum_bootstrap_cannot_replace_the_original_hash() {
         database: Database::Sqlite,
         postgres_connection: PostgresConnection::Direct,
         database_url: db_path.to_string_lossy().to_string(),
+        min_connection: 2,
+        max_connection: 10,
     })
     .await
     .expect("sqlite adapter");
@@ -1034,6 +1038,8 @@ async fn sqlite_introspection_preserves_typed_defaults() {
         database: Database::Sqlite,
         postgres_connection: PostgresConnection::Direct,
         database_url: db_path.to_string_lossy().to_string(),
+        min_connection: 2,
+        max_connection: 10,
     })
     .await
     .expect("sqlite");

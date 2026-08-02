@@ -6,6 +6,8 @@ pub fn format_config_value(value: &ConfigValue, config: &FormatterConfig, indent
     match value {
         ConfigValue::String(value) => format!("\"{}\"", escape_string(value)),
         ConfigValue::Env(value) => format!("env(\"{}\")", escape_string(value)),
+        ConfigValue::Boolean(value) => value.to_string(),
+        ConfigValue::Integer(value) => value.to_string(),
         ConfigValue::Ident(value) => value.clone(),
         ConfigValue::Array(values) => format_config_array(values, config, indent_level),
     }

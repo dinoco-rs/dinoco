@@ -4,6 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, anyhow};
 use dinoco_compiler::{ConfigValue, Schema};
+use inquire::Select;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Database {
@@ -23,6 +24,8 @@ pub struct RuntimeConfig {
     pub database: Database,
     pub postgres_connection: PostgresConnection,
     pub database_url: String,
+    pub min_connection: usize,
+    pub max_connection: usize,
 }
 
 pub fn read_schema() -> anyhow::Result<(String, Schema)> {
@@ -33,6 +36,31 @@ pub fn read_schema() -> anyhow::Result<(String, Schema)> {
     validate_schema_relations(&schema)?;
 
     Ok((source, schema))
+}
+
+pub fn read_schema_for_workspace(requested: Option<&str>) -> anyhow::Result<(String, Schema, Option<String>)> {
+    let (source, schema) = read_schema()?;
+    let workspace_names = schema.workspaces().map(|workspace| workspace.name.clone()).collect::<Vec<_>>();
+
+    if workspace_names.is_empty() {
+        if let Some(requested) = requested {
+            anyhow::bail!("Workspace `{requested}` was requested, but schema.dinoco does not configure workspaces");
+        }
+        return Ok((source, schema, None));
+    }
+
+    let workspace = match requested {
+        Some(name) if workspace_names.iter().any(|candidate| candidate == name) => name.to_string(),
+        Some(name) => {
+            anyhow::bail!("Workspace `{name}` was not found. Available workspaces: {}", workspace_names.join(", "))
+        }
+        None => Select::new("Which workspace do you want to use?", workspace_names).prompt()?,
+    };
+    let selected = schema
+        .for_workspace(&workspace)
+        .with_context(|| format!("failed to load workspace `{workspace}` from schema.dinoco"))?;
+
+    Ok((source, selected, Some(workspace)))
 }
 
 pub fn runtime_config(schema: &Schema) -> anyhow::Result<RuntimeConfig> {
@@ -74,8 +102,17 @@ pub fn runtime_config(schema: &Schema) -> anyhow::Result<RuntimeConfig> {
         })
         .context("config.database_url must be env(\"DATABASE_URL\")")?;
     let database_url = env::var(database_url_env).with_context(|| format!("env `{database_url_env}` was not found"))?;
+    let min_connection = config_integer(config, "min_connection").unwrap_or(2);
+    let max_connection = config_integer(config, "max_connection").unwrap_or(10);
 
-    Ok(RuntimeConfig { database, postgres_connection, database_url })
+    Ok(RuntimeConfig { database, postgres_connection, database_url, min_connection, max_connection })
+}
+
+fn config_integer(config: &dinoco_compiler::ConfigBlock, key: &str) -> Option<usize> {
+    config.entries.iter().find(|entry| entry.key == key).and_then(|entry| match &entry.value {
+        ConfigValue::Integer(value) if *value > 0 => usize::try_from(*value).ok(),
+        _ => None,
+    })
 }
 
 pub fn validate_schema_relations(schema: &Schema) -> anyhow::Result<()> {

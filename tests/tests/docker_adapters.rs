@@ -87,6 +87,18 @@ async fn postgres_adapter_runs_all_dinoco_methods() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn postgres_direct_applies_configured_pool_limits() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
+    let adapter = PostgresAdapter::direct_with_pool(POSTGRES_URL, 3, 7).await?;
+    let status = adapter.pool.status();
+
+    assert_eq!(status.max_size, 7);
+    assert_eq!(status.size, 3);
+    assert_eq!(status.available, 3);
+    Ok(())
+}
+
+#[tokio::test]
 async fn mysql_adapter_runs_all_dinoco_methods() -> anyhow::Result<()> {
     let _guard = MYSQL_TEST_LOCK.lock().await;
     let adapter = MySqlAdapter::new(MYSQL_URL);

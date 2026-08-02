@@ -6,7 +6,7 @@ use pest_derive::Parser;
 
 use crate::ast::{
     Attribute, AttributeArgument, AttributeValue, ConfigBlock, ConfigEntry, ConfigValue, EnumDef, FieldType, Model,
-    ModelField, Schema, SchemaItem,
+    ModelField, Schema, SchemaItem, WorkspaceConfig,
 };
 use crate::error::CompileError;
 
@@ -36,14 +36,33 @@ pub fn parse_schema(source: &str) -> CompileResult<Schema> {
 
 fn parse_config(pair: Pair<'_, Rule>) -> CompileResult<ConfigBlock> {
     let mut entries = Vec::new();
+    let mut workspaces = Vec::new();
 
     for pair in pair.into_inner() {
-        if pair.as_rule() == Rule::config_entry {
-            entries.push(parse_config_entry(pair)?);
+        match pair.as_rule() {
+            Rule::config_entry => entries.push(parse_config_entry(pair)?),
+            Rule::workspace_block => {
+                for workspace in pair.into_inner() {
+                    if workspace.as_rule() == Rule::workspace_entry {
+                        workspaces.push(parse_workspace(workspace)?);
+                    }
+                }
+            }
+            _ => return Err(pair_error(&pair, "unexpected config item")),
         }
     }
 
-    Ok(ConfigBlock { entries })
+    Ok(ConfigBlock { entries, workspaces })
+}
+
+fn parse_workspace(pair: Pair<'_, Rule>) -> CompileResult<WorkspaceConfig> {
+    let mut inner = pair.into_inner();
+    let name = expect_rule(&mut inner, Rule::ident, "expected workspace name")?.as_str().to_string();
+    let entries = inner
+        .filter(|pair| pair.as_rule() == Rule::config_entry)
+        .map(parse_config_entry)
+        .collect::<CompileResult<Vec<_>>>()?;
+    Ok(WorkspaceConfig { name, entries })
 }
 
 fn parse_config_entry(pair: Pair<'_, Rule>) -> CompileResult<ConfigEntry> {
@@ -115,13 +134,21 @@ pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
     }
 
     if uses_snowflake {
-        let has_node_id = schema
-            .config()
-            .into_iter()
-            .flat_map(|config| &config.entries)
-            .any(|entry| entry.key == "snowflake_node_id" && matches!(entry.value, ConfigValue::Env(_)));
-        if !has_node_id {
+        let configs = schema.config().into_iter().flat_map(config_entry_scopes).collect::<Vec<_>>();
+        if configs.is_empty() {
             return Err(CompileError::new("snowflake() requires config.snowflake_node_id = env(\"...\")", 1, 1));
+        }
+        for (scope, entries) in configs {
+            let has_node_id = entries
+                .iter()
+                .any(|entry| entry.key == "snowflake_node_id" && matches!(entry.value, ConfigValue::Env(_)));
+            if !has_node_id {
+                return Err(CompileError::new(
+                    format!("snowflake() requires {scope}.snowflake_node_id = env(\"...\")"),
+                    1,
+                    1,
+                ));
+            }
         }
     }
 
@@ -143,6 +170,28 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
         for entry in &config.entries {
             if !keys.insert(entry.key.as_str()) {
                 return schema_error(format!("Config key `{}` is declared more than once", entry.key));
+            }
+        }
+
+        if !config.entries.is_empty() && !config.workspaces.is_empty() {
+            return schema_error(
+                "A `config` block cannot mix top-level database settings with `workspace` settings; remove the top-level `database` and `database_url` entries",
+            );
+        }
+
+        let mut workspace_names = HashSet::new();
+        for workspace in &config.workspaces {
+            if !workspace_names.insert(workspace.name.as_str()) {
+                return schema_error(format!("Workspace `{}` is declared more than once", workspace.name));
+            }
+            let mut keys = HashSet::new();
+            for entry in &workspace.entries {
+                if !keys.insert(entry.key.as_str()) {
+                    return schema_error(format!(
+                        "Config key `{}` is declared more than once in workspace `{}`",
+                        entry.key, workspace.name
+                    ));
+                }
             }
         }
     }
@@ -492,38 +541,117 @@ fn validate_config_values(schema: &Schema) -> CompileResult<()> {
         SchemaItem::Config(config) => Some(config),
         _ => None,
     }) {
-        for entry in &config.entries {
-            match (entry.key.as_str(), &entry.value) {
-                ("database_url", ConfigValue::Env(name)) if !name.trim().is_empty() => {}
-                ("database_url", ConfigValue::Env(_)) => {
-                    return schema_error("`database_url` env name cannot be empty");
-                }
-                ("database_url", _) => {
-                    return schema_error("`database_url` only accepts env(\"DATABASE_URL\")");
-                }
-                ("read_replicas", ConfigValue::Array(values))
-                    if values
-                        .iter()
-                        .all(|value| matches!(value, ConfigValue::Env(name) if !name.trim().is_empty())) => {}
-                ("read_replicas", ConfigValue::Array(_)) => {
-                    return schema_error("`read_replicas` only accepts non-empty env(...) values");
-                }
-                ("read_replicas", _) => {
-                    return schema_error("`read_replicas` must be an array of env(...) values");
-                }
-                ("snowflake_node_id", ConfigValue::Env(name)) if !name.trim().is_empty() => {}
-                ("snowflake_node_id", ConfigValue::Env(_)) => {
-                    return schema_error("`snowflake_node_id` env name cannot be empty");
-                }
-                ("snowflake_node_id", _) => {
-                    return schema_error("`snowflake_node_id` only accepts env(...)");
-                }
-                _ => {}
-            }
+        for (scope, entries) in config_entry_scopes(config) {
+            validate_config_scope(&scope, entries)?;
         }
     }
 
     Ok(())
+}
+
+fn validate_config_scope(scope: &str, entries: &[ConfigEntry]) -> CompileResult<()> {
+    for entry in entries {
+        match (entry.key.as_str(), &entry.value) {
+            ("database_url", ConfigValue::Env(name)) if !name.trim().is_empty() => {}
+            ("database_url", ConfigValue::Env(_)) => {
+                return schema_error(format!("`{scope}.database_url` env name cannot be empty"));
+            }
+            ("database_url", _) => {
+                return schema_error(format!("`{scope}.database_url` only accepts env(\"DATABASE_URL\")"));
+            }
+            ("read_replicas", ConfigValue::Array(values))
+                if values.iter().all(|value| matches!(value, ConfigValue::Env(name) if !name.trim().is_empty())) => {}
+            ("read_replicas", ConfigValue::Array(_)) => {
+                return schema_error(format!("`{scope}.read_replicas` only accepts non-empty env(...) values"));
+            }
+            ("read_replicas", _) => {
+                return schema_error(format!("`{scope}.read_replicas` must be an array of env(...) values"));
+            }
+            ("snowflake_node_id", ConfigValue::Env(name)) if !name.trim().is_empty() => {}
+            ("snowflake_node_id", ConfigValue::Env(_)) => {
+                return schema_error(format!("`{scope}.snowflake_node_id` env name cannot be empty"));
+            }
+            ("snowflake_node_id", _) => {
+                return schema_error(format!("`{scope}.snowflake_node_id` only accepts env(...)"));
+            }
+            ("with_logger", ConfigValue::Boolean(_)) => {}
+            ("with_logger", _) => {
+                return schema_error(format!("`{scope}.with_logger` must be `true` or `false`"));
+            }
+            ("min_connection" | "max_connection", ConfigValue::Integer(value)) if *value > 0 => {}
+            ("min_connection" | "max_connection", _) => {
+                return schema_error(format!("`{scope}.{}` must be a positive integer", entry.key));
+            }
+            _ => {}
+        }
+    }
+
+    let database = entries
+        .iter()
+        .find(|entry| entry.key == "database")
+        .ok_or_else(|| CompileError::new(format!("`{scope}.database` is required"), 1, 1))?;
+    let database = match &database.value {
+        ConfigValue::String(value) | ConfigValue::Ident(value)
+            if matches!(value.as_str(), "postgresql" | "postgres" | "mysql" | "sqlite") =>
+        {
+            value.as_str()
+        }
+        _ => {
+            return schema_error(format!("`{scope}.database` must be `postgresql`, `mysql`, or `sqlite`"));
+        }
+    };
+
+    if !entries.iter().any(|entry| entry.key == "database_url") {
+        return schema_error(format!("`{scope}.database_url = env(\"DATABASE_URL\")` is required"));
+    }
+
+    let connection = entries.iter().find(|entry| entry.key == "connection");
+    let connection = match connection.map(|entry| &entry.value) {
+        None => "direct",
+        Some(ConfigValue::String(value) | ConfigValue::Ident(value))
+            if matches!(value.as_str(), "direct" | "pgbouncer") =>
+        {
+            value
+        }
+        Some(_) => {
+            return schema_error(format!("`{scope}.connection` must be `direct` or `pgbouncer`"));
+        }
+    };
+
+    let min_connection = config_positive_integer(entries, "min_connection").unwrap_or(2);
+    let max_connection = config_positive_integer(entries, "max_connection").unwrap_or(10);
+    let configures_pool = entries.iter().any(|entry| matches!(entry.key.as_str(), "min_connection" | "max_connection"));
+    if configures_pool && !(matches!(database, "postgresql" | "postgres") && connection == "direct") {
+        return schema_error(format!(
+            "`{scope}.min_connection` and `{scope}.max_connection` are supported only for PostgreSQL with `connection = \"direct\"`"
+        ));
+    }
+    if min_connection > max_connection {
+        return schema_error(format!(
+            "`{scope}.min_connection` ({min_connection}) cannot be greater than `{scope}.max_connection` ({max_connection})"
+        ));
+    }
+
+    Ok(())
+}
+
+fn config_positive_integer(entries: &[ConfigEntry], key: &str) -> Option<usize> {
+    entries.iter().find(|entry| entry.key == key).and_then(|entry| match &entry.value {
+        ConfigValue::Integer(value) if *value > 0 => usize::try_from(*value).ok(),
+        _ => None,
+    })
+}
+
+fn config_entry_scopes(config: &ConfigBlock) -> Vec<(String, &[ConfigEntry])> {
+    if config.workspaces.is_empty() {
+        vec![("config".to_string(), config.entries.as_slice())]
+    } else {
+        config
+            .workspaces
+            .iter()
+            .map(|workspace| (format!("config.workspace.{}", workspace.name), workspace.entries.as_slice()))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1135,6 +1263,12 @@ fn parse_config_value(pair: Pair<'_, Rule>) -> CompileResult<ConfigValue> {
             Ok(ConfigValue::Env(unquote(raw.as_str())))
         }
         Rule::string_literal => Ok(ConfigValue::String(unquote(value.as_str()))),
+        Rule::boolean_literal => Ok(ConfigValue::Boolean(value.as_str() == "true")),
+        Rule::number_literal => value
+            .as_str()
+            .parse::<i64>()
+            .map(ConfigValue::Integer)
+            .map_err(|_| pair_error(&value, "config numbers must be integers")),
         Rule::ident => Ok(ConfigValue::Ident(value.as_str().to_string())),
         _ => Err(pair_error(&value, "unexpected config value")),
     }

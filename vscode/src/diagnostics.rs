@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use dinoco_compiler::{Attribute, AttributeArgument, AttributeValue, ConfigValue, Model, ModelField, Schema};
+use dinoco_compiler::{
+    Attribute, AttributeArgument, AttributeValue, ConfigEntry, ConfigValue, Model, ModelField, Schema,
+};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 
 use crate::document::{BlockInfo, BlockKind, DocumentIndex, FieldInfo, scalar_types};
@@ -98,9 +100,53 @@ fn validate_config(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
     };
 
     let config_index = index.config();
-    let known = ["database", "connection", "database_url", "read_replicas", "snowflake_node_id"];
+    if !config.entries.is_empty() && !config.workspaces.is_empty() {
+        for entry in &config.entries {
+            diagnostics.push(diagnostic(
+                config_entry_range(config_index, &entry.key),
+                DiagnosticSeverity::ERROR,
+                "dinoco.ambiguousConfig",
+                format!(
+                    "Top-level config key `{}` cannot be combined with `workspace`; move it into each workspace.",
+                    entry.key
+                ),
+            ));
+        }
+    }
+    if config.workspaces.is_empty() {
+        validate_config_entries(&config.entries, "config", config_index, snowflake_range, diagnostics);
+    } else {
+        for workspace in &config.workspaces {
+            validate_config_entries(
+                &workspace.entries,
+                &format!("workspace `{}`", workspace.name),
+                config_index,
+                snowflake_range,
+                diagnostics,
+            );
+        }
+    }
+}
+
+fn validate_config_entries(
+    entries: &[ConfigEntry],
+    scope: &str,
+    config_index: Option<&BlockInfo>,
+    snowflake_range: Option<Range>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let known = [
+        "database",
+        "connection",
+        "database_url",
+        "read_replicas",
+        "snowflake_node_id",
+        "with_logger",
+        "min_connection",
+        "max_connection",
+    ];
     let mut seen = HashSet::new();
-    for entry in &config.entries {
+    for entry in entries {
         let range = config_entry_range(config_index, &entry.key);
         if !seen.insert(entry.key.as_str()) {
             diagnostics.push(diagnostic(
@@ -141,39 +187,109 @@ fn validate_config(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
                 "dinoco.invalidSnowflakeNodeId",
                 "`snowflake_node_id` must use a non-empty env(\"...\") value.",
             )),
+            ("with_logger", ConfigValue::Boolean(_)) => {}
+            ("with_logger", _) => diagnostics.push(diagnostic(
+                range,
+                DiagnosticSeverity::ERROR,
+                "dinoco.invalidLogger",
+                "`with_logger` must be `true` or `false`.",
+            )),
+            ("min_connection" | "max_connection", ConfigValue::Integer(value)) if *value > 0 => {}
+            ("min_connection" | "max_connection", _) => diagnostics.push(diagnostic(
+                range,
+                DiagnosticSeverity::ERROR,
+                "dinoco.invalidPoolSize",
+                format!("`{}` must be a positive integer.", entry.key),
+            )),
             _ => {}
         }
     }
 
-    let database = config.entries.iter().find(|entry| entry.key == "database");
-    match database.map(|entry| &entry.value) {
+    let database = entries.iter().find(|entry| entry.key == "database");
+    let database_name = match database.map(|entry| &entry.value) {
         Some(ConfigValue::String(value) | ConfigValue::Ident(value))
-            if matches!(value.as_str(), "postgresql" | "postgres" | "mysql" | "sqlite") => {}
-        Some(_) => diagnostics.push(diagnostic(
-            config_entry_range(config_index, "database"),
-            DiagnosticSeverity::ERROR,
-            "dinoco.invalidDatabase",
-            "Database must be `postgresql`, `mysql`, or `sqlite`.",
-        )),
-        None => diagnostics.push(diagnostic(
-            config_index.map_or(default_range(), |block| block.body_range),
-            DiagnosticSeverity::ERROR,
-            "dinoco.missingDatabase",
-            "Config key `database` is required.",
-        )),
+            if matches!(value.as_str(), "postgresql" | "postgres" | "mysql" | "sqlite") =>
+        {
+            Some(value.as_str())
+        }
+        Some(_) => {
+            diagnostics.push(diagnostic(
+                config_entry_range(config_index, "database"),
+                DiagnosticSeverity::ERROR,
+                "dinoco.invalidDatabase",
+                "Database must be `postgresql`, `mysql`, or `sqlite`.",
+            ));
+            None
+        }
+        None => {
+            diagnostics.push(diagnostic(
+                config_index.map_or(default_range(), |block| block.body_range),
+                DiagnosticSeverity::ERROR,
+                "dinoco.missingDatabase",
+                format!("Config key `database` is required in {scope}."),
+            ));
+            None
+        }
+    };
+
+    let connection = entries.iter().find(|entry| entry.key == "connection");
+    let connection_name = match connection.map(|entry| &entry.value) {
+        None => Some("direct"),
+        Some(ConfigValue::String(value) | ConfigValue::Ident(value))
+            if matches!(value.as_str(), "direct" | "pgbouncer") =>
+        {
+            Some(value.as_str())
+        }
+        Some(_) => {
+            diagnostics.push(diagnostic(
+                config_entry_range(config_index, "connection"),
+                DiagnosticSeverity::ERROR,
+                "dinoco.invalidConnection",
+                "Connection must be `direct` or `pgbouncer`.",
+            ));
+            None
+        }
+    };
+
+    let configures_pool = entries.iter().any(|entry| matches!(entry.key.as_str(), "min_connection" | "max_connection"));
+    if configures_pool
+        && !(database_name.is_some_and(|database| matches!(database, "postgresql" | "postgres"))
+            && connection_name == Some("direct"))
+    {
+        for key in ["min_connection", "max_connection"] {
+            if entries.iter().any(|entry| entry.key == key) {
+                diagnostics.push(diagnostic(
+                    config_entry_range(config_index, key),
+                    DiagnosticSeverity::ERROR,
+                    "dinoco.unsupportedPoolSize",
+                    "Pool limits are supported only for PostgreSQL with `connection = \"direct\"`.",
+                ));
+            }
+        }
     }
 
-    if !config.entries.iter().any(|entry| entry.key == "database_url") {
+    let min_connection = config_integer(entries, "min_connection").unwrap_or(2);
+    let max_connection = config_integer(entries, "max_connection").unwrap_or(10);
+    if min_connection > max_connection {
+        diagnostics.push(diagnostic(
+            config_entry_range(config_index, "min_connection"),
+            DiagnosticSeverity::ERROR,
+            "dinoco.invalidPoolRange",
+            format!("`min_connection` ({min_connection}) cannot be greater than `max_connection` ({max_connection})."),
+        ));
+    }
+
+    if !entries.iter().any(|entry| entry.key == "database_url") {
         diagnostics.push(diagnostic(
             config_index.map_or(default_range(), |block| block.body_range),
             DiagnosticSeverity::ERROR,
             CODE_MISSING_DATABASE_URL,
-            "Config key `database_url = env(\"DATABASE_URL\")` is required.",
+            format!("Config key `database_url = env(\"DATABASE_URL\")` is required in {scope}."),
         ));
     }
 
     if let Some(range) = snowflake_range
-        && !config.entries.iter().any(|entry| {
+        && !entries.iter().any(|entry| {
             entry.key == "snowflake_node_id"
                 && matches!(&entry.value, ConfigValue::Env(name) if !name.trim().is_empty())
         })
@@ -182,9 +298,16 @@ fn validate_config(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
             range,
             DiagnosticSeverity::ERROR,
             CODE_MISSING_SNOWFLAKE_NODE_ID,
-            "snowflake() requires config.snowflake_node_id = env(\"...\")",
+            format!("snowflake() requires `snowflake_node_id = env(\"...\")` in {scope}."),
         ));
     }
+}
+
+fn config_integer(entries: &[ConfigEntry], key: &str) -> Option<i64> {
+    entries.iter().find(|entry| entry.key == key).and_then(|entry| match &entry.value {
+        ConfigValue::Integer(value) if *value > 0 => Some(*value),
+        _ => None,
+    })
 }
 
 fn validate_models(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec<Diagnostic>) {
@@ -1203,6 +1326,20 @@ mod tests {
         }"#;
         let diagnostics = analyze(source, &DocumentIndex::new(source));
         assert!(diagnostics.iter().any(|item| item.code == Some(NumberOrString::String(CODE_UNKNOWN_TYPE.into()))));
+    }
+
+    #[test]
+    fn accepts_complete_workspace_configs() {
+        let source = r#"config {
+            workspace {
+                dev { database = "sqlite" database_url = env("DEV_DATABASE_URL") }
+                prod { database = "postgresql" database_url = env("PROD_DATABASE_URL") }
+            }
+        }
+        model User { id String @id }
+        "#;
+        let diagnostics = analyze(source, &DocumentIndex::new(source));
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
     }
 
     #[test]

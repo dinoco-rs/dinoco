@@ -41,7 +41,7 @@
 			}
 		},
 		"config_declaration": {
-			"match": "^\\s*(config)\\b",
+			"match": "^\\s*(config|workspace)\\b",
 			"name": "keyword.control.config.dinoco"
 		},
 		"primitive_fields": {

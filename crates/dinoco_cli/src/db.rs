@@ -75,9 +75,10 @@ const MYSQL_SCHEMA_SNAPSHOTS_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS dinoc
 impl CliDatabase {
     pub async fn connect(config: &RuntimeConfig) -> anyhow::Result<Self> {
         match (config.database, config.postgres_connection) {
-            (Database::Postgresql, PostgresConnection::Direct) => {
-                Ok(Self::Postgres(PostgresAdapter::direct(&config.database_url).await?))
-            }
+            (Database::Postgresql, PostgresConnection::Direct) => Ok(Self::Postgres(
+                PostgresAdapter::direct_with_pool(&config.database_url, config.min_connection, config.max_connection)
+                    .await?,
+            )),
             (Database::Postgresql, PostgresConnection::PgBouncer) => {
                 Ok(Self::PgBouncer(PgBouncerAdapter::new(&config.database_url).await?))
             }

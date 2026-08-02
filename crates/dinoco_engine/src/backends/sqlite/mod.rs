@@ -14,6 +14,7 @@ use crate::{
 pub struct SqliteAdapter {
     pub path: String,
     pub pool: Arc<Pool>,
+    with_logger: bool,
 }
 
 #[async_trait::async_trait]
@@ -50,7 +51,12 @@ impl DinocoAdapter for SqliteAdapter {
             .build()
             .map_err(|err| err.to_string())?;
 
-        Ok(Self { path, pool: Arc::new(pool) })
+        // Open one pooled connection eagerly so `connect()` guarantees that a
+        // file-backed SQLite database has been created and configured.
+        let connection = pool.get().await.map_err(|err| err.to_string())?;
+        drop(connection);
+
+        Ok(Self { path, pool: Arc::new(pool), with_logger: false })
     }
 
     async fn query<M>(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<Vec<M>>
@@ -138,6 +144,14 @@ fn normalize_sqlite_path(path: String) -> String {
 }
 
 impl SqliteAdapter {
+    pub(crate) fn set_logger(&mut self, enabled: bool) {
+        self.with_logger = enabled;
+    }
+
+    pub(crate) fn logger_enabled(&self) -> bool {
+        self.with_logger
+    }
+
     pub(crate) async fn execute_compiled_transaction(
         &self,
         commands: Vec<CompiledTransactionCommand>,

@@ -1,5 +1,6 @@
 mod backends;
 mod query;
+pub mod runtime;
 mod traits;
 mod transaction;
 mod value;
@@ -73,6 +74,14 @@ impl DinocoClient {
 
     pub fn with_read_replicas(mut self, read_replicas: Vec<Backend>) -> Self {
         self.read_replicas = read_replicas;
+        self
+    }
+
+    pub fn with_logger(mut self, enabled: bool) -> Self {
+        self.backend.set_logger(enabled);
+        for replica in &mut self.read_replicas {
+            replica.set_logger(enabled);
+        }
         self
     }
 

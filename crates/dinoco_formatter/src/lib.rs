@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn formats_schema() {
-        let raw = r#"config{database="postgresql" read_replicas=[env("A"),env("B")]}enum Status{Active Pending}model User{id String @id @default(uuid())email String tokens Token[]}model Token{id String @id @default(uuid())user User? @relation(fields:[user_id],references:[id],onDelete:Cascade)user_id String?}"#;
+        let raw = r#"config{database="postgresql" database_url=env("DATABASE_URL") read_replicas=[env("A"),env("B")]}enum Status{Active Pending}model User{id String @id @default(uuid())email String tokens Token[]}model Token{id String @id @default(uuid())user User? @relation(fields:[user_id],references:[id],onDelete:Cascade)user_id String?}"#;
 
         let formatted = format_from_raw(raw).expect("format");
 

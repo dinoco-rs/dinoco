@@ -24,6 +24,31 @@ impl Schema {
             _ => None,
         })
     }
+
+    pub fn workspaces(&self) -> impl Iterator<Item = &WorkspaceConfig> {
+        self.config().into_iter().flat_map(|config| config.workspaces.iter())
+    }
+
+    pub fn workspace(&self, name: &str) -> Option<&WorkspaceConfig> {
+        self.workspaces().find(|workspace| workspace.name == name)
+    }
+
+    /// Returns a schema whose effective config is the selected workspace.
+    ///
+    /// Models and enums are shared by every workspace. Consumers that operate on
+    /// one database at a time can use this method and continue reading
+    /// `Schema::config().entries` as before.
+    pub fn for_workspace(&self, name: &str) -> Option<Self> {
+        let entries = self.workspace(name)?.entries.clone();
+        let mut schema = self.clone();
+        let config = schema.items.iter_mut().find_map(|item| match item {
+            SchemaItem::Config(config) => Some(config),
+            _ => None,
+        })?;
+        config.entries = entries;
+        config.workspaces.clear();
+        Some(schema)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,6 +60,13 @@ pub enum SchemaItem {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigBlock {
+    pub entries: Vec<ConfigEntry>,
+    pub workspaces: Vec<WorkspaceConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkspaceConfig {
+    pub name: String,
     pub entries: Vec<ConfigEntry>,
 }
 
@@ -49,6 +81,8 @@ pub enum ConfigValue {
     String(String),
     Env(String),
     Array(Vec<ConfigValue>),
+    Boolean(bool),
+    Integer(i64),
     Ident(String),
 }
 

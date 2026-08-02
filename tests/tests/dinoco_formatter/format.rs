@@ -37,6 +37,47 @@ read_replicas = [env("DATABASE_REPLICA_URL")]
 }
 
 #[test]
+fn formatter_formats_logger_and_pool_sizes() {
+    let formatted = dinoco_formatter::format_from_raw(
+        r#"config { database="postgresql" database_url=env("DATABASE_URL") with_logger=true min_connection=2 max_connection=10 }"#,
+    )
+    .expect("format config values");
+
+    assert!(formatted.contains("with_logger    = true"));
+    assert!(formatted.contains("min_connection = 2"));
+    assert!(formatted.contains("max_connection = 10"));
+    assert_eq!(formatted, dinoco_formatter::format_from_raw(&formatted).expect("format must be stable"));
+}
+
+#[test]
+fn formatter_formats_workspace_configs() {
+    let raw = r#"
+config { workspace { dev { database="sqlite" database_url=env("DEV_DATABASE_URL") } prod { database="postgresql" database_url=env("PROD_DATABASE_URL") } } }
+"#;
+
+    let formatted = dinoco_formatter::format_from_raw(raw).expect("format workspaces");
+
+    assert_eq!(
+        formatted,
+        r#"config {
+    workspace {
+        dev {
+            database     = "sqlite"
+            database_url = env("DEV_DATABASE_URL")
+        }
+
+        prod {
+            database     = "postgresql"
+            database_url = env("PROD_DATABASE_URL")
+        }
+    }
+}
+"#
+    );
+    assert_eq!(formatted, dinoco_formatter::format_from_raw(&formatted).expect("workspace format is stable"));
+}
+
+#[test]
 fn formatter_aligns_types_inside_each_contiguous_field_group() {
     let raw = r#"
 model Teste {

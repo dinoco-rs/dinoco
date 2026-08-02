@@ -19,10 +19,14 @@ pub enum PostgresMode {
     PgBouncer,
 }
 
+pub const DEFAULT_MIN_CONNECTIONS: usize = 2;
+pub const DEFAULT_MAX_CONNECTIONS: usize = 10;
+
 pub struct PostgresAdapter {
     pub url: String,
     pub pool: Arc<Pool>,
     pub mode: PostgresMode,
+    with_logger: bool,
 }
 
 pub struct PgBouncerAdapter {
@@ -91,14 +95,34 @@ impl DinocoAdapter for PostgresAdapter {
 
 impl PostgresAdapter {
     pub async fn direct(url: impl Into<String>) -> anyhow::Result<Self> {
-        Self::from_url(url.into(), PostgresMode::Direct).await
+        Self::direct_with_pool(url, DEFAULT_MIN_CONNECTIONS, DEFAULT_MAX_CONNECTIONS).await
+    }
+
+    pub async fn direct_with_pool(
+        url: impl Into<String>,
+        min_connections: usize,
+        max_connections: usize,
+    ) -> anyhow::Result<Self> {
+        if min_connections == 0 {
+            anyhow::bail!("PostgreSQL min_connections must be greater than zero");
+        }
+        if max_connections == 0 {
+            anyhow::bail!("PostgreSQL max_connections must be greater than zero");
+        }
+        if min_connections > max_connections {
+            anyhow::bail!(
+                "PostgreSQL min_connections ({min_connections}) cannot be greater than max_connections ({max_connections})"
+            );
+        }
+
+        Self::from_url(url.into(), PostgresMode::Direct, Some((min_connections, max_connections))).await
     }
 
     pub async fn pgbouncer(url: impl Into<String>) -> anyhow::Result<Self> {
-        Self::from_url(url.into(), PostgresMode::PgBouncer).await
+        Self::from_url(url.into(), PostgresMode::PgBouncer, None).await
     }
 
-    async fn from_url(url: String, mode: PostgresMode) -> anyhow::Result<Self> {
+    async fn from_url(url: String, mode: PostgresMode, pool_limits: Option<(usize, usize)>) -> anyhow::Result<Self> {
         let pg_config = Config::from_str(&url).context("Invalid postgres url")?;
         let manager_config = ManagerConfig {
             recycling_method: match mode {
@@ -107,9 +131,29 @@ impl PostgresAdapter {
             },
         };
         let manager = deadpool_postgres::Manager::from_config(pg_config, NoTls, manager_config);
-        let pool = Pool::builder(manager).runtime(Runtime::Tokio1).build()?;
+        let mut builder = Pool::builder(manager).runtime(Runtime::Tokio1);
+        if let Some((_, max_connections)) = pool_limits {
+            builder = builder.max_size(max_connections);
+        }
+        let pool = builder.build()?;
 
-        Ok(Self { url, pool: Arc::new(pool), mode })
+        if let Some((min_connections, _)) = pool_limits {
+            let mut warm_connections = Vec::with_capacity(min_connections);
+            for _ in 0..min_connections {
+                warm_connections
+                    .push(pool.get().await.context("Failed to create the configured minimum PostgreSQL connections")?);
+            }
+        }
+
+        Ok(Self { url, pool: Arc::new(pool), mode, with_logger: false })
+    }
+
+    pub(crate) fn set_logger(&mut self, enabled: bool) {
+        self.with_logger = enabled;
+    }
+
+    pub(crate) fn logger_enabled(&self) -> bool {
+        self.with_logger
     }
 
     pub(crate) async fn execute_compiled_transaction(
@@ -223,6 +267,14 @@ impl PgBouncerAdapter {
 
     pub fn inner(&self) -> &PostgresAdapter {
         &self.inner
+    }
+
+    pub(crate) fn set_logger(&mut self, enabled: bool) {
+        self.inner.set_logger(enabled);
+    }
+
+    pub(crate) fn logger_enabled(&self) -> bool {
+        self.inner.logger_enabled()
     }
 
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {

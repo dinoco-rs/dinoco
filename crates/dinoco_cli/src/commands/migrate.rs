@@ -10,21 +10,22 @@ use inquire::Confirm;
 use sha2::{Digest, Sha256};
 
 use crate::db::CliDatabase;
-use crate::schema::{Database, RuntimeConfig, read_schema, runtime_config};
+use crate::schema::{Database, RuntimeConfig, read_schema_for_workspace, runtime_config};
 use crate::sql::{MigrationPlan, MigrationStep, desired_database_schema, plan_database_migration};
 use crate::ui;
 
 const MIGRATION_CHECKSUM_MARKER: &str = "-- dinoco-checksum: ";
 const MIGRATION_CHECKSUM_PLACEHOLDER: &str = "__DINOCO_INTERNAL_SHA256_PLACEHOLDER_7F43A9C2__";
 
-pub async fn generate() -> anyhow::Result<()> {
-    let (_, schema) = read_schema()?;
+pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
+    let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
     let config = runtime_config(&schema)?;
     let db = CliDatabase::connect(&config).await?;
-    let mut migrations = migration_dirs()?;
+    let migrations_root = migrations_root(workspace.as_deref());
+    let mut migrations = migration_dirs(&migrations_root)?;
     migrations.sort();
 
-    fs::create_dir_all("dinoco/migrations")?;
+    fs::create_dir_all(&migrations_root)?;
 
     let current = db.inspect_schema().await?;
     let history = inspect_sqlite_migration_history(&db, &config, &migrations).await?;
@@ -81,7 +82,7 @@ pub async fn generate() -> anyhow::Result<()> {
         let latest = server_history.applied.last().expect("legacy history is not empty");
         db.record_server_schema_snapshot(latest, &current).await?;
         persist_legacy_checksums(&db, history.as_ref(), Some(server_history)).await?;
-        dinoco_codegen::generate_models(&schema)?;
+        dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
         ui::success("Legacy migration history adopted with a canonical schema snapshot.");
         ui::success("Rust models generated at dinoco/models/");
         return Ok(());
@@ -173,7 +174,7 @@ pub async fn generate() -> anyhow::Result<()> {
     if migration_plan.steps.is_empty() && !repairing_drift {
         persist_legacy_checksums(&db, history.as_ref(), server_history.as_ref()).await?;
         ui::info("No schema changes were found.");
-        dinoco_codegen::generate_models(&schema)?;
+        dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
         ui::success("Rust models generated at dinoco/models/");
         return Ok(());
     }
@@ -190,7 +191,7 @@ pub async fn generate() -> anyhow::Result<()> {
             .await
             .context("failed to repair SQLite schema drift; all changes were rolled back")?;
         ensure_live_schema_matches(&db, &desired).await?;
-        dinoco_codegen::generate_models(&schema)?;
+        dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
         ui::success(
             "SQLite schema drift repaired; no new migration was needed because the Dinoco schema did not change.",
         );
@@ -221,7 +222,13 @@ pub async fn generate() -> anyhow::Result<()> {
     );
     let live_statements = compile_plan(&db, live_plan);
 
-    let migration_dir = publish_migration_artifacts(&migration_name, &up_sql, &down_statements.join("\n\n"))?;
+    let migration_dir = publish_migration_artifacts(
+        &migrations_root,
+        workspace.as_deref(),
+        &migration_name,
+        &up_sql,
+        &down_statements.join("\n\n"),
+    )?;
 
     persist_legacy_checksums(&db, history.as_ref(), server_history.as_ref()).await?;
     let live_sql = statements_sql(&live_statements);
@@ -241,7 +248,7 @@ pub async fn generate() -> anyhow::Result<()> {
     if !db.is_sqlite() {
         db.record_server_schema_snapshot(&migration_name, &desired).await?;
     }
-    dinoco_codegen::generate_models(&schema)?;
+    dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
 
     ui::success(format!("Migration generated and applied: {}", migration_dir.display()));
     ui::success("Rust models generated at dinoco/models/");
@@ -746,12 +753,13 @@ async fn repair_pending_history_drift(
     ensure_live_schema_matches(db, &history.expected).await
 }
 
-pub async fn run() -> anyhow::Result<()> {
-    let (_, schema) = read_schema()?;
+pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
+    let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
     let config = runtime_config(&schema)?;
     let db = CliDatabase::connect(&config).await?;
 
-    let mut migrations = migration_dirs()?;
+    let migrations_root = migrations_root(workspace.as_deref());
+    let mut migrations = migration_dirs(&migrations_root)?;
     migrations.sort();
     let mut history = inspect_sqlite_migration_history(&db, &config, &migrations).await?;
     let server_history = inspect_server_migration_history(&db, &config, &migrations).await?;
@@ -1808,8 +1816,12 @@ fn describe_step(step: &MigrationStep) -> String {
     }
 }
 
-fn migration_dirs() -> anyhow::Result<Vec<PathBuf>> {
-    let path = Path::new("dinoco/migrations");
+fn migrations_root(workspace: Option<&str>) -> PathBuf {
+    let root = Path::new("dinoco/migrations");
+    workspace.map_or_else(|| root.to_path_buf(), |workspace| root.join(workspace))
+}
+
+fn migration_dirs(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
@@ -1827,11 +1839,17 @@ fn write_migration_artifacts(directory: &Path, up: &str, down: &str) -> anyhow::
     Ok(())
 }
 
-fn publish_migration_artifacts(name: &str, up: &str, down: &str) -> anyhow::Result<PathBuf> {
-    let migrations = Path::new("dinoco/migrations");
+fn publish_migration_artifacts(
+    migrations: &Path,
+    workspace: Option<&str>,
+    name: &str,
+    up: &str,
+    down: &str,
+) -> anyhow::Result<PathBuf> {
     let destination = migrations.join(name);
-    let staging_root = Path::new("dinoco/.migration-staging");
-    fs::create_dir_all(staging_root).context("failed to create the migration staging directory")?;
+    let staging_parent = Path::new("dinoco/.migration-staging");
+    let staging_root = staging_parent.join(workspace.unwrap_or("__default__"));
+    fs::create_dir_all(&staging_root).context("failed to create the migration staging directory")?;
     let staged = staging_root.join(name);
     fs::create_dir(&staged)
         .with_context(|| format!("failed to reserve unique migration staging directory {}", staged.display()))?;
@@ -1852,7 +1870,8 @@ fn publish_migration_artifacts(name: &str, up: &str, down: &str) -> anyhow::Resu
     if publish.is_err() {
         let _ = fs::remove_dir_all(&staged);
     }
-    let _ = fs::remove_dir(staging_root);
+    let _ = fs::remove_dir(&staging_root);
+    let _ = fs::remove_dir(staging_parent);
     publish?;
     Ok(destination)
 }

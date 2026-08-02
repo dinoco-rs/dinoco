@@ -40,6 +40,186 @@ fn compile_parses_config_enums_models_and_relations() {
 }
 
 #[test]
+fn compile_parses_and_selects_workspace_configs() {
+    let schema = compile(
+        r#"
+        config {
+            workspace {
+                dev {
+                    database = "sqlite"
+                    database_url = env("DEV_DATABASE_URL")
+                }
+
+                prod {
+                    database = "postgresql"
+                    connection = "pgbouncer"
+                    database_url = env("PROD_DATABASE_URL")
+                }
+            }
+        }
+
+        model User {
+            id String @id
+        }
+        "#,
+    )
+    .expect("workspace schema should compile");
+
+    assert_eq!(schema.workspaces().map(|workspace| workspace.name.as_str()).collect::<Vec<_>>(), ["dev", "prod"]);
+    assert!(schema.config().expect("config").entries.is_empty());
+
+    let prod = schema.for_workspace("prod").expect("prod workspace");
+    let config = prod.config().expect("selected config");
+    assert!(config.workspaces.is_empty());
+    assert!(matches!(
+        config.entries.iter().find(|entry| entry.key == "database_url").map(|entry| &entry.value),
+        Some(ConfigValue::Env(name)) if name == "PROD_DATABASE_URL"
+    ));
+    assert!(schema.for_workspace("missing").is_none());
+}
+
+#[test]
+fn compile_rejects_ambiguous_or_invalid_workspace_configs() {
+    let mixed = compile(
+        r#"
+        config {
+            database = "sqlite"
+            database_url = env("DATABASE_URL")
+            workspace {
+                dev { database = "sqlite" database_url = env("DEV_DATABASE_URL") }
+            }
+        }
+        "#,
+    )
+    .expect_err("top-level settings and workspaces must not be mixed");
+    assert!(mixed.message.contains("cannot mix"), "{mixed}");
+    assert!(mixed.message.contains("database_url"), "{mixed}");
+
+    let duplicate = compile(
+        r#"
+        config {
+            workspace {
+                dev { database = "sqlite" database_url = env("DEV_DATABASE_URL") }
+                dev { database = "sqlite" database_url = env("OTHER_DATABASE_URL") }
+            }
+        }
+        "#,
+    )
+    .expect_err("workspace names must be unique");
+    assert!(duplicate.message.contains("Workspace `dev` is declared more than once"), "{duplicate}");
+
+    let literal_url = compile(
+        r#"
+        config {
+            workspace {
+                dev { database = "sqlite" database_url = "dev.sqlite" }
+            }
+        }
+        "#,
+    )
+    .expect_err("workspace database URLs must use env");
+    assert!(literal_url.message.contains("config.workspace.dev.database_url"), "{literal_url}");
+
+    let empty = compile("config { workspace {} }").expect_err("an empty workspace block must be rejected");
+    assert!(empty.message.contains("workspace") || empty.message.contains("ident"), "{empty}");
+
+    let incomplete = compile(
+        r#"
+        config {
+            workspace {
+                dev { with_logger = true }
+            }
+        }
+        "#,
+    )
+    .expect_err("every workspace must contain a complete database configuration");
+    assert!(incomplete.message.contains("config.workspace.dev.database"), "{incomplete}");
+}
+
+#[test]
+fn compile_supports_logger_and_postgres_direct_pool_settings() {
+    let schema = compile(
+        r#"
+        config {
+            database = "postgresql"
+            connection = "direct"
+            database_url = env("DATABASE_URL")
+            with_logger = true
+            min_connection = 4
+            max_connection = 20
+        }
+        "#,
+    )
+    .expect("logger and pool settings should compile");
+
+    let config = schema.config().expect("config");
+    assert!(matches!(
+        config.entries.iter().find(|entry| entry.key == "with_logger").map(|entry| &entry.value),
+        Some(ConfigValue::Boolean(true))
+    ));
+    assert!(matches!(
+        config.entries.iter().find(|entry| entry.key == "min_connection").map(|entry| &entry.value),
+        Some(ConfigValue::Integer(4))
+    ));
+
+    compile(
+        r#"
+        config {
+            workspace {
+                dev {
+                    database = "sqlite"
+                    database_url = env("DEV_DATABASE_URL")
+                    with_logger = true
+                }
+            }
+        }
+        "#,
+    )
+    .expect("with_logger should also work inside a workspace");
+}
+
+#[test]
+fn compile_rejects_invalid_postgres_pool_settings() {
+    let wrong_order = compile(
+        r#"
+        config {
+            database = "postgresql"
+            database_url = env("DATABASE_URL")
+            min_connection = 11
+            max_connection = 10
+        }
+        "#,
+    )
+    .expect_err("minimum pool size cannot exceed maximum");
+    assert!(wrong_order.message.contains("cannot be greater"), "{wrong_order}");
+
+    let pgbouncer = compile(
+        r#"
+        config {
+            database = "postgresql"
+            connection = "pgbouncer"
+            database_url = env("DATABASE_URL")
+            min_connection = 2
+        }
+        "#,
+    )
+    .expect_err("pool settings are direct-only");
+    assert!(pgbouncer.message.contains("supported only for PostgreSQL"), "{pgbouncer}");
+
+    let non_boolean = compile(
+        r#"
+        config {
+            database = "sqlite"
+            database_url = env("DATABASE_URL")
+            with_logger = "true"
+        }
+        "#,
+    )
+    .expect_err("logger must be a boolean");
+    assert!(non_boolean.message.contains("with_logger"), "{non_boolean}");
+}
+
+#[test]
 fn compile_rejects_literal_database_urls_and_replicas() {
     let database_url = compile(
         r#"
