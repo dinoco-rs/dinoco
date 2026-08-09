@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dinoco_engine::{
     DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
+    ManyToManyWriteQuery,
 };
 
 pub type Uuid = String;
@@ -25,11 +26,16 @@ where
     M: DinocoInsertable,
 {
     const HAS_NESTED: bool = false;
+    const HAS_TRANSACTION_NESTED: bool = false;
 
     fn dinoco_insert_model(&self) -> M;
 
     fn dinoco_insert_nested<'a>(&'a self, _parent: &'a M, _client: &'a DinocoClient) -> InsertNestedFuture<'a> {
         Box::pin(async { Ok(()) })
+    }
+
+    fn dinoco_transaction_many_to_many_writes(&self, _parent: &M) -> anyhow::Result<Vec<ManyToManyWriteQuery>> {
+        Ok(Vec::new())
     }
 }
 
@@ -39,6 +45,7 @@ where
     V: InsertPayload<M>,
 {
     const HAS_NESTED: bool = V::HAS_NESTED;
+    const HAS_TRANSACTION_NESTED: bool = V::HAS_TRANSACTION_NESTED;
 
     fn dinoco_insert_model(&self) -> M {
         (*self).dinoco_insert_model()
@@ -47,10 +54,18 @@ where
     fn dinoco_insert_nested<'a>(&'a self, parent: &'a M, client: &'a DinocoClient) -> InsertNestedFuture<'a> {
         (*self).dinoco_insert_nested(parent, client)
     }
+
+    fn dinoco_transaction_many_to_many_writes(&self, parent: &M) -> anyhow::Result<Vec<ManyToManyWriteQuery>> {
+        (*self).dinoco_transaction_many_to_many_writes(parent)
+    }
 }
 
 pub trait DinocoBelongsTo<P> {
     fn dinoco_bind_parent(&mut self, parent: &P);
+
+    fn dinoco_bind_parent_relation(&mut self, _relation: &'static str, parent: &P) {
+        self.dinoco_bind_parent(parent);
+    }
 }
 
 pub fn new_uuid() -> Uuid {

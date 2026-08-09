@@ -84,19 +84,24 @@ where
     fn into_transaction_operation(self) -> TransactionCommand {
         let item = self.item.expect("insert_into().values(...) must be called before adding it to a transaction");
 
-        if V::HAS_NESTED {
+        if V::HAS_TRANSACTION_NESTED {
             return TransactionCommand::invalid(
                 "Nested relation inserts are not supported inside a transaction batch yet.",
             );
         }
 
         let model = item.dinoco_insert_model();
+        let writes = match item.dinoco_transaction_many_to_many_writes(&model) {
+            Ok(writes) => writes,
+            Err(error) => return TransactionCommand::invalid(error.to_string()),
+        };
         TransactionCommand::insert(InsertQuery {
             table: M::TABLE_NAME,
             fields: M::INSERT_FIELDS.to_vec(),
             rows: vec![model.dinoco_insert_values()],
             returning: None,
         })
+        .with_appended_many_to_many_connects(writes)
     }
 }
 
@@ -110,13 +115,17 @@ where
         let item =
             self.item.expect("insert_into().values(...).returning() must be called before adding it to a transaction");
 
-        if V::HAS_NESTED {
+        if V::HAS_TRANSACTION_NESTED {
             return TransactionCommand::invalid(
                 "Nested relation inserts are not supported inside a transaction batch yet.",
             );
         }
 
         let model = item.dinoco_insert_model();
+        let writes = match item.dinoco_transaction_many_to_many_writes(&model) {
+            Ok(writes) => writes,
+            Err(error) => return TransactionCommand::invalid(error.to_string()),
+        };
         TransactionCommand::insert_returning::<S>(
             InsertQuery {
                 table: M::TABLE_NAME,
@@ -126,5 +135,6 @@ where
             },
             format!("Record from table '{}' could not be returned after insert.", M::TABLE_NAME),
         )
+        .with_appended_many_to_many_connects(writes)
     }
 }

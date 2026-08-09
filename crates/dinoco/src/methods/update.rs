@@ -1,10 +1,14 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, TransactionCommand, UpdateQuery, UpdateSet,
+    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, TransactionCommand,
+    UpdateQuery, UpdateSet,
 };
 
-use crate::{IntoTransactionOperation, execute_relation_update_sets, split_update_sets};
+use crate::{DinocoRelationValue, has_many_to_many_update_sets, load_update_matches};
+use crate::{
+    IntoTransactionOperation, execute_relation_update_sets, split_update_sets, transaction_many_to_many_writes,
+};
 
 pub struct Update<M> {
     sets: Vec<UpdateSet>,
@@ -54,14 +58,20 @@ where
         UpdateReturning { sets: self.sets, conditions: self.conditions, marker: PhantomData }
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<()> {
+    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<()>
+    where
+        M: DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
+    {
         if self.sets.is_empty() {
             anyhow::bail!("update::<{}>() requires at least one .update(...) call.", M::TABLE_NAME);
         }
 
+        let has_many_to_many = has_many_to_many_update_sets(&self.sets);
         let (sets, connects, disconnects) = split_update_sets(self.sets);
+        let parents =
+            if has_many_to_many { load_update_matches::<M, M>(&self.conditions, client).await? } else { Vec::new() };
 
-        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, client).await?;
+        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, &parents, client).await?;
 
         if !sets.is_empty() {
             let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: None };
@@ -74,7 +84,7 @@ where
 
 impl<M, S> UpdateReturning<M, S>
 where
-    M: DinocoEntity,
+    M: DinocoEntity + DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
     S: DinocoProjection<M> + DinocoRowModel,
 {
     pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<S>> {
@@ -82,10 +92,15 @@ where
             anyhow::bail!("update::<{}>() requires at least one .update(...) call.", M::TABLE_NAME);
         }
 
+        let has_many_to_many = has_many_to_many_update_sets(&self.sets);
         let (sets, connects, disconnects) = split_update_sets(self.sets);
+        let parents =
+            if has_many_to_many { load_update_matches::<M, M>(&self.conditions, client).await? } else { Vec::new() };
 
-        if !connects.is_empty() || !disconnects.is_empty() {
-            anyhow::bail!("update::<{}>().returning::<T>() does not support connect/disconnect.", M::TABLE_NAME);
+        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, &parents, client).await?;
+
+        if sets.is_empty() {
+            return load_update_matches::<M, S>(&self.conditions, client).await;
         }
 
         let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: Some(S::FIELDS) };
@@ -107,19 +122,23 @@ where
         }
 
         let (sets, connects, disconnects) = split_update_sets(self.sets);
-        if !connects.is_empty() || !disconnects.is_empty() {
-            return TransactionCommand::invalid(format!(
-                "update::<{}>() connect/disconnect is not supported inside a transaction batch yet.",
-                M::TABLE_NAME
-            ));
-        }
+        let (connects, disconnects) =
+            match transaction_many_to_many_writes(M::TABLE_NAME, &self.conditions, connects, disconnects) {
+                Ok(writes) => writes,
+                Err(error) => return TransactionCommand::invalid(error.to_string()),
+            };
+        let command = if sets.is_empty() {
+            TransactionCommand::empty_write()
+        } else {
+            TransactionCommand::update(UpdateQuery {
+                table: M::TABLE_NAME,
+                sets,
+                conditions: self.conditions,
+                returning: None,
+            })
+        };
 
-        TransactionCommand::update(UpdateQuery {
-            table: M::TABLE_NAME,
-            sets,
-            conditions: self.conditions,
-            returning: None,
-        })
+        command.with_many_to_many_writes(connects, disconnects)
     }
 }
 
@@ -137,18 +156,29 @@ where
         }
 
         let (sets, connects, disconnects) = split_update_sets(self.sets);
-        if !connects.is_empty() || !disconnects.is_empty() {
-            return TransactionCommand::invalid(format!(
-                "update::<{}>().returning::<T>() does not support connect/disconnect.",
-                M::TABLE_NAME
-            ));
-        }
+        let (connects, disconnects) =
+            match transaction_many_to_many_writes(M::TABLE_NAME, &self.conditions, connects, disconnects) {
+                Ok(writes) => writes,
+                Err(error) => return TransactionCommand::invalid(error.to_string()),
+            };
+        let command = if sets.is_empty() {
+            TransactionCommand::find_many::<S>(FindQuery {
+                fields: S::FIELDS,
+                from: M::TABLE_NAME,
+                conditions: self.conditions,
+                limit: -1,
+                skip: -1,
+                order_by: None,
+            })
+        } else {
+            TransactionCommand::update_returning::<S>(UpdateQuery {
+                table: M::TABLE_NAME,
+                sets,
+                conditions: self.conditions,
+                returning: Some(S::FIELDS),
+            })
+        };
 
-        TransactionCommand::update_returning::<S>(UpdateQuery {
-            table: M::TABLE_NAME,
-            sets,
-            conditions: self.conditions,
-            returning: Some(S::FIELDS),
-        })
+        command.with_many_to_many_writes(connects, disconnects)
     }
 }

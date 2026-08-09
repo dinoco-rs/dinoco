@@ -2,7 +2,7 @@ use std::any::{Any, type_name};
 
 use crate::{
     CountQuery, DeleteQuery, DinocoMysql, DinocoPostgres, DinocoRowModel, DinocoSqlCompiler, DinocoSqlite, DinocoValue,
-    FindQuery, InsertQuery, MysqlRow, PostgresRow, SqliteRow, UpdateQuery,
+    FindQuery, InsertQuery, ManyToManyWriteQuery, MysqlRow, PostgresRow, SqliteRow, UpdateQuery,
 };
 
 type TransactionAny = Box<dyn Any + Send>;
@@ -83,7 +83,8 @@ impl TransactionResults {
 }
 
 pub struct TransactionCommand {
-    statement: TransactionStatement,
+    statements: Vec<TransactionStatement>,
+    output_statement: usize,
     output: TransactionOutputAdapter,
 }
 
@@ -93,6 +94,8 @@ enum TransactionStatement {
     Update(UpdateQuery),
     Delete(DeleteQuery),
     Count(CountQuery),
+    ConnectManyToMany(ManyToManyWriteQuery),
+    DisconnectManyToMany(ManyToManyWriteQuery),
     Noop,
     Invalid(String),
 }
@@ -125,12 +128,17 @@ pub(crate) enum RawTransactionOutput {
 }
 
 pub(crate) struct CompiledTransactionCommand {
+    pub statements: Vec<CompiledTransactionStatement>,
+    finish: TransactionFinish,
+    type_name: &'static str,
+}
+
+pub(crate) struct CompiledTransactionStatement {
     pub sql: String,
     pub params: Vec<DinocoValue>,
     pub kind: TransactionCommandKind,
     pub decoder: Option<TransactionRowDecoder>,
-    finish: TransactionFinish,
-    type_name: &'static str,
+    pub output: bool,
 }
 
 impl TransactionCommand {
@@ -146,6 +154,15 @@ impl TransactionCommand {
         M: DinocoRowModel,
     {
         Self::rows::<M, Vec<M>, _>(TransactionStatement::Find(query), Ok)
+    }
+
+    pub fn find_one<M>(query: FindQuery, missing_message: String) -> Self
+    where
+        M: DinocoRowModel,
+    {
+        Self::rows::<M, M, _>(TransactionStatement::Find(query), move |mut rows| {
+            rows.pop().ok_or_else(|| anyhow::anyhow!(missing_message))
+        })
     }
 
     pub fn insert(query: InsertQuery) -> Self {
@@ -223,7 +240,8 @@ impl TransactionCommand {
         });
 
         Self {
-            statement: TransactionStatement::Count(query),
+            statements: vec![TransactionStatement::Count(query)],
+            output_statement: 0,
             output: TransactionOutputAdapter {
                 kind: TransactionCommandKind::Count,
                 decoder: None,
@@ -235,7 +253,8 @@ impl TransactionCommand {
 
     pub fn invalid(message: impl Into<String>) -> Self {
         Self {
-            statement: TransactionStatement::Invalid(message.into()),
+            statements: vec![TransactionStatement::Invalid(message.into())],
+            output_statement: 0,
             output: TransactionOutputAdapter {
                 kind: TransactionCommandKind::Execute,
                 decoder: None,
@@ -245,37 +264,66 @@ impl TransactionCommand {
         }
     }
 
+    pub fn with_many_to_many_writes(
+        mut self,
+        connects: Vec<ManyToManyWriteQuery>,
+        disconnects: Vec<ManyToManyWriteQuery>,
+    ) -> Self {
+        let prefix_len = connects.len() + disconnects.len();
+        let mut statements = Vec::with_capacity(prefix_len + self.statements.len());
+        statements.extend(connects.into_iter().map(TransactionStatement::ConnectManyToMany));
+        statements.extend(disconnects.into_iter().map(TransactionStatement::DisconnectManyToMany));
+        statements.append(&mut self.statements);
+        self.statements = statements;
+        self.output_statement += prefix_len;
+        self
+    }
+
+    pub fn with_appended_many_to_many_connects(mut self, connects: Vec<ManyToManyWriteQuery>) -> Self {
+        self.statements.extend(connects.into_iter().map(TransactionStatement::ConnectManyToMany));
+        self
+    }
+
     pub(crate) fn has_returning_write(&self) -> bool {
-        match &self.statement {
+        self.statements.iter().any(|statement| match statement {
             TransactionStatement::Insert(query) => query.returning.is_some(),
             TransactionStatement::Update(query) => query.returning.is_some(),
             TransactionStatement::Delete(query) => query.returning.is_some(),
             _ => false,
-        }
+        })
     }
 
     pub(crate) fn compile<C>(self, compiler: &C) -> anyhow::Result<CompiledTransactionCommand>
     where
         C: DinocoSqlCompiler,
     {
-        let (sql, params) = match self.statement {
-            TransactionStatement::Find(query) => compiler.compile_find_query(query),
-            TransactionStatement::Insert(query) => compiler.compile_insert_query(query),
-            TransactionStatement::Update(query) => compiler.compile_update_query(query),
-            TransactionStatement::Delete(query) => compiler.compile_delete_query(query),
-            TransactionStatement::Count(query) => compiler.compile_count_query(query),
-            TransactionStatement::Noop => (String::new(), Vec::new()),
-            TransactionStatement::Invalid(message) => anyhow::bail!(message),
-        };
+        let mut statements = Vec::with_capacity(self.statements.len());
 
-        Ok(CompiledTransactionCommand {
-            sql,
-            params,
-            kind: self.output.kind,
-            decoder: self.output.decoder,
-            finish: self.output.finish,
-            type_name: self.output.type_name,
-        })
+        for (index, statement) in self.statements.into_iter().enumerate() {
+            let (sql, params) = match statement {
+                TransactionStatement::Find(query) => compiler.compile_find_query(query),
+                TransactionStatement::Insert(query) => compiler.compile_insert_query(query),
+                TransactionStatement::Update(query) => compiler.compile_update_query(query),
+                TransactionStatement::Delete(query) => compiler.compile_delete_query(query),
+                TransactionStatement::Count(query) => compiler.compile_count_query(query),
+                TransactionStatement::ConnectManyToMany(query) => compiler.compile_connect_many_to_many_query(query),
+                TransactionStatement::DisconnectManyToMany(query) => {
+                    compiler.compile_disconnect_many_to_many_query(query)
+                }
+                TransactionStatement::Noop => (String::new(), Vec::new()),
+                TransactionStatement::Invalid(message) => anyhow::bail!(message),
+            };
+            let is_output = index == self.output_statement;
+            statements.push(CompiledTransactionStatement {
+                sql,
+                params,
+                kind: if is_output { self.output.kind } else { TransactionCommandKind::Execute },
+                decoder: if is_output { self.output.decoder } else { None },
+                output: is_output,
+            });
+        }
+
+        Ok(CompiledTransactionCommand { statements, finish: self.output.finish, type_name: self.output.type_name })
     }
 
     fn unit(statement: TransactionStatement) -> Self {
@@ -288,7 +336,8 @@ impl TransactionCommand {
         });
 
         Self {
-            statement,
+            statements: vec![statement],
+            output_statement: 0,
             output: TransactionOutputAdapter {
                 kind: TransactionCommandKind::Execute,
                 decoder: None,
@@ -321,7 +370,8 @@ impl TransactionCommand {
         });
 
         Self {
-            statement,
+            statements: vec![statement],
+            output_statement: 0,
             output: TransactionOutputAdapter {
                 kind: TransactionCommandKind::Rows,
                 decoder: Some(TransactionRowDecoder {

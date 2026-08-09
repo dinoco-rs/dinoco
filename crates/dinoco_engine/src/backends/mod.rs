@@ -8,8 +8,8 @@ pub use sqlite::*;
 
 use crate::{
     CompiledTransactionCommand, CountQuery, DeleteQuery, DinocoAdapter, DinocoRowModel, DinocoSqlCompiler, FindQuery,
-    InsertQuery, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, TransactionCommand, TransactionResults,
-    UpdateQuery,
+    InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery,
+    RelationJoinQuery, TransactionCommand, TransactionResults, UpdateQuery,
 };
 
 pub enum Backend {
@@ -46,7 +46,9 @@ impl Backend {
 
     fn log_transaction(&self, commands: &[CompiledTransactionCommand]) {
         for command in commands {
-            self.log_query(&command.sql, &command.params);
+            for statement in &command.statements {
+                self.log_query(&statement.sql, &statement.params);
+            }
         }
     }
 
@@ -201,6 +203,32 @@ impl Backend {
 
                 adapter.query::<M>(&sql, &params).await
             }
+        }
+    }
+
+    pub async fn query_many_to_many_relation<M>(
+        &self,
+        query: ManyToManyRelationQuery,
+        params: &[crate::DinocoValue],
+    ) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        macro_rules! query {
+            ($adapter:expr) => {{
+                let (sql, extra_params) = $adapter.compile_many_to_many_relation_query(query);
+                let mut params = params.to_vec();
+                params.extend(extra_params);
+                self.log_query(&sql, &params);
+                $adapter.query::<M>(&sql, &params).await
+            }};
+        }
+
+        match &self {
+            Backend::Sqlite(adapter) => query!(adapter),
+            Backend::Postgres(adapter) => query!(adapter),
+            Backend::PgBouncer(adapter) => query!(adapter),
+            Backend::Mysql(adapter) => query!(adapter),
         }
     }
 
@@ -579,6 +607,23 @@ impl Backend {
 
                 adapter.query_count(&sql, &params).await
             }
+        }
+    }
+
+    pub async fn count_many_to_many_relation(&self, query: ManyToManyRelationCountQuery) -> anyhow::Result<i64> {
+        macro_rules! count {
+            ($adapter:expr) => {{
+                let (sql, params) = $adapter.compile_many_to_many_relation_count_query(query);
+                self.log_query(&sql, &params);
+                $adapter.query_count(&sql, &params).await
+            }};
+        }
+
+        match &self {
+            Backend::Sqlite(adapter) => count!(adapter),
+            Backend::Postgres(adapter) => count!(adapter),
+            Backend::PgBouncer(adapter) => count!(adapter),
+            Backend::Mysql(adapter) => count!(adapter),
         }
     }
 }

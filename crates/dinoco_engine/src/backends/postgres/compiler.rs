@@ -2,9 +2,10 @@ use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
-    FindOrderBy, FindQuery, FindWhere, InsertQuery, MigrationColumn, MigrationColumnType, MigrationDefault,
-    MigrationForeignKey, MigrationIndexKind, ReferentialAction, RelationBatchQuery, RelationCountQuery,
-    RelationJoinQuery, RenameColumnMigration, UpdateQuery,
+    FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
+    ManyToManyWriteQuery, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey,
+    MigrationIndexKind, ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
+    RenameColumnMigration, UpdateQuery,
 };
 
 use super::{PgBouncerAdapter, PostgresAdapter};
@@ -40,6 +41,25 @@ impl DinocoSqlCompiler for PostgresAdapter {
 
     fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>) {
         compile_relation_join_query(query)
+    }
+
+    fn compile_many_to_many_relation_query(&self, query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>) {
+        compile_many_to_many_relation_query(query)
+    }
+
+    fn compile_many_to_many_relation_count_query(
+        &self,
+        query: ManyToManyRelationCountQuery,
+    ) -> (String, Vec<DinocoValue>) {
+        compile_many_to_many_relation_count_query(query)
+    }
+
+    fn compile_connect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
+        compile_connect_many_to_many_query(query)
+    }
+
+    fn compile_disconnect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
+        compile_disconnect_many_to_many_query(query)
     }
 
     fn compile_create_migrations_table(&self) -> String {
@@ -134,6 +154,25 @@ impl DinocoSqlCompiler for PgBouncerAdapter {
 
     fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>) {
         compile_relation_join_query(query)
+    }
+
+    fn compile_many_to_many_relation_query(&self, query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>) {
+        compile_many_to_many_relation_query(query)
+    }
+
+    fn compile_many_to_many_relation_count_query(
+        &self,
+        query: ManyToManyRelationCountQuery,
+    ) -> (String, Vec<DinocoValue>) {
+        compile_many_to_many_relation_count_query(query)
+    }
+
+    fn compile_connect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
+        compile_connect_many_to_many_query(query)
+    }
+
+    fn compile_disconnect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
+        compile_disconnect_many_to_many_query(query)
     }
 
     fn compile_create_migrations_table(&self) -> String {
@@ -596,6 +635,110 @@ fn compile_partitioned_relation_join_query(query: RelationJoinQuery) -> (String,
     );
 
     append_row_window(&mut params, &mut inner_sql, query.query.skip, query.query.limit, &mut placeholders)
+}
+
+fn compile_many_to_many_relation_query(query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>) {
+    let mut placeholders = Placeholder::default();
+    let in_placeholders = (0..query.key_count).map(|_| placeholders.next()).collect::<Vec<_>>().join(", ");
+    let partitioned = query.query.limit >= 0 || query.query.skip >= 0;
+    let partition_field = format!("{}.{}", query.join_table, query.join_parent_field);
+    let mut fields =
+        query.query.fields.iter().map(|field| qualify_field(field, Some(query.query.from))).collect::<Vec<_>>();
+    fields.push(format!("{partition_field} AS __dinoco_relation_key"));
+
+    if partitioned {
+        let order_by = relation_partition_order_by(
+            query.query.from,
+            query.query.order_by.clone(),
+            &format!("{}.{}", query.query.from, query.child_field),
+        );
+        fields.push(format!(
+            "ROW_NUMBER() OVER (PARTITION BY {partition_field} ORDER BY {order_by}) AS __dinoco_row_num"
+        ));
+    }
+
+    let mut sql = format!(
+        "SELECT {} FROM {} INNER JOIN {} ON {}.{} = {}.{} WHERE {partition_field} IN ({in_placeholders})",
+        fields.join(", "),
+        query.join_table,
+        query.query.from,
+        query.join_table,
+        query.join_child_field,
+        query.query.from,
+        query.child_field,
+    );
+    let mut params = Vec::new();
+    append_and_conditions(&mut sql, &mut params, query.query.conditions, Some(query.query.from), &mut placeholders);
+
+    if partitioned {
+        append_row_window(&mut params, &mut sql, query.query.skip, query.query.limit, &mut placeholders)
+    } else {
+        append_order_by(&mut sql, query.query.order_by, Some(query.query.from));
+        (sql, params)
+    }
+}
+
+fn compile_many_to_many_relation_count_query(query: ManyToManyRelationCountQuery) -> (String, Vec<DinocoValue>) {
+    let mut placeholders = Placeholder::default();
+    let mut parent_sql = format!("SELECT {} FROM {}", query.parent_field, query.parent_table);
+    let mut params =
+        append_conditions(&mut parent_sql, query.parent_conditions, Some(query.parent_table), &mut placeholders);
+    let mut sql = format!(
+        "SELECT COUNT(*) FROM {} INNER JOIN {} ON {}.{} = {}.{} WHERE {}.{} IN ({parent_sql})",
+        query.join_table,
+        query.child_table,
+        query.join_table,
+        query.join_child_field,
+        query.child_table,
+        query.child_field,
+        query.join_table,
+        query.join_parent_field,
+    );
+    append_and_conditions(&mut sql, &mut params, query.child_conditions, Some(query.child_table), &mut placeholders);
+
+    (sql, params)
+}
+
+fn compile_connect_many_to_many_query(query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
+    let mut placeholders = Placeholder::default();
+    let child_placeholder = placeholders.next();
+    let mut sql = format!(
+        "INSERT INTO {} ({}, {}) SELECT {}, {child_placeholder} FROM {}",
+        sql_identifier(query.join_table),
+        sql_identifier(query.join_parent_field),
+        sql_identifier(query.join_child_field),
+        qualify_field(query.parent_field, Some(query.parent_table)),
+        sql_identifier(query.parent_table),
+    );
+    let mut params = vec![query.child_value];
+    params.extend(append_conditions(&mut sql, query.parent_conditions, Some(query.parent_table), &mut placeholders));
+
+    (sql, params)
+}
+
+fn compile_disconnect_many_to_many_query(query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
+    let mut placeholders = Placeholder::default();
+    let child_placeholder = placeholders.next();
+    let mut parent_sql = format!(
+        "SELECT {} FROM {}",
+        qualify_field(query.parent_field, Some(query.parent_table)),
+        sql_identifier(query.parent_table),
+    );
+    let mut params = vec![query.child_value];
+    params.extend(append_conditions(
+        &mut parent_sql,
+        query.parent_conditions,
+        Some(query.parent_table),
+        &mut placeholders,
+    ));
+    let sql = format!(
+        "DELETE FROM {} WHERE {} = {child_placeholder} AND {} IN ({parent_sql})",
+        sql_identifier(query.join_table),
+        sql_identifier(query.join_child_field),
+        sql_identifier(query.join_parent_field),
+    );
+
+    (sql, params)
 }
 
 fn append_row_window(

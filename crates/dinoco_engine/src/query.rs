@@ -50,6 +50,27 @@ pub enum UpdateOperation {
     Set,
     Connect,
     Disconnect,
+    ConnectManyToMany(ManyToManyUpdate),
+    DisconnectManyToMany(ManyToManyUpdate),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ManyToManyUpdate {
+    pub join_table: &'static str,
+    pub parent_field: &'static str,
+    pub join_parent_field: &'static str,
+    pub join_child_field: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct ManyToManyWriteQuery {
+    pub parent_table: &'static str,
+    pub join_table: &'static str,
+    pub parent_field: &'static str,
+    pub join_parent_field: &'static str,
+    pub join_child_field: &'static str,
+    pub child_value: DinocoValue,
+    pub parent_conditions: Vec<FindWhere>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +110,30 @@ pub struct RelationJoinQuery {
 pub struct RelationBatchQuery {
     pub query: FindQuery,
     pub relation_key_field: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct ManyToManyRelationQuery {
+    pub query: FindQuery,
+    pub join_table: &'static str,
+    pub parent_field: &'static str,
+    pub child_field: &'static str,
+    pub join_parent_field: &'static str,
+    pub join_child_field: &'static str,
+    pub key_count: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct ManyToManyRelationCountQuery {
+    pub parent_table: &'static str,
+    pub child_table: &'static str,
+    pub join_table: &'static str,
+    pub parent_field: &'static str,
+    pub child_field: &'static str,
+    pub join_parent_field: &'static str,
+    pub join_child_field: &'static str,
+    pub parent_conditions: Vec<FindWhere>,
+    pub child_conditions: Vec<FindWhere>,
 }
 
 #[derive(Debug, Clone)]

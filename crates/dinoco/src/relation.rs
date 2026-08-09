@@ -5,7 +5,8 @@ use std::pin::Pin;
 
 use dinoco_engine::{
     DinocoClient, DinocoEntity, DinocoMysql, DinocoPostgres, DinocoProjection, DinocoRowModel, DinocoSqlite,
-    DinocoValue, FindOrderBy, FindQuery, FindWhere, RelationBatchQuery, RelationJoinQuery, WhereComplex,
+    DinocoValue, FindOrderBy, FindQuery, FindWhere, ManyToManyRelationQuery, RelationBatchQuery, RelationJoinQuery,
+    WhereComplex,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +65,15 @@ pub struct HasMany<M, C, CS = C> {
     query: FindQuery,
     includes: Vec<Box<dyn IncludeLoader<CS>>>,
     complex_where: bool,
+    many_to_many: Option<ManyToManyMetadata>,
     marker: PhantomData<fn() -> (M, C, CS)>,
+}
+
+#[derive(Clone, Copy)]
+struct ManyToManyMetadata {
+    join_table: &'static str,
+    join_parent_field: &'static str,
+    join_child_field: &'static str,
 }
 
 pub struct BelongsTo<M, C, CS = C> {
@@ -89,6 +98,27 @@ where
             query: FindQuery::new(C::FIELDS, C::TABLE_NAME, -1, -1),
             includes: Vec::new(),
             complex_where: false,
+            many_to_many: None,
+            marker: PhantomData,
+        }
+    }
+
+    pub fn many_to_many(
+        relation: &'static str,
+        parent_field: &'static str,
+        child_field: &'static str,
+        join_table: &'static str,
+        join_parent_field: &'static str,
+        join_child_field: &'static str,
+    ) -> Self {
+        Self {
+            relation,
+            parent_field,
+            child_field,
+            query: FindQuery::new(C::FIELDS, C::TABLE_NAME, -1, -1),
+            includes: Vec::new(),
+            complex_where: false,
+            many_to_many: Some(ManyToManyMetadata { join_table, join_parent_field, join_child_field }),
             marker: PhantomData,
         }
     }
@@ -154,6 +184,7 @@ where
             query: self.query,
             includes: Vec::new(),
             complex_where: self.complex_where,
+            many_to_many: self.many_to_many,
             marker: PhantomData,
         }
     }
@@ -312,12 +343,26 @@ where
                 return Ok(noop_include_applier());
             }
 
-            let mut find_query = self.query.clone();
-            find_query.conditions.push(FindWhere::Batch(self.child_field, keys));
-            let query = RelationBatchQuery { query: find_query, relation_key_field: self.child_field };
-
-            let child_rows =
-                client.read_backend(read_primary).query_relation_batch::<RelationManyRow<C, CS>>(query).await?;
+            let child_rows = if let Some(many_to_many) = self.many_to_many {
+                let query = ManyToManyRelationQuery {
+                    query: self.query.clone(),
+                    join_table: many_to_many.join_table,
+                    parent_field: self.parent_field,
+                    child_field: self.child_field,
+                    join_parent_field: many_to_many.join_parent_field,
+                    join_child_field: many_to_many.join_child_field,
+                    key_count: keys.len(),
+                };
+                client
+                    .read_backend(read_primary)
+                    .query_many_to_many_relation::<RelationManyRow<C, CS>>(query, &keys)
+                    .await?
+            } else {
+                let mut find_query = self.query.clone();
+                find_query.conditions.push(FindWhere::Batch(self.child_field, keys));
+                let query = RelationBatchQuery { query: find_query, relation_key_field: self.child_field };
+                client.read_backend(read_primary).query_relation_batch::<RelationManyRow<C, CS>>(query).await?
+            };
             let relation_keys = child_rows.iter().map(|row| relation_key(&row.key)).collect::<Vec<_>>();
             let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
             let appliers = futures::future::try_join_all(

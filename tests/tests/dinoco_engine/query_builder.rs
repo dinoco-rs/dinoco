@@ -1,6 +1,6 @@
 use dinoco_engine::{
     DeleteQuery, DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    MySqlAdapter, PostgresAdapter, SqliteAdapter, UpdateOperation, UpdateQuery, UpdateSet,
+    ManyToManyWriteQuery, MySqlAdapter, PostgresAdapter, SqliteAdapter, UpdateOperation, UpdateQuery, UpdateSet,
 };
 
 #[tokio::test]
@@ -101,6 +101,49 @@ async fn compilers_preserve_nested_boolean_where_groups_and_parameter_order() ->
         "SELECT id FROM account WHERE ((id = $1 AND name = $2) OR ((id = $3 AND name = $4) OR (id = $5 AND NOT (name = $6)))) LIMIT $7"
     );
     assert_eq!(postgres_params, sqlite_params);
+
+    let relation_write = || ManyToManyWriteQuery {
+        parent_table: "business",
+        join_table: "_business_to_system",
+        parent_field: "id",
+        join_parent_field: "business_id",
+        join_child_field: "system_id",
+        child_value: DinocoValue::String("system-1".to_string()),
+        parent_conditions: vec![FindWhere::Eq("name", DinocoValue::String("Dinoco".to_string()))],
+    };
+    let expected_params = [DinocoValue::String("system-1".to_string()), DinocoValue::String("Dinoco".to_string())];
+
+    let (sqlite_sql, sqlite_params) = sqlite.compile_connect_many_to_many_query(relation_write());
+    assert_eq!(
+        sqlite_sql,
+        "INSERT INTO _business_to_system (business_id, system_id) SELECT business.id, ? FROM business WHERE business.name = ?"
+    );
+    assert_eq!(sqlite_params, expected_params);
+    let (mysql_sql, mysql_params) = mysql.compile_connect_many_to_many_query(relation_write());
+    assert_eq!(mysql_sql, sqlite_sql);
+    assert_eq!(mysql_params, expected_params);
+    let (postgres_sql, postgres_params) = postgres.compile_connect_many_to_many_query(relation_write());
+    assert_eq!(
+        postgres_sql,
+        "INSERT INTO _business_to_system (business_id, system_id) SELECT business.id, $1 FROM business WHERE business.name = $2"
+    );
+    assert_eq!(postgres_params, expected_params);
+
+    let (sqlite_sql, sqlite_params) = sqlite.compile_disconnect_many_to_many_query(relation_write());
+    assert_eq!(
+        sqlite_sql,
+        "DELETE FROM _business_to_system WHERE system_id = ? AND business_id IN (SELECT business.id FROM business WHERE business.name = ?)"
+    );
+    assert_eq!(sqlite_params, expected_params);
+    let (mysql_sql, mysql_params) = mysql.compile_disconnect_many_to_many_query(relation_write());
+    assert_eq!(mysql_sql, sqlite_sql);
+    assert_eq!(mysql_params, expected_params);
+    let (postgres_sql, postgres_params) = postgres.compile_disconnect_many_to_many_query(relation_write());
+    assert_eq!(
+        postgres_sql,
+        "DELETE FROM _business_to_system WHERE system_id = $1 AND business_id IN (SELECT business.id FROM business WHERE business.name = $2)"
+    );
+    assert_eq!(postgres_params, expected_params);
 
     Ok(())
 }

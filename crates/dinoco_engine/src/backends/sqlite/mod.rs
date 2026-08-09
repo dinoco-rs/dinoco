@@ -7,8 +7,8 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, 
 mod compiler;
 
 use crate::{
-    CompiledTransactionCommand, DinocoAdapter, DinocoSqlite, DinocoValue, RawTransactionOutput, TransactionCommandKind,
-    TransactionResults,
+    CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoSqlite, DinocoValue,
+    RawTransactionOutput, TransactionCommandKind, TransactionResults,
 };
 
 pub struct SqliteAdapter {
@@ -206,6 +206,21 @@ impl SqliteAdapter {
 fn execute_transaction_command(
     transaction: &rusqlite::Transaction<'_>,
     command: &CompiledTransactionCommand,
+) -> anyhow::Result<RawTransactionOutput> {
+    let mut output = None;
+    for statement in &command.statements {
+        let raw = execute_transaction_statement(transaction, statement)?;
+        if statement.output {
+            output = Some(raw);
+        }
+    }
+
+    output.ok_or_else(|| anyhow!("Dinoco transaction command contains no output statement."))
+}
+
+fn execute_transaction_statement(
+    transaction: &rusqlite::Transaction<'_>,
+    command: &CompiledTransactionStatement,
 ) -> anyhow::Result<RawTransactionOutput> {
     if command.sql.is_empty() {
         return match command.kind {

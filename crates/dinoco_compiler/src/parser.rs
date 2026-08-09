@@ -231,6 +231,12 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
         }
         let mut field_names = HashSet::new();
         for field in &model.fields {
+            if is_rust_keyword(&field.name) {
+                return schema_error(format!(
+                    "Field `{}.{}` conflicts with a reserved Rust keyword; rename it (for example, use `_{}`)",
+                    model.name, field.name, field.name
+                ));
+            }
             if !field_names.insert(field.name.as_str()) {
                 return schema_error(format!("Field `{}.{}` is declared more than once", model.name, field.name));
             }
@@ -1229,6 +1235,64 @@ fn non_empty_string_or_ident(
 
 fn schema_error<T>(message: impl Into<String>) -> CompileResult<T> {
     Err(CompileError::new(message, 1, 1))
+}
+
+fn is_rust_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "Self"
+            | "abstract"
+            | "as"
+            | "async"
+            | "await"
+            | "become"
+            | "box"
+            | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "do"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "final"
+            | "fn"
+            | "for"
+            | "gen"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "macro"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "override"
+            | "priv"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "try"
+            | "type"
+            | "typeof"
+            | "unsafe"
+            | "unsized"
+            | "use"
+            | "virtual"
+            | "where"
+            | "while"
+            | "yield"
+    )
 }
 
 fn field_relation_name(field: &ModelField) -> Option<String> {

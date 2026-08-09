@@ -149,11 +149,11 @@ fn codegen_respects_uuid_snowflake_enum_defaults_and_implicit_relations() {
     assert!(models.contains("pub birthday: ::dinoco::chrono::NaiveDate"));
     assert!(models.contains("pub metadata: ::dinoco::serde_json::Value"));
     assert!(models.contains("#[dinoco(default = Role::USER)]"));
-    assert!(models.contains("#[dinoco(many_to_many)]"));
-    assert!(models.contains("pub struct PostUser"));
-    assert!(models.contains("#[dinoco(table_name = \"_post_to_user\")]"));
-    assert!(models.contains("pub post_id: ::dinoco::Uuid"));
-    assert!(models.contains("pub user_id: ::dinoco::Uuid"));
+    assert!(models.contains("#[dinoco(many_to_many, join_table = \"_post_to_user\""));
+    assert!(models.contains("#[dinoco(many_to_many_key, join_table = \"_post_to_user\""));
+    assert!(models.contains("pub post_id: Option<::dinoco::Uuid>"));
+    assert!(models.contains("pub user_id: Option<::dinoco::Uuid>"));
+    assert!(!models.contains("pub struct PostUser"));
     assert!(!models.contains("dinoco_engine"));
 
     let dinoco_mod = dinoco_codegen::render_dinoco_mod(&schema);
@@ -207,9 +207,9 @@ fn codegen_preserves_uuid_and_snowflake_types_on_relation_keys() {
 
     assert!(models.contains("pub organization_id: Option<::dinoco::Uuid>"));
     assert!(models.contains("pub account_id: ::dinoco::Snowflake"));
-    assert!(models.contains("pub struct AccountSystem"));
-    assert!(models.contains("pub account_id: ::dinoco::Snowflake"));
-    assert!(models.contains("pub system_id: ::dinoco::Snowflake"));
+    assert!(!models.contains("pub struct AccountSystem"));
+    assert!(models.contains("pub account_id: Option<::dinoco::Snowflake>"));
+    assert!(models.contains("pub system_id: Option<::dinoco::Snowflake>"));
 }
 
 #[test]
@@ -278,6 +278,58 @@ fn codegen_reverses_explicit_list_relation_keys_for_the_derive() {
     );
 
     assert!(user.contains("#[dinoco(one_to_many, foreign_key = \"user_id\", references = \"id\")]"));
+}
+
+#[test]
+fn codegen_preserves_multiple_named_relations_to_the_same_model() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Business {
+            id                   Integer           @id @default(snowflake())
+            analyses             BusinessAnalyse[] @relation(name: "owned")
+            registration_changes BusinessAnalyse[] @relation(name: "changes")
+        }
+
+        model BusinessAnalyse {
+            id                  Integer   @id @default(snowflake())
+            _type               String
+            owned_business_id   Integer?
+            owned_business      Business? @relation(name: "owned", fields: [owned_business_id], references: [id])
+            changes_business_id Integer?
+            changes_business    Business? @relation(name: "changes", fields: [changes_business_id], references: [id])
+        }
+
+        config {
+            database = "sqlite"
+            database_url = env("DATABASE_URL")
+            snowflake_node_id = env("SNOWFLAKE_NODE_ID")
+        }
+        "#,
+    )
+    .expect("named relations to the same model must compile");
+
+    let business = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "Business").expect("business model"),
+        &schema,
+    );
+    let analyse = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "BusinessAnalyse").expect("analysis model"),
+        &schema,
+    );
+
+    assert!(business.contains(
+        "#[dinoco(one_to_many, relation_name = \"owned\", foreign_key = \"owned_business_id\", references = \"id\")]"
+    ));
+    assert!(business.contains(
+        "#[dinoco(one_to_many, relation_name = \"changes\", foreign_key = \"changes_business_id\", references = \"id\")]"
+    ));
+    assert!(analyse.contains(
+        "#[dinoco(many_to_one, relation_name = \"owned\", foreign_key = \"owned_business_id\", references = \"id\")]"
+    ));
+    assert!(analyse.contains(
+        "#[dinoco(many_to_one, relation_name = \"changes\", foreign_key = \"changes_business_id\", references = \"id\")]"
+    ));
+    assert!(analyse.contains("pub _type: String"));
 }
 
 #[test]

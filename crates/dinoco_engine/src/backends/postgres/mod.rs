@@ -9,8 +9,8 @@ use tokio_postgres::{Config, NoTls};
 mod compiler;
 
 use crate::{
-    CompiledTransactionCommand, DinocoAdapter, DinocoRowModel, DinocoValue, RawTransactionOutput,
-    TransactionCommandKind, TransactionResults,
+    CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoRowModel, DinocoValue,
+    RawTransactionOutput, TransactionCommandKind, TransactionResults,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -200,6 +200,21 @@ impl PostgresAdapter {
 async fn execute_transaction_command(
     transaction: &tokio_postgres::Transaction<'_>,
     command: &CompiledTransactionCommand,
+) -> anyhow::Result<RawTransactionOutput> {
+    let mut output = None;
+    for statement in &command.statements {
+        let raw = execute_transaction_statement(transaction, statement).await?;
+        if statement.output {
+            output = Some(raw);
+        }
+    }
+
+    output.ok_or_else(|| anyhow!("Dinoco transaction command contains no output statement."))
+}
+
+async fn execute_transaction_statement(
+    transaction: &tokio_postgres::Transaction<'_>,
+    command: &CompiledTransactionStatement,
 ) -> anyhow::Result<RawTransactionOutput> {
     if command.sql.is_empty() {
         return match command.kind {

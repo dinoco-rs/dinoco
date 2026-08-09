@@ -196,6 +196,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
     let mut scalar_fields = Vec::new();
     let mut relations = Vec::new();
+    let mut many_to_many_keys = Vec::new();
 
     for field in fields.named.iter() {
         let parsed = ParsedField::new(field, &parent_snake)?;
@@ -203,6 +204,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         match parsed.kind {
             FieldKind::Scalar => scalar_fields.push(parsed),
             FieldKind::HasMany | FieldKind::BelongsTo => relations.push(parsed),
+            FieldKind::ManyToManyKey => many_to_many_keys.push(parsed),
             FieldKind::Extra => {}
         }
     }
@@ -256,6 +258,30 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         quote! { #ident: ::dinoco::UpdateField::new(#name) }
     });
 
+    let many_to_many_update_fields = many_to_many_keys.iter().map(|field| {
+        let ident = &field.ident;
+        let ty = option_inner(&field.ty).unwrap_or(&field.ty);
+        quote! { pub #ident: ::dinoco::ManyToManyUpdateField<#ty> }
+    });
+
+    let many_to_many_update_defaults = many_to_many_keys.iter().map(|field| {
+        let ident = &field.ident;
+        let name = &field.name;
+        let join_table = field.join_table.as_deref().expect("many-to-many join table");
+        let parent_field = field.parent_field.as_deref().expect("many-to-many parent field");
+        let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
+        let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
+        quote! {
+            #ident: ::dinoco::ManyToManyUpdateField::new(
+                #name,
+                #join_table,
+                #parent_field,
+                #join_parent_field,
+                #join_child_field,
+            )
+        }
+    });
+
     let count_relation_fields = relations.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
         let ident = &field.ident;
         quote! { pub #ident: ::core::option::Option<i64> }
@@ -275,9 +301,27 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let child_field =
             if field.foreign_key.is_some() { foreign_key.to_string() } else { format!("{}_id", parent_snake) };
 
-        quote! {
-            pub fn #ident(&self) -> ::dinoco::RelationCount<#name, #target> {
-                ::dinoco::RelationCount::<#name, #target>::new(#relation_name, #references, #child_field)
+        if field.many_to_many && field.join_table.is_some() {
+            let join_table = field.join_table.as_deref().expect("many-to-many join table");
+            let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
+            let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
+            quote! {
+                pub fn #ident(&self) -> ::dinoco::RelationCount<#name, #target> {
+                    ::dinoco::RelationCount::<#name, #target>::many_to_many(
+                        #relation_name,
+                        #references,
+                        #child_field,
+                        #join_table,
+                        #join_parent_field,
+                        #join_child_field,
+                    )
+                }
+            }
+        } else {
+            quote! {
+                pub fn #ident(&self) -> ::dinoco::RelationCount<#name, #target> {
+                    ::dinoco::RelationCount::<#name, #target>::new(#relation_name, #references, #child_field)
+                }
             }
         }
     });
@@ -340,6 +384,14 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         })
         .collect::<Vec<_>>();
 
+    let many_to_many_key_initializers = many_to_many_keys
+        .iter()
+        .map(|field| {
+            let ident = &field.ident;
+            quote! { #ident: ::core::option::Option::None }
+        })
+        .collect::<Vec<_>>();
+
     let relation_value_arms = scalar_fields.iter().map(|field| {
         let ident = &field.ident;
         let name = &field.name;
@@ -363,9 +415,27 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 let child_field =
                     if field.foreign_key.is_some() { foreign_key.to_string() } else { format!("{}_id", parent_snake) };
 
-                quote! {
-                    pub fn #ident(&self) -> ::dinoco::HasMany<#name, #target> {
-                        ::dinoco::HasMany::new(#relation_name, #references, #child_field)
+                if field.many_to_many && field.join_table.is_some() {
+                    let join_table = field.join_table.as_deref().expect("many-to-many join table");
+                    let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
+                    let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
+                    quote! {
+                        pub fn #ident(&self) -> ::dinoco::HasMany<#name, #target> {
+                            ::dinoco::HasMany::many_to_many(
+                                #relation_name,
+                                #references,
+                                #child_field,
+                                #join_table,
+                                #join_parent_field,
+                                #join_child_field,
+                            )
+                        }
+                    }
+                } else {
+                    quote! {
+                        pub fn #ident(&self) -> ::dinoco::HasMany<#name, #target> {
+                            ::dinoco::HasMany::new(#relation_name, #references, #child_field)
+                        }
                     }
                 }
             }
@@ -384,39 +454,39 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                     }
                 }
             }
-            FieldKind::Scalar | FieldKind::Extra => quote! {},
+            FieldKind::Scalar | FieldKind::ManyToManyKey | FieldKind::Extra => quote! {},
         }
     });
 
-    let relation_apply_impls = relations.iter().map(|field| {
-        let relation_name = &field.name;
-        let ident = &field.ident;
-        let target = field.target_ty.as_ref().expect("relation target");
+    let relation_groups = group_relations_by_target(&relations);
+    let relation_apply_impls = relation_groups.iter().map(|(target, fields)| {
+        let many_arms = fields.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
+            let relation_name = &field.name;
+            let ident = &field.ident;
+            quote! { #relation_name => self.#ident = values, }
+        });
+        let one_arms = fields.iter().filter(|field| field.kind == FieldKind::BelongsTo).map(|field| {
+            let relation_name = &field.name;
+            let ident = &field.ident;
+            quote! { #relation_name => self.#ident = value, }
+        });
 
-        match field.kind {
-            FieldKind::HasMany => quote! {
-                impl ::dinoco::DinocoRelationApply<#target> for #name {
-                    fn dinoco_apply_many(&mut self, relation: &'static str, values: ::std::vec::Vec<#target>) {
-                        if relation == #relation_name {
-                            self.#ident = values;
-                        }
-                    }
-
-                    fn dinoco_apply_one(&mut self, _relation: &'static str, _value: ::core::option::Option<#target>) {}
-                }
-            },
-            FieldKind::BelongsTo => quote! {
-                impl ::dinoco::DinocoRelationApply<#target> for #name {
-                    fn dinoco_apply_many(&mut self, _relation: &'static str, _values: ::std::vec::Vec<#target>) {}
-
-                    fn dinoco_apply_one(&mut self, relation: &'static str, value: ::core::option::Option<#target>) {
-                        if relation == #relation_name {
-                            self.#ident = value;
-                        }
+        quote! {
+            impl ::dinoco::DinocoRelationApply<#target> for #name {
+                fn dinoco_apply_many(&mut self, relation: &'static str, values: ::std::vec::Vec<#target>) {
+                    match relation {
+                        #(#many_arms)*
+                        _ => {}
                     }
                 }
-            },
-            FieldKind::Scalar | FieldKind::Extra => quote! {},
+
+                fn dinoco_apply_one(&mut self, relation: &'static str, value: ::core::option::Option<#target>) {
+                    match relation {
+                        #(#one_arms)*
+                        _ => {}
+                    }
+                }
+            }
         }
     });
 
@@ -503,6 +573,9 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let insert_nested_steps = insert_nested_relations.iter().filter_map(|field| {
         let ident = &field.ident;
         let ty = &field.ty;
+        let bind_relation = field.relation_name.clone().or_else(|| field.foreign_key.clone()).unwrap_or_else(|| {
+            if field.kind == FieldKind::HasMany { format!("{parent_snake}_id") } else { field.name.clone() }
+        });
 
         if let Some(inner) = vec_inner(ty) {
             Some(quote! {
@@ -510,7 +583,11 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
                 for value in &self.#ident {
                     let mut item = <#inner as ::dinoco::InsertPayload<#inner>>::dinoco_insert_model(value);
-                    <#inner as ::dinoco::DinocoBelongsTo<#name>>::dinoco_bind_parent(&mut item, parent);
+                    <#inner as ::dinoco::DinocoBelongsTo<#name>>::dinoco_bind_parent_relation(
+                        &mut item,
+                        #bind_relation,
+                        parent,
+                    );
                     nested_items.push(item);
                 }
 
@@ -524,49 +601,181 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             Some(quote! {
                 if let ::core::option::Option::Some(value) = &self.#ident {
                     let mut item = <#inner as ::dinoco::InsertPayload<#inner>>::dinoco_insert_model(value);
-                    <#inner as ::dinoco::DinocoBelongsTo<#name>>::dinoco_bind_parent(&mut item, parent);
+                    <#inner as ::dinoco::DinocoBelongsTo<#name>>::dinoco_bind_parent_relation(
+                        &mut item,
+                        #bind_relation,
+                        parent,
+                    );
                     ::dinoco::execute_insert_payloads::<#inner, #inner, #inner>(&[item], client).await?;
                 }
             })
         }
     });
 
-    let has_nested_insert = !insert_nested_relations.is_empty();
+    let many_to_many_insert_steps = many_to_many_keys.iter().map(|field| {
+        let ident = &field.ident;
+        let field_name = &field.name;
+        let join_table = field.join_table.as_deref().expect("many-to-many join table");
+        let parent_field = field.parent_field.as_deref().expect("many-to-many parent field");
+        let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
+        let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
 
-    let belongs_to_binders = relations.iter().filter_map(|field| {
+        quote! {
+            if let ::core::option::Option::Some(value) = &self.#ident {
+                let parent_value = <#name as ::dinoco::DinocoRelationValue>::dinoco_relation_value(
+                    parent,
+                    #parent_field,
+                )
+                .ok_or_else(|| {
+                    ::dinoco::anyhow::anyhow!(
+                        "many-to-many key '{}' could not read parent field '{}'",
+                        #field_name,
+                        #parent_field,
+                    )
+                })?;
+                let query = ::dinoco::InsertQuery {
+                    table: #join_table,
+                    fields: ::std::vec![#join_parent_field, #join_child_field],
+                    rows: ::std::vec![::std::vec![parent_value, ::core::convert::Into::into(value)]],
+                    returning: ::core::option::Option::None,
+                };
+                client.backend.insert(query).await?;
+            }
+        }
+    });
+
+    let many_to_many_transaction_insert_steps = many_to_many_keys.iter().map(|field| {
+        let ident = &field.ident;
+        let field_name = &field.name;
+        let join_table = field.join_table.as_deref().expect("many-to-many join table");
+        let parent_field = field.parent_field.as_deref().expect("many-to-many parent field");
+        let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
+        let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
+        let parent_is_autoincrement = scalar_fields
+            .iter()
+            .find(|scalar| scalar.name == parent_field)
+            .map(|scalar| scalar.auto_generate == Some(AutoGenerate::Autoincrement))
+            .unwrap_or(false);
+
+        if parent_is_autoincrement {
+            quote! {
+                if self.#ident.is_some() {
+                    ::dinoco::anyhow::bail!(
+                        "many-to-many key '{}' cannot be connected by a transaction insert because parent field '{}' is autoincrement; insert the endpoint first and connect it after its ID is available",
+                        #field_name,
+                        #parent_field,
+                    );
+                }
+            }
+        } else {
+            quote! {
+                if let ::core::option::Option::Some(value) = &self.#ident {
+                    let parent_value = <#name as ::dinoco::DinocoRelationValue>::dinoco_relation_value(
+                        parent,
+                        #parent_field,
+                    )
+                    .ok_or_else(|| {
+                        ::dinoco::anyhow::anyhow!(
+                            "many-to-many key '{}' could not read parent field '{}'",
+                            #field_name,
+                            #parent_field,
+                        )
+                    })?;
+                    writes.push(::dinoco::ManyToManyWriteQuery {
+                        parent_table: <#name as ::dinoco::DinocoEntity>::TABLE_NAME,
+                        join_table: #join_table,
+                        parent_field: #parent_field,
+                        join_parent_field: #join_parent_field,
+                        join_child_field: #join_child_field,
+                        child_value: ::core::convert::Into::into(value),
+                        parent_conditions: ::std::vec![::dinoco::FindWhere::Eq(#parent_field, parent_value)],
+                    });
+                }
+            }
+        }
+    });
+
+    let has_nested_insert = !insert_nested_relations.is_empty() || !many_to_many_keys.is_empty();
+    let has_transaction_nested_insert = !insert_nested_relations.is_empty();
+
+    let mut belongs_to_groups = Vec::<(&Type, Vec<(&ParsedField, &ParsedField)>)>::new();
+    for field in &relations {
         if field.kind != FieldKind::BelongsTo {
-            return None;
+            continue;
         }
 
-        let target = field.target_ty.as_ref()?;
+        let Some(target) = field.target_ty.as_ref() else {
+            continue;
+        };
         let inferred_foreign_key;
         let foreign_key = if let Some(foreign_key) = field.foreign_key.as_deref() {
             foreign_key
         } else {
-            inferred_foreign_key = infer_belongs_to_foreign_key(&field.name, &scalar_fields)?;
+            let Some(inferred) = infer_belongs_to_foreign_key(&field.name, &scalar_fields) else {
+                continue;
+            };
+            inferred_foreign_key = inferred;
             inferred_foreign_key.as_str()
         };
-        let foreign_key_field = scalar_fields.iter().find(|scalar| scalar.name == foreign_key)?;
-        let foreign_key_ident = &foreign_key_field.ident;
-        let references = field.references.as_deref().unwrap_or("id");
-        let references_ident = format_ident!("{}", references);
+        let Some(foreign_key_field) = scalar_fields.iter().find(|scalar| scalar.name == foreign_key) else {
+            continue;
+        };
 
-        if foreign_key_field.is_option {
-            Some(quote! {
-                impl ::dinoco::DinocoBelongsTo<#target> for #name {
-                    fn dinoco_bind_parent(&mut self, parent: &#target) {
-                        self.#foreign_key_ident = ::core::option::Option::Some(parent.#references_ident.clone());
-                    }
-                }
-            })
+        let key = type_key(target);
+        if let Some((_, bindings)) = belongs_to_groups.iter_mut().find(|(candidate, _)| type_key(candidate) == key) {
+            bindings.push((field, foreign_key_field));
         } else {
-            Some(quote! {
-                impl ::dinoco::DinocoBelongsTo<#target> for #name {
-                    fn dinoco_bind_parent(&mut self, parent: &#target) {
-                        self.#foreign_key_ident = parent.#references_ident.clone();
+            belongs_to_groups.push((target, vec![(field, foreign_key_field)]));
+        }
+    }
+
+    let belongs_to_binders = belongs_to_groups.iter().map(|(target, bindings)| {
+        let (default_relation, default_foreign_key) = bindings.first().expect("belongs-to binding");
+        let default_foreign_key_ident = &default_foreign_key.ident;
+        let default_references = default_relation.references.as_deref().unwrap_or("id");
+        let default_references_ident = format_ident!("{}", default_references);
+        let default_assignment = if default_foreign_key.is_option {
+            quote! {
+                self.#default_foreign_key_ident =
+                    ::core::option::Option::Some(parent.#default_references_ident.clone());
+            }
+        } else {
+            quote! { self.#default_foreign_key_ident = parent.#default_references_ident.clone(); }
+        };
+
+        let relation_arms = bindings.iter().map(|(field, foreign_key_field)| {
+            let foreign_key = &foreign_key_field.name;
+            let foreign_key_ident = &foreign_key_field.ident;
+            let references = field.references.as_deref().unwrap_or("id");
+            let references_ident = format_ident!("{}", references);
+            let assignment = if foreign_key_field.is_option {
+                quote! {
+                    self.#foreign_key_ident = ::core::option::Option::Some(parent.#references_ident.clone());
+                }
+            } else {
+                quote! { self.#foreign_key_ident = parent.#references_ident.clone(); }
+            };
+
+            if let Some(relation_name) = field.relation_name.as_deref().filter(|name| *name != foreign_key) {
+                quote! { #relation_name | #foreign_key => { #assignment } }
+            } else {
+                quote! { #foreign_key => { #assignment } }
+            }
+        });
+
+        quote! {
+            impl ::dinoco::DinocoBelongsTo<#target> for #name {
+                fn dinoco_bind_parent(&mut self, parent: &#target) {
+                    #default_assignment
+                }
+
+                fn dinoco_bind_parent_relation(&mut self, relation: &'static str, parent: &#target) {
+                    match relation {
+                        #(#relation_arms)*
+                        _ => self.dinoco_bind_parent(parent),
                     }
                 }
-            })
+            }
         }
     });
 
@@ -597,12 +806,14 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
         pub struct #update_name {
             #(#update_fields,)*
+            #(#many_to_many_update_fields,)*
         }
 
         impl ::core::default::Default for #update_name {
             fn default() -> Self {
                 Self {
                     #(#update_defaults,)*
+                    #(#many_to_many_update_defaults,)*
                 }
             }
         }
@@ -634,6 +845,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 Self {
                     #(#default_scalar_initializers,)*
                     #(#relation_initializers,)*
+                    #(#many_to_many_key_initializers,)*
                 }
             }
         }
@@ -643,6 +855,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 Self {
                     #(#new_scalar_initializers,)*
                     #(#relation_initializers,)*
+                    #(#many_to_many_key_initializers,)*
                 }
             }
         }
@@ -676,6 +889,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 ::core::option::Option::Some(Self {
                     #(#row_initializers,)*
                     #(#relation_initializers,)*
+                    #(#many_to_many_key_initializers,)*
                 })
             }
         }
@@ -685,6 +899,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 ::core::option::Option::Some(Self {
                     #(#postgres_row_initializers,)*
                     #(#relation_initializers,)*
+                    #(#many_to_many_key_initializers,)*
                 })
             }
 
@@ -696,6 +911,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 ::core::option::Option::Some(Self {
                     #(#postgres_row_initializers,)*
                     #(#relation_initializers,)*
+                    #(#many_to_many_key_initializers,)*
                 })
             }
         }
@@ -707,6 +923,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 ::core::option::Option::Some(Self {
                     #(#mysql_row_initializers,)*
                     #(#relation_initializers,)*
+                    #(#many_to_many_key_initializers,)*
                 })
             }
         }
@@ -734,11 +951,13 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
         impl ::dinoco::InsertPayload<#name> for #name {
             const HAS_NESTED: bool = #has_nested_insert;
+            const HAS_TRANSACTION_NESTED: bool = #has_transaction_nested_insert;
 
             fn dinoco_insert_model(&self) -> #name {
                 #name {
                     #(#insert_model_scalar_initializers,)*
                     #(#relation_initializers,)*
+                    #(#many_to_many_key_initializers,)*
                 }
             }
 
@@ -749,9 +968,19 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             ) -> ::dinoco::InsertNestedFuture<'a> {
                 ::std::boxed::Box::pin(async move {
                     #(#insert_nested_steps)*
+                    #(#many_to_many_insert_steps)*
 
                     Ok(())
                 })
+            }
+
+            fn dinoco_transaction_many_to_many_writes(
+                &self,
+                parent: &#name,
+            ) -> ::dinoco::anyhow::Result<::std::vec::Vec<::dinoco::ManyToManyWriteQuery>> {
+                let mut writes = ::std::vec::Vec::new();
+                #(#many_to_many_transaction_insert_steps)*
+                Ok(writes)
             }
         }
 
@@ -788,7 +1017,7 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
         match parsed.kind {
             FieldKind::Scalar => scalar_fields.push(parsed),
             FieldKind::HasMany | FieldKind::BelongsTo => relations.push(parsed),
-            FieldKind::Extra => {}
+            FieldKind::ManyToManyKey | FieldKind::Extra => {}
         }
     }
 
@@ -873,35 +1102,45 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
         }
     });
 
-    let relation_apply_impls = relations.iter().map(|field| {
-        let relation_name = &field.name;
-        let ident = &field.ident;
+    let mut relation_groups = Vec::<(&Type, Vec<&ParsedExtendField>)>::new();
+    for field in &relations {
         let target = field.target_ty.as_ref().expect("relation target");
+        let key = type_key(target);
+        if let Some((_, fields)) = relation_groups.iter_mut().find(|(candidate, _)| type_key(candidate) == key) {
+            fields.push(field);
+        } else {
+            relation_groups.push((target, vec![field]));
+        }
+    }
 
-        match field.kind {
-            FieldKind::HasMany => quote! {
-                impl ::dinoco::DinocoRelationApply<#target> for #name {
-                    fn dinoco_apply_many(&mut self, relation: &'static str, values: ::std::vec::Vec<#target>) {
-                        if relation == #relation_name {
-                            self.#ident = values;
-                        }
+    let relation_apply_impls = relation_groups.iter().map(|(target, fields)| {
+        let many_arms = fields.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
+            let relation_name = &field.name;
+            let ident = &field.ident;
+            quote! { #relation_name => self.#ident = values, }
+        });
+        let one_arms = fields.iter().filter(|field| field.kind == FieldKind::BelongsTo).map(|field| {
+            let relation_name = &field.name;
+            let ident = &field.ident;
+            quote! { #relation_name => self.#ident = value, }
+        });
+
+        quote! {
+            impl ::dinoco::DinocoRelationApply<#target> for #name {
+                fn dinoco_apply_many(&mut self, relation: &'static str, values: ::std::vec::Vec<#target>) {
+                    match relation {
+                        #(#many_arms)*
+                        _ => {}
                     }
-
-                    fn dinoco_apply_one(&mut self, _relation: &'static str, _value: ::core::option::Option<#target>) {}
                 }
-            },
-            FieldKind::BelongsTo => quote! {
-                impl ::dinoco::DinocoRelationApply<#target> for #name {
-                    fn dinoco_apply_many(&mut self, _relation: &'static str, _values: ::std::vec::Vec<#target>) {}
 
-                    fn dinoco_apply_one(&mut self, relation: &'static str, value: ::core::option::Option<#target>) {
-                        if relation == #relation_name {
-                            self.#ident = value;
-                        }
+                fn dinoco_apply_one(&mut self, relation: &'static str, value: ::core::option::Option<#target>) {
+                    match relation {
+                        #(#one_arms)*
+                        _ => {}
                     }
                 }
-            },
-            FieldKind::Scalar | FieldKind::Extra => quote! {},
+            }
         }
     });
 
@@ -1032,11 +1271,32 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
     })
 }
 
+fn group_relations_by_target(relations: &[ParsedField]) -> Vec<(&Type, Vec<&ParsedField>)> {
+    let mut groups = Vec::<(&Type, Vec<&ParsedField>)>::new();
+
+    for field in relations {
+        let target = field.target_ty.as_ref().expect("relation target");
+        let key = type_key(target);
+        if let Some((_, fields)) = groups.iter_mut().find(|(candidate, _)| type_key(candidate) == key) {
+            fields.push(field);
+        } else {
+            groups.push((target, vec![field]));
+        }
+    }
+
+    groups
+}
+
+fn type_key(ty: &Type) -> String {
+    quote! { #ty }.to_string()
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FieldKind {
     Scalar,
     HasMany,
     BelongsTo,
+    ManyToManyKey,
     Extra,
 }
 
@@ -1048,12 +1308,17 @@ struct ParsedField {
     target_ty: Option<Type>,
     foreign_key: Option<String>,
     references: Option<String>,
+    relation_name: Option<String>,
     is_option: bool,
     primary_key: bool,
     fulltext: Vec<String>,
     default_value: Option<DefaultValue>,
     auto_generate: Option<AutoGenerate>,
     many_to_many: bool,
+    join_table: Option<String>,
+    parent_field: Option<String>,
+    join_parent_field: Option<String>,
+    join_child_field: Option<String>,
 }
 
 enum DefaultValue {
@@ -1082,11 +1347,16 @@ impl ParsedField {
         let mut relation_kind = None;
         let mut foreign_key = None;
         let mut references = None;
+        let mut relation_name = None;
         let mut primary_key = false;
         let mut fulltext = Vec::new();
         let mut default_value = None;
         let mut auto_generate = None;
         let mut many_to_many = false;
+        let mut join_table = None;
+        let mut parent_field = None;
+        let mut join_parent_field = None;
+        let mut join_child_field = None;
 
         for attr in &field.attrs {
             if !attr.path().is_ident("dinoco") {
@@ -1110,6 +1380,12 @@ impl ParsedField {
                     return Ok(());
                 }
 
+                if meta.path.is_ident("many_to_many_key") {
+                    relation_kind = Some(FieldKind::ManyToManyKey);
+                    many_to_many = true;
+                    return Ok(());
+                }
+
                 if meta.path.is_ident("many_to_one") || meta.path.is_ident("one_to_one") {
                     relation_kind = Some(FieldKind::BelongsTo);
                     return Ok(());
@@ -1128,7 +1404,27 @@ impl ParsedField {
                 }
 
                 if meta.path.is_ident("relation_name") {
-                    let _ = meta.value()?.parse::<LitStr>()?;
+                    relation_name = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("join_table") {
+                    join_table = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("parent_field") {
+                    parent_field = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("join_parent_field") {
+                    join_parent_field = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("join_child_field") {
+                    join_child_field = Some(meta.value()?.parse::<LitStr>()?.value());
                     return Ok(());
                 }
 
@@ -1190,12 +1486,54 @@ impl ParsedField {
                 target_ty: None,
                 foreign_key,
                 references,
+                relation_name,
                 is_option: false,
                 primary_key,
                 fulltext,
                 default_value,
                 auto_generate,
                 many_to_many,
+                join_table,
+                parent_field,
+                join_parent_field,
+                join_child_field,
+            });
+        }
+
+        if relation_kind == Some(FieldKind::ManyToManyKey) {
+            if option_inner(&field.ty).is_none() {
+                return Err(syn::Error::new_spanned(field, "many-to-many virtual keys must be optional"));
+            }
+            if join_table.is_none()
+                || parent_field.is_none()
+                || join_parent_field.is_none()
+                || join_child_field.is_none()
+            {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    "many-to-many virtual keys require join_table, parent_field, join_parent_field, and join_child_field",
+                ));
+            }
+
+            return Ok(Self {
+                ident,
+                name,
+                ty: field.ty.clone(),
+                kind: FieldKind::ManyToManyKey,
+                target_ty: None,
+                foreign_key,
+                references,
+                relation_name,
+                is_option: true,
+                primary_key,
+                fulltext,
+                default_value,
+                auto_generate,
+                many_to_many,
+                join_table,
+                parent_field,
+                join_parent_field,
+                join_child_field,
             });
         }
 
@@ -1216,12 +1554,17 @@ impl ParsedField {
                     target_ty: Some(inner.clone()),
                     foreign_key,
                     references,
+                    relation_name,
                     is_option: false,
                     primary_key,
                     fulltext,
                     default_value,
                     auto_generate,
                     many_to_many,
+                    join_table,
+                    parent_field,
+                    join_parent_field,
+                    join_child_field,
                 });
             }
         }
@@ -1243,12 +1586,17 @@ impl ParsedField {
                     target_ty: Some(inner.clone()),
                     foreign_key,
                     references,
+                    relation_name,
                     is_option: true,
                     primary_key,
                     fulltext,
                     default_value,
                     auto_generate,
                     many_to_many,
+                    join_table,
+                    parent_field,
+                    join_parent_field,
+                    join_child_field,
                 });
             }
         }
@@ -1265,12 +1613,17 @@ impl ParsedField {
                 foreign_key
             },
             references,
+            relation_name,
             is_option: option_inner(&field.ty).is_some(),
             primary_key,
             fulltext,
             default_value,
             auto_generate,
             many_to_many,
+            join_table,
+            parent_field,
+            join_parent_field,
+            join_child_field,
         })
     }
 }
@@ -1396,7 +1749,7 @@ fn should_insert_nested_relation(field: &ParsedField, scalar_fields: &[ParsedFie
 
             !scalar_fields.iter().any(|scalar| scalar.name == foreign_key)
         }
-        FieldKind::Scalar | FieldKind::Extra => false,
+        FieldKind::Scalar | FieldKind::ManyToManyKey | FieldKind::Extra => false,
     }
 }
 

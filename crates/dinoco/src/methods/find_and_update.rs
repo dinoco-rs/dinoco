@@ -1,11 +1,14 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, TransactionCommand, UpdateQuery,
-    UpdateSet, WhereComplex,
+    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, TransactionCommand,
+    UpdateQuery, UpdateSet, WhereComplex,
 };
 
-use crate::{IntoTransactionOperation, split_update_sets};
+use crate::{
+    DinocoRelationValue, IntoTransactionOperation, execute_relation_update_sets, has_many_to_many_update_sets,
+    load_update_matches, split_update_sets, transaction_many_to_many_writes,
+};
 
 pub struct FindAndUpdate<M> {
     sets: Vec<UpdateSet>,
@@ -23,7 +26,7 @@ where
 
 impl<M> FindAndUpdate<M>
 where
-    M: DinocoEntity + DinocoProjection<M> + DinocoRowModel,
+    M: DinocoEntity + DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
 {
     pub fn where_<F>(mut self, callback: F) -> Self
     where
@@ -60,10 +63,23 @@ where
             anyhow::bail!("find_and_update::<{}>() requires at least one .update(...) call.", M::TABLE_NAME);
         }
 
+        let has_many_to_many = has_many_to_many_update_sets(&self.sets);
         let (sets, connects, disconnects) = split_update_sets(self.sets);
+        let has_relation_updates = !connects.is_empty() || !disconnects.is_empty();
+        let mut parents = if has_relation_updates {
+            load_update_matches::<M, M>(&self.conditions, client).await?
+        } else {
+            Vec::new()
+        };
 
-        if !connects.is_empty() || !disconnects.is_empty() {
-            anyhow::bail!("find_and_update::<{}>() does not support connect/disconnect.", M::TABLE_NAME);
+        let relation_parents = if has_many_to_many { parents.as_slice() } else { &[] };
+        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, relation_parents, client)
+            .await?;
+
+        if sets.is_empty() {
+            return parents.pop().ok_or_else(|| {
+                anyhow::anyhow!("Record from table '{}' could not be found for update.", M::TABLE_NAME)
+            });
         }
 
         let query = UpdateQuery {
@@ -81,7 +97,7 @@ where
 
 impl<M> IntoTransactionOperation for FindAndUpdate<M>
 where
-    M: DinocoEntity + DinocoProjection<M> + DinocoRowModel,
+    M: DinocoEntity + DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
 {
     fn into_transaction_operation(self) -> TransactionCommand {
         if self.sets.is_empty() {
@@ -92,21 +108,36 @@ where
         }
 
         let (sets, connects, disconnects) = split_update_sets(self.sets);
-        if !connects.is_empty() || !disconnects.is_empty() {
-            return TransactionCommand::invalid(format!(
-                "find_and_update::<{}>() does not support connect/disconnect.",
-                M::TABLE_NAME
-            ));
-        }
+        let (connects, disconnects) =
+            match transaction_many_to_many_writes(M::TABLE_NAME, &self.conditions, connects, disconnects) {
+                Ok(writes) => writes,
+                Err(error) => return TransactionCommand::invalid(error.to_string()),
+            };
+        let missing_message = format!("Record from table '{}' could not be found for update.", M::TABLE_NAME);
+        let command = if sets.is_empty() {
+            TransactionCommand::find_one::<M>(
+                FindQuery {
+                    fields: <M as DinocoProjection<M>>::FIELDS,
+                    from: M::TABLE_NAME,
+                    conditions: self.conditions,
+                    limit: -1,
+                    skip: -1,
+                    order_by: None,
+                },
+                missing_message,
+            )
+        } else {
+            TransactionCommand::update_returning_one::<M>(
+                UpdateQuery {
+                    table: M::TABLE_NAME,
+                    sets,
+                    conditions: self.conditions,
+                    returning: Some(<M as DinocoProjection<M>>::FIELDS),
+                },
+                missing_message,
+            )
+        };
 
-        TransactionCommand::update_returning_one::<M>(
-            UpdateQuery {
-                table: M::TABLE_NAME,
-                sets,
-                conditions: self.conditions,
-                returning: Some(<M as DinocoProjection<M>>::FIELDS),
-            },
-            format!("Record from table '{}' could not be found for update.", M::TABLE_NAME),
-        )
+        command.with_many_to_many_writes(connects, disconnects)
     }
 }

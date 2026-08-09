@@ -1,5 +1,6 @@
 use dinoco_engine::{
-    DinocoAdapter, DinocoSqlCompiler, FindQuery, RelationBatchQuery, RelationJoinQuery, SqliteAdapter,
+    DinocoAdapter, DinocoSqlCompiler, FindQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationJoinQuery,
+    SqliteAdapter,
 };
 
 #[tokio::test]
@@ -29,6 +30,22 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     assert!(join_sql.contains("ROW_NUMBER() OVER (PARTITION BY user_token.user_id"));
     assert!(join_sql.contains("__dinoco_row_num <= ?"));
     assert_eq!(join_params.len(), 1);
+
+    let (many_to_many_sql, many_to_many_params) =
+        adapter.compile_many_to_many_relation_query(ManyToManyRelationQuery {
+            query: FindQuery::new(&["id", "name"], "system", 3, 1),
+            join_table: "_business_to_system",
+            parent_field: "id",
+            child_field: "id",
+            join_parent_field: "business_id",
+            join_child_field: "system_id",
+            key_count: 2,
+        });
+
+    assert!(many_to_many_sql.contains("INNER JOIN system ON _business_to_system.system_id = system.id"));
+    assert!(many_to_many_sql.contains("PARTITION BY _business_to_system.business_id"));
+    assert!(many_to_many_sql.contains("_business_to_system.business_id IN (?, ?)"));
+    assert_eq!(many_to_many_params.len(), 2);
 
     Ok(())
 }

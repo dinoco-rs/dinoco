@@ -507,6 +507,34 @@ fn compile_supports_composite_unique_index_and_fulltext_declarations() {
 }
 
 #[test]
+fn compile_rejects_model_fields_that_are_reserved_rust_keywords() {
+    for keyword in ["type", "match", "self", "async", "gen"] {
+        let source = format!(
+            r#"
+            model KeywordField {{
+                id        Integer @id
+                {keyword} String
+            }}
+            "#,
+        );
+        let error = compile(&source).expect_err("Rust keywords cannot become generated struct fields");
+
+        assert!(error.message.contains(&format!("KeywordField.{keyword}")), "{error}");
+        assert!(error.message.contains("reserved Rust keyword"), "{error}");
+    }
+
+    compile(
+        r#"
+        model SafeField {
+            id    Integer @id
+            _type String
+        }
+        "#,
+    )
+    .expect("prefixing a keyword keeps the generated Rust field valid");
+}
+
+#[test]
 fn compile_accepts_attached_large_schema_when_available() {
     let path = "/Users/theuszastro/.codex/attachments/44beec3f-c803-46ca-8828-c624cf31b68f/pasted-text.txt";
     let Ok(schema_source) = std::fs::read_to_string(path) else {

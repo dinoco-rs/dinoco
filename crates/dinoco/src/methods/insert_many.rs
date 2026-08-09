@@ -75,18 +75,21 @@ where
     V: InsertPayload<M>,
 {
     fn into_transaction_operation(self) -> TransactionCommand {
-        if V::HAS_NESTED {
+        if V::HAS_TRANSACTION_NESTED {
             return TransactionCommand::invalid(
                 "Nested relation inserts are not supported inside a transaction batch yet.",
             );
         }
 
-        let rows = self
-            .items
-            .iter()
-            .map(InsertPayload::dinoco_insert_model)
-            .map(|model| model.dinoco_insert_values())
-            .collect::<Vec<_>>();
+        let models = self.items.iter().map(InsertPayload::dinoco_insert_model).collect::<Vec<_>>();
+        let mut writes = Vec::new();
+        for (item, model) in self.items.iter().zip(&models) {
+            match item.dinoco_transaction_many_to_many_writes(model) {
+                Ok(item_writes) => writes.extend(item_writes),
+                Err(error) => return TransactionCommand::invalid(error.to_string()),
+            }
+        }
+        let rows = models.iter().map(DinocoInsertable::dinoco_insert_values).collect::<Vec<_>>();
         if rows.is_empty() {
             return TransactionCommand::empty_write();
         }
@@ -96,6 +99,7 @@ where
             rows,
             returning: None,
         })
+        .with_appended_many_to_many_connects(writes)
     }
 }
 
@@ -106,18 +110,21 @@ where
     S: DinocoProjection<M> + DinocoRowModel,
 {
     fn into_transaction_operation(self) -> TransactionCommand {
-        if V::HAS_NESTED {
+        if V::HAS_TRANSACTION_NESTED {
             return TransactionCommand::invalid(
                 "Nested relation inserts are not supported inside a transaction batch yet.",
             );
         }
 
-        let rows = self
-            .items
-            .iter()
-            .map(InsertPayload::dinoco_insert_model)
-            .map(|model| model.dinoco_insert_values())
-            .collect::<Vec<_>>();
+        let models = self.items.iter().map(InsertPayload::dinoco_insert_model).collect::<Vec<_>>();
+        let mut writes = Vec::new();
+        for (item, model) in self.items.iter().zip(&models) {
+            match item.dinoco_transaction_many_to_many_writes(model) {
+                Ok(item_writes) => writes.extend(item_writes),
+                Err(error) => return TransactionCommand::invalid(error.to_string()),
+            }
+        }
+        let rows = models.iter().map(DinocoInsertable::dinoco_insert_values).collect::<Vec<_>>();
         if rows.is_empty() {
             return TransactionCommand::empty_rows::<S>();
         }
@@ -127,5 +134,6 @@ where
             rows,
             returning: Some(S::FIELDS),
         })
+        .with_appended_many_to_many_connects(writes)
     }
 }

@@ -1,4 +1,6 @@
-use dinoco::{Entity, EntityExtend, count, find_first, find_many, insert_into, insert_many, transaction, transactions};
+use dinoco::{
+    Entity, EntityExtend, count, find_first, find_many, insert_into, insert_many, transaction, transactions, update,
+};
 use dinoco_engine::{
     Backend, CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler,
     MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex, MigrationIndexKind,
@@ -49,6 +51,62 @@ pub struct UserPost {
 pub struct TransactionAccount {
     id: String,
     email: String,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "adapter_transaction_business")]
+pub struct AdapterTransactionBusiness {
+    #[dinoco(primary_key)]
+    id: String,
+    name: String,
+
+    #[dinoco(
+        many_to_many,
+        foreign_key = "id",
+        references = "id",
+        join_table = "_adapter_transaction_business_to_system",
+        parent_field = "id",
+        join_parent_field = "business_id",
+        join_child_field = "system_id"
+    )]
+    systems: Vec<AdapterTransactionSystem>,
+
+    #[dinoco(
+        many_to_many_key,
+        join_table = "_adapter_transaction_business_to_system",
+        parent_field = "id",
+        join_parent_field = "business_id",
+        join_child_field = "system_id"
+    )]
+    system_id: Option<String>,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "adapter_transaction_system")]
+pub struct AdapterTransactionSystem {
+    #[dinoco(primary_key)]
+    id: String,
+    name: String,
+
+    #[dinoco(
+        many_to_many,
+        foreign_key = "id",
+        references = "id",
+        join_table = "_adapter_transaction_business_to_system",
+        parent_field = "id",
+        join_parent_field = "system_id",
+        join_child_field = "business_id"
+    )]
+    businesses: Vec<AdapterTransactionBusiness>,
+
+    #[dinoco(
+        many_to_many_key,
+        join_table = "_adapter_transaction_business_to_system",
+        parent_field = "id",
+        join_parent_field = "system_id",
+        join_child_field = "business_id"
+    )]
+    business_id: Option<String>,
 }
 
 #[derive(Debug, Entity)]
@@ -248,11 +306,35 @@ async fn reset_transaction_schema<A>(adapter: &A) -> anyhow::Result<()>
 where
     A: DinocoAdapter + DinocoSqlCompiler,
 {
+    drop_table(adapter, "_adapter_transaction_business_to_system").await?;
+    drop_table(adapter, "adapter_transaction_system").await?;
+    drop_table(adapter, "adapter_transaction_business").await?;
     drop_table(adapter, "adapter_transaction_account").await?;
     create_table(
         adapter,
         "adapter_transaction_account",
         vec![primary(column("id", MigrationColumnType::String)), column("email", MigrationColumnType::String)],
+    )
+    .await?;
+    create_table(
+        adapter,
+        "adapter_transaction_business",
+        vec![primary(column("id", MigrationColumnType::String)), column("name", MigrationColumnType::String)],
+    )
+    .await?;
+    create_table(
+        adapter,
+        "adapter_transaction_system",
+        vec![primary(column("id", MigrationColumnType::String)), column("name", MigrationColumnType::String)],
+    )
+    .await?;
+    create_table(
+        adapter,
+        "_adapter_transaction_business_to_system",
+        vec![
+            primary(column("business_id", MigrationColumnType::String)),
+            primary(column("system_id", MigrationColumnType::String)),
+        ],
     )
     .await
 }
@@ -919,6 +1001,83 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     assert!(
         find_first::<TransactionAccount>().where_(|item| item.id.eq("duplicate")).execute(&client).await?.is_none()
     );
+
+    let business = AdapterTransactionBusiness::new("business-1".to_string(), "Before".to_string());
+    let system = AdapterTransactionSystem::new("system-1".to_string(), "ERP".to_string());
+    insert_into::<AdapterTransactionBusiness>().values(&business).execute(&client).await?;
+    insert_into::<AdapterTransactionSystem>().values(&system).execute(&client).await?;
+
+    let mut connected = transactions(transaction![
+        update::<AdapterTransactionBusiness>()
+            .where_(|item| item.id.eq(&business.id))
+            .update(|item| item.system_id.connect(&system.id)),
+    ])
+    .execute(&client)
+    .await?;
+    connected.take::<()>(0)?;
+    let loaded = find_many::<AdapterTransactionBusiness>()
+        .where_(|item| item.id.eq(&business.id))
+        .includes(|item| item.systems())
+        .execute(&client)
+        .await?;
+    assert_eq!(loaded[0].systems.len(), 1);
+
+    let duplicate = transactions(transaction![
+        update::<AdapterTransactionBusiness>()
+            .where_(|item| item.id.eq(&business.id))
+            .update(|item| item.name.set("After".to_string()))
+            .update(|item| item.system_id.connect(&system.id)),
+    ])
+    .execute(&client)
+    .await;
+    assert!(duplicate.is_err());
+
+    let loaded = find_many::<AdapterTransactionBusiness>()
+        .where_(|item| item.id.eq(&business.id))
+        .includes(|item| item.systems())
+        .execute(&client)
+        .await?;
+    assert_eq!(loaded[0].name, "Before");
+    assert_eq!(loaded[0].systems.len(), 1);
+
+    let mut disconnected = transactions(transaction![
+        update::<AdapterTransactionBusiness>()
+            .where_(|item| item.id.eq(&business.id))
+            .update(|item| item.system_id.disconnect(&system.id)),
+    ])
+    .execute(&client)
+    .await?;
+    disconnected.take::<()>(0)?;
+    let loaded = find_many::<AdapterTransactionBusiness>()
+        .where_(|item| item.id.eq(&business.id))
+        .includes(|item| item.systems())
+        .execute(&client)
+        .await?;
+    assert!(loaded[0].systems.is_empty());
+
+    let mut finance = AdapterTransactionSystem::new("system-finance".to_string(), "Finance".to_string());
+    finance.business_id = Some(business.id.clone());
+    let mut extra_systems = vec![
+        AdapterTransactionSystem::new("system-bi".to_string(), "BI".to_string()),
+        AdapterTransactionSystem::new("system-support".to_string(), "Support".to_string()),
+    ];
+    for system in &mut extra_systems {
+        system.business_id = Some(business.id.clone());
+    }
+    let mut inserted = transactions(transaction![
+        insert_into::<AdapterTransactionSystem>().values(&finance),
+        insert_many::<AdapterTransactionSystem>().values(&extra_systems),
+    ])
+    .execute(&client)
+    .await?;
+    inserted.take::<()>(0)?;
+    inserted.take::<()>(1)?;
+    let loaded = find_many::<AdapterTransactionBusiness>()
+        .where_(|item| item.id.eq(&business.id))
+        .includes(|item| item.systems())
+        .execute(&client)
+        .await?;
+    assert_eq!(loaded[0].systems.len(), 3);
 
     Ok(())
 }

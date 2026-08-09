@@ -7,8 +7,8 @@ use mysql_async::{Pool, TxOpts, Value};
 mod compiler;
 
 use crate::{
-    CompiledTransactionCommand, DinocoAdapter, DinocoRowModel, DinocoValue, RawTransactionOutput,
-    TransactionCommandKind, TransactionResults,
+    CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoRowModel, DinocoValue,
+    RawTransactionOutput, TransactionCommandKind, TransactionResults,
 };
 
 pub struct MySqlAdapter {
@@ -105,6 +105,21 @@ impl MySqlAdapter {
 async fn execute_transaction_command(
     transaction: &mut mysql_async::Transaction<'_>,
     command: &CompiledTransactionCommand,
+) -> anyhow::Result<RawTransactionOutput> {
+    let mut output = None;
+    for statement in &command.statements {
+        let raw = execute_transaction_statement(transaction, statement).await?;
+        if statement.output {
+            output = Some(raw);
+        }
+    }
+
+    output.ok_or_else(|| anyhow!("Dinoco transaction command contains no output statement."))
+}
+
+async fn execute_transaction_statement(
+    transaction: &mut mysql_async::Transaction<'_>,
+    command: &CompiledTransactionStatement,
 ) -> anyhow::Result<RawTransactionOutput> {
     if command.sql.is_empty() {
         return match command.kind {

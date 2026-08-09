@@ -42,10 +42,10 @@ pub fn generate_models_for_workspace(schema: &Schema, workspace: Option<&str>) -
         fs::write(format!("dinoco/models/{}.rs", to_snake_case(&model.name)), render_model_file(&model, schema))?;
     }
     for join in implicit_many_to_many_joins(schema) {
-        fs::write(
-            format!("dinoco/models/{}.rs", to_snake_case(&join.rust_name)),
-            render_many_to_many_join_file(&join, schema),
-        )?;
+        let legacy_join_file = format!("dinoco/models/{}.rs", to_snake_case(&join.rust_name));
+        if Path::new(&legacy_join_file).exists() {
+            fs::remove_file(legacy_join_file)?;
+        }
     }
     let migrations = runtime_migrations(workspace)?;
     fs::write("dinoco/mod.rs", render_dinoco_mod_with_migrations(schema, &migrations))?;
@@ -59,10 +59,6 @@ pub fn render_models(schema: &Schema) -> String {
     for model in schema.models() {
         out.push('\n');
         out.push_str(&render_model_file(&model, schema));
-    }
-    for join in implicit_many_to_many_joins(schema) {
-        out.push('\n');
-        out.push_str(&render_many_to_many_join_file(&join, schema));
     }
     out
 }
@@ -92,12 +88,6 @@ pub fn render_models_mod(schema: &Schema) -> String {
         out.push_str(&format!("mod {module};\n"));
         out.push_str(&format!("pub use {module}::*;\n"));
     }
-    for join in implicit_many_to_many_joins(schema) {
-        let module = to_snake_case(&join.rust_name);
-        out.push_str(&format!("mod {module};\n"));
-        out.push_str(&format!("pub use {module}::*;\n"));
-    }
-
     out
 }
 
@@ -120,6 +110,16 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
         out.push_str(": ");
         out.push_str(&rust_type(model, field, schema));
         out.push_str(",\n\n");
+    }
+    for field in many_to_many_virtual_fields(model, schema) {
+        out.push_str(&format!(
+            "    #[dinoco(many_to_many_key, join_table = \"{}\", parent_field = \"{}\", join_parent_field = \"{}\", join_child_field = \"{}\")]\n",
+            escape_rust_string(&field.join_table),
+            escape_rust_string(&field.parent_field),
+            escape_rust_string(&field.join_parent_field),
+            escape_rust_string(&field.join_child_field),
+        ));
+        out.push_str(&format!("    pub {}: Option<{}>,\n\n", field.name, field.ty));
     }
     out.push_str("}\n");
     out
@@ -460,11 +460,14 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
         let relation = field.attributes.iter().find(|attr| attr.name == "relation");
         let fields = relation.and_then(|relation| relation.argument("fields")).and_then(first_array_ident);
         let references = relation.and_then(|relation| relation.argument("references")).and_then(first_array_ident);
+        let many_to_many = implicit_many_to_many_field(model, field, schema);
         let (relation_kind, foreign_key, relation_reference) = if field.ty.list {
             if let (Some(parent_field), Some(child_field)) = (fields, references) {
                 ("one_to_many", Some(child_field), Some(parent_field))
             } else if let Some((child_field, parent_field)) = inverse_relation_fields(model, field, schema) {
                 ("one_to_many", Some(child_field), Some(parent_field))
+            } else if let Some(many_to_many) = &many_to_many {
+                ("many_to_many", Some(many_to_many.child_field.clone()), Some(many_to_many.parent_field.clone()))
             } else {
                 ("many_to_many", None, None)
             }
@@ -477,6 +480,12 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
         dinoco_attrs.push(relation_kind.to_string());
         if let Some(name) = relation.and_then(relation_name) {
             dinoco_attrs.push(format!("relation_name = \"{name}\""));
+        }
+        if let Some(many_to_many) = many_to_many {
+            dinoco_attrs.push(format!("join_table = \"{}\"", many_to_many.join_table));
+            dinoco_attrs.push(format!("parent_field = \"{}\"", many_to_many.parent_field));
+            dinoco_attrs.push(format!("join_parent_field = \"{}\"", many_to_many.join_parent_field));
+            dinoco_attrs.push(format!("join_child_field = \"{}\"", many_to_many.join_child_field));
         }
         if let (Some(foreign_key), Some(references)) = (foreign_key, relation_reference) {
             dinoco_attrs.push(format!("foreign_key = \"{foreign_key}\""));
@@ -650,6 +659,103 @@ pub struct ManyToManyJoin {
     pub right_model: String,
     pub left_column: String,
     pub right_column: String,
+}
+
+#[derive(Debug, Clone)]
+struct ManyToManyField {
+    join_table: String,
+    parent_field: String,
+    child_field: String,
+    join_parent_field: String,
+    join_child_field: String,
+}
+
+#[derive(Debug, Clone)]
+struct ManyToManyVirtualField {
+    name: String,
+    ty: String,
+    join_table: String,
+    parent_field: String,
+    join_parent_field: String,
+    join_child_field: String,
+}
+
+fn many_to_many_virtual_fields(model: &Model, schema: &Schema) -> Vec<ManyToManyVirtualField> {
+    let mut used = model.fields.iter().map(|field| field.name.clone()).collect::<BTreeSet<_>>();
+    let mut fields = Vec::new();
+
+    for relation in &model.fields {
+        let Some(metadata) = implicit_many_to_many_field(model, relation, schema) else {
+            continue;
+        };
+        let Some(target) = schema.models().find(|target| target.name == relation.ty.name) else {
+            continue;
+        };
+
+        let mut name = metadata.join_child_field.clone();
+        if !used.insert(name.clone()) {
+            name = format!("{}_id", to_snake_case(&relation.name));
+            let mut suffix = 2usize;
+            while !used.insert(name.clone()) {
+                name = format!("{}_id_{suffix}", to_snake_case(&relation.name));
+                suffix += 1;
+            }
+        }
+
+        fields.push(ManyToManyVirtualField {
+            name,
+            ty: model_primary_rust_type(schema, &target.name),
+            join_table: metadata.join_table,
+            parent_field: metadata.parent_field,
+            join_parent_field: metadata.join_parent_field,
+            join_child_field: metadata.join_child_field,
+        });
+    }
+
+    fields
+}
+
+fn implicit_many_to_many_field(model: &Model, field: &ModelField, schema: &Schema) -> Option<ManyToManyField> {
+    if !field.ty.list || !field.is_relation(schema) {
+        return None;
+    }
+    let relation = field.attributes.iter().find(|attr| attr.name == "relation");
+    if relation.and_then(|attr| attr.argument("fields")).is_some() {
+        return None;
+    }
+
+    let target = schema.models().find(|target| target.name == field.ty.name)?;
+    let relation_label = relation.and_then(relation_name);
+    let mut opposites = target.fields.iter().filter(|candidate| {
+        (model.name != target.name || candidate.name != field.name)
+            && candidate.ty.list
+            && candidate.ty.name == model.name
+            && candidate.attributes.iter().find(|attr| attr.name == "relation").and_then(relation_name)
+                == relation_label
+    });
+    let opposite = opposites.next()?;
+    if opposites.next().is_some() {
+        return None;
+    }
+
+    let mut names = [model.name.as_str(), target.name.as_str()];
+    names.sort();
+    let join_table = many_to_many_table_name(names[0], names[1], relation_label.as_deref());
+    let (join_parent_field, join_child_field) = if model.name != target.name {
+        (format!("{}_id", to_snake_case(&model.name)), format!("{}_id", to_snake_case(&target.name)))
+    } else if field.name.as_str() <= opposite.name.as_str() {
+        ("a_id".to_string(), "b_id".to_string())
+    } else {
+        ("b_id".to_string(), "a_id".to_string())
+    };
+
+    Some(ManyToManyField {
+        join_table,
+        parent_field: model.fields.iter().find(|field| is_primary_key_field(model, field))?.name.clone(),
+        child_field: target.fields.iter().find(|field| is_primary_key_field(target, field))?.name.clone(),
+        join_parent_field,
+        join_child_field,
+    })
 }
 
 fn implicit_many_to_many_joins(schema: &Schema) -> Vec<ManyToManyJoin> {

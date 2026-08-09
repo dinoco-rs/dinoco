@@ -2,7 +2,9 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 
-use dinoco_engine::{CountQuery, DinocoClient, DinocoEntity, FindWhere, RelationCountQuery};
+use dinoco_engine::{
+    CountQuery, DinocoClient, DinocoEntity, FindWhere, ManyToManyRelationCountQuery, RelationCountQuery,
+};
 
 pub trait DinocoCountModel<M>: Default {
     fn dinoco_set_total(&mut self, total: i64);
@@ -36,8 +38,16 @@ where
     relation: &'static str,
     parent_field: &'static str,
     child_field: &'static str,
+    many_to_many: Option<ManyToManyCountMetadata>,
     conditions: Vec<FindWhere>,
     marker: PhantomData<fn() -> (M, C)>,
+}
+
+#[derive(Clone, Copy)]
+struct ManyToManyCountMetadata {
+    join_table: &'static str,
+    join_parent_field: &'static str,
+    join_child_field: &'static str,
 }
 
 impl<M, C> RelationCount<M, C>
@@ -45,7 +55,25 @@ where
     C: DinocoEntity,
 {
     pub fn new(relation: &'static str, parent_field: &'static str, child_field: &'static str) -> Self {
-        Self { relation, parent_field, child_field, conditions: Vec::new(), marker: PhantomData }
+        Self { relation, parent_field, child_field, many_to_many: None, conditions: Vec::new(), marker: PhantomData }
+    }
+
+    pub fn many_to_many(
+        relation: &'static str,
+        parent_field: &'static str,
+        child_field: &'static str,
+        join_table: &'static str,
+        join_parent_field: &'static str,
+        join_child_field: &'static str,
+    ) -> Self {
+        Self {
+            relation,
+            parent_field,
+            child_field,
+            many_to_many: Some(ManyToManyCountMetadata { join_table, join_parent_field, join_child_field }),
+            conditions: Vec::new(),
+            marker: PhantomData,
+        }
     }
 }
 
@@ -88,17 +116,34 @@ where
         target: &'a mut S,
     ) -> CountLoaderFuture<'a> {
         Box::pin(async move {
-            let total = client
-                .read_backend(false)
-                .count_relation(RelationCountQuery {
-                    parent_table,
-                    child_table: C::TABLE_NAME,
-                    parent_field: self.parent_field,
-                    child_field: self.child_field,
-                    parent_conditions: parent_conditions.to_vec(),
-                    child_conditions: self.conditions.clone(),
-                })
-                .await?;
+            let total = if let Some(many_to_many) = self.many_to_many {
+                client
+                    .read_backend(false)
+                    .count_many_to_many_relation(ManyToManyRelationCountQuery {
+                        parent_table,
+                        child_table: C::TABLE_NAME,
+                        join_table: many_to_many.join_table,
+                        parent_field: self.parent_field,
+                        child_field: self.child_field,
+                        join_parent_field: many_to_many.join_parent_field,
+                        join_child_field: many_to_many.join_child_field,
+                        parent_conditions: parent_conditions.to_vec(),
+                        child_conditions: self.conditions.clone(),
+                    })
+                    .await?
+            } else {
+                client
+                    .read_backend(false)
+                    .count_relation(RelationCountQuery {
+                        parent_table,
+                        child_table: C::TABLE_NAME,
+                        parent_field: self.parent_field,
+                        child_field: self.child_field,
+                        parent_conditions: parent_conditions.to_vec(),
+                        child_conditions: self.conditions.clone(),
+                    })
+                    .await?
+            };
             target.dinoco_apply_count(self.relation, total);
 
             Ok(())
