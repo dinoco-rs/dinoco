@@ -1133,7 +1133,12 @@ fn run_cli(project: &Path, db_path: &Path, args: &[&str], envs: &[(&str, &str)])
 
 fn cli_command(project: &Path, db_path: &Path, args: &[&str], envs: &[(&str, &str)]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"));
-    command.args(args).env("DATABASE_URL", db_path).env("NODE_ID", "1").current_dir(project);
+    command
+        .args(args)
+        .env("DATABASE_URL", db_path)
+        .env("NODE_ID", "1")
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
+        .current_dir(project);
     for (key, value) in envs {
         command.env(key, value);
     }

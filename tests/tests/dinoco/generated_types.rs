@@ -11,6 +11,13 @@ enum GeneratedStatus {
 }
 
 #[derive(Debug, Entity)]
+#[dinoco(table_name = "enum_update_fixture")]
+struct EnumUpdateFixture {
+    id: String,
+    status: GeneratedStatus,
+}
+
+#[derive(Debug, Entity)]
 #[dinoco(table_name = "generated_scalar_fixture")]
 struct GeneratedScalarFixture {
     id: String,
@@ -165,6 +172,15 @@ fn generated_scalar_types_satisfy_entity_adapter_bounds() {
 
     let value = dinoco::DinocoValue::from(&GeneratedStatus::InProgress);
     assert_eq!(value, dinoco::DinocoValue::Enum("GeneratedStatus".to_string(), "in-progress".to_string()));
+    assert_eq!(GeneratedStatus::Waiting.to_string(), "waiting");
+    assert_eq!(GeneratedStatus::InProgress.to_string(), "in-progress");
+    assert_eq!(GeneratedStatus::try_from("waiting"), Ok(GeneratedStatus::Waiting));
+    assert_eq!(GeneratedStatus::try_from("in-progress".to_string()), Ok(GeneratedStatus::InProgress));
+    assert_eq!("in-progress".parse::<GeneratedStatus>(), Ok(GeneratedStatus::InProgress));
+    assert_eq!(
+        GeneratedStatus::try_from("InProgress"),
+        Err("unknown value `InProgress` for enum `GeneratedStatus`".to_string()),
+    );
 
     let json = serde_json::to_string(&GeneratedStatus::InProgress).expect("serialize generated enum");
     assert_eq!(json, "\"InProgress\"");
@@ -172,6 +188,28 @@ fn generated_scalar_types_satisfy_entity_adapter_bounds() {
         serde_json::from_str::<GeneratedStatus>(&json).expect("deserialize generated enum"),
         GeneratedStatus::InProgress
     );
+
+    let postgres_enum = dinoco::tokio_postgres::types::Type::new(
+        "GeneratedStatus".to_string(),
+        99_999,
+        dinoco::tokio_postgres::types::Kind::Enum(vec!["waiting".to_string(), "in-progress".to_string()]),
+        "public".to_string(),
+    );
+    assert!(<GeneratedStatus as dinoco::tokio_postgres::types::FromSql>::accepts(&postgres_enum));
+    assert_eq!(
+        <GeneratedStatus as dinoco::tokio_postgres::types::FromSql>::from_sql(&postgres_enum, b"in-progress")
+            .expect("decode native PostgreSQL enum"),
+        GeneratedStatus::InProgress
+    );
+}
+
+#[test]
+fn generated_enums_can_be_used_by_all_update_builders() {
+    let _ = dinoco::update::<EnumUpdateFixture>().update(|item| item.status.set(GeneratedStatus::InProgress));
+    let _ = dinoco::find_and_update::<EnumUpdateFixture>().update(|item| item.status.set(&GeneratedStatus::Waiting));
+    let _ = dinoco::update_many::<EnumUpdateFixture>().update(|item| item.status.set(GeneratedStatus::Waiting));
+    let _ =
+        dinoco::UpdateField::<Option<GeneratedStatus>>::new("optional_status").set(Some(GeneratedStatus::InProgress));
 }
 
 #[test]

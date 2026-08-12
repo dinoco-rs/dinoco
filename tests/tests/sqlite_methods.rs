@@ -100,6 +100,14 @@ async fn sqlite_crud_relations_and_count_work_end_to_end() -> anyhow::Result<()>
         .await?;
     assert_eq!(updated.office, "member");
 
+    let missing = dinoco::find_and_update::<User>()
+        .where_(|x| x.email.eq("missing@dinoco.rs"))
+        .update(|x| x.office.set("member".to_string()))
+        .execute(&client)
+        .await
+        .expect_err("find_and_update must fail when no row is affected");
+    assert!(missing.to_string().contains("could not be found for update"));
+
     let count = dinoco::count::<User>().includes(|x| x.tokens()).execute(&client).await?;
     assert_eq!(count.total, 1);
     assert_eq!(count.tokens, Some(1));

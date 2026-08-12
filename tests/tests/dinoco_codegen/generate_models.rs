@@ -33,6 +33,8 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     let dinoco_mod = dinoco_codegen::render_dinoco_mod(&schema);
 
     assert!(models.contains("pub enum OfficeType"));
+    assert!(models.contains("#[dinoco(value = \"admin\")]\n    Admin,"));
+    assert!(models.contains("#[dinoco(value = \"member\")]\n    Member,"));
     assert!(models.contains("Admin,"));
     assert!(models.contains("#[derive(Debug, Entity)]"));
     assert!(models.contains("pub struct User"));
@@ -49,6 +51,30 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     assert!(dinoco_mod.contains("PostgresAdapter::direct_with_pool(database_url, 2, 10)"));
     assert!(dinoco_mod.contains("with_read_replicas(read_replicas)"));
     assert!(dinoco_mod.contains("with_logger(false)"));
+}
+
+#[test]
+fn codegen_keeps_model_acronyms_together_in_generated_names() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model BusinessCNAE {
+            id String @id
+        }
+
+        model BusinessOffice {
+            id String @id
+        }
+        "#,
+    )
+    .expect("schema");
+
+    let models = dinoco_codegen::render_models(&schema);
+
+    assert!(models.contains("mod business_cnae;"));
+    assert!(models.contains("#[dinoco(table_name = \"business_cnae\")]"));
+    assert!(models.contains("mod business_office;"));
+    assert!(models.contains("#[dinoco(table_name = \"business_office\")]"));
+    assert!(!models.contains("business_c_n_a_e"));
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use std::fs;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dinoco_engine::{DinocoAdapter, DinocoSqlCompiler, DinocoValue, InsertQuery, SqliteAdapter, rusqlite::Connection};
@@ -37,16 +38,23 @@ fn migrate_generate_sqlite_creates_migration_and_models() {
     fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("schema");
 
     let db_path = project.join("dev.sqlite");
-    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
         .args(["migrate", "generate"])
         .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .current_dir(&project)
-        .output()
+        .spawn()
         .expect("cli should run");
+    child.stdin.take().expect("migration confirmation stdin").write_all(b"Y\n").expect("confirm migration");
+    let output = child.wait_with_output().expect("cli output");
 
     assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Detected"));
+    assert!(stdout.contains("Generate and apply this migration"));
     assert!(stdout.contains("Migration generated and applied"));
     assert!(stdout.contains("Rust models generated"));
     assert!(project.join("dinoco/mod.rs").exists());
@@ -64,6 +72,34 @@ fn migrate_generate_sqlite_creates_migration_and_models() {
 }
 
 #[test]
+fn migrate_generate_cancels_before_writing_when_not_confirmed() {
+    let project = temp_project("migrate-cancelled");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
+    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("schema");
+
+    let db_path = project.join("dev.sqlite");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate"])
+        .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .current_dir(&project)
+        .spawn()
+        .expect("cli should run");
+    child.stdin.take().expect("migration confirmation stdin").write_all(b"n\n").expect("cancel migration");
+    let output = child.wait_with_output().expect("cli output");
+
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Detected"));
+    assert!(stdout.contains("Migration generation cancelled"));
+    assert!(!project.join("dinoco/models").exists());
+    let migrations = fs::read_dir(project.join("dinoco/migrations")).expect("empty migrations directory");
+    assert_eq!(migrations.count(), 0);
+}
+
+#[test]
 fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
     let project = temp_project("workspaces");
     fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
@@ -76,6 +112,7 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
         .args(["migrate", "generate", "--workspace", "dev"])
         .env("DEV_DATABASE_URL", &dev_db)
         .env("DEV_REPLICA_DATABASE_URL", &dev_replica_db)
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
         .current_dir(&project)
         .output()
         .expect("dev migration should run");
@@ -102,6 +139,7 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
         .args(["migrate", "generate", "-w", "prod"])
         .env("PROD_DATABASE_URL", &prod_db)
         .env("PROD_REPLICA_DATABASE_URL", &prod_replica_db)
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
         .current_dir(&project)
         .output()
         .expect("prod migration should run");
@@ -153,6 +191,7 @@ fn migrate_generate_sqlite_creates_explicit_and_foreign_key_indexes() {
     let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
         .args(["migrate", "generate"])
         .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
         .current_dir(&project)
         .output()
         .expect("cli should run");
@@ -194,6 +233,7 @@ fn migrate_generate_sqlite_applies_composite_model_attributes() {
     let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
         .args(["migrate", "generate"])
         .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
         .current_dir(&project)
         .output()
         .expect("cli should run");
@@ -222,6 +262,46 @@ fn migrate_generate_sqlite_applies_composite_model_attributes() {
     assert!(generated.contains("#[dinoco(fulltext = \"title,body\")]"));
 }
 
+#[test]
+fn migrate_generate_sqlite_enforces_enum_values_with_check_constraint() {
+    let project = temp_project("sqlite-enum");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
+    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_ENUM_SCHEMA).expect("schema");
+
+    let db_path = project.join("dev.sqlite");
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate"])
+        .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
+        .current_dir(&project)
+        .output()
+        .expect("cli should run");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+
+    let migration_dir = fs::read_dir(project.join("dinoco/migrations"))
+        .expect("migrations")
+        .next()
+        .expect("migration directory")
+        .expect("migration entry")
+        .path();
+    let up = fs::read_to_string(migration_dir.join("up.sql")).expect("up migration");
+    assert!(up.contains("role TEXT CHECK (role IN ('ADMIN', 'MEMBER'))"), "{up}");
+
+    let connection = Connection::open(&db_path).expect("sqlite");
+    connection.execute("INSERT INTO user (id, role) VALUES ('valid', 'ADMIN')", []).expect("valid enum value");
+    assert!(connection.execute("INSERT INTO user (id, role) VALUES ('invalid', 'OWNER')", []).is_err());
+    drop(connection);
+
+    let stable = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate"])
+        .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .current_dir(&project)
+        .output()
+        .expect("stable cli run");
+    assert!(stable.status.success(), "stderr: {}", String::from_utf8_lossy(&stable.stderr));
+    assert!(String::from_utf8_lossy(&stable.stdout).contains("No schema changes were found"));
+}
+
 #[tokio::test]
 async fn migrate_generate_detects_and_applies_destructive_column_drop_when_confirmed() {
     let project = temp_project("drop-column");
@@ -232,6 +312,7 @@ async fn migrate_generate_detects_and_applies_destructive_column_drop_when_confi
     let initial = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
         .args(["migrate", "generate"])
         .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
         .current_dir(&project)
         .output()
         .expect("initial migration");
@@ -364,6 +445,23 @@ model User {
     id       String @id @default(uuid())
     email    String
     password String
+}
+"#;
+
+const SQLITE_ENUM_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum Role {
+    ADMIN
+    MEMBER
+}
+
+model User {
+    id   String @id
+    role Role
 }
 "#;
 

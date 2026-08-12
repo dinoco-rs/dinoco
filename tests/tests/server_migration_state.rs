@@ -185,7 +185,11 @@ fn temporary_project(adapter: &str, suffix: &str) -> PathBuf {
 
 fn run_cli(project: &Path, database_url: &str, args: &[&str], envs: &[(&str, &str)]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"));
-    command.args(args).env("DATABASE_URL", database_url).current_dir(project);
+    command
+        .args(args)
+        .env("DATABASE_URL", database_url)
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
+        .current_dir(project);
     for (key, value) in envs {
         command.env(key, value);
     }

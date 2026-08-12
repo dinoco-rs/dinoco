@@ -135,7 +135,7 @@ async fn adapters_compile_schema_types_with_expected_database_types() -> anyhow:
     assert!(sqlite_sql.contains("datetime_value DATETIME"));
     assert!(sqlite_sql.contains("date_value DATE"));
     assert!(sqlite_sql.contains("json_value BLOB"));
-    assert!(sqlite_sql.contains("enum_value TEXT"));
+    assert!(sqlite_sql.contains("enum_value TEXT CHECK (enum_value IN ('admin', 'member'))"));
 
     let postgres = PostgresAdapter::direct("postgres://postgres:postgres@localhost:5432/postgres").await?;
     let postgres_sql = postgres.compile_create_table_migration(migration.clone());
@@ -146,7 +146,14 @@ async fn adapters_compile_schema_types_with_expected_database_types() -> anyhow:
     assert!(postgres_sql.contains("datetime_value TIMESTAMP"));
     assert!(postgres_sql.contains("date_value DATE"));
     assert!(postgres_sql.contains("json_value JSONB"));
-    assert!(postgres_sql.contains("enum_value OfficeType"));
+    assert!(postgres_sql.contains("enum_value \"OfficeType\""));
+    assert_eq!(
+        postgres.compile_create_enum_migration(dinoco_engine::CreateEnumMigration {
+            name: "OfficeType".to_string(),
+            values: vec!["admin".to_string(), "member".to_string()],
+        }),
+        ["CREATE TYPE \"OfficeType\" AS ENUM ('admin', 'member');"]
+    );
 
     let mysql = MySqlAdapter::new("mysql://root:root@localhost:3306/mysql");
     let mysql_sql = mysql.compile_create_table_migration(migration);

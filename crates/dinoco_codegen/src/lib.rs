@@ -638,9 +638,15 @@ fn to_pascal_case(value: &str) -> String {
 
 fn to_snake_case(value: &str) -> String {
     let mut out = String::new();
-    for (index, ch) in value.chars().enumerate() {
+    let chars = value.chars().collect::<Vec<_>>();
+    for (index, ch) in chars.iter().copied().enumerate() {
         if ch.is_ascii_uppercase() {
-            if index > 0 {
+            let previous_is_lowercase_or_digit =
+                index > 0 && (chars[index - 1].is_ascii_lowercase() || chars[index - 1].is_ascii_digit());
+            let starts_word_after_acronym = index > 0
+                && chars[index - 1].is_ascii_uppercase()
+                && chars.get(index + 1).is_some_and(|next| next.is_ascii_lowercase());
+            if previous_is_lowercase_or_digit || starts_word_after_acronym {
                 out.push('_');
             }
             out.extend(ch.to_lowercase());

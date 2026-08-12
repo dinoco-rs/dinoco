@@ -323,6 +323,11 @@ fn referential_action(action: ReferentialAction) -> &'static str {
 fn compile_migration_column(column: &MigrationColumn, dialect: DatabaseDialect, inline_primary_key: bool) -> String {
     let mut parts = vec![sql_identifier(&column.name), migration_type(&column.ty, dialect).to_string()];
 
+    if let MigrationColumnType::Enum { values, .. } = &column.ty {
+        let values = values.iter().map(|value| format!("'{}'", escape_sql(value))).collect::<Vec<_>>().join(", ");
+        parts.push(format!("CHECK ({} IN ({values}))", sql_identifier(&column.name)));
+    }
+
     if column.primary_key && inline_primary_key {
         parts.push("PRIMARY KEY".to_string());
     }
@@ -771,4 +776,30 @@ fn is_reserved_identifier(identifier: &str) -> bool {
             | "default"
             | "check"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqlite_uses_text_with_a_check_constraint_for_enums() {
+        let sql = compile_migration_column(
+            &MigrationColumn {
+                name: "auth_method".to_string(),
+                ty: MigrationColumnType::Enum {
+                    name: "AuthMethod".to_string(),
+                    values: vec!["PASSWORD".to_string(), "GOOGLE".to_string()],
+                },
+                primary_key: false,
+                unique: false,
+                nullable: false,
+                default: None,
+            },
+            DatabaseDialect::Sqlite,
+            true,
+        );
+
+        assert_eq!(sql, "auth_method TEXT CHECK (auth_method IN ('PASSWORD', 'GOOGLE')) NOT NULL");
+    }
 }

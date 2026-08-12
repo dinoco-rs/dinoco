@@ -68,6 +68,12 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
             ),
         }
     });
+    let display_arms = variants.iter().map(|(variant, value)| {
+        quote! { #name::#variant => formatter.write_str(#value), }
+    });
+    let from_str_arms = variants.iter().map(|(variant, value)| {
+        quote! { #value => ::core::result::Result::Ok(Self::#variant), }
+    });
     let sqlite_arms = variants.iter().map(|(variant, value)| {
         quote! { #value => ::core::result::Result::Ok(Self::#variant), }
     });
@@ -79,11 +85,65 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
     });
 
     Ok(quote! {
+        impl ::core::fmt::Display for #name {
+            fn fmt(
+                &self,
+                formatter: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
+                match self {
+                    #(#display_arms)*
+                }
+            }
+        }
+
+        impl ::core::str::FromStr for #name {
+            type Err = ::std::string::String;
+
+            fn from_str(value: &str) -> ::core::result::Result<Self, Self::Err> {
+                match value {
+                    #(#from_str_arms)*
+                    _ => ::core::result::Result::Err(::std::format!(
+                        "unknown value `{}` for enum `{}`",
+                        value,
+                        #enum_name,
+                    )),
+                }
+            }
+        }
+
+        impl ::core::convert::TryFrom<&str> for #name {
+            type Error = ::std::string::String;
+
+            fn try_from(value: &str) -> ::core::result::Result<Self, Self::Error> {
+                <Self as ::core::str::FromStr>::from_str(value)
+            }
+        }
+
+        impl ::core::convert::TryFrom<::std::string::String> for #name {
+            type Error = ::std::string::String;
+
+            fn try_from(value: ::std::string::String) -> ::core::result::Result<Self, Self::Error> {
+                <Self as ::core::convert::TryFrom<&str>>::try_from(value.as_str())
+            }
+        }
+
         impl ::core::convert::From<&#name> for ::dinoco::DinocoValue {
             fn from(value: &#name) -> Self {
                 match value {
                     #(#value_arms)*
                 }
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<#name> for #name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(&self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<#name> for &#name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(self)
             }
         }
 
@@ -104,15 +164,14 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
 
         impl<'a> ::dinoco::tokio_postgres::types::FromSql<'a> for #name {
             fn from_sql(
-                ty: &::dinoco::tokio_postgres::types::Type,
+                _ty: &::dinoco::tokio_postgres::types::Type,
                 raw: &'a [u8],
             ) -> ::core::result::Result<
                 Self,
                 ::std::boxed::Box<dyn ::std::error::Error + Sync + Send>,
             > {
-                let value =
-                    <::std::string::String as ::dinoco::tokio_postgres::types::FromSql>::from_sql(ty, raw)?;
-                match value.as_str() {
+                let value = ::core::str::from_utf8(raw)?;
+                match value {
                     #(#postgres_arms)*
                     _ => ::core::result::Result::Err(
                         ::std::format!("unknown enum value `{}`", value).into(),
@@ -121,7 +180,8 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
             }
 
             fn accepts(ty: &::dinoco::tokio_postgres::types::Type) -> bool {
-                <::std::string::String as ::dinoco::tokio_postgres::types::FromSql>::accepts(ty)
+                matches!(ty.kind(), ::dinoco::tokio_postgres::types::Kind::Enum(_))
+                    || <::std::string::String as ::dinoco::tokio_postgres::types::FromSql>::accepts(ty)
             }
         }
 
@@ -1949,10 +2009,16 @@ fn is_string(ty: &Type) -> bool {
 
 fn to_snake_case(value: &str) -> String {
     let mut out = String::new();
+    let chars = value.chars().collect::<Vec<_>>();
 
-    for (index, ch) in value.chars().enumerate() {
+    for (index, ch) in chars.iter().copied().enumerate() {
         if ch.is_uppercase() {
-            if index > 0 {
+            let previous_is_lowercase_or_digit =
+                index > 0 && (chars[index - 1].is_lowercase() || chars[index - 1].is_ascii_digit());
+            let starts_word_after_acronym = index > 0
+                && chars[index - 1].is_uppercase()
+                && chars.get(index + 1).is_some_and(|next| next.is_lowercase());
+            if previous_is_lowercase_or_digit || starts_word_after_acronym {
                 out.push('_');
             }
 

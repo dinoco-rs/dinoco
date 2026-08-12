@@ -378,11 +378,11 @@ fn referential_action(action: ReferentialAction) -> &'static str {
 
 fn compile_create_enum_migration(migration: CreateEnumMigration) -> Vec<String> {
     let values = migration.values.iter().map(|value| format!("'{}'", escape_sql(value))).collect::<Vec<_>>().join(", ");
-    vec![format!("CREATE TYPE {} AS ENUM ({values});", migration.name)]
+    vec![format!("CREATE TYPE {} AS ENUM ({values});", quoted_identifier(&migration.name))]
 }
 
 fn compile_drop_enum_migration(migration: DropEnumMigration) -> Vec<String> {
-    vec![format!("DROP TYPE IF EXISTS {};", migration.name)]
+    vec![format!("DROP TYPE IF EXISTS {};", quoted_identifier(&migration.name))]
 }
 
 fn compile_alter_enum_migration(migration: AlterEnumMigration) -> Vec<String> {
@@ -390,7 +390,13 @@ fn compile_alter_enum_migration(migration: AlterEnumMigration) -> Vec<String> {
         .desired_values
         .iter()
         .filter(|value| !migration.current_values.contains(value))
-        .map(|value| format!("ALTER TYPE {} ADD VALUE IF NOT EXISTS '{}';", migration.name, escape_sql(value)))
+        .map(|value| {
+            format!(
+                "ALTER TYPE {} ADD VALUE IF NOT EXISTS '{}';",
+                quoted_identifier(&migration.name),
+                escape_sql(value)
+            )
+        })
         .collect()
 }
 
@@ -418,16 +424,16 @@ fn compile_migration_column(column: &MigrationColumn, inline_primary_key: bool) 
     parts.join(" ")
 }
 
-fn migration_type(ty: &MigrationColumnType) -> &str {
+fn migration_type(ty: &MigrationColumnType) -> String {
     match ty {
-        MigrationColumnType::String | MigrationColumnType::Text => "TEXT",
-        MigrationColumnType::Boolean => "BOOLEAN",
-        MigrationColumnType::Integer => "BIGINT",
-        MigrationColumnType::Float => "DOUBLE PRECISION",
-        MigrationColumnType::DateTime => "TIMESTAMP",
-        MigrationColumnType::Date => "DATE",
-        MigrationColumnType::Json => "JSONB",
-        MigrationColumnType::Enum { name, .. } => name.as_str(),
+        MigrationColumnType::String | MigrationColumnType::Text => "TEXT".to_string(),
+        MigrationColumnType::Boolean => "BOOLEAN".to_string(),
+        MigrationColumnType::Integer => "BIGINT".to_string(),
+        MigrationColumnType::Float => "DOUBLE PRECISION".to_string(),
+        MigrationColumnType::DateTime => "TIMESTAMP".to_string(),
+        MigrationColumnType::Date => "DATE".to_string(),
+        MigrationColumnType::Json => "JSONB".to_string(),
+        MigrationColumnType::Enum { name, .. } => quoted_identifier(name),
     }
 }
 
@@ -444,6 +450,10 @@ fn migration_default(default: &MigrationDefault) -> Option<String> {
 
 fn escape_sql(value: &str) -> String {
     value.replace('\'', "''")
+}
+
+fn quoted_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
 fn compile_find_query(query: FindQuery) -> (String, Vec<DinocoValue>) {
@@ -1051,5 +1061,28 @@ impl Placeholder {
     fn next(&mut self) -> String {
         self.index += 1;
         format!("${}", self.index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn postgres_uses_a_named_native_enum_type() {
+        assert_eq!(
+            compile_create_enum_migration(CreateEnumMigration {
+                name: "AuthMethod".to_string(),
+                values: vec!["PASSWORD".to_string(), "GOOGLE".to_string()],
+            }),
+            ["CREATE TYPE \"AuthMethod\" AS ENUM ('PASSWORD', 'GOOGLE');"]
+        );
+        assert_eq!(
+            migration_type(&MigrationColumnType::Enum {
+                name: "AuthMethod".to_string(),
+                values: vec!["PASSWORD".to_string(), "GOOGLE".to_string()],
+            }),
+            "\"AuthMethod\""
+        );
     }
 }

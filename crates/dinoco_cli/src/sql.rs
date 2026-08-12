@@ -974,9 +974,15 @@ fn migration_default(field: &ModelField) -> Option<MigrationDefault> {
 
 fn table_name(name: &str) -> String {
     let mut out = String::new();
-    for (index, ch) in name.chars().enumerate() {
+    let chars = name.chars().collect::<Vec<_>>();
+    for (index, ch) in chars.iter().copied().enumerate() {
         if ch.is_ascii_uppercase() {
-            if index > 0 {
+            let previous_is_lowercase_or_digit =
+                index > 0 && (chars[index - 1].is_ascii_lowercase() || chars[index - 1].is_ascii_digit());
+            let starts_word_after_acronym = index > 0
+                && chars[index - 1].is_ascii_uppercase()
+                && chars.get(index + 1).is_some_and(|next| next.is_ascii_lowercase());
+            if previous_is_lowercase_or_digit || starts_word_after_acronym {
                 out.push('_');
             }
             out.extend(ch.to_lowercase());
@@ -1256,6 +1262,29 @@ mod tests {
         assert!(matches!(role.ty, MigrationColumnType::Enum { ref name, .. } if name == "Role"));
         assert_eq!(role.default, Some(MigrationDefault::String("USER".to_string())));
         assert!(migrations.iter().any(|migration| migration.table == "_post_to_user"));
+    }
+
+    #[test]
+    fn desired_schema_keeps_model_acronyms_together_in_table_names() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            model BusinessCNAE {
+                id String @id
+            }
+
+            model BusinessOffice {
+                id String @id
+            }
+            "#,
+        )
+        .expect("schema");
+
+        let migrations = generate_create_table_migrations(&schema);
+        let names = migrations.iter().map(|migration| migration.table.as_str()).collect::<Vec<_>>();
+
+        assert!(names.contains(&"business_cnae"));
+        assert!(names.contains(&"business_office"));
+        assert!(!names.contains(&"business_c_n_a_e"));
     }
 
     #[test]

@@ -1050,8 +1050,18 @@ async fn inspect_sqlite(adapter: &SqliteAdapter) -> anyhow::Result<DatabaseSchem
         for table_name in table_names {
             let row_count =
                 conn.query_row(&format!("SELECT COUNT(*) FROM {table_name}"), [], |row| row.get::<_, i64>(0))?;
+            let definition: String = conn.query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [&table_name],
+                |row| row.get(0),
+            )?;
             let mut columns_stmt = conn.prepare(&format!("PRAGMA table_info({table_name})"))?;
             let mut columns = columns_stmt.query_map([], sqlite_column)?.collect::<Result<Vec<_>, _>>()?;
+            for column in &mut columns {
+                if let Some(values) = sqlite_enum_values(&definition, &column.name) {
+                    column.ty = MigrationColumnType::Enum { name: String::new(), values };
+                }
+            }
             let unique_columns = sqlite_unique_columns(conn, &table_name)?;
             for column in &mut columns {
                 column.unique = unique_columns.contains(column.name.as_str());
@@ -1066,6 +1076,47 @@ async fn inspect_sqlite(adapter: &SqliteAdapter) -> anyhow::Result<DatabaseSchem
     })
     .await
     .map_err(|err| anyhow::anyhow!(err.to_string()))?
+}
+
+fn sqlite_enum_values(definition: &str, column: &str) -> Option<Vec<String>> {
+    let identifiers = [column.to_string(), format!("\"{}\"", column.replace('"', "\"\""))];
+    identifiers.iter().find_map(|identifier| {
+        let prefix = format!("CHECK ({identifier} IN (");
+        let values = definition.split_once(&prefix)?.1;
+        parse_sql_string_list(values)
+    })
+}
+
+fn parse_sql_string_list(values: &str) -> Option<Vec<String>> {
+    let mut chars = values.chars().peekable();
+    let mut parsed = Vec::new();
+
+    loop {
+        while chars.next_if(|ch| ch.is_whitespace()).is_some() {}
+        if chars.next_if_eq(&')').is_some() {
+            return (!parsed.is_empty()).then_some(parsed);
+        }
+        if chars.next()? != '\'' {
+            return None;
+        }
+
+        let mut value = String::new();
+        loop {
+            match chars.next()? {
+                '\'' if chars.next_if_eq(&'\'').is_some() => value.push('\''),
+                '\'' => break,
+                ch => value.push(ch),
+            }
+        }
+        parsed.push(value);
+
+        while chars.next_if(|ch| ch.is_whitespace()).is_some() {}
+        match chars.next()? {
+            ',' => {}
+            ')' => return Some(parsed),
+            _ => return None,
+        }
+    }
 }
 
 fn sqlite_foreign_keys(conn: &rusqlite::Connection, table_name: &str) -> rusqlite::Result<Vec<MigrationForeignKey>> {

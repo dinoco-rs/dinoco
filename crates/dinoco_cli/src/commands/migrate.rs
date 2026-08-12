@@ -153,21 +153,11 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
             ui::info("Changes required to reconcile the live SQLite database:");
             print_plan_summary(&live_plan);
             ensure_plan_is_supported(&db, &live_plan)?;
-            if live_plan.warnings.iter().any(|warning| warning.destructive) && !confirm_destructive_plan(&live_plan)? {
-                ui::warning("Migration generation cancelled.");
-                return Ok(());
-            }
         }
         if !migration_plan.steps.is_empty() {
             ui::info("Schema evolution that will be recorded for other databases:");
             print_plan_summary(&migration_plan);
             ensure_plan_is_supported(&db, &migration_plan)?;
-            if migration_plan.warnings.iter().any(|warning| warning.destructive)
-                && !confirm_destructive_plan(&migration_plan)?
-            {
-                ui::warning("Migration generation cancelled.");
-                return Ok(());
-            }
         }
     }
 
@@ -202,12 +192,12 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
     if !repairing_drift {
         print_plan_summary(&migration_plan);
         ensure_plan_is_supported(&db, &migration_plan)?;
-        if migration_plan.warnings.iter().any(|warning| warning.destructive)
-            && !confirm_destructive_plan(&migration_plan)?
-        {
-            ui::warning("Migration generation cancelled.");
-            return Ok(());
-        }
+    }
+
+    let plans = if repairing_drift { vec![&live_plan, &migration_plan] } else { vec![&migration_plan] };
+    if !confirm_migration_generation(&plans)? {
+        ui::warning("Migration generation cancelled. No migration was created or applied.");
+        return Ok(());
     }
 
     let migration_name = migration_name("generated");
@@ -1784,6 +1774,31 @@ fn print_plan_summary(plan: &MigrationPlan) {
     }
 }
 
+fn confirm_migration_generation(plans: &[&MigrationPlan]) -> anyhow::Result<bool> {
+    if std::env::var("DINOCO_CLI_CONFIRM_MIGRATION").ok().as_deref() == Some("true") {
+        return Ok(true);
+    }
+
+    let destructive_count = plans.iter().flat_map(|plan| &plan.warnings).filter(|warning| warning.destructive).count();
+    if destructive_count > 0 && std::env::var("DINOCO_CLI_CONFIRM_DESTRUCTIVE").ok().as_deref() == Some("true") {
+        return Ok(true);
+    }
+
+    let message = if destructive_count > 0 {
+        format!(
+            "This migration contains {destructive_count} destructive change(s) that may permanently delete data. Make sure you have a backup. Generate and apply it now?"
+        )
+    } else {
+        "Generate and apply this migration, then generate the Rust models?".to_string()
+    };
+
+    print!("? {message} [y/N] ");
+    std::io::stdout().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    Ok(answer.trim().eq_ignore_ascii_case("y"))
+}
+
 fn confirm_destructive_plan(plan: &MigrationPlan) -> anyhow::Result<bool> {
     if std::env::var("DINOCO_CLI_CONFIRM_DESTRUCTIVE").ok().as_deref() == Some("true") {
         return Ok(true);
@@ -1791,7 +1806,7 @@ fn confirm_destructive_plan(plan: &MigrationPlan) -> anyhow::Result<bool> {
 
     let destructive_count = plan.warnings.iter().filter(|warning| warning.destructive).count();
     Confirm::new(&format!(
-        "This migration contains {destructive_count} destructive change(s) that may permanently delete data. Make sure you have a backup. Continue?"
+        "This repair contains {destructive_count} destructive change(s) that may permanently delete data. Make sure you have a backup. Continue?"
     ))
     .with_default(false)
     .prompt()

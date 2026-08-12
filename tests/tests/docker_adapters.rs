@@ -601,19 +601,15 @@ async fn assert_constraint_introspection(db: dinoco_cli::db::CliDatabase) -> any
     assert_eq!(active.ty, MigrationColumnType::Boolean);
     assert_eq!(active.default, Some(MigrationDefault::Boolean(false)));
     let role = table.columns.iter().find(|column| column.name == "role").expect("enum column");
-    if is_sqlite {
-        assert_eq!(role.ty, MigrationColumnType::Text);
-    } else {
-        assert!(
-            matches!(
-                &role.ty,
-                MigrationColumnType::Enum { name, values }
-                    if (!is_postgres || name == "migration_constraint_role")
-                        && values == &["member".to_string(), "admin".to_string()]
-            ),
-            "{role:#?}"
-        );
-    }
+    assert!(
+        matches!(
+            &role.ty,
+            MigrationColumnType::Enum { name, values }
+                if (!is_postgres || name == "migration_constraint_role")
+                    && values == &["member".to_string(), "admin".to_string()]
+        ),
+        "{role:#?}"
+    );
 
     let join =
         schema.tables.iter().find(|table| table.name == "migration_constraints_join").expect("composite-key table");

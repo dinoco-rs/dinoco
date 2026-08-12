@@ -737,3 +737,19 @@ fn is_reserved_identifier(identifier: &str) -> bool {
             | "check"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mysql_uses_an_inline_native_enum() {
+        assert_eq!(
+            migration_type(&MigrationColumnType::Enum {
+                name: "AuthMethod".to_string(),
+                values: vec!["PASSWORD".to_string(), "GOOGLE".to_string()],
+            }),
+            "ENUM('PASSWORD', 'GOOGLE')"
+        );
+    }
+}

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
 use deadpool_postgres::{ManagerConfig, Pool, RecyclingMethod, Runtime};
-use tokio_postgres::types::{Json, ToSql};
+use tokio_postgres::types::{IsNull, Json, Kind, ToSql, Type};
 use tokio_postgres::{Config, NoTls};
 
 mod compiler;
@@ -301,11 +301,13 @@ fn postgres_params(params: &[DinocoValue]) -> Vec<Box<dyn ToSql + Sync + Send>> 
     params
         .iter()
         .map(|param| match param {
-            DinocoValue::Null => Box::new(None::<String>) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Null => Box::new(PostgresNull) as Box<dyn ToSql + Sync + Send>,
             DinocoValue::Integer(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
             DinocoValue::Float(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
             DinocoValue::String(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::Enum(_, value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::Enum(name, value) => {
+                Box::new(PostgresEnumValue { name: name.clone(), value: value.clone() }) as Box<dyn ToSql + Sync + Send>
+            }
             DinocoValue::Boolean(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
             DinocoValue::Bytes(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
             DinocoValue::Json(value) => Box::new(Json(value.clone())) as Box<dyn ToSql + Sync + Send>,
@@ -313,6 +315,50 @@ fn postgres_params(params: &[DinocoValue]) -> Vec<Box<dyn ToSql + Sync + Send>> 
             DinocoValue::Date(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
         })
         .collect()
+}
+
+#[derive(Debug)]
+struct PostgresNull;
+
+impl ToSql for PostgresNull {
+    fn to_sql(
+        &self,
+        _ty: &Type,
+        _out: &mut tokio_postgres::types::private::BytesMut,
+    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
+        Ok(IsNull::Yes)
+    }
+
+    fn accepts(_ty: &Type) -> bool {
+        true
+    }
+
+    tokio_postgres::types::to_sql_checked!();
+}
+
+#[derive(Debug)]
+struct PostgresEnumValue {
+    name: String,
+    value: String,
+}
+
+impl ToSql for PostgresEnumValue {
+    fn to_sql(
+        &self,
+        ty: &Type,
+        out: &mut tokio_postgres::types::private::BytesMut,
+    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
+        if matches!(ty.kind(), Kind::Enum(_)) && !ty.name().eq_ignore_ascii_case(&self.name) {
+            return Err(format!("enum `{}` cannot be written to PostgreSQL enum `{}`", self.name, ty.name()).into());
+        }
+        <&str as ToSql>::to_sql(&self.value.as_str(), ty, out)
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        matches!(ty.kind(), Kind::Enum(_)) || <String as ToSql>::accepts(ty)
+    }
+
+    tokio_postgres::types::to_sql_checked!();
 }
 
 fn postgres_param_refs(params: &[Box<dyn ToSql + Sync + Send>]) -> Vec<&(dyn ToSql + Sync)> {
@@ -376,5 +422,30 @@ impl<'a> tokio_postgres::types::FromSql<'a> for DinocoValue {
 
     fn accepts(_ty: &tokio_postgres::types::Type) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn postgres_enum_and_null_parameters_accept_native_enum_columns() {
+        let ty = Type::new(
+            "AuthMethod".to_string(),
+            99_999,
+            Kind::Enum(vec!["PASSWORD".to_string(), "GOOGLE".to_string()]),
+            "public".to_string(),
+        );
+        let params =
+            postgres_params(&[DinocoValue::Enum("AuthMethod".to_string(), "GOOGLE".to_string()), DinocoValue::Null]);
+
+        let mut enum_bytes = tokio_postgres::types::private::BytesMut::new();
+        assert!(params[0].to_sql_checked(&ty, &mut enum_bytes).is_ok());
+        assert_eq!(enum_bytes.as_ref(), b"GOOGLE");
+
+        let mut null_bytes = tokio_postgres::types::private::BytesMut::new();
+        assert!(matches!(params[1].to_sql_checked(&ty, &mut null_bytes), Ok(IsNull::Yes)));
+        assert!(null_bytes.is_empty());
     }
 }
