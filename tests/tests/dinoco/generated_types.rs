@@ -10,6 +10,18 @@ enum GeneratedStatus {
     InProgress,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize, DinocoEnum)]
+#[serde(crate = "::dinoco::serde")]
+enum AudioStatus {
+    #[default]
+    #[dinoco(value = "generated")]
+    Generated,
+    #[dinoco(value = "building")]
+    Building,
+    #[dinoco(value = "error")]
+    Error,
+}
+
 #[derive(Debug, Entity)]
 #[dinoco(table_name = "enum_update_fixture")]
 struct EnumUpdateFixture {
@@ -210,6 +222,217 @@ fn generated_enums_can_be_used_by_all_update_builders() {
     let _ = dinoco::update_many::<EnumUpdateFixture>().update(|item| item.status.set(GeneratedStatus::Waiting));
     let _ =
         dinoco::UpdateField::<Option<GeneratedStatus>>::new("optional_status").set(Some(GeneratedStatus::InProgress));
+}
+
+#[test]
+fn generated_enums_compile_in_every_query_builder() {
+    let waiting = GeneratedStatus::Waiting;
+    let _ = dinoco::find_first::<EnumUpdateFixture>().where_(|item| item.status.eq(GeneratedStatus::Waiting));
+    let _ = dinoco::find_many::<EnumUpdateFixture>().where_(|item| item.status.neq(&waiting));
+    let _ = dinoco::count::<EnumUpdateFixture>().where_(|item| item.status.batch([GeneratedStatus::Waiting]));
+    let _ = dinoco::find_and_update::<EnumUpdateFixture>()
+        .where_(|item| item.status.eq(&waiting))
+        .update(|item| item.status.set(GeneratedStatus::InProgress));
+    let _ = dinoco::update::<EnumUpdateFixture>()
+        .where_(|item| item.status.neq(GeneratedStatus::InProgress))
+        .update(|item| item.status.set(&waiting));
+    let _ = dinoco::update_many::<EnumUpdateFixture>()
+        .where_(|item| item.status.batch([&waiting]))
+        .update(|item| item.status.set(GeneratedStatus::InProgress));
+    let _ = dinoco::delete::<EnumUpdateFixture>().where_(|item| item.status.eq(GeneratedStatus::Waiting));
+    let _ = dinoco::delete_many::<EnumUpdateFixture>().where_(|item| item.status.neq(&waiting));
+}
+
+#[test]
+fn generated_enum_error_variant_does_not_conflict_with_associated_error_types() {
+    assert_eq!(AudioStatus::try_from("error"), Ok(AudioStatus::Error));
+    assert_eq!("building".parse::<AudioStatus>(), Ok(AudioStatus::Building));
+    assert_eq!(AudioStatus::Error.to_string(), "error");
+    assert_eq!(
+        dinoco::DinocoValue::from(&AudioStatus::Error),
+        dinoco::DinocoValue::Enum("AudioStatus".to_string(), "error".to_string())
+    );
+    let _ = dinoco::UpdateField::<AudioStatus>::new("status").set(AudioStatus::Error);
+    let _ = dinoco::UpdateField::<AudioStatus>::new("status").set(&AudioStatus::Building);
+    let _ = dinoco::UpdateField::<Option<AudioStatus>>::new("status").set(Some(AudioStatus::Generated));
+}
+
+#[test]
+fn generated_enums_can_be_used_by_value_in_filters() {
+    let owned = dinoco::DinocoValue::from(GeneratedStatus::InProgress);
+    assert_eq!(owned, dinoco::DinocoValue::Enum("GeneratedStatus".to_string(), "in-progress".to_string()));
+
+    let status = dinoco::Field::<GeneratedStatus>::new("status");
+    let _ = status.eq(GeneratedStatus::Waiting);
+    let _ = status.neq(GeneratedStatus::InProgress);
+    let _ = status.batch([GeneratedStatus::Waiting, GeneratedStatus::InProgress]);
+
+    let error_fields = dinoco::Field::<AudioStatus>::new("status");
+    let _ = error_fields.eq(AudioStatus::Error);
+    let _ = error_fields.neq(AudioStatus::Building);
+
+    let waiting = GeneratedStatus::Waiting;
+    let in_progress = GeneratedStatus::InProgress;
+    let status = dinoco::Field::<GeneratedStatus>::new("status");
+    let _ = status.eq(&waiting);
+    let _ = status.neq(&in_progress);
+    let _ = status.gt(GeneratedStatus::Waiting);
+    let _ = status.gt(&waiting);
+    let _ = status.gte(GeneratedStatus::Waiting);
+    let _ = status.gte(&waiting);
+    let _ = status.lt(GeneratedStatus::InProgress);
+    let _ = status.lt(&in_progress);
+    let _ = status.lte(GeneratedStatus::InProgress);
+    let _ = status.lte(&in_progress);
+    let _ = status.batch([&waiting, &in_progress]);
+    let _ = status.null();
+    let _ = status.not_null();
+}
+
+#[test]
+fn every_generated_scalar_type_can_be_used_by_update_builders() {
+    let now = chrono::Utc::now();
+    let date = now.date_naive();
+    let metadata = serde_json::json!({ "updated": true });
+
+    let _ = dinoco::update::<GeneratedScalarFixture>().update(|item| item.created_at.set(now));
+    let _ = dinoco::update::<GeneratedScalarFixture>().update(|item| item.created_at.set(&now));
+    let _ = dinoco::find_and_update::<GeneratedScalarFixture>().update(|item| item.birthday.set(date));
+    let _ = dinoco::find_and_update::<GeneratedScalarFixture>().update(|item| item.birthday.set(&date));
+    let _ = dinoco::update_many::<GeneratedScalarFixture>().update(|item| item.metadata.set(metadata.clone()));
+    let _ = dinoco::update_many::<GeneratedScalarFixture>().update(|item| item.metadata.set(&metadata));
+
+    let _ = dinoco::UpdateField::<Option<chrono::DateTime<chrono::Utc>>>::new("optional_datetime").set(Some(now));
+    let _ = dinoco::UpdateField::<Option<chrono::NaiveDate>>::new("optional_date").set(Some(date));
+    let _ = dinoco::UpdateField::<Option<serde_json::Value>>::new("optional_json").set(Some(metadata));
+    let _ = dinoco::UpdateField::<Option<serde_json::Value>>::new("optional_json").set(None);
+
+    let optional_now = Some(now);
+    let optional_date = Some(date);
+    let optional_metadata = Some(serde_json::json!({ "borrowed": true }));
+    let optional_status = Some(GeneratedStatus::Waiting);
+    let no_metadata: Option<serde_json::Value> = None;
+    let _ = dinoco::UpdateField::<Option<chrono::DateTime<chrono::Utc>>>::new("optional_datetime").set(&optional_now);
+    let _ = dinoco::UpdateField::<Option<chrono::NaiveDate>>::new("optional_date").set(&optional_date);
+    let _ = dinoco::UpdateField::<Option<serde_json::Value>>::new("optional_json").set(&optional_metadata);
+    let _ = dinoco::UpdateField::<Option<GeneratedStatus>>::new("optional_status").set(&optional_status);
+    let _ = dinoco::UpdateField::<Option<serde_json::Value>>::new("optional_json").set(&no_metadata);
+}
+
+#[test]
+fn datetime_date_and_json_support_every_common_filter_operator() {
+    let first_datetime = chrono::Utc::now();
+    let second_datetime = first_datetime + chrono::Duration::hours(1);
+    let datetime = dinoco::Field::<chrono::DateTime<chrono::Utc>>::new("created_at");
+    let _ = datetime.eq(first_datetime);
+    let _ = datetime.eq(&first_datetime);
+    let _ = datetime.neq(second_datetime);
+    let _ = datetime.neq(&second_datetime);
+    let _ = datetime.gt(first_datetime);
+    let _ = datetime.gt(&first_datetime);
+    let _ = datetime.gte(first_datetime);
+    let _ = datetime.gte(&first_datetime);
+    let _ = datetime.lt(second_datetime);
+    let _ = datetime.lt(&second_datetime);
+    let _ = datetime.lte(second_datetime);
+    let _ = datetime.lte(&second_datetime);
+    let _ = datetime.batch([first_datetime, second_datetime]);
+    let _ = datetime.batch([&first_datetime, &second_datetime]);
+    let _ = datetime.between(first_datetime, second_datetime);
+    let _ = datetime.between(&first_datetime, &second_datetime);
+    let _ = datetime.null();
+    let _ = datetime.not_null();
+
+    let first_date = first_datetime.date_naive();
+    let second_date = second_datetime.date_naive();
+    let date = dinoco::Field::<chrono::NaiveDate>::new("birthday");
+    let _ = date.eq(first_date);
+    let _ = date.eq(&first_date);
+    let _ = date.neq(second_date);
+    let _ = date.neq(&second_date);
+    let _ = date.gt(first_date);
+    let _ = date.gt(&first_date);
+    let _ = date.gte(first_date);
+    let _ = date.gte(&first_date);
+    let _ = date.lt(second_date);
+    let _ = date.lt(&second_date);
+    let _ = date.lte(second_date);
+    let _ = date.lte(&second_date);
+    let _ = date.batch([first_date, second_date]);
+    let _ = date.batch([&first_date, &second_date]);
+    let _ = date.between(first_date, second_date);
+    let _ = date.between(&first_date, &second_date);
+    let _ = date.null();
+    let _ = date.not_null();
+
+    let first_json = serde_json::json!({ "order": 1 });
+    let second_json = serde_json::json!({ "order": 2 });
+    let json = dinoco::Field::<serde_json::Value>::new("metadata");
+    let _ = json.eq(first_json.clone());
+    let _ = json.eq(&first_json);
+    let _ = json.neq(second_json.clone());
+    let _ = json.neq(&second_json);
+    let _ = json.gt(first_json.clone());
+    let _ = json.gt(&first_json);
+    let _ = json.gte(first_json.clone());
+    let _ = json.gte(&first_json);
+    let _ = json.lt(second_json.clone());
+    let _ = json.lt(&second_json);
+    let _ = json.lte(second_json.clone());
+    let _ = json.lte(&second_json);
+    let _ = json.batch([first_json.clone(), second_json.clone()]);
+    let _ = json.batch([&first_json, &second_json]);
+    let _ = json.null();
+    let _ = json.not_null();
+}
+
+#[test]
+fn generated_scalar_values_compile_in_every_query_builder() {
+    let now = chrono::Utc::now();
+    let date = now.date_naive();
+    let metadata = serde_json::json!({ "query": true });
+
+    let _ = dinoco::find_first::<GeneratedScalarFixture>()
+        .where_(|item| item.created_at.eq(now))
+        .where_(|item| item.birthday.eq(date))
+        .where_(|item| item.metadata.eq(metadata.clone()));
+    let _ = dinoco::find_many::<GeneratedScalarFixture>()
+        .where_(|item| item.created_at.neq(&now))
+        .where_(|item| item.birthday.gte(&date))
+        .where_(|item| item.metadata.neq(&metadata));
+    let _ = dinoco::count::<GeneratedScalarFixture>()
+        .where_(|item| item.created_at.lte(now))
+        .where_(|item| item.birthday.lte(date))
+        .where_(|item| item.metadata.eq(metadata.clone()));
+    let _ = dinoco::find_and_update::<GeneratedScalarFixture>()
+        .where_(|item| item.created_at.eq(&now))
+        .where_(|item| item.birthday.eq(&date))
+        .where_(|item| item.metadata.eq(&metadata))
+        .update(|item| item.created_at.set(now))
+        .update(|item| item.birthday.set(date))
+        .update(|item| item.metadata.set(metadata.clone()));
+    let _ = dinoco::update::<GeneratedScalarFixture>()
+        .where_(|item| item.created_at.eq(now))
+        .where_(|item| item.birthday.eq(date))
+        .where_(|item| item.metadata.eq(metadata.clone()))
+        .update(|item| item.created_at.set(&now))
+        .update(|item| item.birthday.set(&date))
+        .update(|item| item.metadata.set(&metadata));
+    let _ = dinoco::update_many::<GeneratedScalarFixture>()
+        .where_(|item| item.created_at.batch([now]))
+        .where_(|item| item.birthday.batch([date]))
+        .where_(|item| item.metadata.batch([metadata.clone()]))
+        .update(|item| item.created_at.set(now))
+        .update(|item| item.birthday.set(date))
+        .update(|item| item.metadata.set(metadata.clone()));
+    let _ = dinoco::delete::<GeneratedScalarFixture>()
+        .where_(|item| item.created_at.eq(&now))
+        .where_(|item| item.birthday.eq(&date))
+        .where_(|item| item.metadata.eq(&metadata));
+    let _ = dinoco::delete_many::<GeneratedScalarFixture>()
+        .where_(|item| item.created_at.eq(now))
+        .where_(|item| item.birthday.eq(date))
+        .where_(|item| item.metadata.eq(metadata));
 }
 
 #[test]

@@ -119,6 +119,16 @@ pub struct FullTextDocument {
     body: String,
 }
 
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "adapter_postgres_temporal")]
+pub struct PostgresTemporalRecord {
+    #[dinoco(primary_key)]
+    id: String,
+    verified_at: dinoco::chrono::DateTime<dinoco::chrono::Utc>,
+    verification_day: dinoco::chrono::NaiveDate,
+    payload: dinoco::serde_json::Value,
+}
+
 #[derive(Debug, EntityExtend)]
 #[extend(User)]
 pub struct UserSelect {
@@ -153,6 +163,61 @@ async fn postgres_direct_applies_configured_pool_limits() -> anyhow::Result<()> 
     assert_eq!(status.max_size, 7);
     assert_eq!(status.size, 3);
     assert_eq!(status.available, 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_serializes_and_decodes_utc_datetime_for_timestamp_columns() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
+    let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
+    drop_table(&adapter, "adapter_postgres_temporal").await?;
+    create_table(
+        &adapter,
+        "adapter_postgres_temporal",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            column("verified_at", MigrationColumnType::DateTime),
+            column("verification_day", MigrationColumnType::Date),
+            column("payload", MigrationColumnType::Json),
+        ],
+    )
+    .await?;
+    let client = DinocoClient::new(Backend::Postgres(adapter));
+    let initial = dinoco::chrono::DateTime::from_timestamp(1_700_000_000, 123_456_000).expect("valid timestamp");
+    let updated = dinoco::chrono::DateTime::from_timestamp(1_700_003_600, 654_321_000).expect("valid timestamp");
+    let initial_payload = dinoco::serde_json::json!({ "verified": false });
+    let updated_payload = dinoco::serde_json::json!({ "verified": true });
+
+    dinoco::insert_into::<PostgresTemporalRecord>()
+        .values(PostgresTemporalRecord {
+            id: "verification-1".to_string(),
+            verified_at: initial,
+            verification_day: initial.date_naive(),
+            payload: initial_payload.clone(),
+        })
+        .execute(&client)
+        .await?;
+
+    let inserted = find_first::<PostgresTemporalRecord>()
+        .where_(|item| item.verified_at.eq(initial))
+        .where_(|item| item.verification_day.eq(initial.date_naive()))
+        .where_(|item| item.payload.eq(initial_payload))
+        .execute(&client)
+        .await?
+        .expect("inserted temporal record");
+    assert_eq!(inserted.verified_at, initial);
+
+    let changed = dinoco::find_and_update::<PostgresTemporalRecord>()
+        .where_(|item| item.verified_at.eq(&initial))
+        .update(|item| item.verified_at.set(updated))
+        .update(|item| item.verification_day.set(updated.date_naive()))
+        .update(|item| item.payload.set(&updated_payload))
+        .execute(&client)
+        .await?;
+    assert_eq!(changed.verified_at, updated);
+    assert_eq!(changed.verification_day, updated.date_naive());
+    assert_eq!(changed.payload, updated_payload);
+
     Ok(())
 }
 

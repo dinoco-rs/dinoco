@@ -279,6 +279,58 @@ fn missing_checksum_table_for_generated_history_is_an_integrity_error() {
 }
 
 #[test]
+fn legacy_migration_layout_and_history_are_adopted() {
+    let project = temp_project("legacy-layout-adoption");
+    write_project_schema(&project, ACCOUNT_ID_ONLY_SCHEMA);
+    let db_path = project.join("dev.sqlite");
+    let migration = project.join("dinoco/migrations/001_legacy");
+    fs::create_dir_all(&migration).expect("legacy migration directory");
+    fs::write(migration.join("migration.sql"), "CREATE TABLE account (id TEXT PRIMARY KEY NOT NULL);")
+        .expect("legacy migration.sql");
+    fs::write(migration.join("schema.bin"), b"legacy snapshot is retained").expect("legacy schema.bin");
+
+    let conn = Connection::open(&db_path).expect("legacy sqlite");
+    conn.execute_batch(
+        "CREATE TABLE account (id TEXT PRIMARY KEY NOT NULL);
+         INSERT INTO account (id) VALUES ('must-survive');
+         CREATE TABLE _dinoco_migrations (
+             name TEXT PRIMARY KEY NOT NULL,
+             applied_at TEXT NULL,
+             rollback_at TEXT NULL
+         );
+         INSERT INTO _dinoco_migrations (name, applied_at, rollback_at)
+         VALUES ('001_legacy', CURRENT_TIMESTAMP, NULL);",
+    )
+    .expect("legacy database state");
+    drop(conn);
+
+    let generate = run_cli(&project, &db_path, &["migrate", "generate"], &[]);
+    assert_success(&generate);
+    let output = combined_output(&generate);
+    assert!(output.contains("Upgraded 1 legacy migration(s)"), "{output}");
+    assert!(output.contains("No schema changes were found"), "{output}");
+    assert_eq!(
+        fs::read_to_string(migration.join("up.sql")).expect("upgraded up.sql"),
+        "CREATE TABLE account (id TEXT PRIMARY KEY NOT NULL);"
+    );
+    assert!(migration.join("down.sql").is_file());
+    assert!(migration.join("migration.sql").is_file());
+    assert!(migration.join("schema.bin").is_file());
+
+    let conn = Connection::open(&db_path).expect("upgraded sqlite");
+    let adopted: i64 = conn
+        .query_row("SELECT COUNT(*) FROM dinoco_migrations WHERE name = '001_legacy'", [], |row| row.get(0))
+        .expect("adopted migration row");
+    let checksum: i64 = conn
+        .query_row("SELECT COUNT(*) FROM dinoco_migration_checksums WHERE name = '001_legacy'", [], |row| row.get(0))
+        .expect("legacy checksum");
+    assert_eq!((adopted, checksum), (1, 1));
+    let preserved_id: String = conn.query_row("SELECT id FROM account", [], |row| row.get(0)).expect("account data");
+    assert_eq!(preserved_id, "must-survive");
+    assert!(table_exists(&conn, "_dinoco_migrations"), "legacy metadata must be retained");
+}
+
+#[test]
 fn missing_checksum_table_for_new_custom_history_is_an_integrity_error() {
     let project = temp_project("missing-custom-checksum-table");
     write_project_schema(&project, CUSTOM_TABLE_SCHEMA);

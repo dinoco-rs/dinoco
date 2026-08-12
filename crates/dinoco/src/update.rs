@@ -173,6 +173,30 @@ impl IntoUpdateValue<Vec<u8>> for &Vec<u8> {
     }
 }
 
+macro_rules! impl_update_value {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl IntoUpdateValue<$ty> for $ty {
+                fn into_update_value(self) -> DinocoValue {
+                    self.into()
+                }
+            }
+
+            impl IntoUpdateValue<$ty> for &$ty {
+                fn into_update_value(self) -> DinocoValue {
+                    self.into()
+                }
+            }
+        )*
+    };
+}
+
+impl_update_value!(
+    dinoco_engine::serde_json::Value,
+    dinoco_engine::chrono::DateTime<dinoco_engine::chrono::Utc>,
+    dinoco_engine::chrono::NaiveDate,
+);
+
 impl<T> IntoUpdateValue<Option<T>> for Option<T>
 where
     for<'a> &'a T: Into<DinocoValue>,
@@ -180,6 +204,18 @@ where
     fn into_update_value(self) -> DinocoValue {
         match self {
             Some(value) => (&value).into(),
+            None => DinocoValue::Null,
+        }
+    }
+}
+
+impl<T> IntoUpdateValue<Option<T>> for &Option<T>
+where
+    for<'a> &'a T: Into<DinocoValue>,
+{
+    fn into_update_value(self) -> DinocoValue {
+        match self {
+            Some(value) => value.into(),
             None => DinocoValue::Null,
         }
     }

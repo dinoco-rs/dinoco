@@ -99,7 +99,12 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
         impl ::core::str::FromStr for #name {
             type Err = ::std::string::String;
 
-            fn from_str(value: &str) -> ::core::result::Result<Self, Self::Err> {
+            fn from_str(
+                value: &str,
+            ) -> ::core::result::Result<
+                Self,
+                <Self as ::core::str::FromStr>::Err,
+            > {
                 match value {
                     #(#from_str_arms)*
                     _ => ::core::result::Result::Err(::std::format!(
@@ -114,7 +119,12 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
         impl ::core::convert::TryFrom<&str> for #name {
             type Error = ::std::string::String;
 
-            fn try_from(value: &str) -> ::core::result::Result<Self, Self::Error> {
+            fn try_from(
+                value: &str,
+            ) -> ::core::result::Result<
+                Self,
+                <Self as ::core::convert::TryFrom<&str>>::Error,
+            > {
                 <Self as ::core::str::FromStr>::from_str(value)
             }
         }
@@ -122,7 +132,12 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
         impl ::core::convert::TryFrom<::std::string::String> for #name {
             type Error = ::std::string::String;
 
-            fn try_from(value: ::std::string::String) -> ::core::result::Result<Self, Self::Error> {
+            fn try_from(
+                value: ::std::string::String,
+            ) -> ::core::result::Result<
+                Self,
+                <Self as ::core::convert::TryFrom<::std::string::String>>::Error,
+            > {
                 <Self as ::core::convert::TryFrom<&str>>::try_from(value.as_str())
             }
         }
@@ -132,6 +147,12 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
                 match value {
                     #(#value_arms)*
                 }
+            }
+        }
+
+        impl ::core::convert::From<#name> for ::dinoco::DinocoValue {
+            fn from(value: #name) -> Self {
+                ::dinoco::DinocoValue::from(&value)
             }
         }
 
@@ -422,7 +443,8 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         .map(|field| {
             let ident = &field.ident;
             let name = &field.name;
-            quote! { #ident: row.try_get(#name).ok()? }
+            let value = postgres_row_value(&field.ty, field.is_option, quote! { #name });
+            quote! { #ident: #value }
         })
         .collect::<Vec<_>>();
 
@@ -1916,6 +1938,22 @@ fn mysql_row_value(ty: &Type, is_option: bool, index: proc_macro2::TokenStream) 
         quote! {
             row.take::<::dinoco::chrono::NaiveDateTime, _>(#index)?.and_utc()
         }
+    }
+}
+
+fn postgres_row_value(ty: &Type, is_option: bool, index: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    let ty = option_inner(ty).unwrap_or(ty);
+    let is_datetime =
+        matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "DateTime"));
+
+    if !is_datetime {
+        return quote! { row.try_get(#index).ok()? };
+    }
+
+    if is_option {
+        quote! { ::dinoco::postgres_optional_datetime_from_row(row, #index)? }
+    } else {
+        quote! { ::dinoco::postgres_datetime_from_row(row, #index)? }
     }
 }
 

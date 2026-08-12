@@ -311,7 +311,7 @@ fn postgres_params(params: &[DinocoValue]) -> Vec<Box<dyn ToSql + Sync + Send>> 
             DinocoValue::Boolean(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
             DinocoValue::Bytes(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
             DinocoValue::Json(value) => Box::new(Json(value.clone())) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::DateTime(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
+            DinocoValue::DateTime(value) => Box::new(PostgresDateTimeValue(*value)) as Box<dyn ToSql + Sync + Send>,
             DinocoValue::Date(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
         })
         .collect()
@@ -342,6 +342,32 @@ struct PostgresEnumValue {
     value: String,
 }
 
+#[derive(Debug)]
+struct PostgresDateTimeValue(chrono::DateTime<chrono::Utc>);
+
+impl ToSql for PostgresDateTimeValue {
+    fn to_sql(
+        &self,
+        ty: &Type,
+        out: &mut tokio_postgres::types::private::BytesMut,
+    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
+        if *ty == Type::TIMESTAMP {
+            return <chrono::NaiveDateTime as ToSql>::to_sql(&self.0.naive_utc(), ty, out);
+        }
+        if *ty == Type::TIMESTAMPTZ {
+            return <chrono::DateTime<chrono::Utc> as ToSql>::to_sql(&self.0, ty, out);
+        }
+
+        Err(format!("DateTime<Utc> cannot be written to PostgreSQL type `{}`", ty.name()).into())
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        *ty == Type::TIMESTAMP || *ty == Type::TIMESTAMPTZ
+    }
+
+    tokio_postgres::types::to_sql_checked!();
+}
+
 impl ToSql for PostgresEnumValue {
     fn to_sql(
         &self,
@@ -363,6 +389,29 @@ impl ToSql for PostgresEnumValue {
 
 fn postgres_param_refs(params: &[Box<dyn ToSql + Sync + Send>]) -> Vec<&(dyn ToSql + Sync)> {
     params.iter().map(|param| param.as_ref() as &(dyn ToSql + Sync)).collect()
+}
+
+#[doc(hidden)]
+pub fn postgres_datetime_from_row(row: &tokio_postgres::Row, field: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    row.try_get::<_, chrono::DateTime<chrono::Utc>>(field)
+        .or_else(|_| {
+            row.try_get::<_, chrono::NaiveDateTime>(field)
+                .map(|value| chrono::DateTime::from_naive_utc_and_offset(value, chrono::Utc))
+        })
+        .ok()
+}
+
+#[doc(hidden)]
+pub fn postgres_optional_datetime_from_row(
+    row: &tokio_postgres::Row,
+    field: &str,
+) -> Option<Option<chrono::DateTime<chrono::Utc>>> {
+    row.try_get::<_, Option<chrono::DateTime<chrono::Utc>>>(field)
+        .or_else(|_| {
+            row.try_get::<_, Option<chrono::NaiveDateTime>>(field)
+                .map(|value| value.map(|value| chrono::DateTime::from_naive_utc_and_offset(value, chrono::Utc)))
+        })
+        .ok()
 }
 
 impl<'a> tokio_postgres::types::FromSql<'a> for DinocoValue {
@@ -447,5 +496,22 @@ mod tests {
         let mut null_bytes = tokio_postgres::types::private::BytesMut::new();
         assert!(matches!(params[1].to_sql_checked(&ty, &mut null_bytes), Ok(IsNull::Yes)));
         assert!(null_bytes.is_empty());
+    }
+
+    #[test]
+    fn postgres_datetime_parameters_accept_timestamp_with_and_without_timezone() {
+        let value = chrono::DateTime::from_timestamp(1_700_000_000, 123_456_000).expect("valid timestamp");
+        let params = postgres_params(&[DinocoValue::DateTime(value)]);
+
+        let mut timestamp_bytes = tokio_postgres::types::private::BytesMut::new();
+        assert!(params[0].to_sql_checked(&Type::TIMESTAMP, &mut timestamp_bytes).is_ok());
+        assert!(!timestamp_bytes.is_empty());
+
+        let mut timestamptz_bytes = tokio_postgres::types::private::BytesMut::new();
+        assert!(params[0].to_sql_checked(&Type::TIMESTAMPTZ, &mut timestamptz_bytes).is_ok());
+        assert!(!timestamptz_bytes.is_empty());
+
+        let mut date_bytes = tokio_postgres::types::private::BytesMut::new();
+        assert!(params[0].to_sql_checked(&Type::DATE, &mut date_bytes).is_err());
     }
 }

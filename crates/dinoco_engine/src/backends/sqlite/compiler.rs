@@ -5,7 +5,7 @@ use crate::{
     FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
     ManyToManyWriteQuery, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey,
     MigrationIndexKind, ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
-    RenameColumnMigration, SqliteAdapter, UpdateQuery,
+    RenameColumnMigration, RenameTableMigration, SqliteAdapter, UpdateQuery,
 };
 
 impl DinocoSqlCompiler for SqliteAdapter {
@@ -193,19 +193,42 @@ impl DinocoSqlCompiler for SqliteAdapter {
 
     fn compile_drop_table_migration(&self, migration: DropTableMigration) -> String {
         let if_exists = if migration.if_exists { " IF EXISTS" } else { "" };
-        format!("DROP TABLE{if_exists} {};", migration.table)
+        format!("DROP TABLE{if_exists} {};", sql_identifier(&migration.table))
+    }
+
+    fn compile_rename_table_migration(&self, migration: RenameTableMigration) -> Vec<String> {
+        if migration.from != migration.to && migration.from.eq_ignore_ascii_case(&migration.to) {
+            let temporary = format!("__dinoco_legacy_rename_{}", migration.to);
+            return vec![
+                format!(
+                    "ALTER TABLE {} RENAME TO {};",
+                    quoted_identifier(&migration.from),
+                    quoted_identifier(&temporary)
+                ),
+                format!(
+                    "ALTER TABLE {} RENAME TO {};",
+                    quoted_identifier(&temporary),
+                    quoted_identifier(&migration.to)
+                ),
+            ];
+        }
+        vec![format!(
+            "ALTER TABLE {} RENAME TO {};",
+            quoted_identifier(&migration.from),
+            quoted_identifier(&migration.to)
+        )]
     }
 
     fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String {
         format!(
             "ALTER TABLE {} ADD COLUMN {};",
-            migration.table,
+            sql_identifier(&migration.table),
             compile_migration_column(&migration.column, DatabaseDialect::Sqlite, true)
         )
     }
 
     fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String {
-        format!("ALTER TABLE {} DROP COLUMN {};", migration.table, migration.column)
+        format!("ALTER TABLE {} DROP COLUMN {};", sql_identifier(&migration.table), sql_identifier(&migration.column))
     }
 
     fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String> {
@@ -216,7 +239,12 @@ impl DinocoSqlCompiler for SqliteAdapter {
     }
 
     fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String> {
-        vec![format!("ALTER TABLE {} RENAME COLUMN {} TO {};", migration.table, migration.from, migration.to)]
+        vec![format!(
+            "ALTER TABLE {} RENAME COLUMN {} TO {};",
+            sql_identifier(&migration.table),
+            quoted_identifier(&migration.from),
+            quoted_identifier(&migration.to)
+        )]
     }
 
     fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
@@ -750,11 +778,24 @@ fn qualify_field(field: &str, qualifier: Option<&str>) -> String {
 }
 
 fn sql_identifier(identifier: &str) -> String {
-    if is_reserved_identifier(identifier) {
-        format!("\"{}\"", identifier.replace('"', "\"\""))
+    if identifier == "*" {
+        return identifier.to_string();
+    }
+    if is_reserved_identifier(identifier) || identifier_requires_quotes(identifier) {
+        quoted_identifier(identifier)
     } else {
         identifier.to_string()
     }
+}
+
+fn identifier_requires_quotes(identifier: &str) -> bool {
+    let mut chars = identifier.chars();
+    !matches!(chars.next(), Some(ch) if ch.is_ascii_lowercase() || ch == '_')
+        || chars.any(|ch| !(ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'))
+}
+
+fn quoted_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
 fn is_reserved_identifier(identifier: &str) -> bool {

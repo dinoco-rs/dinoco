@@ -6,6 +6,7 @@ use dinoco_engine::{
     CreateIndexMigration, CreateTableMigration, DropColumnMigration, DropEnumMigration, DropForeignKeyMigration,
     DropIndexMigration, DropTableMigration, MigrationColumn, MigrationColumnType, MigrationDefault,
     MigrationForeignKey, MigrationIndex, MigrationIndexKind, ReferentialAction, RenameColumnMigration,
+    RenameTableMigration,
 };
 
 use crate::db::{DatabaseEnum, DatabaseSchema, DatabaseTable};
@@ -23,6 +24,7 @@ pub enum MigrationStep {
     AlterEnum(AlterEnumMigration),
     CreateTable(CreateTableMigration),
     DropTable(DropTableMigration),
+    RenameTable(RenameTableMigration),
     AddColumn(AddColumnMigration),
     DropColumn(DropColumnMigration),
     AlterColumn(AlterColumnMigration),
@@ -75,6 +77,8 @@ pub fn plan_schema_migration(schema: &Schema, current: &DatabaseSchema) -> Migra
 
 pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchema) -> MigrationPlan {
     let mut plan = MigrationPlan::default();
+    let (current, table_renames) = normalize_legacy_table_names(desired, current);
+    plan.steps.extend(table_renames.into_iter().map(MigrationStep::RenameTable));
     let current_tables = current.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
     let desired_tables = desired.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
     let current_enums = current.enums.iter().map(|item| (item.name.as_str(), item)).collect::<BTreeMap<_, _>>();
@@ -166,6 +170,60 @@ pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchem
     }
 
     plan
+}
+
+fn normalize_legacy_table_names(
+    desired: &DatabaseSchema,
+    current: &DatabaseSchema,
+) -> (DatabaseSchema, Vec<RenameTableMigration>) {
+    let desired_names = desired.tables.iter().map(|table| table.name.as_str()).collect::<BTreeSet<_>>();
+    let current_names = current.tables.iter().map(|table| table.name.as_str()).collect::<BTreeSet<_>>();
+    let mut claimed_current = BTreeSet::new();
+    let mut rename_map = BTreeMap::new();
+
+    for desired_table in &desired.tables {
+        if current_names.contains(desired_table.name.as_str()) {
+            continue;
+        }
+
+        let candidates = current
+            .tables
+            .iter()
+            .filter(|current_table| {
+                !desired_names.contains(current_table.name.as_str())
+                    && !claimed_current.contains(current_table.name.as_str())
+                    && current_table.name != desired_table.name
+                    && table_name(&current_table.name) == desired_table.name
+            })
+            .collect::<Vec<_>>();
+
+        if let [legacy_table] = candidates.as_slice() {
+            claimed_current.insert(legacy_table.name.clone());
+            rename_map.insert(legacy_table.name.clone(), desired_table.name.clone());
+        }
+    }
+
+    let renames = rename_map
+        .iter()
+        .map(|(from, to)| RenameTableMigration { from: from.clone(), to: to.clone() })
+        .collect::<Vec<_>>();
+    if renames.is_empty() {
+        return (current.clone(), renames);
+    }
+
+    let mut normalized = current.clone();
+    for table in &mut normalized.tables {
+        if let Some(name) = rename_map.get(&table.name) {
+            table.name.clone_from(name);
+        }
+        for foreign_key in &mut table.foreign_keys {
+            if let Some(name) = rename_map.get(&foreign_key.references_table) {
+                foreign_key.references_table.clone_from(name);
+            }
+        }
+    }
+
+    (normalized, renames)
 }
 
 fn dropped_table_order(
@@ -335,13 +393,25 @@ fn diff_foreign_keys(plan: &mut MigrationPlan, current_table: &DatabaseTable, de
         .map(|foreign_key| (foreign_key.name.as_str(), foreign_key))
         .collect::<BTreeMap<_, _>>();
 
+    let mut matched_current = BTreeSet::new();
+
     for (name, desired_key) in &desired_keys {
+        if let Some(current_key) = current_keys.get(name)
+            && foreign_keys_equivalent(current_key, desired_key)
+        {
+            matched_current.insert((*name).to_string());
+            continue;
+        }
+
+        if let Some(current_key) = current_table.foreign_keys.iter().find(|current_key| {
+            !matched_current.contains(&current_key.name) && foreign_keys_equivalent(current_key, desired_key)
+        }) {
+            matched_current.insert(current_key.name.clone());
+            continue;
+        }
+
         match current_keys.get(name) {
-            None => plan.steps.push(MigrationStep::AddForeignKey(AddForeignKeyMigration {
-                table: desired_table.name.clone(),
-                foreign_key: (*desired_key).clone(),
-            })),
-            Some(current_key) if *current_key != *desired_key => {
+            Some(current_key) => {
                 plan.warnings.push(MigrationWarning {
                     message: format!(
                         "Foreign key `{}` on `{}` will be recreated.",
@@ -357,13 +427,17 @@ fn diff_foreign_keys(plan: &mut MigrationPlan, current_table: &DatabaseTable, de
                     table: desired_table.name.clone(),
                     foreign_key: (*desired_key).clone(),
                 }));
+                matched_current.insert(current_key.name.clone());
             }
-            _ => {}
+            None => plan.steps.push(MigrationStep::AddForeignKey(AddForeignKeyMigration {
+                table: desired_table.name.clone(),
+                foreign_key: (*desired_key).clone(),
+            })),
         }
     }
 
     for (name, current_key) in &current_keys {
-        if !desired_keys.contains_key(name) {
+        if !matched_current.contains(*name) {
             plan.warnings.push(MigrationWarning {
                 message: format!("Foreign key `{}` on `{}` will be dropped.", current_key.name, current_table.name),
                 destructive: false,
@@ -374,6 +448,14 @@ fn diff_foreign_keys(plan: &mut MigrationPlan, current_table: &DatabaseTable, de
             }));
         }
     }
+}
+
+fn foreign_keys_equivalent(left: &MigrationForeignKey, right: &MigrationForeignKey) -> bool {
+    left.columns == right.columns
+        && left.references_table == right.references_table
+        && left.references_columns == right.references_columns
+        && left.on_update == right.on_update
+        && left.on_delete == right.on_delete
 }
 
 fn diff_indexes(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired_table: &DatabaseTable) {
@@ -997,6 +1079,62 @@ fn table_name(name: &str) -> String {
 mod tests {
     use super::*;
     use crate::db::{DatabaseSchema, DatabaseTable};
+
+    #[test]
+    fn plan_renames_legacy_pascal_case_tables_without_dropping_data_or_recreating_foreign_keys() {
+        let desired = DatabaseSchema {
+            tables: vec![
+                table("account", vec![integer_column("id", true)], vec![], 0),
+                table(
+                    "audio_creation",
+                    vec![integer_column("id", true), nullable_integer_column("account_id")],
+                    vec![MigrationForeignKey {
+                        name: "fk_audio_creation_account_id".to_string(),
+                        columns: vec!["account_id".to_string()],
+                        references_table: "account".to_string(),
+                        references_columns: vec!["id".to_string()],
+                        on_update: ReferentialAction::Cascade,
+                        on_delete: ReferentialAction::Cascade,
+                    }],
+                    0,
+                ),
+            ],
+            enums: Vec::new(),
+        };
+        let current = DatabaseSchema {
+            tables: vec![
+                table("Account", vec![integer_column("id", true)], vec![], 17),
+                table(
+                    "AudioCreation",
+                    vec![integer_column("id", true), nullable_integer_column("account_id")],
+                    vec![MigrationForeignKey {
+                        name: "fk_AudioCreation_account_id".to_string(),
+                        columns: vec!["account_id".to_string()],
+                        references_table: "Account".to_string(),
+                        references_columns: vec!["id".to_string()],
+                        on_update: ReferentialAction::Cascade,
+                        on_delete: ReferentialAction::Cascade,
+                    }],
+                    23,
+                ),
+            ],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_database_migration(&desired, &current);
+
+        assert_eq!(plan.steps.len(), 2, "{:#?}", plan.steps);
+        assert!(plan.steps.iter().any(
+            |step| matches!(step, MigrationStep::RenameTable(item) if item.from == "Account" && item.to == "account")
+        ));
+        assert!(plan.steps.iter().any(
+            |step| matches!(step, MigrationStep::RenameTable(item) if item.from == "AudioCreation" && item.to == "audio_creation")
+        ));
+        assert!(!plan.warnings.iter().any(|warning| warning.destructive));
+        assert!(
+            !plan.steps.iter().any(|step| matches!(step, MigrationStep::CreateTable(_) | MigrationStep::DropTable(_)))
+        );
+    }
 
     #[test]
     fn plan_detects_dropped_column_with_existing_rows_as_destructive() {

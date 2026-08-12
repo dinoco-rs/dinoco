@@ -182,4 +182,8 @@ impl_between_field!(
     Option<usize>,
     Option<f32>,
     Option<f64>,
+    dinoco_engine::chrono::DateTime<dinoco_engine::chrono::Utc>,
+    dinoco_engine::chrono::NaiveDate,
+    Option<dinoco_engine::chrono::DateTime<dinoco_engine::chrono::Utc>>,
+    Option<dinoco_engine::chrono::NaiveDate>,
 );

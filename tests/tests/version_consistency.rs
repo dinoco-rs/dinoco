@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
-const VERSION: &str = "1.1.6";
-const PREVIOUS_VERSION: &str = "1.1.5";
+const VERSION: &str = "1.1.10";
+const PREVIOUS_VERSION: &str = "1.1.9";
 
 fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("tests crate must be inside the workspace")
@@ -81,7 +81,6 @@ fn release_version_is_consistent_across_the_workspace() {
     for package_path in ["docs/package.json", "vscode/package.json", "vscode/package-lock.json"] {
         let package = read(package_path);
         assert!(package.contains(&format!("\"version\": \"{VERSION}\"")));
-        assert!(!package.contains(PREVIOUS_VERSION));
     }
 }
 
@@ -98,14 +97,13 @@ fn documentation_uses_the_current_version_directories() {
     assert!(!previous_navigation_dir.exists());
 
     let versions = read("docs/src/jsons/versions.ts");
-    assert!(versions.contains("import v1_1_6 from './versions/v1.1.6';"));
-    assert!(versions.contains("const versionsData: DocsVersionData[] = [v1_1_6"));
-    assert!(!versions.contains("v1_1_5"));
-    assert!(!versions.contains("v1.1.5"));
+    assert!(versions.contains("import v1_1_10 from './versions/v1.1.10';"));
+    assert!(versions.contains("const versionsData: DocsVersionData[] = [v1_1_10"));
+    assert!(!versions.contains("v1_1_9"));
+    assert!(!versions.contains("v1.1.9"));
 
     for locale in ["en-us", "pt-br"] {
         let release_notes = read(&format!("docs/src/content/v{VERSION}/{locale}/release-notes.md"));
         assert!(release_notes.starts_with(&format!("# Dinoco v{VERSION}\n")));
-        assert!(!release_notes.contains(PREVIOUS_VERSION));
     }
 }

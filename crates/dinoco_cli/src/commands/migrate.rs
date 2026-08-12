@@ -21,11 +21,16 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
     let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
     let config = runtime_config(&schema)?;
     let db = CliDatabase::connect(&config).await?;
+    db.adopt_legacy_migration_history().await?;
     let migrations_root = migrations_root(workspace.as_deref());
     let mut migrations = migration_dirs(&migrations_root)?;
     migrations.sort();
 
     fs::create_dir_all(&migrations_root)?;
+    let upgraded = upgrade_legacy_migration_artifacts(&migrations)?;
+    if upgraded > 0 {
+        ui::info(format!("Upgraded {upgraded} legacy migration(s) to the current artifact layout."));
+    }
 
     let current = db.inspect_schema().await?;
     let history = inspect_sqlite_migration_history(&db, &config, &migrations).await?;
@@ -66,26 +71,24 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
         }
     }
     let mut live_plan = plan_database_migration(&desired, &current);
+    mark_unvalidated_legacy_foreign_keys(&db, &mut live_plan);
     if let Some(server_history) =
         server_history.as_ref().filter(|history| !history.applied.is_empty() && history.expected.is_none())
     {
-        if !live_plan.steps.is_empty() {
-            print_plan_summary(&live_plan);
-            anyhow::bail!(
-                "This server database has legacy migration history without a canonical schema snapshot. Dinoco cannot safely distinguish schema drift from a new schema change. Restore/reconcile the live schema until it exactly matches schema.dinoco, then run migration generation again to adopt the snapshot."
-            );
-        }
-        if !confirm_untracked_baseline()? {
-            ui::warning("Migration history snapshot adoption cancelled.");
+        if live_plan.steps.is_empty() {
+            if !confirm_untracked_baseline()? {
+                ui::warning("Migration history snapshot adoption cancelled.");
+                return Ok(());
+            }
+            let latest = server_history.applied.last().expect("legacy history is not empty");
+            db.record_server_schema_snapshot(latest, &current).await?;
+            persist_legacy_checksums(&db, history.as_ref(), Some(server_history)).await?;
+            dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
+            ui::success("Legacy migration history adopted with a canonical schema snapshot.");
+            ui::success("Rust models generated at dinoco/models/");
             return Ok(());
         }
-        let latest = server_history.applied.last().expect("legacy history is not empty");
-        db.record_server_schema_snapshot(latest, &current).await?;
-        persist_legacy_checksums(&db, history.as_ref(), Some(server_history)).await?;
-        dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
-        ui::success("Legacy migration history adopted with a canonical schema snapshot.");
-        ui::success("Rust models generated at dinoco/models/");
-        return Ok(());
+        ui::info("Legacy migration history will be normalized through a new data-preserving migration.");
     }
     let mut migration_plan = live_plan.clone();
     let mut repairing_drift = false;
@@ -398,7 +401,7 @@ async fn inspect_server_migration_history(
     let mut legacy_checksums = Vec::new();
     let mut validated = BTreeMap::new();
     for (name, path) in local {
-        let sql_path = path.join("up.sql");
+        let sql_path = migration_sql_path(path)?;
         let sql = fs::read_to_string(&sql_path).with_context(|| format!("failed to read {}", sql_path.display()))?;
         let checksum = server_migration_checksum(&sql);
         if applied.contains(&name) {
@@ -411,7 +414,7 @@ async fn inspect_server_migration_history(
                 Some(recorded) if recorded.get(&name) != Some(&checksum) => {
                     let original = recorded.get(&name).expect("checksum presence was checked");
                     anyhow::bail!(
-                        "Applied migration `{name}` was modified after it ran: its current up.sql checksum is {checksum}, but the database recorded {original}. Restore the original migration file before continuing."
+                        "Applied migration `{name}` was modified after it ran: its current SQL checksum is {checksum}, but the database recorded {original}. Restore the original migration file before continuing."
                     );
                 }
                 Some(_) => {}
@@ -551,7 +554,7 @@ async fn inspect_sqlite_migration_history(
         let mut validated = BTreeMap::new();
         let mut expected = None;
         for (name, path) in &local {
-            let sql_path = path.join("up.sql");
+            let sql_path = migration_sql_path(path)?;
             let sql =
                 fs::read_to_string(&sql_path).with_context(|| format!("failed to read {}", sql_path.display()))?;
             let checksum = migration_checksum(&shadow, name, &sql)?;
@@ -566,7 +569,7 @@ async fn inspect_sqlite_migration_history(
                     Some(recorded_checksums) if recorded_checksums.get(name) != Some(&checksum) => {
                         let recorded = recorded_checksums.get(name).expect("checksum presence was checked");
                         anyhow::bail!(
-                            "Applied migration `{name}` was modified after it ran: its current up.sql checksum is {checksum}, but the database recorded {recorded}. Restore the original migration file before continuing."
+                            "Applied migration `{name}` was modified after it ran: its current SQL checksum is {checksum}, but the database recorded {recorded}. Restore the original migration file before continuing."
                         );
                     }
                     Some(_) => {}
@@ -610,6 +613,58 @@ fn migration_directory_name(path: &Path) -> anyhow::Result<String> {
     path.file_name().and_then(|name| name.to_str()).map(str::to_string).context("invalid migration directory name")
 }
 
+fn migration_sql_path(directory: &Path) -> anyhow::Result<PathBuf> {
+    let current = directory.join("up.sql");
+    if current.is_file() {
+        return Ok(current);
+    }
+
+    let legacy = directory.join("migration.sql");
+    if legacy.is_file() {
+        return Ok(legacy);
+    }
+
+    anyhow::bail!("migration directory {} contains neither up.sql nor the legacy migration.sql", directory.display())
+}
+
+fn upgrade_legacy_migration_artifacts(migrations: &[PathBuf]) -> anyhow::Result<usize> {
+    let mut upgraded = 0;
+    for directory in migrations {
+        let legacy = directory.join("migration.sql");
+        if !legacy.is_file() {
+            continue;
+        }
+
+        let current = directory.join("up.sql");
+        let down = directory.join("down.sql");
+        let mut changed = false;
+        if !current.exists() {
+            let sql = fs::read(&legacy).with_context(|| format!("failed to read {}", legacy.display()))?;
+            write_atomic_file(&current, &sql)?;
+            changed = true;
+        }
+        if !down.exists() {
+            let name = migration_directory_name(directory)?;
+            let rollback = format!(
+                "-- Migration `{name}` was imported from the legacy Dinoco format.\n\
+                 -- No safe automatic rollback was recorded by that format.\n\
+                 -- This file intentionally leaves application data and schema unchanged.\n"
+            );
+            write_atomic_file(&down, rollback.as_bytes())?;
+            changed = true;
+        }
+        if changed {
+            OpenOptions::new()
+                .read(true)
+                .open(directory)?
+                .sync_all()
+                .with_context(|| format!("failed to sync upgraded migration directory {}", directory.display()))?;
+            upgraded += 1;
+        }
+    }
+    Ok(upgraded)
+}
+
 fn print_schema_drift(drift: &MigrationPlan) {
     ui::warning("Database schema drift detected: the live schema differs from applied migration history.");
     for step in &drift.steps {
@@ -633,6 +688,7 @@ fn describe_drift_step(step: &MigrationStep) -> String {
         MigrationStep::AlterEnum(item) => format!("Changed enum `{}`", item.name),
         MigrationStep::CreateTable(item) => format!("Missing table `{}`", item.table),
         MigrationStep::DropTable(item) => format!("Unexpected table `{}`", item.table),
+        MigrationStep::RenameTable(item) => format!("Table `{}` differs from expected `{}`", item.from, item.to),
         MigrationStep::AddColumn(item) => format!("Missing column `{}.{}`", item.table, item.column.name),
         MigrationStep::DropColumn(item) => format!("Unexpected column `{}.{}`", item.table, item.column),
         MigrationStep::AlterColumn(item) => format!("Changed column `{}.{}`", item.table, item.desired.name),
@@ -653,7 +709,13 @@ fn ensure_drift_is_repairable(drift: &MigrationPlan) -> anyhow::Result<()> {
         .steps
         .iter()
         .filter(|step| {
-            !matches!(step, MigrationStep::CreateTable(_) | MigrationStep::CreateIndex(_) | MigrationStep::DropIndex(_))
+            !matches!(
+                step,
+                MigrationStep::CreateTable(_)
+                    | MigrationStep::RenameTable(_)
+                    | MigrationStep::CreateIndex(_)
+                    | MigrationStep::DropIndex(_)
+            )
         })
         .map(describe_drift_step)
         .collect::<Vec<_>>();
@@ -747,6 +809,7 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
     let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
     let config = runtime_config(&schema)?;
     let db = CliDatabase::connect(&config).await?;
+    db.adopt_legacy_migration_history().await?;
 
     let migrations_root = migrations_root(workspace.as_deref());
     let mut migrations = migration_dirs(&migrations_root)?;
@@ -795,10 +858,22 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
                     "Refusing to run pending migrations while server schema drift exists. Restore the expected schema or use `dinoco migrate generate` to review a supported repair."
                 );
             }
-        } else if !server_history.applied.is_empty() && !server_history.pending_names(&migrations)?.is_empty() {
-            anyhow::bail!(
-                "Refusing to run pending migrations because this legacy server history has no canonical schema snapshot. Reconcile schema.dinoco with the live database and run `dinoco migrate generate` to adopt the history first."
-            );
+        } else if !server_history.applied.is_empty() {
+            let pending = server_history.pending_names(&migrations)?;
+            if !pending.is_empty() {
+                let recoverable = matches!(db, CliDatabase::Postgres(_) | CliDatabase::PgBouncer(_))
+                    && pending.iter().all(|name| {
+                        server_history.validated.get(name).is_some_and(is_generated_legacy_normalization_migration)
+                    });
+                if !recoverable {
+                    anyhow::bail!(
+                        "Refusing to run pending migrations because this legacy server history has no canonical schema snapshot. Reconcile schema.dinoco with the live database and run `dinoco migrate generate` to adopt the history first."
+                    );
+                }
+                ui::info(
+                    "Recovering a pending generated legacy normalization; PostgreSQL foreign keys will preserve unvalidated historical rows.",
+                );
+            }
         }
     }
     persist_legacy_checksums(&db, history.as_ref(), server_history.as_ref()).await?;
@@ -820,7 +895,7 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
             continue;
         }
 
-        let (sql, checksum, generated) = if let Some(history) = &history {
+        let (mut sql, checksum, generated) = if let Some(history) = &history {
             let migration = history
                 .validated
                 .get(&name)
@@ -833,12 +908,18 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
                 .with_context(|| format!("validated server migration `{name}` was not available"))?;
             (migration.execution_sql.clone(), migration.checksum.clone(), migration.generated)
         } else {
-            let sql_path = migration.join("up.sql");
+            let sql_path = migration_sql_path(migration)?;
             let sql =
                 fs::read_to_string(&sql_path).with_context(|| format!("failed to read {}", sql_path.display()))?;
             let checksum = migration_checksum(&db, &name, &sql)?;
             (sql, checksum, false)
         };
+        if generated
+            && matches!(db, CliDatabase::Postgres(_) | CliDatabase::PgBouncer(_))
+            && server_history.as_ref().is_some_and(|history| history.expected.is_none())
+        {
+            sql = postgres_preserve_legacy_foreign_key_rows(&sql)?;
+        }
         let applied = apply_migration_sql(&db, &name, &sql, &checksum, generated).await.with_context(|| {
             match config.database {
                 Database::Sqlite => {
@@ -877,6 +958,35 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
     ui::success("All pending migrations were applied.");
 
     Ok(())
+}
+
+fn is_generated_legacy_normalization_migration(migration: &ValidatedMigration) -> bool {
+    migration.generated
+        && split_sql(&migration.execution_sql).is_ok_and(|statements| {
+            statements.iter().any(|statement| {
+                let normalized = statement.to_ascii_uppercase();
+                normalized.contains("ALTER TABLE") && normalized.contains(" RENAME TO ")
+            })
+        })
+}
+
+fn postgres_preserve_legacy_foreign_key_rows(sql: &str) -> anyhow::Result<String> {
+    let statements = split_sql(sql)?
+        .into_iter()
+        .map(|statement| {
+            let normalized = statement.to_ascii_uppercase();
+            if normalized.contains("ALTER TABLE")
+                && normalized.contains(" ADD ")
+                && normalized.contains("FOREIGN KEY")
+                && !normalized.contains("NOT VALID")
+            {
+                format!("{} NOT VALID", statement.trim_end())
+            } else {
+                statement
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok(statements_sql(&statements))
 }
 
 async fn apply_statements(db: &CliDatabase, statements: &[String]) -> anyhow::Result<()> {
@@ -1465,6 +1575,42 @@ fn ensure_plan_is_supported(db: &CliDatabase, plan: &MigrationPlan) -> anyhow::R
     Ok(())
 }
 
+fn mark_unvalidated_legacy_foreign_keys(db: &CliDatabase, plan: &mut MigrationPlan) {
+    if !matches!(db, CliDatabase::Postgres(_) | CliDatabase::PgBouncer(_)) {
+        return;
+    }
+
+    let renamed_tables = plan
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            MigrationStep::RenameTable(item) => Some(item.to.as_str()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let foreign_keys = plan
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            MigrationStep::AddForeignKey(item) if renamed_tables.contains(item.table.as_str()) => {
+                Some(format!("{}.{}", item.table, item.foreign_key.name))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if foreign_keys.is_empty() {
+        return;
+    }
+
+    plan.warnings.push(crate::sql::MigrationWarning {
+        message: format!(
+            "Legacy foreign keys will be installed as PostgreSQL NOT VALID constraints to preserve historical rows: {}. They protect new writes immediately; clean any orphan rows and run VALIDATE CONSTRAINT when ready.",
+            foreign_keys.join(", ")
+        ),
+        destructive: false,
+    });
+}
+
 fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     let mut create_enums = Vec::new();
     let mut alter_enums = Vec::new();
@@ -1472,6 +1618,7 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     let mut drop_foreign_keys = Vec::new();
     let mut drop_indexes = Vec::new();
     let mut create_tables = Vec::new();
+    let mut rename_tables = Vec::new();
     let mut rename_columns = Vec::new();
     let mut add_columns = Vec::new();
     let mut alter_columns = Vec::new();
@@ -1496,6 +1643,7 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
                 }
                 create_tables.push(item);
             }
+            MigrationStep::RenameTable(item) => rename_tables.push(item),
             MigrationStep::RenameColumn(item) => rename_columns.push(item),
             MigrationStep::AddColumn(item) => add_columns.push(item),
             MigrationStep::AlterColumn(item) => alter_columns.push(item),
@@ -1507,6 +1655,10 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     }
 
     let mut statements = Vec::new();
+    let renamed_tables = rename_tables.iter().map(|item| item.to.clone()).collect::<BTreeSet<_>>();
+    for item in rename_tables {
+        statements.extend(db.compile_rename_table_migration(item));
+    }
     for item in drop_foreign_keys {
         statements.extend(db.compile_drop_foreign_key_migration(item));
     }
@@ -1538,7 +1690,11 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
         statements.push(db.compile_create_index_migration(item));
     }
     for item in add_foreign_keys {
-        statements.extend(db.compile_add_foreign_key_migration(item));
+        if renamed_tables.contains(item.table.as_str()) {
+            statements.extend(db.compile_add_unvalidated_foreign_key_migration(item));
+        } else {
+            statements.extend(db.compile_add_foreign_key_migration(item));
+        }
     }
     for item in drop_tables {
         statements.push(db.compile_drop_table_migration(item));
@@ -1642,6 +1798,12 @@ fn compile_down_plan(
                     .push(format!("-- Altering enum `{}` is not safely reversible by generated SQL.", migration.name));
             }
             MigrationStep::CreateTable(_) => {}
+            MigrationStep::RenameTable(migration) => {
+                statements.extend(db.compile_rename_table_migration(dinoco_engine::RenameTableMigration {
+                    from: migration.to.clone(),
+                    to: migration.from.clone(),
+                }));
+            }
             MigrationStep::DropTable(migration) => {
                 statements.push(format!("-- Dropping table `{}` is not reversible without a backup.", migration.table));
             }
@@ -1820,6 +1982,7 @@ fn describe_step(step: &MigrationStep) -> String {
         MigrationStep::AlterEnum(item) => format!("Alter enum `{}`", item.name),
         MigrationStep::CreateTable(item) => format!("Create table `{}`", item.table),
         MigrationStep::DropTable(item) => format!("Drop table `{}`", item.table),
+        MigrationStep::RenameTable(item) => format!("Rename table `{}` to `{}`", item.from, item.to),
         MigrationStep::AddColumn(item) => format!("Add column `{}.{}`", item.table, item.column.name),
         MigrationStep::DropColumn(item) => format!("Drop column `{}.{}`", item.table, item.column),
         MigrationStep::AlterColumn(item) => format!("Alter column `{}.{}`", item.table, item.desired.name),
@@ -2254,6 +2417,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn migration_sql_path_falls_back_to_the_legacy_filename() {
+        let directory = tempfile::tempdir().expect("temporary migration");
+        fs::write(directory.path().join("migration.sql"), "SELECT 1;").expect("legacy migration");
+        assert_eq!(migration_sql_path(directory.path()).expect("legacy path"), directory.path().join("migration.sql"));
+
+        fs::write(directory.path().join("up.sql"), "SELECT 2;").expect("current migration");
+        assert_eq!(migration_sql_path(directory.path()).expect("current path"), directory.path().join("up.sql"));
+    }
+
+    #[test]
+    fn legacy_artifact_upgrade_preserves_the_original_and_never_overwrites_current_files() {
+        let root = tempfile::tempdir().expect("temporary migrations");
+        let directory = root.path().join("001_legacy");
+        fs::create_dir(&directory).expect("legacy directory");
+        fs::write(directory.join("migration.sql"), b"SELECT 1;\r\n").expect("legacy SQL");
+        fs::write(directory.join("schema.bin"), b"snapshot").expect("legacy snapshot");
+
+        assert_eq!(upgrade_legacy_migration_artifacts(std::slice::from_ref(&directory)).expect("upgrade"), 1);
+        assert_eq!(fs::read(directory.join("up.sql")).expect("up.sql"), b"SELECT 1;\r\n");
+        assert!(fs::read_to_string(directory.join("down.sql")).expect("down.sql").contains("unchanged"));
+        assert_eq!(fs::read(directory.join("migration.sql")).expect("legacy SQL"), b"SELECT 1;\r\n");
+        assert_eq!(fs::read(directory.join("schema.bin")).expect("legacy snapshot"), b"snapshot");
+
+        fs::write(directory.join("up.sql"), "SELECT 2;").expect("custom current SQL");
+        assert_eq!(upgrade_legacy_migration_artifacts(std::slice::from_ref(&directory)).expect("second upgrade"), 0);
+        assert_eq!(fs::read_to_string(directory.join("up.sql")).expect("up.sql"), "SELECT 2;");
+    }
+
+    #[test]
     fn server_sql_splitter_preserves_literals_comments_and_postgres_dollar_quotes() {
         let sql = "INSERT INTO events(value) VALUES ('a;b');\n\
                    -- semicolon ; in a comment\n\
@@ -2300,5 +2492,24 @@ mod tests {
 
         let changed_literal = "INSERT INTO audit(message) VALUES ('line 1\nline 2');\nCREATE TABLE item(id INT);\n";
         assert_ne!(server_migration_checksum(lf), server_migration_checksum(changed_literal));
+    }
+
+    #[test]
+    fn pending_legacy_postgres_foreign_keys_become_not_valid_without_changing_other_statements() {
+        let sql = r#"
+            ALTER TABLE "AudioVariation" RENAME TO "audio_variation";
+            ALTER TABLE audio_variation ADD CONSTRAINT "fk_audio_variation_creation_id"
+                FOREIGN KEY (creation_id) REFERENCES audio_creation (id) ON UPDATE CASCADE ON DELETE CASCADE;
+            CREATE INDEX idx_audio_variation_creation_id ON audio_variation (creation_id);
+        "#;
+
+        let recovered = postgres_preserve_legacy_foreign_key_rows(sql).expect("recover legacy SQL");
+
+        assert!(recovered.contains("ON DELETE CASCADE NOT VALID;"), "{recovered}");
+        assert!(recovered.contains("CREATE INDEX idx_audio_variation_creation_id"), "{recovered}");
+        assert_eq!(recovered.matches("NOT VALID").count(), 1);
+        let migration =
+            ValidatedMigration { execution_sql: recovered, checksum: "unused".to_string(), generated: true };
+        assert!(is_generated_legacy_normalization_migration(&migration));
     }
 }

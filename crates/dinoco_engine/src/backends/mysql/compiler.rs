@@ -5,7 +5,7 @@ use crate::{
     FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
     ManyToManyWriteQuery, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey,
     MigrationIndexKind, MySqlAdapter, ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
-    RenameColumnMigration, UpdateQuery,
+    RenameColumnMigration, RenameTableMigration, UpdateQuery,
 };
 
 impl DinocoSqlCompiler for MySqlAdapter {
@@ -215,35 +215,60 @@ impl DinocoSqlCompiler for MySqlAdapter {
 
     fn compile_drop_table_migration(&self, migration: DropTableMigration) -> String {
         let if_exists = if migration.if_exists { " IF EXISTS" } else { "" };
-        format!("DROP TABLE{if_exists} {};", migration.table)
+        format!("DROP TABLE{if_exists} {};", sql_identifier(&migration.table))
+    }
+
+    fn compile_rename_table_migration(&self, migration: RenameTableMigration) -> Vec<String> {
+        vec![format!(
+            "ALTER TABLE {} RENAME TO {};",
+            quoted_identifier(&migration.from),
+            quoted_identifier(&migration.to)
+        )]
     }
 
     fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String {
-        format!("ALTER TABLE {} ADD COLUMN {};", migration.table, compile_migration_column(&migration.column, true))
+        format!(
+            "ALTER TABLE {} ADD COLUMN {};",
+            sql_identifier(&migration.table),
+            compile_migration_column(&migration.column, true)
+        )
     }
 
     fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String {
-        format!("ALTER TABLE {} DROP COLUMN {};", migration.table, migration.column)
+        format!("ALTER TABLE {} DROP COLUMN {};", sql_identifier(&migration.table), sql_identifier(&migration.column))
     }
 
     fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String> {
         vec![format!(
             "ALTER TABLE {} MODIFY COLUMN {};",
-            migration.table,
+            sql_identifier(&migration.table),
             compile_migration_column(&migration.desired, true)
         )]
     }
 
     fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String> {
-        vec![format!("ALTER TABLE {} RENAME COLUMN {} TO {};", migration.table, migration.from, migration.to)]
+        vec![format!(
+            "ALTER TABLE {} RENAME COLUMN {} TO {};",
+            sql_identifier(&migration.table),
+            quoted_identifier(&migration.from),
+            quoted_identifier(&migration.to)
+        )]
     }
 
     fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
-        vec![format!("ALTER TABLE {} ADD {};", migration.table, compile_foreign_key(&migration.foreign_key))]
+        vec![format!(
+            "ALTER TABLE {} ADD {};",
+            sql_identifier(&migration.table),
+            compile_foreign_key(&migration.foreign_key)
+        )]
     }
 
     fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String> {
-        vec![format!("ALTER TABLE {} DROP FOREIGN KEY {};", migration.table, migration.name)]
+        vec![format!(
+            "ALTER TABLE {} DROP FOREIGN KEY {};",
+            sql_identifier(&migration.table),
+            quoted_identifier(&migration.name)
+        )]
     }
 
     fn compile_create_index_migration(&self, migration: CreateIndexMigration) -> String {
@@ -304,10 +329,10 @@ fn compile_migration_column(column: &MigrationColumn, inline_primary_key: bool) 
 fn compile_foreign_key(foreign_key: &MigrationForeignKey) -> String {
     format!(
         "CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON UPDATE {} ON DELETE {}",
-        foreign_key.name,
-        foreign_key.columns.join(", "),
-        foreign_key.references_table,
-        foreign_key.references_columns.join(", "),
+        sql_identifier(&foreign_key.name),
+        foreign_key.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", "),
+        sql_identifier(&foreign_key.references_table),
+        foreign_key.references_columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", "),
         referential_action(foreign_key.on_update),
         referential_action(foreign_key.on_delete),
     )
@@ -710,11 +735,24 @@ fn qualify_field(field: &str, qualifier: Option<&str>) -> String {
 }
 
 fn sql_identifier(identifier: &str) -> String {
-    if is_reserved_identifier(identifier) {
-        format!("`{}`", identifier.replace('`', "``"))
+    if identifier == "*" {
+        return identifier.to_string();
+    }
+    if is_reserved_identifier(identifier) || identifier_requires_quotes(identifier) {
+        quoted_identifier(identifier)
     } else {
         identifier.to_string()
     }
+}
+
+fn identifier_requires_quotes(identifier: &str) -> bool {
+    let mut chars = identifier.chars();
+    !matches!(chars.next(), Some(ch) if ch.is_ascii_lowercase() || ch == '_')
+        || chars.any(|ch| !(ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'))
+}
+
+fn quoted_identifier(identifier: &str) -> String {
+    format!("`{}`", identifier.replace('`', "``"))
 }
 
 fn is_reserved_identifier(identifier: &str) -> bool {

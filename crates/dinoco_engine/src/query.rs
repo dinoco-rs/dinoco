@@ -151,6 +151,12 @@ pub struct DropTableMigration {
 }
 
 #[derive(Debug, Clone)]
+pub struct RenameTableMigration {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct AddColumnMigration {
     pub table: String,
     pub column: MigrationColumn,

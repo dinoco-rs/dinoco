@@ -6,7 +6,7 @@ use dinoco_engine::{
     CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, DropColumnMigration,
     DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, MigrationColumn,
     MigrationColumnType, MigrationForeignKey, MigrationIndex, MigrationIndexKind, MySqlAdapter, PgBouncerAdapter,
-    PostgresAdapter, ReferentialAction, RenameColumnMigration, SqliteAdapter,
+    PostgresAdapter, ReferentialAction, RenameColumnMigration, RenameTableMigration, SqliteAdapter,
 };
 use dinoco_engine::{
     mysql_async::{TxOpts, prelude::Queryable},
@@ -96,6 +96,18 @@ impl CliDatabase {
             Self::PgBouncer(adapter) => adapter.execute(sql, &[]).await,
             Self::Mysql(adapter) => adapter.execute(sql, &[]).await,
             Self::Sqlite(adapter) => adapter.execute(sql, &[]).await,
+        }
+    }
+
+    /// Imports migration history written by releases that used
+    /// `_dinoco_migrations`. The old table is retained so upgrading is
+    /// non-destructive and remains reversible at the database level.
+    pub async fn adopt_legacy_migration_history(&self) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(adapter) => adopt_legacy_postgres_history(adapter).await,
+            Self::PgBouncer(adapter) => adopt_legacy_postgres_history(adapter.inner()).await,
+            Self::Mysql(adapter) => adopt_legacy_mysql_history(adapter).await,
+            Self::Sqlite(adapter) => adopt_legacy_sqlite_history(adapter).await,
         }
     }
 
@@ -311,13 +323,13 @@ impl CliDatabase {
     pub async fn database_has_user_tables(&self) -> anyhow::Result<bool> {
         let sql = match self {
             Self::Postgres(_) | Self::PgBouncer(_) => {
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name NOT IN ('dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas')"
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name NOT IN ('_dinoco_migrations', 'dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas')"
             }
             Self::Mysql(_) => {
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND table_name NOT IN ('dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas')"
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND table_name NOT IN ('_dinoco_migrations', 'dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas')"
             }
             Self::Sqlite(_) => {
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas')"
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('_dinoco_migrations', 'dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas')"
             }
         };
 
@@ -503,12 +515,30 @@ impl CliDatabase {
         }
     }
 
+    pub fn compile_rename_table_migration(&self, migration: RenameTableMigration) -> Vec<String> {
+        match self {
+            Self::Postgres(adapter) => adapter.compile_rename_table_migration(migration),
+            Self::PgBouncer(adapter) => adapter.compile_rename_table_migration(migration),
+            Self::Mysql(adapter) => adapter.compile_rename_table_migration(migration),
+            Self::Sqlite(adapter) => adapter.compile_rename_table_migration(migration),
+        }
+    }
+
     pub fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
         match self {
             Self::Postgres(adapter) => adapter.compile_add_foreign_key_migration(migration),
             Self::PgBouncer(adapter) => adapter.compile_add_foreign_key_migration(migration),
             Self::Mysql(adapter) => adapter.compile_add_foreign_key_migration(migration),
             Self::Sqlite(adapter) => adapter.compile_add_foreign_key_migration(migration),
+        }
+    }
+
+    pub fn compile_add_unvalidated_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
+        match self {
+            Self::Postgres(adapter) => adapter.compile_add_unvalidated_foreign_key_migration(migration),
+            Self::PgBouncer(adapter) => adapter.compile_add_unvalidated_foreign_key_migration(migration),
+            Self::Mysql(adapter) => adapter.compile_add_unvalidated_foreign_key_migration(migration),
+            Self::Sqlite(adapter) => adapter.compile_add_unvalidated_foreign_key_migration(migration),
         }
     }
 
@@ -1035,12 +1065,90 @@ async fn release_mysql_migration_lock<T>(
     }
 }
 
+async fn adopt_legacy_sqlite_history(adapter: &SqliteAdapter) -> anyhow::Result<()> {
+    let conn = adapter.pool.get().await.context("failed to get sqlite migration connection")?;
+    conn.interact(|conn| -> anyhow::Result<()> {
+        let transaction = conn.transaction()?;
+        let legacy_exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_dinoco_migrations')",
+            [],
+            |row| row.get(0),
+        )?;
+        if legacy_exists {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS dinoco_migrations (name TEXT PRIMARY KEY NOT NULL);
+                 INSERT OR IGNORE INTO dinoco_migrations (name)
+                 SELECT name FROM _dinoco_migrations
+                 WHERE applied_at IS NOT NULL AND rollback_at IS NULL;",
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!(error.to_string()))??;
+    Ok(())
+}
+
+async fn adopt_legacy_postgres_history(adapter: &PostgresAdapter) -> anyhow::Result<()> {
+    let mut conn = adapter.pool.get().await.context("failed to get postgres migration connection")?;
+    let transaction = conn.transaction().await?;
+    let legacy_exists: bool =
+        transaction.query_one("SELECT to_regclass('public._dinoco_migrations') IS NOT NULL", &[]).await?.get(0);
+    if legacy_exists {
+        transaction
+            .batch_execute(
+                "CREATE TABLE IF NOT EXISTS dinoco_migrations (name VARCHAR(255) PRIMARY KEY NOT NULL);
+                 INSERT INTO dinoco_migrations (name)
+                 SELECT name FROM _dinoco_migrations
+                 WHERE applied_at IS NOT NULL AND rollback_at IS NULL
+                 ON CONFLICT (name) DO NOTHING;",
+            )
+            .await?;
+    }
+    transaction.commit().await?;
+    Ok(())
+}
+
+async fn adopt_legacy_mysql_history(adapter: &MySqlAdapter) -> anyhow::Result<()> {
+    let mut conn = adapter.pool.get_conn().await.context("failed to get mysql migration connection")?;
+    let legacy_exists: Option<u8> = conn
+        .query_first(
+            "SELECT 1 FROM information_schema.tables
+             WHERE table_schema = DATABASE() AND table_name = '_dinoco_migrations'",
+        )
+        .await?;
+    if legacy_exists.is_some() {
+        conn.query_drop("CREATE TABLE IF NOT EXISTS dinoco_migrations (name VARCHAR(255) PRIMARY KEY NOT NULL)")
+            .await?;
+        conn.query_drop(
+            "INSERT IGNORE INTO dinoco_migrations (name)
+             SELECT name FROM _dinoco_migrations
+             WHERE applied_at IS NOT NULL AND rollback_at IS NULL",
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+fn sqlite_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn postgres_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn mysql_identifier(identifier: &str) -> String {
+    format!("`{}`", identifier.replace('`', "``"))
+}
+
 async fn inspect_sqlite(adapter: &SqliteAdapter) -> anyhow::Result<DatabaseSchema> {
     let conn = adapter.pool.get().await.context("failed to get sqlite connection from pool")?;
 
     conn.interact(move |conn| -> anyhow::Result<DatabaseSchema> {
         let mut tables_stmt = conn.prepare(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas') ORDER BY name",
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('_dinoco_migrations', 'dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas') ORDER BY name",
         )?;
         let table_names = tables_stmt
             .query_map([], |row| row.get::<_, String>(0))?
@@ -1048,14 +1156,15 @@ async fn inspect_sqlite(adapter: &SqliteAdapter) -> anyhow::Result<DatabaseSchem
         let mut tables = Vec::new();
 
         for table_name in table_names {
-            let row_count =
-                conn.query_row(&format!("SELECT COUNT(*) FROM {table_name}"), [], |row| row.get::<_, i64>(0))?;
+            let table_identifier = sqlite_identifier(&table_name);
+            let row_count = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table_identifier}"), [], |row| row.get::<_, i64>(0))?;
             let definition: String = conn.query_row(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
                 [&table_name],
                 |row| row.get(0),
             )?;
-            let mut columns_stmt = conn.prepare(&format!("PRAGMA table_info({table_name})"))?;
+            let mut columns_stmt = conn.prepare(&format!("PRAGMA table_info({table_identifier})"))?;
             let mut columns = columns_stmt.query_map([], sqlite_column)?.collect::<Result<Vec<_>, _>>()?;
             for column in &mut columns {
                 if let Some(values) = sqlite_enum_values(&definition, &column.name) {
@@ -1240,7 +1349,7 @@ async fn inspect_postgres(adapter: &PostgresAdapter) -> anyhow::Result<DatabaseS
     let conn = adapter.pool.get().await.context("failed to get postgres connection from pool")?;
     let table_rows = conn
         .query(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name NOT IN ('dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas') ORDER BY table_name",
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name NOT IN ('_dinoco_migrations', 'dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas') ORDER BY table_name",
             &[],
         )
         .await?;
@@ -1248,7 +1357,7 @@ async fn inspect_postgres(adapter: &PostgresAdapter) -> anyhow::Result<DatabaseS
 
     for row in table_rows {
         let table_name: String = row.try_get(0)?;
-        let count_sql = format!("SELECT COUNT(*) FROM {table_name}");
+        let count_sql = format!("SELECT COUNT(*) FROM {}", postgres_identifier(&table_name));
         let row_count: i64 = conn.query_one(&count_sql, &[]).await?.try_get(0)?;
         let column_rows = conn
             .query(
@@ -1491,13 +1600,14 @@ async fn inspect_mysql(adapter: &MySqlAdapter) -> anyhow::Result<DatabaseSchema>
     let mut conn = adapter.pool.get_conn().await.context("failed to get mysql connection from pool")?;
     let table_names: Vec<String> = conn
         .query(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND table_name NOT IN ('dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas') ORDER BY table_name",
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND table_name NOT IN ('_dinoco_migrations', 'dinoco_migrations', 'dinoco_migration_checksums', 'dinoco_migration_schemas') ORDER BY table_name",
         )
         .await?;
     let mut tables = Vec::new();
 
     for table_name in table_names {
-        let row_count: Option<i64> = conn.query_first(format!("SELECT COUNT(*) FROM {table_name}")).await?;
+        let row_count: Option<i64> =
+            conn.query_first(format!("SELECT COUNT(*) FROM {}", mysql_identifier(&table_name))).await?;
         let rows: Vec<dinoco_engine::mysql_async::Row> = conn
             .exec(
                 "SELECT column_name AS name, data_type AS raw_type, column_type AS column_type,
@@ -1783,7 +1893,10 @@ fn sqlite_authorization(context: AuthContext<'_>, allow_metadata_mutation: bool)
 }
 
 fn is_migration_metadata_table(table: &str) -> bool {
-    matches!(table, "dinoco_migrations" | "dinoco_migration_checksums" | "dinoco_migration_schemas")
+    matches!(
+        table,
+        "_dinoco_migrations" | "dinoco_migrations" | "dinoco_migration_checksums" | "dinoco_migration_schemas"
+    )
 }
 
 fn ensure_sqlite_foreign_key_integrity(transaction: &rusqlite::Transaction<'_>) -> anyhow::Result<()> {

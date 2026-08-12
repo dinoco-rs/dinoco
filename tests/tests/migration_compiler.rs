@@ -1,7 +1,7 @@
 use dinoco_engine::{
     CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, DropIndexMigration, FindQuery,
     InsertQuery, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex,
-    MigrationIndexKind, ReferentialAction, SqliteAdapter,
+    MigrationIndexKind, ReferentialAction, RenameTableMigration, SqliteAdapter,
 };
 
 #[tokio::test]
@@ -35,6 +35,26 @@ async fn sqlite_adapter_compiles_migration_sql() -> anyhow::Result<()> {
     assert!(sql.contains("id TEXT PRIMARY KEY NOT NULL"));
     assert!(sql.contains("is_active BOOLEAN NOT NULL DEFAULT 0"));
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_adapter_renames_case_only_legacy_tables_without_losing_rows() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    adapter.execute("CREATE TABLE \"Account\" (id INTEGER PRIMARY KEY, name TEXT NOT NULL)", &[]).await?;
+    adapter.execute("INSERT INTO \"Account\" (name) VALUES ('preserved')", &[]).await?;
+
+    let statements = adapter.compile_rename_table_migration(RenameTableMigration {
+        from: "Account".to_string(),
+        to: "account".to_string(),
+    });
+    assert_eq!(statements.len(), 2, "SQLite requires an intermediate name for a case-only rename");
+    for statement in statements {
+        adapter.execute(&statement, &[]).await?;
+    }
+
+    let rows = adapter.execute("UPDATE account SET name = 'still-preserved' WHERE name = 'preserved'", &[]).await?;
+    assert_eq!(rows, 1);
     Ok(())
 }
 
@@ -82,6 +102,15 @@ async fn sqlite_quotes_reserved_identifiers_in_migrations_and_queries() -> anyho
     let rows = adapter.query::<dinoco_engine::SingleIdRow>(&select, &params).await?;
     assert_eq!(rows.len(), 1);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_quotes_case_sensitive_identifiers_but_keeps_wildcards() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let (select, _) = adapter.compile_find_query(FindQuery::new(&["*", "createdAt"], "AudioCreation", -1, -1));
+
+    assert_eq!(select, "SELECT *, \"createdAt\" FROM \"AudioCreation\"");
     Ok(())
 }
 

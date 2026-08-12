@@ -5,7 +5,8 @@ use crate::{
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeadpoolPostgresRow, DeleteQuery, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, FindQuery,
     InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, ManyToManyWriteQuery, MysqlRow, PostgresRow,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, SqliteRow, UpdateQuery,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, RenameTableMigration, SqliteRow,
+    UpdateQuery,
 };
 
 #[async_trait]
@@ -56,11 +57,15 @@ pub trait DinocoSqlCompiler {
     fn compile_insert_migration_record(&self, name: &str) -> String;
     fn compile_create_table_migration(&self, migration: CreateTableMigration) -> String;
     fn compile_drop_table_migration(&self, migration: DropTableMigration) -> String;
+    fn compile_rename_table_migration(&self, migration: RenameTableMigration) -> Vec<String>;
     fn compile_add_column_migration(&self, migration: AddColumnMigration) -> String;
     fn compile_drop_column_migration(&self, migration: DropColumnMigration) -> String;
     fn compile_alter_column_migration(&self, migration: AlterColumnMigration) -> Vec<String>;
     fn compile_rename_column_migration(&self, migration: RenameColumnMigration) -> Vec<String>;
     fn compile_add_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String>;
+    fn compile_add_unvalidated_foreign_key_migration(&self, migration: AddForeignKeyMigration) -> Vec<String> {
+        self.compile_add_foreign_key_migration(migration)
+    }
     fn compile_drop_foreign_key_migration(&self, migration: DropForeignKeyMigration) -> Vec<String>;
     fn compile_create_index_migration(&self, migration: CreateIndexMigration) -> String;
     fn compile_drop_index_migration(&self, migration: DropIndexMigration) -> String;
