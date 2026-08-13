@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
-const VERSION: &str = "1.1.10";
-const PREVIOUS_VERSION: &str = "1.1.9";
+const VERSION: &str = "1.2.0";
+const PREVIOUS_VERSION: &str = "1.1.10";
 
 fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("tests crate must be inside the workspace")
@@ -97,10 +97,10 @@ fn documentation_uses_the_current_version_directories() {
     assert!(!previous_navigation_dir.exists());
 
     let versions = read("docs/src/jsons/versions.ts");
-    assert!(versions.contains("import v1_1_10 from './versions/v1.1.10';"));
-    assert!(versions.contains("const versionsData: DocsVersionData[] = [v1_1_10"));
-    assert!(!versions.contains("v1_1_9"));
-    assert!(!versions.contains("v1.1.9"));
+    assert!(versions.contains("import v1_2_0 from './versions/v1.2.0';"));
+    assert!(versions.contains("const versionsData: DocsVersionData[] = [v1_2_0"));
+    assert!(!versions.contains("v1_1_10"));
+    assert!(!versions.contains("v1.1.10"));
 
     for locale in ["en-us", "pt-br"] {
         let release_notes = read(&format!("docs/src/content/v{VERSION}/{locale}/release-notes.md"));

@@ -7,9 +7,12 @@ pub mod ui;
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "dinoco")]
+#[command(name = "dinoco", version, disable_version_flag = true)]
 #[command(about = "The Dinoco database toolkit")]
 struct Cli {
+    #[arg(short = 'v', long = "version", action = clap::ArgAction::Version, required = false, help = "Print version")]
+    _version: Option<bool>,
+
     #[command(subcommand)]
     command: Commands,
 }

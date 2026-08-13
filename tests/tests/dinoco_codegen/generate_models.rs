@@ -33,10 +33,11 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     let dinoco_mod = dinoco_codegen::render_dinoco_mod(&schema);
 
     assert!(models.contains("pub enum OfficeType"));
-    assert!(models.contains("#[dinoco(value = \"admin\")]\n    Admin,"));
-    assert!(models.contains("#[dinoco(value = \"member\")]\n    Member,"));
+    assert!(models.contains("#[dinoco(value = \"admin\")]\n    #[serde(rename = \"admin\")]\n    Admin,"));
+    assert!(models.contains("#[dinoco(value = \"member\")]\n    #[serde(rename = \"member\")]\n    Member,"));
     assert!(models.contains("Admin,"));
-    assert!(models.contains("#[derive(Debug, Entity)]"));
+    assert!(models.contains("#[derive(Debug, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]"));
+    assert!(models.contains("#[serde(crate = \"::dinoco::serde\")]\n#[dinoco(table_name = \"user\")]"));
     assert!(models.contains("pub struct User"));
     assert!(models.contains("#[dinoco(primary_key, auto_generate = uuid)]"));
     assert!(models.contains("#[dinoco(fulltext)]\n    pub email: String"));
@@ -170,7 +171,7 @@ fn codegen_respects_uuid_snowflake_enum_defaults_and_implicit_relations() {
     ));
     assert!(models.contains("#[serde(crate = \"::dinoco::serde\")]"));
     assert!(models.contains("#[dinoco(value = \"USER\")]"));
-    assert!(models.contains("#[default]\n    #[dinoco(value = \"USER\")]\n    USER,"));
+    assert!(models.contains("#[default]\n    #[dinoco(value = \"USER\")]\n    #[serde(rename = \"USER\")]\n    USER,"));
     assert!(models.contains("pub createdAt: ::dinoco::chrono::DateTime<::dinoco::chrono::Utc>"));
     assert!(models.contains("pub birthday: ::dinoco::chrono::NaiveDate"));
     assert!(models.contains("pub metadata: ::dinoco::serde_json::Value"));

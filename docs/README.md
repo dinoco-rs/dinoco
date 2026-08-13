@@ -1,6 +1,6 @@
 # Dinoco documentation
 
-Documentation website for Dinoco. The English and Brazilian Portuguese content lives under `src/content/v1.1.10`; the site currently exposes this version only.
+Documentation website for Dinoco. The English and Brazilian Portuguese content lives under `src/content/v1.2.0`; the site currently exposes this version only.
 
 ```bash
 yarn install

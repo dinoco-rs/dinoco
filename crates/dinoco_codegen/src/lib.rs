@@ -76,6 +76,7 @@ pub fn render_models_mod(schema: &Schema) -> String {
                 out.push_str("    #[default]\n");
             }
             out.push_str(&format!("    #[dinoco(value = \"{}\")]\n", escape_rust_string(value)));
+            out.push_str(&format!("    #[serde(rename = \"{}\")]\n", escape_rust_string(value)));
             out.push_str("    ");
             out.push_str(&to_pascal_case(value));
             out.push_str(",\n");
@@ -96,7 +97,8 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
     out.push_str("#[allow(unused_imports)]\n");
     out.push_str("use super::*;\n");
     out.push_str("use dinoco::Entity;\n\n");
-    out.push_str("#[derive(Debug, Entity)]\n");
+    out.push_str("#[derive(Debug, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n");
+    out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
     out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", escape_rust_string(&model_table_name(model))));
     out.push_str(&format!("pub struct {} {{\n", model.name));
     for field in &model.fields {
@@ -290,7 +292,8 @@ pub fn render_many_to_many_join_file(join: &ManyToManyJoin, schema: &Schema) -> 
     out.push_str("#[allow(unused_imports)]\n");
     out.push_str("use super::*;\n");
     out.push_str("use dinoco::Entity;\n\n");
-    out.push_str("#[derive(Debug, Entity)]\n");
+    out.push_str("#[derive(Debug, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n");
+    out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
     out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", escape_rust_string(&join.table_name)));
     out.push_str(&format!("pub struct {} {{\n", join.rust_name));
     out.push_str("    #[dinoco(primary_key)]\n");

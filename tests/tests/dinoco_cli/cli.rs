@@ -6,6 +6,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use dinoco_engine::{DinocoAdapter, DinocoSqlCompiler, DinocoValue, InsertQuery, SqliteAdapter, rusqlite::Connection};
 
 #[test]
+fn version_flags_print_the_cli_version() {
+    for flag in ["--version", "-v"] {
+        let output =
+            Command::new(env!("CARGO_BIN_EXE_dinoco_cli")).arg(flag).output().expect("cli should print its version");
+
+        assert!(output.status.success(), "{flag} stderr: {}", String::from_utf8_lossy(&output.stderr));
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), format!("dinoco {}", env!("CARGO_PKG_VERSION")));
+    }
+}
+
+#[test]
 fn init_creates_english_colored_schema() {
     let project = temp_project("init");
     let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
