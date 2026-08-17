@@ -1332,7 +1332,7 @@ fn sqlite_indexes(conn: &rusqlite::Connection, table_name: &str) -> rusqlite::Re
         let mut columns_stmt = conn.prepare("SELECT name FROM pragma_index_info(?1) ORDER BY seqno")?;
         let columns =
             columns_stmt.query_map([name.as_str()], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
-        if !columns.is_empty() && !(unique == 1 && columns.len() == 1) {
+        if !(columns.is_empty() || unique == 1 && columns.len() == 1) {
             indexes.push(MigrationIndex {
                 name,
                 columns,

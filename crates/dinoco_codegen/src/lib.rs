@@ -39,7 +39,7 @@ pub fn generate_models_for_workspace(schema: &Schema, workspace: Option<&str>) -
 
     fs::write("dinoco/models/mod.rs", render_models_mod(schema))?;
     for model in schema.models() {
-        fs::write(format!("dinoco/models/{}.rs", to_snake_case(&model.name)), render_model_file(&model, schema))?;
+        fs::write(format!("dinoco/models/{}.rs", to_snake_case(&model.name)), render_model_file(model, schema))?;
     }
     for join in implicit_many_to_many_joins(schema) {
         let legacy_join_file = format!("dinoco/models/{}.rs", to_snake_case(&join.rust_name));
@@ -58,7 +58,7 @@ pub fn render_models(schema: &Schema) -> String {
     out.push_str(&render_models_mod(schema));
     for model in schema.models() {
         out.push('\n');
-        out.push_str(&render_model_file(&model, schema));
+        out.push_str(&render_model_file(model, schema));
     }
     out
 }
@@ -67,7 +67,7 @@ pub fn render_models_mod(schema: &Schema) -> String {
     let mut out = String::new();
     for item in schema.enums() {
         out.push_str(
-            "#[derive(Debug, Clone, PartialEq, Eq, Default, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize, ::dinoco::DinocoEnum)]\n",
+            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize, ::dinoco::DinocoEnum)]\n",
         );
         out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
         out.push_str(&format!("pub enum {} {{\n", item.name));
@@ -97,7 +97,13 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
     out.push_str("#[allow(unused_imports)]\n");
     out.push_str("use super::*;\n");
     out.push_str("use dinoco::Entity;\n\n");
-    out.push_str("#[derive(Debug, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n");
+    if model_supports_copy(model, schema) {
+        out.push_str(
+            "#[derive(Debug, Clone, Copy, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n",
+        );
+    } else {
+        out.push_str("#[derive(Debug, Clone, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n");
+    }
     out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
     out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", escape_rust_string(&model_table_name(model))));
     out.push_str(&format!("pub struct {} {{\n", model.name));
@@ -292,7 +298,13 @@ pub fn render_many_to_many_join_file(join: &ManyToManyJoin, schema: &Schema) -> 
     out.push_str("#[allow(unused_imports)]\n");
     out.push_str("use super::*;\n");
     out.push_str("use dinoco::Entity;\n\n");
-    out.push_str("#[derive(Debug, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n");
+    if many_to_many_join_supports_copy(join, schema) {
+        out.push_str(
+            "#[derive(Debug, Clone, Copy, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n",
+        );
+    } else {
+        out.push_str("#[derive(Debug, Clone, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n");
+    }
     out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
     out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", escape_rust_string(&join.table_name)));
     out.push_str(&format!("pub struct {} {{\n", join.rust_name));
@@ -331,8 +343,6 @@ fn rust_type(model: &Model, field: &ModelField, schema: &Schema) -> String {
         format!("Vec<{base}>")
     } else if field.ty.optional {
         format!("Option<{base}>")
-    } else if schema.models().any(|model| model.name == field.ty.name) {
-        base
     } else {
         base
     }
@@ -388,6 +398,38 @@ fn model_primary_rust_type(schema: &Schema, model_name: &str) -> String {
     rust_type(model, field, schema)
 }
 
+fn model_supports_copy(model: &Model, schema: &Schema) -> bool {
+    model.fields.iter().all(|field| field_supports_copy(field, schema))
+}
+
+fn field_supports_copy(field: &ModelField, schema: &Schema) -> bool {
+    if field.ty.list || field.is_relation(schema) {
+        return false;
+    }
+
+    match field.ty.name.as_str() {
+        // `::dinoco::Uuid` is currently an alias for `String`, so UUID-backed
+        // fields are cloneable but not copyable as well.
+        "String" => false,
+        "Json" => false,
+        "Boolean" | "Integer" | "Float" | "DateTime" | "Date" => true,
+        _ => field.is_enum(schema),
+    }
+}
+
+fn many_to_many_join_supports_copy(join: &ManyToManyJoin, schema: &Schema) -> bool {
+    [&join.left_model, &join.right_model].into_iter().all(|model_name| {
+        let Some(model) = schema.models().find(|model| model.name == *model_name) else {
+            return false;
+        };
+        let Some(field) = model.fields.iter().find(|field| is_primary_key_field(model, field)) else {
+            return false;
+        };
+
+        field_supports_copy(field, schema)
+    })
+}
+
 fn has_default_call(field: &ModelField, name: &str) -> bool {
     field.attributes.iter().find(|attr| attr.name == "default").and_then(|attr| attr.arguments.first()).is_some_and(
         |argument| {
@@ -418,44 +460,41 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
         dinoco_attrs.push(format!("fulltext = \"{}\"", fields.join(",")));
     }
 
-    if let Some(default) = field.attributes.iter().find(|attr| attr.name == "default") {
-        if let Some(value) = default.arguments.first() {
-            match value {
-                dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. }) if name == "uuid" => {
-                    dinoco_attrs.push("auto_generate = uuid".to_string());
-                }
-                dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. }) if name == "snowflake" => {
-                    dinoco_attrs.push("auto_generate = snowflake".to_string());
-                }
-                dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. })
-                    if name == "autoincrement" =>
-                {
-                    dinoco_attrs.push("auto_generate = autoincrement".to_string());
-                }
-                dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. }) if name == "now" => {
-                    if field.ty.name == "Date" {
-                        dinoco_attrs.push("default = ::dinoco::chrono::Utc::now().date_naive()".to_string());
-                    } else {
-                        dinoco_attrs.push("default = ::dinoco::chrono::Utc::now()".to_string());
-                    }
-                }
-                dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value))
-                    if value == "true" || value == "false" =>
-                {
-                    dinoco_attrs.push(format!("default = {value}"));
-                }
-                dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value)) if field.is_enum(schema) => {
-                    dinoco_attrs.push(format!("default = {}::{}", field.ty.name, to_pascal_case(value)));
-                }
-                dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value)) => {
-                    dinoco_attrs.push(format!("default = {value}"));
-                }
-                dinoco_compiler::AttributeArgument::Value(AttributeValue::String(value)) => {
-                    dinoco_attrs
-                        .push(format!("default = ::std::string::String::from(\"{}\")", escape_rust_string(value)));
-                }
-                _ => {}
+    if let Some(default) = field.attributes.iter().find(|attr| attr.name == "default")
+        && let Some(value) = default.arguments.first()
+    {
+        match value {
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. }) if name == "uuid" => {
+                dinoco_attrs.push("auto_generate = uuid".to_string());
             }
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. }) if name == "snowflake" => {
+                dinoco_attrs.push("auto_generate = snowflake".to_string());
+            }
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. }) if name == "autoincrement" => {
+                dinoco_attrs.push("auto_generate = autoincrement".to_string());
+            }
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::Call { name, .. }) if name == "now" => {
+                if field.ty.name == "Date" {
+                    dinoco_attrs.push("default = ::dinoco::chrono::Utc::now().date_naive()".to_string());
+                } else {
+                    dinoco_attrs.push("default = ::dinoco::chrono::Utc::now()".to_string());
+                }
+            }
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value))
+                if value == "true" || value == "false" =>
+            {
+                dinoco_attrs.push(format!("default = {value}"));
+            }
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value)) if field.is_enum(schema) => {
+                dinoco_attrs.push(format!("default = {}::{}", field.ty.name, to_pascal_case(value)));
+            }
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value)) => {
+                dinoco_attrs.push(format!("default = {value}"));
+            }
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::String(value)) => {
+                dinoco_attrs.push(format!("default = ::std::string::String::from(\"{}\")", escape_rust_string(value)));
+            }
+            _ => {}
         }
     }
 

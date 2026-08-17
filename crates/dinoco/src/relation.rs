@@ -18,6 +18,7 @@ pub enum IncludeStrategy {
 pub(crate) type IncludeApplier<S> = Box<dyn FnOnce(&mut [S]) + Send>;
 pub(crate) type IncludeLoaderFuture<'a, S> =
     Pin<Box<dyn Future<Output = anyhow::Result<IncludeApplier<S>>> + Send + 'a>>;
+type RelationMarker<M, C, CS> = PhantomData<fn() -> (M, C, CS)>;
 
 pub trait IncludeLoader<S>: Send + Sync {
     fn load_applier<'a>(
@@ -66,7 +67,7 @@ pub struct HasMany<M, C, CS = C> {
     includes: Vec<Box<dyn IncludeLoader<CS>>>,
     complex_where: bool,
     many_to_many: Option<ManyToManyMetadata>,
-    marker: PhantomData<fn() -> (M, C, CS)>,
+    marker: RelationMarker<M, C, CS>,
 }
 
 #[derive(Clone, Copy)]
@@ -83,7 +84,7 @@ pub struct BelongsTo<M, C, CS = C> {
     query: FindQuery,
     includes: Vec<Box<dyn IncludeLoader<CS>>>,
     complex_where: bool,
-    marker: PhantomData<fn() -> (M, C, CS)>,
+    marker: RelationMarker<M, C, CS>,
 }
 
 impl<M, C> HasMany<M, C, C>
@@ -376,7 +377,7 @@ where
 
             let mut grouped = HashMap::<RelationKey, Vec<CS>>::new();
 
-            for (key, child) in relation_keys.into_iter().zip(children.into_iter()) {
+            for (key, child) in relation_keys.into_iter().zip(children) {
                 grouped.entry(key).or_default().push(child);
             }
 
@@ -447,7 +448,7 @@ where
 
             let mut grouped = HashMap::<RelationKey, CS>::new();
 
-            for (key, child) in relation_keys.into_iter().zip(children.into_iter()) {
+            for (key, child) in relation_keys.into_iter().zip(children) {
                 grouped.insert(key, child);
             }
 

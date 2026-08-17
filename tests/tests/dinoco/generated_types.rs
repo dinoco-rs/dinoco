@@ -1,6 +1,10 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
 use dinoco::{DinocoEnum, Entity, Snowflake, chrono, serde_json};
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize, DinocoEnum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize, DinocoEnum,
+)]
 #[serde(crate = "::dinoco::serde")]
 enum GeneratedStatus {
     #[default]
@@ -10,7 +14,9 @@ enum GeneratedStatus {
     InProgress,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize, DinocoEnum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, dinoco::serde::Serialize, dinoco::serde::Deserialize, DinocoEnum,
+)]
 #[serde(crate = "::dinoco::serde")]
 enum AudioStatus {
     #[default]

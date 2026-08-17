@@ -167,6 +167,7 @@ async fn postgres_direct_applies_configured_pool_limits() -> anyhow::Result<()> 
 }
 
 #[tokio::test]
+#[allow(clippy::needless_borrows_for_generic_args)]
 async fn postgres_serializes_and_decodes_utc_datetime_for_timestamp_columns() -> anyhow::Result<()> {
     let _guard = POSTGRES_TEST_LOCK.lock().await;
     let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;

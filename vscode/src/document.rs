@@ -282,16 +282,17 @@ impl DocumentIndex {
         let mut ranges = Vec::new();
 
         for block in &self.blocks {
-            if let (ResolvedSymbol::Type(target_name), Some(name)) = (target, &block.name) {
-                if name.name == *target_name {
-                    ranges.push(name.range);
-                }
+            if let (ResolvedSymbol::Type(target_name), Some(name)) = (target, &block.name)
+                && name.name == *target_name
+            {
+                ranges.push(name.range);
             }
 
-            if let ResolvedSymbol::EnumValue { enum_name, value } = target {
-                if block.kind == BlockKind::Enum && block.name.as_ref().is_some_and(|name| name.name == *enum_name) {
-                    ranges.extend(block.values.iter().filter(|item| item.name == *value).map(|item| item.range));
-                }
+            if let ResolvedSymbol::EnumValue { enum_name, value } = target
+                && block.kind == BlockKind::Enum
+                && block.name.as_ref().is_some_and(|name| name.name == *enum_name)
+            {
+                ranges.extend(block.values.iter().filter(|item| item.name == *value).map(|item| item.range));
             }
 
             if block.kind != BlockKind::Model {
@@ -312,44 +313,45 @@ impl DocumentIndex {
                 }
 
                 for attribute in &field.attributes {
-                    if attribute.name.name == "relation" {
-                        if let ResolvedSymbol::Field { model, field: target_field } = target {
-                            if model == model_name {
-                                if let Some(argument) = attribute.argument("fields") {
-                                    ranges.extend(
-                                        argument
-                                            .values
-                                            .iter()
-                                            .filter(|value| value.name == *target_field)
-                                            .map(|value| value.range),
-                                    );
-                                }
-                            }
-                            if model == &field.ty.name {
-                                if let Some(argument) = attribute.argument("references") {
-                                    ranges.extend(
-                                        argument
-                                            .values
-                                            .iter()
-                                            .filter(|value| value.name == *target_field)
-                                            .map(|value| value.range),
-                                    );
-                                }
-                            }
+                    if attribute.name.name == "relation"
+                        && let ResolvedSymbol::Field { model, field: target_field } = target
+                    {
+                        if model == model_name
+                            && let Some(argument) = attribute.argument("fields")
+                        {
+                            ranges.extend(
+                                argument
+                                    .values
+                                    .iter()
+                                    .filter(|value| value.name == *target_field)
+                                    .map(|value| value.range),
+                            );
+                        }
+                        if model == &field.ty.name
+                            && let Some(argument) = attribute.argument("references")
+                        {
+                            ranges.extend(
+                                argument
+                                    .values
+                                    .iter()
+                                    .filter(|value| value.name == *target_field)
+                                    .map(|value| value.range),
+                            );
                         }
                     }
 
-                    if let ResolvedSymbol::EnumValue { enum_name, value } = target {
-                        if field.ty.name == *enum_name && attribute.name.name == "default" {
-                            ranges.extend(
-                                attribute
-                                    .arguments
-                                    .iter()
-                                    .flat_map(|argument| &argument.values)
-                                    .filter(|symbol| symbol.name == *value)
-                                    .map(|symbol| symbol.range),
-                            );
-                        }
+                    if let ResolvedSymbol::EnumValue { enum_name, value } = target
+                        && field.ty.name == *enum_name
+                        && attribute.name.name == "default"
+                    {
+                        ranges.extend(
+                            attribute
+                                .arguments
+                                .iter()
+                                .flat_map(|argument| &argument.values)
+                                .filter(|symbol| symbol.name == *value)
+                                .map(|symbol| symbol.range),
+                        );
                     }
                 }
             }

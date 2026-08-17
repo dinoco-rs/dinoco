@@ -48,10 +48,10 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 fn env_or_select(key: &str, prompt: &str, options: Vec<&'static str>) -> anyhow::Result<&'static str> {
-    if let Ok(value) = std::env::var(key) {
-        if let Some(option) = options.iter().copied().find(|option| *option == value) {
-            return Ok(option);
-        }
+    if let Ok(value) = std::env::var(key)
+        && let Some(option) = options.iter().copied().find(|option| *option == value)
+    {
+        return Ok(option);
     }
 
     Ok(Select::new(prompt, options).prompt()?)

@@ -410,15 +410,14 @@ fn hover_resolved_symbol(index: &DocumentIndex, symbol: &ResolvedSymbol) -> Opti
             let mut output = format!("```dinoco\n{model}.{}: {}\n```", field.name.name, field.display_type());
             if index.model(&field.ty.name).is_some() {
                 output.push_str("\n\nModel relation");
-                if let Some(relation) = field.attribute("relation") {
-                    if let (Some(local), Some(references)) =
+                if let Some(relation) = field.attribute("relation")
+                    && let (Some(local), Some(references)) =
                         (relation.argument("fields"), relation.argument("references"))
-                    {
-                        let local = local.values.iter().map(|item| item.name.as_str()).collect::<Vec<_>>().join(", ");
-                        let references =
-                            references.values.iter().map(|item| item.name.as_str()).collect::<Vec<_>>().join(", ");
-                        output.push_str(&format!(": `[{local}]` references `{}.[{references}]`.", field.ty.name));
-                    }
+                {
+                    let local = local.values.iter().map(|item| item.name.as_str()).collect::<Vec<_>>().join(", ");
+                    let references =
+                        references.values.iter().map(|item| item.name.as_str()).collect::<Vec<_>>().join(", ");
+                    output.push_str(&format!(": `[{local}]` references `{}.[{references}]`.", field.ty.name));
                 }
             }
             Some(output)

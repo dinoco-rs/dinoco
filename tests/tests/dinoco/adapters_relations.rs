@@ -1,4 +1,4 @@
-use dinoco::{Entity, count, find_and_update, find_many, insert_into, insert_many};
+use dinoco::{DinocoEnum, Entity, count, find_and_update, find_first, find_many, insert_into, insert_many};
 use dinoco_engine::{Backend, DinocoAdapter, DinocoClient, MigrationColumnType, SqliteAdapter};
 use dinoco_tests::{column, create_table, nullable, primary};
 
@@ -78,6 +78,88 @@ pub struct System {
         join_child_field = "business_id"
     )]
     business_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, DinocoEnum)]
+enum PassState {
+    #[default]
+    #[dinoco(value = "enabled")]
+    Enabled,
+    #[dinoco(value = "waiting")]
+    Waiting,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "named_relation_patron")]
+struct Patron {
+    #[dinoco(primary_key)]
+    id: String,
+
+    #[dinoco(one_to_many, foreign_key = "curator_id", references = "id")]
+    studios: Vec<Studio>,
+
+    #[dinoco(one_to_many, relation_name = "holder", foreign_key = "patron_id", references = "id")]
+    borrowed_passes: Vec<VenuePass>,
+
+    #[dinoco(one_to_many, relation_name = "issued_by", foreign_key = "issued_by_id", references = "id")]
+    issued_passes: Vec<VenuePass>,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "named_relation_signin")]
+struct Signin {
+    #[dinoco(primary_key)]
+    id: String,
+    enabled: bool,
+    patron_id: Option<String>,
+
+    #[dinoco(many_to_one, foreign_key = "patron_id", references = "id")]
+    patron: Option<Patron>,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "named_relation_studio")]
+struct Studio {
+    #[dinoco(primary_key)]
+    id: String,
+    curator_id: Option<String>,
+
+    #[dinoco(many_to_one, foreign_key = "curator_id", references = "id")]
+    curator: Option<Patron>,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "named_relation_room")]
+struct Room {
+    #[dinoco(primary_key)]
+    id: String,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "named_relation_venue_pass")]
+struct VenuePass {
+    #[dinoco(primary_key)]
+    id: String,
+    state: PassState,
+    patron_id: Option<String>,
+
+    #[dinoco(many_to_one, relation_name = "holder", foreign_key = "patron_id", references = "id")]
+    patron: Option<Patron>,
+
+    issued_by_id: Option<String>,
+
+    #[dinoco(many_to_one, relation_name = "issued_by", foreign_key = "issued_by_id", references = "id")]
+    issued_by: Option<Patron>,
+
+    studio_id: Option<String>,
+
+    #[dinoco(many_to_one, foreign_key = "studio_id", references = "id")]
+    studio: Option<Studio>,
+
+    room_id: Option<String>,
+
+    #[dinoco(many_to_one, foreign_key = "room_id", references = "id")]
+    room: Option<Room>,
 }
 
 #[tokio::test]
@@ -200,6 +282,106 @@ async fn implicit_many_to_many_uses_virtual_keys_for_insert_update_and_includes(
     system_ids.sort_unstable();
     assert_eq!(system_ids, ["system-b", "system-c", "system-d"]);
     assert!(loaded[0].systems.iter().all(|system| system.business_id.is_none()));
+
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[tokio::test]
+async fn named_relation_loads_filtered_nested_includes_from_the_correct_foreign_key() -> anyhow::Result<()> {
+    let (client, path) = client("named-relation-nested-includes").await?;
+    let Backend::Sqlite(adapter) = &client.backend else { unreachable!("sqlite test") };
+    create_table(adapter, "named_relation_patron", vec![primary(column("id", MigrationColumnType::String))]).await?;
+    create_table(
+        adapter,
+        "named_relation_signin",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            column("enabled", MigrationColumnType::Boolean),
+            nullable(column("patron_id", MigrationColumnType::String)),
+        ],
+    )
+    .await?;
+    create_table(
+        adapter,
+        "named_relation_studio",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            nullable(column("curator_id", MigrationColumnType::String)),
+        ],
+    )
+    .await?;
+    create_table(adapter, "named_relation_room", vec![primary(column("id", MigrationColumnType::String))]).await?;
+    create_table(
+        adapter,
+        "named_relation_venue_pass",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            column(
+                "state",
+                MigrationColumnType::Enum {
+                    name: "PassState".to_string(),
+                    values: vec!["enabled".to_string(), "waiting".to_string()],
+                },
+            ),
+            nullable(column("patron_id", MigrationColumnType::String)),
+            nullable(column("issued_by_id", MigrationColumnType::String)),
+            nullable(column("studio_id", MigrationColumnType::String)),
+            nullable(column("room_id", MigrationColumnType::String)),
+        ],
+    )
+    .await?;
+
+    let holder = Patron::new("holder-a".to_string());
+    let issuer = Patron::new("issuer-b".to_string());
+    insert_into::<Patron>().values(&holder).execute(&client).await?;
+    insert_into::<Patron>().values(&issuer).execute(&client).await?;
+
+    let mut signin = Signin::new("signin-a".to_string(), true);
+    signin.patron_id = Some(holder.id.clone());
+    insert_into::<Signin>().values(&signin).execute(&client).await?;
+
+    let mut studio = Studio::new("studio-a".to_string());
+    studio.curator_id = Some(holder.id.clone());
+    insert_into::<Studio>().values(&studio).execute(&client).await?;
+    let room = Room::new("room-a".to_string());
+    insert_into::<Room>().values(&room).execute(&client).await?;
+
+    let mut active_pass = VenuePass::new("pass-active".to_string(), PassState::Enabled);
+    active_pass.patron_id = Some(holder.id.clone());
+    active_pass.issued_by_id = Some(issuer.id.clone());
+    active_pass.studio_id = Some(studio.id.clone());
+    active_pass.room_id = Some(room.id.clone());
+    insert_into::<VenuePass>().values(&active_pass).execute(&client).await?;
+
+    let mut waiting_pass = VenuePass::new("pass-waiting".to_string(), PassState::Waiting);
+    waiting_pass.patron_id = Some(holder.id.clone());
+    waiting_pass.issued_by_id = Some(issuer.id.clone());
+    insert_into::<VenuePass>().values(&waiting_pass).execute(&client).await?;
+
+    let signin_id = signin.id.clone();
+    let loaded = find_first::<Signin>()
+        .where_(|signin| signin.id.eq(&signin_id))
+        .where_(|signin| signin.enabled.eq(true))
+        .includes(|signin| {
+            signin.patron().includes(|patron| patron.studios()).includes(|patron| {
+                patron
+                    .borrowed_passes()
+                    .where_(|pass| pass.state.eq(PassState::Enabled))
+                    .includes(|pass| pass.studio())
+                    .includes(|pass| pass.room())
+            })
+        })
+        .execute(&client)
+        .await?
+        .expect("signin");
+
+    let patron = loaded.patron.expect("patron include");
+    assert_eq!(patron.studios.len(), 1);
+    assert_eq!(patron.borrowed_passes.len(), 1);
+    assert_eq!(patron.borrowed_passes[0].id, active_pass.id);
+    assert_eq!(patron.borrowed_passes[0].studio.as_ref().map(|studio| studio.id.as_str()), Some("studio-a"));
+    assert_eq!(patron.borrowed_passes[0].room.as_ref().map(|room| room.id.as_str()), Some("room-a"));
 
     let _ = std::fs::remove_file(path);
     Ok(())

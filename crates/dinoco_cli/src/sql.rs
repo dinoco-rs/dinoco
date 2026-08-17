@@ -807,14 +807,14 @@ fn push_index(
 }
 
 fn fulltext_indexes_supported(schema: &Schema) -> bool {
-    !schema
+    schema
         .config()
         .and_then(|config| config.entries.iter().find(|entry| entry.key == "database"))
         .and_then(|entry| match &entry.value {
             ConfigValue::String(value) | ConfigValue::Ident(value) => Some(value.as_str()),
             _ => None,
         })
-        .is_some_and(|database| database == "sqlite")
+        .is_none_or(|database| database != "sqlite")
 }
 
 fn is_primary_key_field(model: &Model, field: &ModelField) -> bool {

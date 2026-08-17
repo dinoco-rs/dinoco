@@ -181,7 +181,7 @@ impl TryFrom<Value> for DinocoValue {
         match value {
             Value::NULL => Ok(DinocoValue::Null),
             Value::Bytes(value) => {
-                String::from_utf8(value.clone()).map(DinocoValue::String).or_else(|_| Ok(DinocoValue::Bytes(value)))
+                String::from_utf8(value.clone()).map(DinocoValue::String).or(Ok(DinocoValue::Bytes(value)))
             }
             Value::Int(value) => Ok(DinocoValue::Integer(value)),
             Value::UInt(value) => Ok(DinocoValue::Integer(value as i64)),

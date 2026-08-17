@@ -1619,73 +1619,73 @@ impl ParsedField {
             });
         }
 
-        if let Some(inner) = vec_inner(&field.ty) {
-            if !is_u8(inner) {
-                if relation_kind.is_none() {
-                    return Err(syn::Error::new_spanned(
-                        field,
-                        "relation fields require an explicit #[dinoco(...)] relation attribute",
-                    ));
-                }
-
-                return Ok(Self {
-                    ident,
-                    name,
-                    ty: field.ty.clone(),
-                    kind: FieldKind::HasMany,
-                    target_ty: Some(inner.clone()),
-                    foreign_key,
-                    references,
-                    relation_name,
-                    is_option: false,
-                    primary_key,
-                    fulltext,
-                    default_value,
-                    auto_generate,
-                    many_to_many,
-                    join_table,
-                    parent_field,
-                    join_parent_field,
-                    join_child_field,
-                });
+        if let Some(inner) = vec_inner(&field.ty)
+            && !is_u8(inner)
+        {
+            if relation_kind.is_none() {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    "relation fields require an explicit #[dinoco(...)] relation attribute",
+                ));
             }
+
+            return Ok(Self {
+                ident,
+                name,
+                ty: field.ty.clone(),
+                kind: FieldKind::HasMany,
+                target_ty: Some(inner.clone()),
+                foreign_key,
+                references,
+                relation_name,
+                is_option: false,
+                primary_key,
+                fulltext,
+                default_value,
+                auto_generate,
+                many_to_many,
+                join_table,
+                parent_field,
+                join_parent_field,
+                join_child_field,
+            });
         }
 
-        if let Some(inner) = option_inner(&field.ty) {
-            if is_custom_type(inner) {
-                if relation_kind.is_none() {
-                    return Err(syn::Error::new_spanned(
-                        field,
-                        "relation fields require an explicit #[dinoco(...)] relation attribute",
-                    ));
-                }
-
-                return Ok(Self {
-                    ident,
-                    name,
-                    ty: field.ty.clone(),
-                    kind: FieldKind::BelongsTo,
-                    target_ty: Some(inner.clone()),
-                    foreign_key,
-                    references,
-                    relation_name,
-                    is_option: true,
-                    primary_key,
-                    fulltext,
-                    default_value,
-                    auto_generate,
-                    many_to_many,
-                    join_table,
-                    parent_field,
-                    join_parent_field,
-                    join_child_field,
-                });
+        if let Some(inner) = option_inner(&field.ty)
+            && is_custom_type(inner)
+        {
+            if relation_kind.is_none() {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    "relation fields require an explicit #[dinoco(...)] relation attribute",
+                ));
             }
+
+            return Ok(Self {
+                ident,
+                name,
+                ty: field.ty.clone(),
+                kind: FieldKind::BelongsTo,
+                target_ty: Some(inner.clone()),
+                foreign_key,
+                references,
+                relation_name,
+                is_option: true,
+                primary_key,
+                fulltext,
+                default_value,
+                auto_generate,
+                many_to_many,
+                join_table,
+                parent_field,
+                join_parent_field,
+                join_child_field,
+            });
         }
 
         Ok(Self {
             ident,
-            name: if name == "id" && references.is_none() && foreign_key.is_none() { name } else { name },
+            name,
             ty: field.ty.clone(),
             kind: FieldKind::Scalar,
             target_ty: None,
@@ -1724,30 +1724,30 @@ impl ParsedExtendField {
         let ident = field.ident.clone().ok_or_else(|| syn::Error::new_spanned(field, "field must have a name"))?;
         let name = ident.to_string();
 
-        if let Some(inner) = vec_inner(&field.ty) {
-            if !is_u8(inner) {
-                return Ok(Self {
-                    ident,
-                    name,
-                    ty: field.ty.clone(),
-                    kind: FieldKind::HasMany,
-                    target_ty: Some(inner.clone()),
-                    is_option: false,
-                });
-            }
+        if let Some(inner) = vec_inner(&field.ty)
+            && !is_u8(inner)
+        {
+            return Ok(Self {
+                ident,
+                name,
+                ty: field.ty.clone(),
+                kind: FieldKind::HasMany,
+                target_ty: Some(inner.clone()),
+                is_option: false,
+            });
         }
 
-        if let Some(inner) = option_inner(&field.ty) {
-            if is_custom_type(inner) {
-                return Ok(Self {
-                    ident,
-                    name,
-                    ty: field.ty.clone(),
-                    kind: FieldKind::BelongsTo,
-                    target_ty: Some(inner.clone()),
-                    is_option: true,
-                });
-            }
+        if let Some(inner) = option_inner(&field.ty)
+            && is_custom_type(inner)
+        {
+            return Ok(Self {
+                ident,
+                name,
+                ty: field.ty.clone(),
+                kind: FieldKind::BelongsTo,
+                target_ty: Some(inner.clone()),
+                is_option: true,
+            });
         }
 
         Ok(Self {

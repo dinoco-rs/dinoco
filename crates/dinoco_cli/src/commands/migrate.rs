@@ -435,7 +435,7 @@ fn snapshot_tracks_indexes(snapshot: &serde_json::Value) -> bool {
     snapshot
         .get("tables")
         .and_then(serde_json::Value::as_array)
-        .map_or(true, |tables| tables.is_empty() || tables.iter().all(|table| table.get("indexes").is_some()))
+        .is_none_or(|tables| tables.is_empty() || tables.iter().all(|table| table.get("indexes").is_some()))
 }
 
 fn validate_history_shape(
@@ -825,10 +825,7 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
         );
     }
 
-    loop {
-        let Some(snapshot) = &history else {
-            break;
-        };
+    while let Some(snapshot) = &history {
         let current = db.inspect_schema().await?;
         let drift = plan_database_migration(&snapshot.expected, &current);
         if drift.steps.is_empty() {

@@ -333,7 +333,7 @@ fn relation_completions(
             "fields" => block
                 .into_iter()
                 .flat_map(|model| &model.fields)
-                .filter(|field| !index.model(&field.ty.name).is_some())
+                .filter(|field| index.model(&field.ty.name).is_none())
                 .map(|field| {
                     value(&field.name.name, CompletionItemKind::FIELD, &field.display_type(), &field.name.name)
                 })
@@ -343,7 +343,7 @@ fn relation_completions(
                 .and_then(|(_, field)| index.model(&field.ty.name))
                 .into_iter()
                 .flat_map(|model| &model.fields)
-                .filter(|field| !index.model(&field.ty.name).is_some())
+                .filter(|field| index.model(&field.ty.name).is_none())
                 .map(|field| {
                     value(&field.name.name, CompletionItemKind::FIELD, &field.display_type(), &field.name.name)
                 })

@@ -36,7 +36,9 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     assert!(models.contains("#[dinoco(value = \"admin\")]\n    #[serde(rename = \"admin\")]\n    Admin,"));
     assert!(models.contains("#[dinoco(value = \"member\")]\n    #[serde(rename = \"member\")]\n    Member,"));
     assert!(models.contains("Admin,"));
-    assert!(models.contains("#[derive(Debug, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]"));
+    assert!(
+        models.contains("#[derive(Debug, Clone, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]")
+    );
     assert!(models.contains("#[serde(crate = \"::dinoco::serde\")]\n#[dinoco(table_name = \"user\")]"));
     assert!(models.contains("pub struct User"));
     assert!(models.contains("#[dinoco(primary_key, auto_generate = uuid)]"));
@@ -167,7 +169,7 @@ fn codegen_respects_uuid_snowflake_enum_defaults_and_implicit_relations() {
     assert!(models.contains("pub id: ::dinoco::Uuid"));
     assert!(models.contains("pub sequence: ::dinoco::Snowflake"));
     assert!(models.contains(
-        "#[derive(Debug, Clone, PartialEq, Eq, Default, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize, ::dinoco::DinocoEnum)]"
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize, ::dinoco::DinocoEnum)]"
     ));
     assert!(models.contains("#[serde(crate = \"::dinoco::serde\")]"));
     assert!(models.contains("#[dinoco(value = \"USER\")]"));
@@ -357,6 +359,108 @@ fn codegen_preserves_multiple_named_relations_to_the_same_model() {
         "#[dinoco(many_to_one, relation_name = \"changes\", foreign_key = \"changes_business_id\", references = \"id\")]"
     ));
     assert!(analyse.contains("pub _type: String"));
+}
+
+#[test]
+fn codegen_generates_copy_only_for_models_whose_fields_are_copy() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        enum BeaconMode {
+            steady
+            pulse
+        }
+
+        model BeaconReading {
+            id          Integer    @id
+            mode        BeaconMode
+            acknowledged Boolean
+            sampled_at  DateTime
+        }
+
+        model BeaconLabel {
+            id    Integer @id
+            label String
+        }
+
+        model BeaconUuid {
+            id String @id @default(uuid())
+        }
+        "#,
+    )
+    .expect("copy derive schema");
+
+    let enums_and_modules = dinoco_codegen::render_models_mod(&schema);
+    let reading = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "BeaconReading").expect("reading model"),
+        &schema,
+    );
+    let label = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "BeaconLabel").expect("label model"),
+        &schema,
+    );
+    let uuid = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "BeaconUuid").expect("uuid model"),
+        &schema,
+    );
+
+    assert!(enums_and_modules.contains(
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize, ::dinoco::DinocoEnum)]"
+    ));
+    assert!(
+        reading.contains(
+            "#[derive(Debug, Clone, Copy, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]"
+        )
+    );
+    assert!(
+        label.contains("#[derive(Debug, Clone, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]")
+    );
+    assert!(!label.contains("Debug, Clone, Copy, Entity"));
+    assert!(uuid.contains("#[derive(Debug, Clone, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]"));
+    assert!(!uuid.contains("Debug, Clone, Copy, Entity"));
+}
+
+#[test]
+fn codegen_keeps_named_inverse_relations_bound_to_their_distinct_foreign_keys() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model GalleryMember {
+            id             Integer       @id
+            collected     ArtworkLoan[] @relation(name: "collector")
+            authenticated ArtworkLoan[] @relation(name: "curator")
+        }
+
+        model ArtworkLoan {
+            id           Integer        @id
+            collector_id Integer?
+            collector    GalleryMember? @relation(name: "collector", fields: [collector_id], references: [id])
+            curator_id   Integer?
+            curator      GalleryMember? @relation(name: "curator", fields: [curator_id], references: [id])
+        }
+        "#,
+    )
+    .expect("named inverse relation schema");
+
+    let member = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "GalleryMember").expect("member model"),
+        &schema,
+    );
+    let loan = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "ArtworkLoan").expect("loan model"),
+        &schema,
+    );
+
+    assert!(member.contains(
+        "#[dinoco(one_to_many, relation_name = \"collector\", foreign_key = \"collector_id\", references = \"id\")]"
+    ));
+    assert!(member.contains(
+        "#[dinoco(one_to_many, relation_name = \"curator\", foreign_key = \"curator_id\", references = \"id\")]"
+    ));
+    assert!(loan.contains(
+        "#[dinoco(many_to_one, relation_name = \"collector\", foreign_key = \"collector_id\", references = \"id\")]"
+    ));
+    assert!(loan.contains(
+        "#[dinoco(many_to_one, relation_name = \"curator\", foreign_key = \"curator_id\", references = \"id\")]"
+    ));
 }
 
 #[test]
