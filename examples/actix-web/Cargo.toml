@@ -1,11 +1,11 @@
 [package]
 name = "dinoco-example-actix-web"
-version = "1.2.2"
+version = "1.2.3"
 edition = "2024"
 publish = false
 
 [dependencies]
 actix-web = "4"
 anyhow = "1"
-dinoco = { path = "../../crates/dinoco", version = "1.2.2" }
+dinoco = { path = "../../crates/dinoco", version = "1.2.3" }
 serde = { version = "1", features = ["derive"] }

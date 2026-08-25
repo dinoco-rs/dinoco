@@ -1,13 +1,13 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, TransactionCommand,
-    UpdateQuery, UpdateSet,
+    DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, TransactionCommand, UpdateQuery, UpdateSet,
 };
 
 use crate::{DinocoRelationValue, has_many_to_many_update_sets, load_update_matches};
 use crate::{
-    IntoTransactionOperation, execute_relation_update_sets, split_update_sets, transaction_many_to_many_writes,
+    IntoTransactionOperation, MutationExecutor, UpdateError, duplicate_update_field, execute_relation_update_sets,
+    split_update_sets, transaction_many_to_many_writes,
 };
 
 pub struct Update<M> {
@@ -58,24 +58,40 @@ where
         UpdateReturning { sets: self.sets, conditions: self.conditions, marker: PhantomData }
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<()>
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<()>
     where
         M: DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
+        C: MutationExecutor,
     {
         if self.sets.is_empty() {
-            anyhow::bail!("update::<{}>() requires at least one .update(...) call.", M::TABLE_NAME);
+            return Err(UpdateError::InvalidOperation(format!(
+                "update::<{}>() requires at least one .update(...) call.",
+                M::TABLE_NAME
+            ))
+            .into());
+        }
+        if let Some(field) = duplicate_update_field(&self.sets) {
+            return Err(UpdateError::InvalidOperation(format!(
+                "field `{field}` is updated more than once in one statement"
+            ))
+            .into());
         }
 
         let has_many_to_many = has_many_to_many_update_sets(&self.sets);
         let (sets, connects, disconnects) = split_update_sets(self.sets);
-        let parents =
-            if has_many_to_many { load_update_matches::<M, M>(&self.conditions, client).await? } else { Vec::new() };
+        let parents = if has_many_to_many {
+            load_update_matches::<M, M, C>(&self.conditions, &client).await.map_err(UpdateError::from_database)?
+        } else {
+            Vec::new()
+        };
 
-        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, &parents, client).await?;
+        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, &parents, &client)
+            .await
+            .map_err(UpdateError::from_database)?;
 
         if !sets.is_empty() {
             let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: None };
-            client.backend.update(query).await?;
+            client.update(query).await.map_err(UpdateError::from_database)?;
         }
 
         Ok(())
@@ -87,25 +103,45 @@ where
     M: DinocoEntity + DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
     S: DinocoProjection<M> + DinocoRowModel,
 {
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<S>> {
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<S>>
+    where
+        C: MutationExecutor,
+    {
         if self.sets.is_empty() {
-            anyhow::bail!("update::<{}>() requires at least one .update(...) call.", M::TABLE_NAME);
+            return Err(UpdateError::InvalidOperation(format!(
+                "update::<{}>() requires at least one .update(...) call.",
+                M::TABLE_NAME
+            ))
+            .into());
+        }
+        if let Some(field) = duplicate_update_field(&self.sets) {
+            return Err(UpdateError::InvalidOperation(format!(
+                "field `{field}` is updated more than once in one statement"
+            ))
+            .into());
         }
 
         let has_many_to_many = has_many_to_many_update_sets(&self.sets);
         let (sets, connects, disconnects) = split_update_sets(self.sets);
-        let parents =
-            if has_many_to_many { load_update_matches::<M, M>(&self.conditions, client).await? } else { Vec::new() };
+        let parents = if has_many_to_many {
+            load_update_matches::<M, M, C>(&self.conditions, &client).await.map_err(UpdateError::from_database)?
+        } else {
+            Vec::new()
+        };
 
-        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, &parents, client).await?;
+        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, &parents, &client)
+            .await
+            .map_err(UpdateError::from_database)?;
 
         if sets.is_empty() {
-            return load_update_matches::<M, S>(&self.conditions, client).await;
+            return load_update_matches::<M, S, C>(&self.conditions, &client)
+                .await
+                .map_err(|error| UpdateError::from_database(error).into());
         }
 
         let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: Some(S::FIELDS) };
 
-        client.backend.update_returning::<S>(query).await
+        client.update_returning::<S>(query).await.map_err(|error| UpdateError::from_database(error).into())
     }
 }
 

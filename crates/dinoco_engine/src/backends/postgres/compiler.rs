@@ -535,11 +535,11 @@ fn compile_insert_query(query: InsertQuery) -> (String, Vec<DinocoValue>) {
 
 fn compile_update_query(query: UpdateQuery) -> (String, Vec<DinocoValue>) {
     let mut placeholders = Placeholder::default();
-    let sets = query.sets.iter().filter(|set| set.operation == crate::UpdateOperation::Set).collect::<Vec<_>>();
+    let sets = query.sets.iter().filter(|set| set.operation.is_scalar()).collect::<Vec<_>>();
     let mut params = sets.iter().map(|set| set.value.clone()).collect::<Vec<_>>();
     let set_sql = sets
         .iter()
-        .map(|set| format!("{} = {}", sql_identifier(set.field), placeholders.next()))
+        .filter_map(|set| set.operation.assignment_sql(&sql_identifier(set.field), &placeholders.next()))
         .collect::<Vec<_>>()
         .join(", ");
     let mut sql = format!("UPDATE {} SET {set_sql}", sql_identifier(query.table));

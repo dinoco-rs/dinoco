@@ -1,5 +1,7 @@
 use std::any::{Any, type_name};
 
+use tokio::sync::{mpsc, oneshot};
+
 use crate::{
     CountQuery, DeleteQuery, DinocoMysql, DinocoPostgres, DinocoRowModel, DinocoSqlCompiler, DinocoSqlite, DinocoValue,
     FindQuery, InsertQuery, ManyToManyWriteQuery, MysqlRow, PostgresRow, SqliteRow, UpdateQuery,
@@ -26,6 +28,72 @@ impl std::fmt::Debug for TransactionResults {
 pub(crate) struct TransactionValue {
     value: TransactionAny,
     type_name: &'static str,
+}
+
+impl TransactionValue {
+    fn into_typed<T>(self) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+    {
+        let actual_type = self.type_name;
+        self.value
+            .downcast::<T>()
+            .map(|value| *value)
+            .map_err(|_| anyhow::anyhow!("Transaction result has type `{actual_type}`, not `{}`.", type_name::<T>(),))
+    }
+}
+
+pub(crate) enum LiveTransactionMessage {
+    Execute { command: TransactionCommand, reply: oneshot::Sender<anyhow::Result<TransactionValue>> },
+    Commit { reply: oneshot::Sender<anyhow::Result<()>> },
+    Rollback { reply: oneshot::Sender<anyhow::Result<()>> },
+}
+
+/// A live transaction pinned to one physical database connection.
+#[derive(Clone)]
+pub struct TransactionExecutor {
+    pub(crate) sender: mpsc::Sender<LiveTransactionMessage>,
+    pub(crate) mysql: bool,
+}
+
+impl TransactionExecutor {
+    pub fn is_mysql(&self) -> bool {
+        self.mysql
+    }
+
+    pub async fn execute<T>(&self, command: TransactionCommand) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+    {
+        let (reply, result) = oneshot::channel();
+        self.sender
+            .send(LiveTransactionMessage::Execute { command, reply })
+            .await
+            .map_err(|_| anyhow::anyhow!("database transaction worker stopped unexpectedly"))?;
+        result
+            .await
+            .map_err(|_| anyhow::anyhow!("database transaction worker dropped its operation result"))??
+            .into_typed()
+    }
+
+    pub async fn commit(self) -> anyhow::Result<()> {
+        self.finish(true).await
+    }
+
+    pub async fn rollback(self) -> anyhow::Result<()> {
+        self.finish(false).await
+    }
+
+    async fn finish(self, commit: bool) -> anyhow::Result<()> {
+        let (reply, result) = oneshot::channel();
+        let message =
+            if commit { LiveTransactionMessage::Commit { reply } } else { LiveTransactionMessage::Rollback { reply } };
+        self.sender
+            .send(message)
+            .await
+            .map_err(|_| anyhow::anyhow!("database transaction worker stopped before finalization"))?;
+        result.await.map_err(|_| anyhow::anyhow!("database transaction worker dropped its finalization result"))?
+    }
 }
 
 impl TransactionResults {
@@ -105,6 +173,7 @@ struct TransactionOutputAdapter {
     decoder: Option<TransactionRowDecoder>,
     finish: TransactionFinish,
     type_name: &'static str,
+    atomic_update_returning: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -131,6 +200,7 @@ pub(crate) struct CompiledTransactionCommand {
     pub statements: Vec<CompiledTransactionStatement>,
     finish: TransactionFinish,
     type_name: &'static str,
+    pub atomic_update_returning: bool,
 }
 
 pub(crate) struct CompiledTransactionStatement {
@@ -247,6 +317,7 @@ impl TransactionCommand {
                 decoder: None,
                 finish,
                 type_name: type_name::<T>(),
+                atomic_update_returning: false,
             },
         }
     }
@@ -260,6 +331,7 @@ impl TransactionCommand {
                 decoder: None,
                 finish: Box::new(|_| Ok(Box::new(()) as TransactionAny)),
                 type_name: type_name::<()>(),
+                atomic_update_returning: false,
             },
         }
     }
@@ -323,7 +395,65 @@ impl TransactionCommand {
             });
         }
 
-        Ok(CompiledTransactionCommand { statements, finish: self.output.finish, type_name: self.output.type_name })
+        Ok(CompiledTransactionCommand {
+            statements,
+            finish: self.output.finish,
+            type_name: self.output.type_name,
+            atomic_update_returning: self.output.atomic_update_returning,
+        })
+    }
+
+    pub(crate) fn compile_mysql(self, compiler: &crate::MySqlAdapter) -> anyhow::Result<CompiledTransactionCommand> {
+        if !self.output.atomic_update_returning {
+            return self.compile(compiler);
+        }
+
+        let mut statements = self.statements;
+        if statements.len() != 1 {
+            anyhow::bail!("MySQL atomic update returning expects exactly one update statement");
+        }
+        let TransactionStatement::Update(mut update) = statements.remove(0) else {
+            anyhow::bail!("MySQL atomic update returning received a non-update statement");
+        };
+        let returning =
+            update.returning.ok_or_else(|| anyhow::anyhow!("MySQL atomic update returning requires a projection"))?;
+        if update.sets.iter().any(|set| set.field == "id") {
+            anyhow::bail!("MySQL atomic find_and_update cannot change the `id` field");
+        }
+        let find_conditions = update.post_update_reload_conditions();
+        let table = update.table;
+        update.returning = None;
+        let (update_sql, update_params) = compiler.compile_update_query(update);
+        let (find_sql, find_params) = compiler.compile_find_query(FindQuery {
+            fields: returning,
+            from: table,
+            conditions: find_conditions,
+            limit: 1,
+            skip: -1,
+            order_by: None,
+        });
+
+        Ok(CompiledTransactionCommand {
+            statements: vec![
+                CompiledTransactionStatement {
+                    sql: update_sql,
+                    params: update_params,
+                    kind: TransactionCommandKind::Execute,
+                    decoder: None,
+                    output: false,
+                },
+                CompiledTransactionStatement {
+                    sql: find_sql,
+                    params: find_params,
+                    kind: TransactionCommandKind::Rows,
+                    decoder: self.output.decoder,
+                    output: true,
+                },
+            ],
+            finish: self.output.finish,
+            type_name: self.output.type_name,
+            atomic_update_returning: true,
+        })
     }
 
     fn unit(statement: TransactionStatement) -> Self {
@@ -343,6 +473,7 @@ impl TransactionCommand {
                 decoder: None,
                 finish,
                 type_name: type_name::<()>(),
+                atomic_update_returning: false,
             },
         }
     }
@@ -381,8 +512,18 @@ impl TransactionCommand {
                 }),
                 finish,
                 type_name: type_name::<T>(),
+                atomic_update_returning: false,
             },
         }
+    }
+
+    pub fn atomic_update_returning<M>(query: UpdateQuery) -> Self
+    where
+        M: DinocoRowModel,
+    {
+        let mut command = Self::update_returning::<M>(query);
+        command.output.atomic_update_returning = true;
+        command
     }
 }
 
@@ -411,4 +552,66 @@ where
     M: DinocoMysql,
 {
     M::from_mysql_row(row).map(|row| Box::new(row) as TransactionAny)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FindWhere, MySqlAdapter, SingleIdRow, UpdateOperation, UpdateSet};
+
+    #[test]
+    fn mysql_atomic_update_compiles_the_update_before_its_compatibility_read() {
+        let command = TransactionCommand::atomic_update_returning::<SingleIdRow>(UpdateQuery {
+            table: "business",
+            sets: vec![UpdateSet {
+                field: "balance",
+                value: DinocoValue::Integer(80),
+                operation: UpdateOperation::Decrement,
+            }],
+            conditions: vec![
+                FindWhere::Eq("id", DinocoValue::String("business-1".to_string())),
+                FindWhere::Gte("balance", DinocoValue::Integer(80)),
+            ],
+            returning: Some(&["id"]),
+        });
+
+        let compiled = command
+            .compile_mysql(&MySqlAdapter::new("mysql://root:root@localhost/mysql"))
+            .expect("compile atomic update");
+
+        assert!(compiled.atomic_update_returning);
+        assert_eq!(compiled.statements.len(), 2);
+        assert_eq!(
+            compiled.statements[0].sql,
+            "UPDATE business SET balance = balance - ? WHERE id = ? AND balance >= ?"
+        );
+        assert!(matches!(compiled.statements[0].kind, TransactionCommandKind::Execute));
+        assert_eq!(compiled.statements[1].sql, "SELECT id FROM business WHERE id = ? LIMIT ?");
+        assert!(matches!(compiled.statements[1].kind, TransactionCommandKind::Rows));
+    }
+
+    #[test]
+    fn mysql_atomic_update_reloads_a_changed_filter_by_its_new_set_value() {
+        let command = TransactionCommand::atomic_update_returning::<SingleIdRow>(UpdateQuery {
+            table: "document",
+            sets: vec![UpdateSet {
+                field: "body",
+                value: DinocoValue::String("updated body".to_string()),
+                operation: UpdateOperation::Set,
+            }],
+            conditions: vec![FindWhere::FullText(&["body"], DinocoValue::String("original".to_string()))],
+            returning: Some(&["id"]),
+        });
+
+        let compiled = command
+            .compile_mysql(&MySqlAdapter::new("mysql://root:root@localhost/mysql"))
+            .expect("compile atomic update");
+
+        assert_eq!(
+            compiled.statements[0].sql,
+            "UPDATE document SET body = ? WHERE MATCH (body) AGAINST (? IN NATURAL LANGUAGE MODE)"
+        );
+        assert_eq!(compiled.statements[1].sql, "SELECT id FROM document WHERE body = ? LIMIT ?");
+        assert_eq!(compiled.statements[1].params[0], DinocoValue::String("updated body".to_string()));
+    }
 }

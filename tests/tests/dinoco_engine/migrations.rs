@@ -137,7 +137,7 @@ async fn adapters_compile_schema_types_with_expected_database_types() -> anyhow:
     assert!(sqlite_sql.contains("json_value BLOB"));
     assert!(sqlite_sql.contains("enum_value TEXT CHECK (enum_value IN ('admin', 'member'))"));
 
-    let postgres = PostgresAdapter::direct("postgres://postgres:postgres@localhost:5432/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost:5432/postgres").await?;
     let postgres_sql = postgres.compile_create_table_migration(migration.clone());
     assert!(postgres_sql.contains("string_value TEXT"));
     assert!(postgres_sql.contains("boolean_value BOOLEAN"));
@@ -187,7 +187,7 @@ async fn adapters_compile_index_migrations_with_their_dialect() -> anyhow::Resul
     );
     assert_eq!(sqlite.compile_drop_index_migration(drop.clone()), "DROP INDEX idx_post_tenant_author;");
 
-    let postgres = PostgresAdapter::direct("postgres://postgres:postgres@localhost:5432/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost:5432/postgres").await?;
     assert_eq!(
         postgres.compile_create_index_migration(create.clone()),
         "CREATE INDEX idx_post_tenant_author ON post (tenant_id, author_id);"

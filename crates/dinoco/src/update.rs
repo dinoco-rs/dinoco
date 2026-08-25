@@ -1,11 +1,12 @@
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DeleteQuery, DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere,
-    InsertQuery, ManyToManyUpdate, ManyToManyWriteQuery, UpdateOperation, UpdateSet,
+    DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
+    ManyToManyUpdate, ManyToManyWriteQuery, UpdateOperation, UpdateSet,
 };
 
-use crate::DinocoRelationValue;
+use crate::{DinocoRelationValue, MutationExecutor};
 
 pub struct UpdateField<T> {
     name: &'static str,
@@ -38,6 +39,90 @@ impl<T> UpdateField<T> {
         UpdateSet { field: self.name, value: value.into_update_value(), operation: UpdateOperation::Disconnect }
     }
 }
+
+macro_rules! impl_numeric_update_field {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl UpdateField<$ty> {
+                pub fn increment<V>(self, value: V) -> UpdateSet
+                where
+                    V: IntoUpdateValue<$ty>,
+                {
+                    UpdateSet {
+                        field: self.name,
+                        value: value.into_update_value(),
+                        operation: UpdateOperation::Increment,
+                    }
+                }
+
+                pub fn decrement<V>(self, value: V) -> UpdateSet
+                where
+                    V: IntoUpdateValue<$ty>,
+                {
+                    UpdateSet {
+                        field: self.name,
+                        value: value.into_update_value(),
+                        operation: UpdateOperation::Decrement,
+                    }
+                }
+
+                pub fn multiply<V>(self, value: V) -> UpdateSet
+                where
+                    V: IntoUpdateValue<$ty>,
+                {
+                    UpdateSet {
+                        field: self.name,
+                        value: value.into_update_value(),
+                        operation: UpdateOperation::Multiply,
+                    }
+                }
+
+                pub fn divide<V>(self, value: V) -> UpdateSet
+                where
+                    V: IntoUpdateValue<$ty>,
+                {
+                    UpdateSet {
+                        field: self.name,
+                        value: value.into_update_value(),
+                        operation: UpdateOperation::Divide,
+                    }
+                }
+            }
+
+            impl UpdateField<Option<$ty>> {
+                pub fn increment<V>(self, value: V) -> UpdateSet
+                where
+                    V: IntoUpdateValue<$ty>,
+                {
+                    UpdateField::<$ty>::new(self.name).increment(value)
+                }
+
+                pub fn decrement<V>(self, value: V) -> UpdateSet
+                where
+                    V: IntoUpdateValue<$ty>,
+                {
+                    UpdateField::<$ty>::new(self.name).decrement(value)
+                }
+
+                pub fn multiply<V>(self, value: V) -> UpdateSet
+                where
+                    V: IntoUpdateValue<$ty>,
+                {
+                    UpdateField::<$ty>::new(self.name).multiply(value)
+                }
+
+                pub fn divide<V>(self, value: V) -> UpdateSet
+                where
+                    V: IntoUpdateValue<$ty>,
+                {
+                    UpdateField::<$ty>::new(self.name).divide(value)
+                }
+            }
+        )*
+    };
+}
+
+impl_numeric_update_field!(i64, f64);
 
 pub struct ManyToManyUpdateField<T> {
     name: &'static str,
@@ -228,13 +313,22 @@ pub(crate) fn split_update_sets(sets: Vec<UpdateSet>) -> (Vec<UpdateSet>, Vec<Up
 
     for set in sets {
         match set.operation {
-            UpdateOperation::Set => updates.push(set),
+            UpdateOperation::Set
+            | UpdateOperation::Increment
+            | UpdateOperation::Decrement
+            | UpdateOperation::Multiply
+            | UpdateOperation::Divide => updates.push(set),
             UpdateOperation::Connect | UpdateOperation::ConnectManyToMany(_) => connects.push(set),
             UpdateOperation::Disconnect | UpdateOperation::DisconnectManyToMany(_) => disconnects.push(set),
         }
     }
 
     (updates, connects, disconnects)
+}
+
+pub(crate) fn duplicate_update_field(sets: &[UpdateSet]) -> Option<&'static str> {
+    let mut fields = HashSet::with_capacity(sets.len());
+    sets.iter().find_map(|set| (!fields.insert(set.field)).then_some(set.field))
 }
 
 pub(crate) fn has_many_to_many_update_sets(sets: &[UpdateSet]) -> bool {
@@ -290,26 +384,28 @@ fn transaction_many_to_many_write(
     })
 }
 
-pub(crate) async fn load_update_matches<M, S>(conditions: &[FindWhere], client: &DinocoClient) -> anyhow::Result<Vec<S>>
+pub(crate) async fn load_update_matches<M, S, C>(conditions: &[FindWhere], client: &C) -> anyhow::Result<Vec<S>>
 where
     M: DinocoEntity,
     S: DinocoProjection<M> + DinocoRowModel,
+    C: MutationExecutor,
 {
     let mut query = FindQuery::new(S::FIELDS, M::TABLE_NAME, -1, -1);
     query.conditions = conditions.to_vec();
-    client.backend.query::<S>(query).await
+    client.query::<S>(query).await
 }
 
-pub(crate) async fn execute_relation_update_sets<M>(
+pub(crate) async fn execute_relation_update_sets<M, C>(
     table: &'static str,
     conditions: &[FindWhere],
     connects: Vec<UpdateSet>,
     disconnects: Vec<UpdateSet>,
     parents: &[M],
-    client: &DinocoClient,
+    client: &C,
 ) -> anyhow::Result<()>
 where
     M: DinocoRelationValue,
+    C: MutationExecutor,
 {
     for connect in connects {
         if let UpdateOperation::ConnectManyToMany(relation) = connect.operation {
@@ -321,7 +417,7 @@ where
                     rows,
                     returning: None,
                 };
-                client.backend.insert(query).await?;
+                client.insert(query).await?;
             }
             continue;
         }
@@ -331,7 +427,7 @@ where
         if !rows.is_empty() {
             let fields = connect_fields(conditions, connect.field)?;
             let query = InsertQuery { table, fields, rows, returning: None };
-            client.backend.insert(query).await?;
+            client.insert(query).await?;
         }
     }
 
@@ -346,14 +442,14 @@ where
                     ],
                     returning: None,
                 };
-                client.backend.delete(query).await?;
+                client.delete(query).await?;
             }
             continue;
         }
 
         for condition_group in disconnect_conditions(conditions, disconnect.field, disconnect.value)? {
             let query = DeleteQuery { table, conditions: condition_group, returning: None };
-            client.backend.delete(query).await?;
+            client.delete(query).await?;
         }
     }
 

@@ -1,4 +1,5 @@
 mod count;
+mod error;
 mod fields;
 mod insert;
 mod methods;
@@ -14,6 +15,7 @@ pub use dinoco_engine::*;
 pub use serde;
 
 pub use count::*;
+pub use error::*;
 pub use fields::*;
 pub use insert::*;
 pub use methods::*;

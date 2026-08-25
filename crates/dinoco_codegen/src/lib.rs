@@ -450,6 +450,13 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
         dinoco_attrs.push("primary_key".to_string());
     }
 
+    // The derive cannot discover whether an arbitrary Rust path names an enum.
+    // Preserve that schema information explicitly so `Option<MyEnum>` is not
+    // mistaken for an optional relation by the generated Entity implementation.
+    if field.is_enum(schema) {
+        dinoco_attrs.push("enum".to_string());
+    }
+
     if field.attributes.iter().any(|attr| attr.name == "fulltext") {
         dinoco_attrs.push("fulltext".to_string());
     } else if let Some(fields) = model
@@ -486,7 +493,12 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
                 dinoco_attrs.push(format!("default = {value}"));
             }
             dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value)) if field.is_enum(schema) => {
-                dinoco_attrs.push(format!("default = {}::{}", field.ty.name, to_pascal_case(value)));
+                let value = format!("{}::{}", field.ty.name, to_pascal_case(value));
+                if field.ty.optional {
+                    dinoco_attrs.push(format!("default = ::core::option::Option::Some({value})"));
+                } else {
+                    dinoco_attrs.push(format!("default = {value}"));
+                }
             }
             dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value)) => {
                 dinoco_attrs.push(format!("default = {value}"));

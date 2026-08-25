@@ -1,4 +1,5 @@
 mod backends;
+mod error;
 mod query;
 pub mod runtime;
 mod traits;
@@ -8,6 +9,7 @@ mod value;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub use backends::*;
+pub use error::*;
 pub use query::*;
 pub use traits::*;
 pub use transaction::*;

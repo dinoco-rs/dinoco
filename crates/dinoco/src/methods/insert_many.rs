@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoClient, DinocoProjection, DinocoRowModel, InsertQuery, TransactionCommand};
+use dinoco_engine::{DinocoProjection, DinocoRowModel, InsertQuery, TransactionCommand};
 
 use crate::{
-    DinocoInsertable, InsertPayload, IntoTransactionOperation, execute_insert_models_returning,
-    execute_insert_payloads, execute_insert_payloads_returning, reload_inserted,
+    CreateError, DinocoInsertable, InsertPayload, IntoTransactionOperation, MutationExecutor,
+    execute_insert_models_returning, execute_insert_payloads, execute_insert_payloads_returning, reload_inserted,
 };
 
 pub struct InsertMany<M, V = M> {
@@ -44,8 +44,11 @@ where
         InsertManyReturning { items: self.items, marker: PhantomData }
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<()> {
-        execute_insert_payloads::<M, V, V>(&self.items, client).await?;
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<()>
+    where
+        C: MutationExecutor,
+    {
+        execute_insert_payloads::<M, V, V, C>(&self.items, &client).await.map_err(CreateError::from_database)?;
 
         Ok(())
     }
@@ -57,15 +60,22 @@ where
     V: InsertPayload<M>,
     S: DinocoProjection<M> + DinocoRowModel,
 {
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<S>> {
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<S>>
+    where
+        C: MutationExecutor,
+    {
         if !V::HAS_NESTED {
             let models = self.items.iter().map(InsertPayload::dinoco_insert_model).collect::<Vec<_>>();
 
-            return execute_insert_models_returning::<M, S>(&models, client).await;
+            return execute_insert_models_returning::<M, S, C>(&models, &client)
+                .await
+                .map_err(|error| CreateError::from_database(error).into());
         }
 
-        let inserted = execute_insert_payloads_returning::<M, V, V>(&self.items, client).await?;
-        reload_inserted::<M, S>(&inserted, client).await
+        let inserted = execute_insert_payloads_returning::<M, V, V, C>(&self.items, &client)
+            .await
+            .map_err(CreateError::from_database)?;
+        reload_inserted::<M, S, C>(&inserted, &client).await.map_err(|error| CreateError::from_database(error).into())
     }
 }
 

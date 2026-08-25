@@ -38,6 +38,64 @@ pub struct UpdateQuery {
     pub returning: Option<&'static [&'static str]>,
 }
 
+impl UpdateQuery {
+    /// Builds a stable post-update lookup for adapters without `RETURNING`.
+    /// A known `id` is always preferred. Otherwise predicates on changed
+    /// fields are replaced by exact values from `set(...)` operations, while
+    /// unaffected predicates remain available to narrow the lookup.
+    pub fn post_update_reload_conditions(&self) -> Vec<FindWhere> {
+        if let Some(id) = find_equality_value(&self.conditions, "id") {
+            return vec![FindWhere::Eq("id", id)];
+        }
+
+        let mut conditions = self
+            .conditions
+            .iter()
+            .filter(|condition| !condition_references_updated_field(condition, &self.sets))
+            .cloned()
+            .collect::<Vec<_>>();
+        conditions.extend(
+            self.sets
+                .iter()
+                .filter(|set| set.operation == UpdateOperation::Set)
+                .map(|set| FindWhere::Eq(set.field, set.value.clone())),
+        );
+
+        if conditions.is_empty() { self.conditions.clone() } else { conditions }
+    }
+}
+
+fn find_equality_value(conditions: &[FindWhere], field: &'static str) -> Option<DinocoValue> {
+    conditions.iter().find_map(|condition| match condition {
+        FindWhere::Eq(candidate, value) if *candidate == field => Some(value.clone()),
+        FindWhere::And(conditions) | FindWhere::Or(conditions) => find_equality_value(conditions, field),
+        FindWhere::Not(condition) => find_equality_value(std::slice::from_ref(condition.as_ref()), field),
+        _ => None,
+    })
+}
+
+fn condition_references_updated_field(condition: &FindWhere, sets: &[UpdateSet]) -> bool {
+    let updated = |field: &'static str| sets.iter().any(|set| set.field == field);
+    match condition {
+        FindWhere::Eq(field, _)
+        | FindWhere::Neq(field, _)
+        | FindWhere::Gt(field, _)
+        | FindWhere::Gte(field, _)
+        | FindWhere::Lt(field, _)
+        | FindWhere::Lte(field, _)
+        | FindWhere::Like(field, _)
+        | FindWhere::Between(field, _, _)
+        | FindWhere::Batch(field, _)
+        | FindWhere::Null(field)
+        | FindWhere::NotNull(field) => updated(field),
+        FindWhere::FullText(fields, _) => fields.iter().any(|field| updated(field)),
+        FindWhere::And(conditions) | FindWhere::Or(conditions) => {
+            conditions.iter().any(|condition| condition_references_updated_field(condition, sets))
+        }
+        FindWhere::Not(condition) => condition_references_updated_field(condition, sets),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UpdateSet {
     pub field: &'static str,
@@ -48,10 +106,34 @@ pub struct UpdateSet {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateOperation {
     Set,
+    Increment,
+    Decrement,
+    Multiply,
+    Divide,
     Connect,
     Disconnect,
     ConnectManyToMany(ManyToManyUpdate),
     DisconnectManyToMany(ManyToManyUpdate),
+}
+
+impl UpdateOperation {
+    pub fn is_scalar(self) -> bool {
+        matches!(self, Self::Set | Self::Increment | Self::Decrement | Self::Multiply | Self::Divide)
+    }
+
+    /// Builds the right-hand side of a scalar assignment. Identifiers and
+    /// placeholders are supplied by the active dialect and values remain bind
+    /// parameters.
+    pub fn assignment_sql(self, field: &str, placeholder: &str) -> Option<String> {
+        match self {
+            Self::Set => Some(format!("{field} = {placeholder}")),
+            Self::Increment => Some(format!("{field} = {field} + {placeholder}")),
+            Self::Decrement => Some(format!("{field} = {field} - {placeholder}")),
+            Self::Multiply => Some(format!("{field} = {field} * {placeholder}")),
+            Self::Divide => Some(format!("{field} = {field} / {placeholder}")),
+            Self::Connect | Self::Disconnect | Self::ConnectManyToMany(_) | Self::DisconnectManyToMany(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -177,7 +177,7 @@ fn codegen_respects_uuid_snowflake_enum_defaults_and_implicit_relations() {
     assert!(models.contains("pub createdAt: ::dinoco::chrono::DateTime<::dinoco::chrono::Utc>"));
     assert!(models.contains("pub birthday: ::dinoco::chrono::NaiveDate"));
     assert!(models.contains("pub metadata: ::dinoco::serde_json::Value"));
-    assert!(models.contains("#[dinoco(default = Role::USER)]"));
+    assert!(models.contains("#[dinoco(enum, default = Role::USER)]"));
     assert!(models.contains("#[dinoco(many_to_many, join_table = \"_post_to_user\""));
     assert!(models.contains("#[dinoco(many_to_many_key, join_table = \"_post_to_user\""));
     assert!(models.contains("pub post_id: Option<::dinoco::Uuid>"));
@@ -487,4 +487,35 @@ fn codegen_qualifies_try_from_error_when_enum_has_error_variant() {
     assert!(models.contains("::dinoco::DinocoEnum"));
     assert!(models.contains("#[dinoco(value = \"error\")]"));
     assert!(!models.contains("impl ::core::convert::TryFrom<::dinoco::mysql_async::Value>"));
+}
+
+#[test]
+fn codegen_marks_optional_enums_as_scalars_and_wraps_optional_defaults() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        enum Status {
+            Active
+            Disabled
+        }
+
+        model Example {
+            id Integer @id
+            status Status?
+            default_status Status? @default(Active)
+            required_status Status
+            required_default Status @default(Disabled)
+        }
+        "#,
+    )
+    .expect("schema");
+    let model = schema.models().find(|model| model.name == "Example").expect("model");
+    let generated = dinoco_codegen::render_model_file(model, &schema);
+
+    assert!(generated.contains("pub status: Option<Status>"));
+    assert!(generated.contains("#[dinoco(enum)]\n    pub status: Option<Status>"));
+    assert!(generated.contains(
+        "#[dinoco(enum, default = ::core::option::Option::Some(Status::Active))]\n    pub default_status: Option<Status>"
+    ));
+    assert!(generated.contains("#[dinoco(enum)]\n    pub required_status: Status"));
+    assert!(generated.contains("#[dinoco(enum, default = Status::Disabled)]"));
 }

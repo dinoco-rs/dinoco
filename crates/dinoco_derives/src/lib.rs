@@ -674,7 +674,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 }
 
                 if !nested_items.is_empty() {
-                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner>(&nested_items, client).await?;
+                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner, C>(&nested_items, client).await?;
                 }
             })
         } else {
@@ -688,7 +688,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                         #bind_relation,
                         parent,
                     );
-                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner>(&[item], client).await?;
+                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner, C>(&[item], client).await?;
                 }
             })
         }
@@ -721,7 +721,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                     rows: ::std::vec![::std::vec![parent_value, ::core::convert::Into::into(value)]],
                     returning: ::core::option::Option::None,
                 };
-                client.backend.insert(query).await?;
+                ::dinoco::MutationExecutor::insert(client, query).await?;
             }
         }
     });
@@ -1043,11 +1043,14 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 }
             }
 
-            fn dinoco_insert_nested<'a>(
+            fn dinoco_insert_nested<'a, C>(
                 &'a self,
                 parent: &'a #name,
-                client: &'a ::dinoco::DinocoClient,
-            ) -> ::dinoco::InsertNestedFuture<'a> {
+                client: &'a C,
+            ) -> ::dinoco::InsertNestedFuture<'a>
+            where
+                C: ::dinoco::MutationExecutor + 'a,
+            {
                 ::std::boxed::Box::pin(async move {
                     #(#insert_nested_steps)*
                     #(#many_to_many_insert_steps)*
@@ -1246,7 +1249,7 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
                 }
 
                 if !nested_items.is_empty() {
-                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner>(&nested_items, client).await?;
+                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner, C>(&nested_items, client).await?;
                 }
             })
         } else {
@@ -1256,7 +1259,7 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
                 if let ::core::option::Option::Some(value) = &self.#ident {
                     let mut item = <#inner as ::dinoco::InsertPayload<#inner>>::dinoco_insert_model(value);
                     <#inner as ::dinoco::DinocoBelongsTo<#model>>::dinoco_bind_parent(&mut item, parent);
-                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner>(&[item], client).await?;
+                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner, C>(&[item], client).await?;
                 }
             })
         }
@@ -1274,11 +1277,14 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
                 model
             }
 
-            fn dinoco_insert_nested<'a>(
+            fn dinoco_insert_nested<'a, C>(
                 &'a self,
                 parent: &'a #model,
-                client: &'a ::dinoco::DinocoClient,
-            ) -> ::dinoco::InsertNestedFuture<'a> {
+                client: &'a C,
+            ) -> ::dinoco::InsertNestedFuture<'a>
+            where
+                C: ::dinoco::MutationExecutor + 'a,
+            {
                 ::std::boxed::Box::pin(async move {
                     #(#insert_nested_steps)*
 
@@ -1426,6 +1432,7 @@ impl ParsedField {
         let ident = field.ident.clone().ok_or_else(|| syn::Error::new_spanned(field, "field must have a name"))?;
         let name = ident.to_string();
         let mut extra = false;
+        let mut enum_field = false;
         let mut relation_kind = None;
         let mut foreign_key = None;
         let mut references = None;
@@ -1448,6 +1455,11 @@ impl ParsedField {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("extra") {
                     extra = true;
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("enum") {
+                    enum_field = true;
                     return Ok(());
                 }
 
@@ -1653,6 +1665,7 @@ impl ParsedField {
 
         if let Some(inner) = option_inner(&field.ty)
             && is_custom_type(inner)
+            && !enum_field
         {
             if relation_kind.is_none() {
                 return Err(syn::Error::new_spanned(

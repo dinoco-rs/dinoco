@@ -34,10 +34,13 @@ impl DinocoSqlCompiler for MySqlAdapter {
     }
 
     fn compile_update_query(&self, query: UpdateQuery) -> (String, Vec<DinocoValue>) {
-        let sets = query.sets.iter().filter(|set| set.operation == crate::UpdateOperation::Set).collect::<Vec<_>>();
+        let sets = query.sets.iter().filter(|set| set.operation.is_scalar()).collect::<Vec<_>>();
         let mut params = sets.iter().map(|set| set.value.clone()).collect::<Vec<_>>();
-        let set_sql =
-            sets.iter().map(|set| format!("{} = ?", sql_identifier(set.field))).collect::<Vec<_>>().join(", ");
+        let set_sql = sets
+            .iter()
+            .filter_map(|set| set.operation.assignment_sql(&sql_identifier(set.field), "?"))
+            .collect::<Vec<_>>()
+            .join(", ");
         let mut sql = format!("UPDATE {} SET {set_sql}", sql_identifier(query.table));
 
         params.extend(append_conditions(&mut sql, query.conditions, None));

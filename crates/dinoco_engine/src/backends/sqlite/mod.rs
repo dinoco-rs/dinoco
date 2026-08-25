@@ -8,9 +8,10 @@ mod compiler;
 
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoSqlite, DinocoValue,
-    RawTransactionOutput, TransactionCommandKind, TransactionResults,
+    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind, TransactionResults,
 };
 
+#[derive(Clone)]
 pub struct SqliteAdapter {
     pub path: String,
     pub pool: Arc<Pool>,
@@ -76,7 +77,7 @@ impl DinocoAdapter for SqliteAdapter {
             let mut result = Vec::new();
 
             while let Some(row) = rows.next()? {
-                let item = M::from_sqlite_row(row).ok_or_else(|| anyhow!("Failed to parse sqlite row"))?;
+                let item = M::from_sqlite_row(row).ok_or_else(|| RowDecodeError::new(std::any::type_name::<M>()))?;
                 result.push(item);
             }
 
@@ -186,6 +187,58 @@ impl SqliteAdapter {
         .map_err(|err| anyhow!(err.to_string()))?
     }
 
+    pub(crate) async fn begin_live_transaction(
+        &self,
+    ) -> anyhow::Result<tokio::sync::mpsc::Sender<LiveTransactionMessage>> {
+        let connection = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
+        let compiler = self.clone();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            let _ = connection
+                .interact(move |connection| -> anyhow::Result<()> {
+                    let transaction = match connection.transaction() {
+                        Ok(transaction) => transaction,
+                        Err(error) => {
+                            let _ = ready_sender.send(Err(anyhow::Error::from(error)));
+                            return Ok(());
+                        }
+                    };
+                    let _ = ready_sender.send(Ok(()));
+
+                    while let Some(message) = receiver.blocking_recv() {
+                        match message {
+                            LiveTransactionMessage::Execute { command, reply } => {
+                                let result = command.compile(&compiler).and_then(|command| {
+                                    execute_transaction_command(&transaction, &command)
+                                        .and_then(|raw| command.finish(raw))
+                                });
+                                let _ = reply.send(result);
+                            }
+                            LiveTransactionMessage::Commit { reply } => {
+                                let result = transaction.commit().map_err(anyhow::Error::from);
+                                let _ = reply.send(result);
+                                return Ok(());
+                            }
+                            LiveTransactionMessage::Rollback { reply } => {
+                                let result = transaction.rollback().map_err(anyhow::Error::from);
+                                let _ = reply.send(result);
+                                return Ok(());
+                            }
+                        }
+                    }
+
+                    // Dropping an unfinished rusqlite transaction rolls it back.
+                    Ok(())
+                })
+                .await;
+        });
+
+        ready_receiver.await.map_err(|_| anyhow!("sqlite transaction worker stopped during BEGIN"))??;
+        Ok(sender)
+    }
+
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
         let query_owned = query.to_string();
@@ -242,7 +295,7 @@ fn execute_transaction_statement(
             let mut values = Vec::new();
 
             while let Some(row) = rows.next()? {
-                values.push((decoder.sqlite)(row).ok_or_else(|| anyhow!("Failed to parse sqlite transaction row"))?);
+                values.push((decoder.sqlite)(row).ok_or_else(|| RowDecodeError::new("transaction result"))?);
             }
 
             Ok(RawTransactionOutput::Rows(values))

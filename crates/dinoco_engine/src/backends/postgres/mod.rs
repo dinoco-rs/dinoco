@@ -10,7 +10,7 @@ mod compiler;
 
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoRowModel, DinocoValue,
-    RawTransactionOutput, TransactionCommandKind, TransactionResults,
+    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind, TransactionResults,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -22,6 +22,7 @@ pub enum PostgresMode {
 pub const DEFAULT_MIN_CONNECTIONS: usize = 2;
 pub const DEFAULT_MAX_CONNECTIONS: usize = 10;
 
+#[derive(Clone)]
 pub struct PostgresAdapter {
     pub url: String,
     pub pool: Arc<Pool>,
@@ -55,7 +56,9 @@ impl DinocoAdapter for PostgresAdapter {
         };
 
         rows.into_iter()
-            .map(|row| M::from_deadpool_posgres_row(&row).ok_or_else(|| anyhow!("Failed to parse postgres row")))
+            .map(|row| {
+                M::from_deadpool_posgres_row(&row).ok_or_else(|| RowDecodeError::new(std::any::type_name::<M>()).into())
+            })
             .collect()
     }
 
@@ -181,6 +184,60 @@ impl PostgresAdapter {
         Ok(TransactionResults::new(values))
     }
 
+    pub(crate) async fn begin_live_transaction(
+        &self,
+    ) -> anyhow::Result<tokio::sync::mpsc::Sender<LiveTransactionMessage>> {
+        let pool = self.pool.clone();
+        let compiler = self.clone();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            let mut connection = match pool.get().await {
+                Ok(connection) => connection,
+                Err(error) => {
+                    let _ = ready_sender.send(Err(anyhow::Error::from(error)));
+                    return;
+                }
+            };
+            let transaction = match connection.transaction().await {
+                Ok(transaction) => transaction,
+                Err(error) => {
+                    let _ = ready_sender.send(Err(anyhow::Error::from(error)));
+                    return;
+                }
+            };
+            let _ = ready_sender.send(Ok(()));
+
+            while let Some(message) = receiver.recv().await {
+                match message {
+                    LiveTransactionMessage::Execute { command, reply } => {
+                        let result = match command.compile(&compiler) {
+                            Ok(command) => execute_transaction_command(&transaction, &command)
+                                .await
+                                .and_then(|raw| command.finish(raw)),
+                            Err(error) => Err(error),
+                        };
+                        let _ = reply.send(result);
+                    }
+                    LiveTransactionMessage::Commit { reply } => {
+                        let result = transaction.commit().await.map_err(anyhow::Error::from);
+                        let _ = reply.send(result);
+                        return;
+                    }
+                    LiveTransactionMessage::Rollback { reply } => {
+                        let result = transaction.rollback().await.map_err(anyhow::Error::from);
+                        let _ = reply.send(result);
+                        return;
+                    }
+                }
+            }
+        });
+
+        ready_receiver.await.map_err(|_| anyhow!("postgres transaction worker stopped during BEGIN"))??;
+        Ok(sender)
+    }
+
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
         let params = postgres_params(params);
@@ -235,7 +292,7 @@ async fn execute_transaction_statement(
             let rows = transaction.query(command.sql.as_str(), &params).await?;
             let values = rows
                 .iter()
-                .map(|row| (decoder.postgres)(row).ok_or_else(|| anyhow!("Failed to parse postgres transaction row")))
+                .map(|row| (decoder.postgres)(row).ok_or_else(|| RowDecodeError::new("transaction result").into()))
                 .collect::<anyhow::Result<Vec<_>>>()?;
             Ok(RawTransactionOutput::Rows(values))
         }

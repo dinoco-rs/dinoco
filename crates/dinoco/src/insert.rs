@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dinoco_engine::{
-    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
+    DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
     ManyToManyWriteQuery,
 };
 
@@ -30,7 +30,10 @@ where
 
     fn dinoco_insert_model(&self) -> M;
 
-    fn dinoco_insert_nested<'a>(&'a self, _parent: &'a M, _client: &'a DinocoClient) -> InsertNestedFuture<'a> {
+    fn dinoco_insert_nested<'a, C>(&'a self, _parent: &'a M, _client: &'a C) -> InsertNestedFuture<'a>
+    where
+        C: crate::MutationExecutor + 'a,
+    {
         Box::pin(async { Ok(()) })
     }
 
@@ -51,7 +54,10 @@ where
         (*self).dinoco_insert_model()
     }
 
-    fn dinoco_insert_nested<'a>(&'a self, parent: &'a M, client: &'a DinocoClient) -> InsertNestedFuture<'a> {
+    fn dinoco_insert_nested<'a, C>(&'a self, parent: &'a M, client: &'a C) -> InsertNestedFuture<'a>
+    where
+        C: crate::MutationExecutor + 'a,
+    {
         (*self).dinoco_insert_nested(parent, client)
     }
 
@@ -82,20 +88,21 @@ pub fn new_snowflake_id() -> Snowflake {
     (timestamp << 12) | sequence
 }
 
-pub async fn execute_insert_payloads<M, V, B>(values: &[B], client: &DinocoClient) -> anyhow::Result<Vec<M>>
+pub async fn execute_insert_payloads<M, V, B, C>(values: &[B], client: &C) -> anyhow::Result<Vec<M>>
 where
     M: DinocoInsertable + DinocoProjection<M> + DinocoRowModel,
     V: InsertPayload<M>,
     B: Borrow<V>,
+    C: crate::MutationExecutor,
 {
     let mut models = values.iter().map(|value| value.borrow().dinoco_insert_model()).collect::<Vec<_>>();
 
     if !V::HAS_NESTED {
-        execute_insert_models::<M>(&models, client).await?;
+        execute_insert_models::<M, C>(&models, client).await?;
         return Ok(models);
     }
 
-    let inserted = execute_insert_models_returning::<M, M>(&models, client).await?;
+    let inserted = execute_insert_models_returning::<M, M, C>(&models, client).await?;
 
     for (payload, model) in values.iter().zip(inserted.iter()) {
         payload.borrow().dinoco_insert_nested(model, client).await?;
@@ -106,17 +113,15 @@ where
     Ok(inserted)
 }
 
-pub(crate) async fn execute_insert_payloads_returning<M, V, B>(
-    values: &[B],
-    client: &DinocoClient,
-) -> anyhow::Result<Vec<M>>
+pub(crate) async fn execute_insert_payloads_returning<M, V, B, C>(values: &[B], client: &C) -> anyhow::Result<Vec<M>>
 where
     M: DinocoInsertable + DinocoProjection<M> + DinocoRowModel,
     V: InsertPayload<M>,
     B: Borrow<V>,
+    C: crate::MutationExecutor,
 {
     let models = values.iter().map(|value| value.borrow().dinoco_insert_model()).collect::<Vec<_>>();
-    let inserted = execute_insert_models_returning::<M, M>(&models, client).await?;
+    let inserted = execute_insert_models_returning::<M, M, C>(&models, client).await?;
 
     if V::HAS_NESTED {
         for (payload, model) in values.iter().zip(inserted.iter()) {
@@ -127,9 +132,10 @@ where
     Ok(inserted)
 }
 
-pub async fn execute_insert_models<M>(models: &[M], client: &DinocoClient) -> anyhow::Result<usize>
+pub async fn execute_insert_models<M, C>(models: &[M], client: &C) -> anyhow::Result<usize>
 where
     M: DinocoInsertable,
+    C: crate::MutationExecutor,
 {
     if models.is_empty() {
         return Ok(0);
@@ -138,13 +144,14 @@ where
     let rows = models.iter().map(DinocoInsertable::dinoco_insert_values).collect::<Vec<_>>();
     let query = InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning: None };
 
-    client.backend.insert(query).await
+    client.insert(query).await
 }
 
-pub async fn execute_insert_models_returning<M, S>(models: &[M], client: &DinocoClient) -> anyhow::Result<Vec<S>>
+pub async fn execute_insert_models_returning<M, S, C>(models: &[M], client: &C) -> anyhow::Result<Vec<S>>
 where
     M: DinocoInsertable,
     S: DinocoProjection<M> + DinocoRowModel,
+    C: crate::MutationExecutor,
 {
     if models.is_empty() {
         return Ok(Vec::new());
@@ -154,13 +161,14 @@ where
     let query =
         InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning: Some(S::FIELDS) };
 
-    client.backend.insert_returning::<S>(query).await
+    client.insert_returning::<S>(query).await
 }
 
-pub async fn reload_inserted<M, S>(models: &[M], client: &DinocoClient) -> anyhow::Result<Vec<S>>
+pub async fn reload_inserted<M, S, C>(models: &[M], client: &C) -> anyhow::Result<Vec<S>>
 where
     M: DinocoInsertable,
     S: DinocoProjection<M> + DinocoRowModel,
+    C: crate::MutationExecutor,
 {
     let mut result = Vec::with_capacity(models.len());
 
@@ -168,7 +176,7 @@ where
         let mut query = FindQuery::new(S::FIELDS, M::TABLE_NAME, 1, -1);
         query.conditions = model.dinoco_insert_identity();
 
-        let mut rows = client.backend.query::<S>(query).await?;
+        let mut rows = client.query::<S>(query).await?;
 
         if let Some(row) = rows.pop() {
             result.push(row);

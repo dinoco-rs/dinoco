@@ -8,9 +8,10 @@ mod compiler;
 
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoRowModel, DinocoValue,
-    RawTransactionOutput, TransactionCommandKind, TransactionResults,
+    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind, TransactionResults,
 };
 
+#[derive(Clone)]
 pub struct MySqlAdapter {
     pub url: String,
     pub pool: Arc<Pool>,
@@ -31,7 +32,7 @@ impl DinocoAdapter for MySqlAdapter {
         let rows: Vec<mysql_async::Row> = conn.exec(query, mysql_params(params)).await?;
 
         rows.into_iter()
-            .map(|row| M::from_mysql_row(&row).ok_or_else(|| anyhow!("Failed to parse mysql row")))
+            .map(|row| M::from_mysql_row(&row).ok_or_else(|| RowDecodeError::new(std::any::type_name::<M>()).into()))
             .collect()
     }
 
@@ -94,6 +95,107 @@ impl MySqlAdapter {
         Ok(TransactionResults::new(values))
     }
 
+    pub(crate) async fn begin_live_transaction(
+        &self,
+    ) -> anyhow::Result<tokio::sync::mpsc::Sender<LiveTransactionMessage>> {
+        let pool = self.pool.clone();
+        let compiler = self.clone();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            let mut connection = match pool.get_conn().await {
+                Ok(connection) => connection,
+                Err(error) => {
+                    let _ = ready_sender.send(Err(anyhow::Error::from(error)));
+                    return;
+                }
+            };
+            let mut transaction = match connection.start_transaction(TxOpts::default()).await {
+                Ok(transaction) => transaction,
+                Err(error) => {
+                    let _ = ready_sender.send(Err(anyhow::Error::from(error)));
+                    return;
+                }
+            };
+            let _ = ready_sender.send(Ok(()));
+
+            while let Some(message) = receiver.recv().await {
+                match message {
+                    LiveTransactionMessage::Execute { command, reply } => {
+                        let result = match command.compile_mysql(&compiler) {
+                            Ok(command) => execute_transaction_command(&mut transaction, &command)
+                                .await
+                                .and_then(|raw| command.finish(raw)),
+                            Err(error) => Err(error),
+                        };
+                        let _ = reply.send(result);
+                    }
+                    LiveTransactionMessage::Commit { reply } => {
+                        let result = transaction.commit().await.map_err(anyhow::Error::from);
+                        let _ = reply.send(result);
+                        return;
+                    }
+                    LiveTransactionMessage::Rollback { reply } => {
+                        let result = transaction.rollback().await.map_err(anyhow::Error::from);
+                        let _ = reply.send(result);
+                        return;
+                    }
+                }
+            }
+        });
+
+        ready_receiver.await.map_err(|_| anyhow!("mysql transaction worker stopped during BEGIN"))??;
+        Ok(sender)
+    }
+
+    pub(crate) async fn execute_atomic_update_returning<M>(
+        &self,
+        update_sql: &str,
+        update_params: &[DinocoValue],
+        find_sql: &str,
+        find_params: &[DinocoValue],
+    ) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        let mut connection = self.pool.get_conn().await.context("Failed to get mysql connection from pool")?;
+        let mut transaction = connection.start_transaction(TxOpts::default()).await?;
+
+        let execution = async {
+            transaction.exec_drop(update_sql, mysql_params(update_params)).await?;
+            if transaction.affected_rows() == 0 {
+                return Ok(Vec::new());
+            }
+
+            let rows = transaction.exec::<mysql_async::Row, _, _>(find_sql, mysql_params(find_params)).await?;
+            let decoded = rows
+                .iter()
+                .map(|row| M::from_mysql_row(row).ok_or_else(|| RowDecodeError::new(std::any::type_name::<M>()).into()))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            if decoded.is_empty() {
+                anyhow::bail!(
+                    "MySQL atomic update affected a row but it no longer matched the post-update reload conditions"
+                );
+            }
+            Ok(decoded)
+        }
+        .await;
+
+        match execution {
+            Ok(rows) => {
+                transaction.commit().await?;
+                Ok(rows)
+            }
+            Err(source) => match transaction.rollback().await {
+                Ok(()) => Err(source),
+                Err(rollback_error) => {
+                    Err(source.context(format!("MySQL atomic update rollback also failed: {rollback_error}")))
+                }
+            },
+        }
+    }
+
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         let mut conn = self.pool.get_conn().await.context("Failed to get mysql connection from pool")?;
         let count = conn.exec_first::<i64, _, _>(query, mysql_params(params)).await?.unwrap_or_default();
@@ -106,6 +208,23 @@ async fn execute_transaction_command(
     transaction: &mut mysql_async::Transaction<'_>,
     command: &CompiledTransactionCommand,
 ) -> anyhow::Result<RawTransactionOutput> {
+    if command.atomic_update_returning {
+        let affected = execute_transaction_statement(transaction, &command.statements[0]).await?;
+        let RawTransactionOutput::Affected(affected) = affected else {
+            anyhow::bail!("MySQL atomic update received an unexpected database result");
+        };
+        if affected == 0 {
+            return Ok(RawTransactionOutput::Rows(Vec::new()));
+        }
+        let rows = execute_transaction_statement(transaction, &command.statements[1]).await?;
+        if matches!(&rows, RawTransactionOutput::Rows(rows) if rows.is_empty()) {
+            anyhow::bail!(
+                "MySQL atomic update affected a row but it no longer matched the post-update reload conditions"
+            );
+        }
+        return Ok(rows);
+    }
+
     let mut output = None;
     for statement in &command.statements {
         let raw = execute_transaction_statement(transaction, statement).await?;
@@ -136,7 +255,7 @@ async fn execute_transaction_statement(
             let rows = transaction.exec::<mysql_async::Row, _, _>(&command.sql, mysql_params(&command.params)).await?;
             let values = rows
                 .iter()
-                .map(|row| (decoder.mysql)(row).ok_or_else(|| anyhow!("Failed to parse mysql transaction row")))
+                .map(|row| (decoder.mysql)(row).ok_or_else(|| RowDecodeError::new("transaction result").into()))
                 .collect::<anyhow::Result<Vec<_>>>()?;
             Ok(RawTransactionOutput::Rows(values))
         }

@@ -20,6 +20,16 @@ pub enum Backend {
 }
 
 impl Backend {
+    pub async fn begin_transaction(&self) -> anyhow::Result<crate::TransactionExecutor> {
+        let sender = match self {
+            Backend::Sqlite(adapter) => adapter.begin_live_transaction().await?,
+            Backend::Postgres(adapter) => adapter.begin_live_transaction().await?,
+            Backend::PgBouncer(adapter) => adapter.inner().begin_live_transaction().await?,
+            Backend::Mysql(adapter) => adapter.begin_live_transaction().await?,
+        };
+        Ok(crate::TransactionExecutor { sender, mysql: matches!(self, Backend::Mysql(_)) })
+    }
+
     pub fn set_logger(&mut self, enabled: bool) {
         match self {
             Backend::Sqlite(adapter) => adapter.set_logger(enabled),
@@ -448,6 +458,45 @@ impl Backend {
                 adapter.query::<M>(&sql, &params).await
             }
         }
+    }
+
+    /// Executes the mutation before any MySQL compatibility read. This keeps
+    /// arithmetic and WHERE predicates in one atomic UPDATE statement.
+    pub async fn atomic_update_returning<M>(&self, query: UpdateQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        if !matches!(self, Backend::Mysql(_)) {
+            return self.update_returning::<M>(query).await;
+        }
+
+        let Backend::Mysql(adapter) = self else {
+            unreachable!();
+        };
+        let returning =
+            query.returning.ok_or_else(|| anyhow::anyhow!("atomic update returning requires a projection"))?;
+        if query.sets.iter().any(|set| set.field == "id") {
+            anyhow::bail!("MySQL atomic find_and_update cannot change the `id` field");
+        }
+        let find_conditions = query.post_update_reload_conditions();
+
+        let table = query.table;
+        let mut update = query;
+        update.returning = None;
+        let (update_sql, update_params) = adapter.compile_update_query(update);
+        self.log_query(&update_sql, &update_params);
+
+        let find = FindQuery {
+            fields: returning,
+            from: table,
+            conditions: find_conditions,
+            limit: 1,
+            skip: -1,
+            order_by: None,
+        };
+        let (find_sql, find_params) = adapter.compile_find_query(find);
+        self.log_query(&find_sql, &find_params);
+        adapter.execute_atomic_update_returning::<M>(&update_sql, &update_params, &find_sql, &find_params).await
     }
 
     pub async fn delete(&self, query: DeleteQuery) -> anyhow::Result<usize> {

@@ -28,6 +28,23 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
     assert_eq!(params.len(), 2);
 
     let (sql, params) = adapter.compile_update_query(UpdateQuery {
+        table: "account",
+        sets: vec![
+            UpdateSet { field: "balance", value: DinocoValue::Integer(100), operation: UpdateOperation::Decrement },
+            UpdateSet { field: "total", value: DinocoValue::Integer(100), operation: UpdateOperation::Increment },
+            UpdateSet { field: "multiplier", value: DinocoValue::Float(2.0), operation: UpdateOperation::Multiply },
+            UpdateSet { field: "ratio", value: DinocoValue::Float(4.0), operation: UpdateOperation::Divide },
+        ],
+        conditions: vec![FindWhere::Gte("balance", DinocoValue::Integer(100))],
+        returning: None,
+    });
+    assert_eq!(
+        sql,
+        "UPDATE account SET balance = balance - ?, total = total + ?, multiplier = multiplier * ?, ratio = ratio / ? WHERE balance >= ?"
+    );
+    assert_eq!(params.len(), 5);
+
+    let (sql, params) = adapter.compile_update_query(UpdateQuery {
         table: "user",
         sets: vec![UpdateSet {
             field: "email",
@@ -54,7 +71,7 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
 #[tokio::test]
 async fn compilers_preserve_nested_boolean_where_groups_and_parameter_order() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::direct("postgres://postgres:postgres@localhost/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
     let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
 
     let condition = || {
@@ -151,7 +168,7 @@ async fn compilers_preserve_nested_boolean_where_groups_and_parameter_order() ->
 #[tokio::test]
 async fn compilers_use_native_fulltext_and_sqlite_like_fallback() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::direct("postgres://postgres:postgres@localhost/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
     let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
     let query = || FindQuery {
         fields: &["id"],

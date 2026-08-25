@@ -1,10 +1,8 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{
-    DeleteQuery, DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, TransactionCommand,
-};
+use dinoco_engine::{DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, TransactionCommand};
 
-use crate::IntoTransactionOperation;
+use crate::{DeleteError, IntoTransactionOperation, MutationExecutor};
 pub struct DeleteNeedsWhere;
 pub struct DeleteReady;
 
@@ -59,10 +57,13 @@ where
         DeleteReturning { conditions: self.conditions, marker: PhantomData }
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<()> {
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<()>
+    where
+        C: MutationExecutor,
+    {
         let query = DeleteQuery { table: M::TABLE_NAME, conditions: self.conditions, returning: None };
 
-        client.backend.delete(query).await?;
+        client.delete(query).await.map_err(DeleteError::from_database)?;
 
         Ok(())
     }
@@ -73,10 +74,13 @@ where
     M: DinocoEntity,
     S: DinocoProjection<M> + DinocoRowModel,
 {
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<S>> {
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<S>>
+    where
+        C: MutationExecutor,
+    {
         let query = DeleteQuery { table: M::TABLE_NAME, conditions: self.conditions, returning: Some(S::FIELDS) };
 
-        client.backend.delete_returning::<S>(query).await
+        client.delete_returning::<S>(query).await.map_err(|error| DeleteError::from_database(error).into())
     }
 }
 
