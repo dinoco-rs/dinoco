@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_engine"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2024"
 license = "Apache-2.0"
 description = "Database adapters, query execution, and migration engine components for Dinoco."
@@ -17,9 +17,17 @@ async-stream = "0.3.6"
 futures = "0.3.32"
 
 deadpool-sqlite = "0.13"
-rusqlite = { version = "0.38", features = ["bundled", "chrono", "hooks", "serde_json"] }
+rusqlite = { version = "0.38", features = [
+	"bundled",
+	"chrono",
+	"hooks",
+	"serde_json",
+] }
 deadpool-postgres = "0.14"
-tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1"] }
+tokio-postgres = { version = "0.7", features = [
+	"with-chrono-0_4",
+	"with-serde_json-1",
+] }
 mysql_async = { version = "0.36", features = ["chrono"] }
 mysql_common = { version = "0.35", features = ["chrono"] }
 anyhow = "1.0.103"

@@ -1,4 +1,4 @@
-use dinoco::{DinocoEnum, Entity, count, find_and_update, find_first, find_many, insert_into, insert_many};
+use dinoco::{DinocoEnum, Entity, count, delete, find_and_update, find_first, find_many, insert_into, insert_many};
 use dinoco_engine::{Backend, DinocoAdapter, DinocoClient, MigrationColumnType, SqliteAdapter};
 use dinoco_tests::{column, create_table, nullable, primary};
 
@@ -96,7 +96,7 @@ struct Patron {
     id: String,
 
     #[dinoco(one_to_many, foreign_key = "curator_id", references = "id")]
-    studios: Vec<Studio>,
+    studio: Vec<Studio>,
 
     #[dinoco(one_to_many, relation_name = "holder", foreign_key = "patron_id", references = "id")]
     borrowed_passes: Vec<VenuePass>,
@@ -354,6 +354,13 @@ async fn named_relation_loads_filtered_nested_includes_from_the_correct_foreign_
     active_pass.room_id = Some(room.id.clone());
     insert_into::<VenuePass>().values(&active_pass).execute(&client).await?;
 
+    let mut second_active_pass = VenuePass::new("pass-active-2".to_string(), PassState::Enabled);
+    second_active_pass.patron_id = Some(holder.id.clone());
+    second_active_pass.issued_by_id = Some(issuer.id.clone());
+    second_active_pass.studio_id = Some(studio.id.clone());
+    second_active_pass.room_id = Some(room.id.clone());
+    insert_into::<VenuePass>().values(&second_active_pass).execute(&client).await?;
+
     let mut waiting_pass = VenuePass::new("pass-waiting".to_string(), PassState::Waiting);
     waiting_pass.patron_id = Some(holder.id.clone());
     waiting_pass.issued_by_id = Some(issuer.id.clone());
@@ -364,7 +371,7 @@ async fn named_relation_loads_filtered_nested_includes_from_the_correct_foreign_
         .where_(|signin| signin.id.eq(&signin_id))
         .where_(|signin| signin.enabled.eq(true))
         .includes(|signin| {
-            signin.patron().includes(|patron| patron.studios()).includes(|patron| {
+            signin.patron().includes(|patron| patron.studio()).includes(|patron| {
                 patron
                     .borrowed_passes()
                     .where_(|pass| pass.state.eq(PassState::Enabled))
@@ -377,9 +384,40 @@ async fn named_relation_loads_filtered_nested_includes_from_the_correct_foreign_
         .expect("signin");
 
     let patron = loaded.patron.expect("patron include");
-    assert_eq!(patron.studios.len(), 1);
+    assert_eq!(patron.studio.len(), 1);
+    assert_eq!(patron.borrowed_passes.len(), 2);
+    assert!(
+        patron
+            .borrowed_passes
+            .iter()
+            .all(|pass| pass.studio.as_ref().map(|studio| studio.id.as_str()) == Some("studio-a"))
+    );
+    assert!(
+        patron.borrowed_passes.iter().all(|pass| pass.room.as_ref().map(|room| room.id.as_str()) == Some("room-a"))
+    );
+
+    delete::<VenuePass>().where_(|pass| pass.id.eq(&active_pass.id)).execute(&client).await?;
+
+    let loaded_after_delete = find_first::<Signin>()
+        .where_(|signin| signin.id.eq(&signin_id))
+        .where_(|signin| signin.enabled.eq(true))
+        .includes(|signin| {
+            signin.patron().includes(|patron| patron.studio()).includes(|patron| {
+                patron
+                    .borrowed_passes()
+                    .where_(|pass| pass.state.eq(PassState::Enabled))
+                    .includes(|pass| pass.studio())
+                    .includes(|pass| pass.room())
+            })
+        })
+        .execute(&client)
+        .await?
+        .expect("signin after delete");
+
+    let patron = loaded_after_delete.patron.expect("patron include after delete");
+    assert_eq!(patron.studio.len(), 1);
     assert_eq!(patron.borrowed_passes.len(), 1);
-    assert_eq!(patron.borrowed_passes[0].id, active_pass.id);
+    assert_eq!(patron.borrowed_passes[0].id, second_active_pass.id);
     assert_eq!(patron.borrowed_passes[0].studio.as_ref().map(|studio| studio.id.as_str()), Some("studio-a"));
     assert_eq!(patron.borrowed_passes[0].room.as_ref().map(|room| room.id.as_str()), Some("room-a"));
 

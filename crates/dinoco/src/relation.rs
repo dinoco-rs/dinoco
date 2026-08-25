@@ -446,10 +446,14 @@ where
                 apply(&mut children);
             }
 
-            let mut grouped = HashMap::<RelationKey, CS>::new();
+            // The join starts from the parent table, so multiple parents that
+            // share one foreign key produce one independently hydrated child
+            // row each. Keep every row instead of overwriting the previous
+            // value for that key.
+            let mut grouped = HashMap::<RelationKey, Vec<CS>>::new();
 
             for (key, child) in relation_keys.into_iter().zip(children) {
-                grouped.insert(key, child);
+                grouped.entry(key).or_default().push(child);
             }
 
             let relation = self.relation;
@@ -457,8 +461,9 @@ where
 
             Ok(Box::new(move |parents: &mut [S]| {
                 for parent in parents {
-                    let value =
-                        parent.dinoco_relation_value(parent_field).and_then(|key| grouped.remove(&relation_key(&key)));
+                    let value = parent
+                        .dinoco_relation_value(parent_field)
+                        .and_then(|key| grouped.get_mut(&relation_key(&key)).and_then(Vec::pop));
 
                     parent.dinoco_apply_one(relation, value);
                 }

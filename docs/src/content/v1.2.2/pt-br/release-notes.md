@@ -1,4 +1,4 @@
-# Dinoco v1.2.1
+# Dinoco v1.2.2
 
 Relações nomeadas agora têm cobertura end-to-end para múltiplas foreign keys apontando ao mesmo model, filtros por enum e `includes` aninhados. O codegen preserva cada `relation_name` junto da foreign key correspondente, evitando que relações distintas sejam misturadas.
 
