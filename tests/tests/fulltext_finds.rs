@@ -1,4 +1,4 @@
-use dinoco::{Entity, Transaction, find_and_update, find_first, find_many, insert_many, transactions};
+use dinoco::{Entity, find_and_update, find_first, find_many, insert_many};
 use dinoco_engine::{Backend, DinocoAdapter, DinocoClient, MigrationColumnType, SqliteAdapter};
 use dinoco_tests::{column, create_table, nullable, primary};
 
@@ -108,13 +108,6 @@ async fn fulltext_is_available_in_every_find_builder() -> anyhow::Result<()> {
         .await?
         .expect("article with filtered author");
     assert_eq!(article.author.expect("full-text belongs-to match").id, "author-1");
-
-    let mut transaction = Transaction::new();
-    transaction.push(find_first::<Article>().where_(|item| item.body.fulltext("atomic")));
-    transaction.push(find_many::<Author>().where_(|item| item.name.fulltext("Dinoco")));
-    let mut results = transactions(transaction).execute(&client).await?;
-    assert_eq!(results.take::<Option<Article>>(0)?.expect("transaction find_first").id, "article-1");
-    assert_eq!(results.take::<Vec<Author>>(1)?.len(), 1);
 
     drop(client);
     let _ = std::fs::remove_file(path);

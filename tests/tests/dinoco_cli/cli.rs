@@ -43,6 +43,55 @@ fn init_creates_english_colored_schema() {
 }
 
 #[test]
+fn models_generate_runs_the_complete_recursive_multi_file_pipeline() {
+    let project = temp_project("multi-file-codegen");
+    fs::create_dir_all(project.join("dinoco/domain")).expect("dinoco directories");
+    fs::write(
+        project.join("dinoco/schema.dinoco"),
+        r#"config {
+    imports = ["domain/business.dinoco"]
+    custom_derives = [
+        { into = "enum" derive = "EnumSchema" import = "use schema_macros::EnumSchema;" },
+        { into = "struct" derive = "StructSchema" import = "use schema_macros::StructSchema;" }
+    ]
+}
+"#,
+    )
+    .expect("root schema");
+    fs::write(
+        project.join("dinoco/domain/business.dinoco"),
+        r#"import { BusinessStatus } from "../enums.dinoco"
+
+model Business {
+    id     String @id
+    status BusinessStatus
+}
+"#,
+    )
+    .expect("business schema");
+    fs::write(project.join("dinoco/enums.dinoco"), "enum BusinessStatus { active inactive }\n").expect("enum schema");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["models", "generate"])
+        .current_dir(&project)
+        .output()
+        .expect("models generation should run");
+
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let generated_mod = fs::read_to_string(project.join("dinoco/mod.rs")).expect("generated dinoco module");
+    let generated_models = fs::read_to_string(project.join("dinoco/models/mod.rs")).expect("generated models module");
+    let generated_business =
+        fs::read_to_string(project.join("dinoco/models/business.rs")).expect("generated business model");
+    assert!(generated_mod.starts_with("#![allow(dead_code)]"));
+    assert!(generated_models.contains("pub enum BusinessStatus"));
+    assert!(generated_models.contains("use schema_macros::EnumSchema;"));
+    assert!(generated_models.contains("::dinoco::DinocoEnum, EnumSchema)]"));
+    assert!(generated_business.contains("use schema_macros::StructSchema;"));
+    assert!(generated_business.contains("::dinoco::serde::Deserialize, StructSchema)]"));
+    assert!(generated_business.contains("pub status: BusinessStatus"));
+}
+
+#[test]
 fn migrate_generate_sqlite_creates_migration_and_models() {
     let project = temp_project("migrate");
     fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");

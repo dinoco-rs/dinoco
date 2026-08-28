@@ -1,0 +1,23 @@
+import { AccountType, BusinessStatus } from "enums.dinoco"
+
+model Account {
+    id            Integer      @id @default(autoincrement())
+    email         String       @unique
+    account_type  AccountType  @default(OWNER)
+    profile       Profile?
+    businesses    Business[]
+}
+
+model Profile {
+    id          Integer   @id @default(autoincrement())
+    account_id  Integer?  @unique
+    account     Account?  @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}
+
+model Business {
+    id          Integer         @id @default(autoincrement())
+    account_id  Integer
+    name        String
+    status      BusinessStatus  @default(ACTIVE)
+    account     Account         @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}

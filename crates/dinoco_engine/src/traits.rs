@@ -4,9 +4,8 @@ use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeadpoolPostgresRow, DeleteQuery, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, FindQuery,
-    InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, ManyToManyWriteQuery, MysqlRow, PostgresRow,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, RenameTableMigration, SqliteRow,
-    UpdateQuery,
+    InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, MysqlRow, PostgresRow, RelationBatchQuery,
+    RelationCountQuery, RelationJoinQuery, RenameColumnMigration, RenameTableMigration, SqliteRow, UpdateQuery,
 };
 
 #[async_trait]
@@ -51,8 +50,6 @@ pub trait DinocoSqlCompiler {
         &self,
         query: ManyToManyRelationCountQuery,
     ) -> (String, Vec<DinocoValue>);
-    fn compile_connect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>);
-    fn compile_disconnect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>);
     fn compile_create_migrations_table(&self) -> String;
     fn compile_insert_migration_record(&self, name: &str) -> String;
     fn compile_create_table_migration(&self, migration: CreateTableMigration) -> String;

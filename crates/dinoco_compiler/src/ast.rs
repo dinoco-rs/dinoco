@@ -1,3 +1,22 @@
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceOrigin {
+    pub file: String,
+    pub line: usize,
+    pub column: usize,
+}
+
+impl SourceOrigin {
+    pub fn new(file: impl Into<String>, line: usize, column: usize) -> Self {
+        Self { file: file.into(), line, column }
+    }
+}
+
+impl Default for SourceOrigin {
+    fn default() -> Self {
+        Self::new("schema.dinoco", 1, 1)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schema {
     pub items: Vec<SchemaItem>,
@@ -23,6 +42,21 @@ impl Schema {
             SchemaItem::Enum(def) => Some(def),
             _ => None,
         })
+    }
+
+    pub fn imports(&self) -> impl Iterator<Item = &Import> {
+        self.items.iter().filter_map(|item| match item {
+            SchemaItem::Import(import) => Some(import),
+            _ => None,
+        })
+    }
+
+    pub fn custom_derives(&self) -> impl Iterator<Item = &CustomDerive> {
+        self.config().into_iter().flat_map(|config| config.custom_derives.iter())
+    }
+
+    pub fn config_imports(&self) -> impl Iterator<Item = &ConfigImport> {
+        self.config().into_iter().flat_map(|config| config.imports.iter())
     }
 
     pub fn workspaces(&self) -> impl Iterator<Item = &WorkspaceConfig> {
@@ -53,27 +87,46 @@ impl Schema {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SchemaItem {
+    Import(Import),
     Config(ConfigBlock),
     Enum(EnumDef),
     Model(Model),
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Import {
+    pub symbols: Vec<String>,
+    pub path: String,
+    pub origin: SourceOrigin,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConfigBlock {
     pub entries: Vec<ConfigEntry>,
     pub workspaces: Vec<WorkspaceConfig>,
+    pub custom_derives: Vec<CustomDerive>,
+    pub imports: Vec<ConfigImport>,
+    pub origin: SourceOrigin,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConfigImport {
+    pub path: String,
+    pub origin: SourceOrigin,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorkspaceConfig {
     pub name: String,
     pub entries: Vec<ConfigEntry>,
+    pub origin: SourceOrigin,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigEntry {
     pub key: String,
     pub value: ConfigValue,
+    pub origin: SourceOrigin,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,15 +134,25 @@ pub enum ConfigValue {
     String(String),
     Env(String),
     Array(Vec<ConfigValue>),
+    Object(Vec<ConfigEntry>),
     Boolean(bool),
     Integer(i64),
     Ident(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct CustomDerive {
+    pub into: String,
+    pub derive: String,
+    pub import: String,
+    pub origin: SourceOrigin,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct EnumDef {
     pub name: String,
     pub values: Vec<String>,
+    pub origin: SourceOrigin,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,6 +160,7 @@ pub struct Model {
     pub name: String,
     pub fields: Vec<ModelField>,
     pub attributes: Vec<Attribute>,
+    pub origin: SourceOrigin,
 }
 
 impl Model {
@@ -114,6 +178,7 @@ pub struct ModelField {
     pub name: String,
     pub ty: FieldType,
     pub attributes: Vec<Attribute>,
+    pub origin: SourceOrigin,
 }
 
 impl ModelField {
@@ -141,6 +206,7 @@ pub struct FieldType {
 pub struct Attribute {
     pub name: String,
     pub arguments: Vec<AttributeArgument>,
+    pub origin: SourceOrigin,
 }
 
 impl Attribute {

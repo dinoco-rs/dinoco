@@ -33,7 +33,12 @@ pub fn format_from_raw(source: &str) -> Result<String, CompileError> {
 }
 
 pub fn format_from_raw_with_config(source: &str, config: &FormatterConfig) -> Result<String, CompileError> {
-    let schema = dinoco_compiler::compile(source)?;
+    let parsed = dinoco_compiler::parse(source)?;
+    let schema = if parsed.imports().next().is_some() || parsed.config_imports().next().is_some() {
+        parsed
+    } else {
+        dinoco_compiler::compile(source)?
+    };
     let layout = LayoutHints::from_source(source, &schema);
 
     Ok(format_schema_with_layout(&schema, config, &layout))
@@ -44,6 +49,11 @@ pub fn format_schema(schema: &Schema, config: &FormatterConfig) -> String {
 
     for item in &schema.items {
         blocks.push(match item {
+            SchemaItem::Import(import) => format!(
+                "import {{ {} }} from \"{}\"",
+                import.symbols.join(", "),
+                import.path.replace('\\', "\\\\").replace('"', "\\\"")
+            ),
             SchemaItem::Config(config_block) => format_config(config_block, config),
             SchemaItem::Enum(enum_def) => format_enum(enum_def, config),
             SchemaItem::Model(model) => format_model(model, config),
@@ -64,6 +74,11 @@ fn format_schema_with_layout(schema: &Schema, config: &FormatterConfig, layout: 
 
     for item in &schema.items {
         blocks.push(match item {
+            SchemaItem::Import(import) => format!(
+                "import {{ {} }} from \"{}\"",
+                import.symbols.join(", "),
+                import.path.replace('\\', "\\\\").replace('"', "\\\"")
+            ),
             SchemaItem::Config(config_block) => format_config(config_block, config),
             SchemaItem::Enum(enum_def) => format_enum(enum_def, config),
             SchemaItem::Model(model) => format_model_with_layout(model, config, layout.model_blank_lines(&model.name)),
@@ -92,6 +107,21 @@ mod tests {
         assert!(formatted.contains("enum Status {\n"));
         assert!(formatted.contains("model User {\n"));
         assert!(formatted.contains("@relation(fields: [user_id], references: [id], onDelete: Cascade)"));
+    }
+
+    #[test]
+    fn formats_imports_and_custom_derive_objects_without_resolving_files() {
+        let raw = r#"import{BusinessStatus,AccountType}from"./shared/enums.dinoco"config{imports=["models.dinoco","enums.dinoco"] custom_derives=[{into="enum" derive="ZodSchema" import="use zod_rs::prelude::*"}]}"#;
+
+        let formatted = format_from_raw(raw).expect("format");
+
+        assert!(formatted.contains("import { BusinessStatus, AccountType } from \"./shared/enums.dinoco\""));
+        assert!(formatted.contains("imports        = ["));
+        assert!(formatted.contains("\"models.dinoco\","));
+        assert!(formatted.contains("custom_derives = ["));
+        assert!(formatted.contains("into = \"enum\""));
+        assert!(formatted.contains("derive = \"ZodSchema\""));
+        assert!(formatted.contains("import = \"use zod_rs::prelude::*\""));
     }
 
     #[test]

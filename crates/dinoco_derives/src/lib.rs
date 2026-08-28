@@ -726,59 +726,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
     });
 
-    let many_to_many_transaction_insert_steps = many_to_many_keys.iter().map(|field| {
-        let ident = &field.ident;
-        let field_name = &field.name;
-        let join_table = field.join_table.as_deref().expect("many-to-many join table");
-        let parent_field = field.parent_field.as_deref().expect("many-to-many parent field");
-        let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
-        let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
-        let parent_is_autoincrement = scalar_fields
-            .iter()
-            .find(|scalar| scalar.name == parent_field)
-            .map(|scalar| scalar.auto_generate == Some(AutoGenerate::Autoincrement))
-            .unwrap_or(false);
-
-        if parent_is_autoincrement {
-            quote! {
-                if self.#ident.is_some() {
-                    ::dinoco::anyhow::bail!(
-                        "many-to-many key '{}' cannot be connected by a transaction insert because parent field '{}' is autoincrement; insert the endpoint first and connect it after its ID is available",
-                        #field_name,
-                        #parent_field,
-                    );
-                }
-            }
-        } else {
-            quote! {
-                if let ::core::option::Option::Some(value) = &self.#ident {
-                    let parent_value = <#name as ::dinoco::DinocoRelationValue>::dinoco_relation_value(
-                        parent,
-                        #parent_field,
-                    )
-                    .ok_or_else(|| {
-                        ::dinoco::anyhow::anyhow!(
-                            "many-to-many key '{}' could not read parent field '{}'",
-                            #field_name,
-                            #parent_field,
-                        )
-                    })?;
-                    writes.push(::dinoco::ManyToManyWriteQuery {
-                        parent_table: <#name as ::dinoco::DinocoEntity>::TABLE_NAME,
-                        join_table: #join_table,
-                        parent_field: #parent_field,
-                        join_parent_field: #join_parent_field,
-                        join_child_field: #join_child_field,
-                        child_value: ::core::convert::Into::into(value),
-                        parent_conditions: ::std::vec![::dinoco::FindWhere::Eq(#parent_field, parent_value)],
-                    });
-                }
-            }
-        }
-    });
-
     let has_nested_insert = !insert_nested_relations.is_empty() || !many_to_many_keys.is_empty();
-    let has_transaction_nested_insert = !insert_nested_relations.is_empty();
 
     let mut belongs_to_groups = Vec::<(&Type, Vec<(&ParsedField, &ParsedField)>)>::new();
     for field in &relations {
@@ -1033,7 +981,6 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
         impl ::dinoco::InsertPayload<#name> for #name {
             const HAS_NESTED: bool = #has_nested_insert;
-            const HAS_TRANSACTION_NESTED: bool = #has_transaction_nested_insert;
 
             fn dinoco_insert_model(&self) -> #name {
                 #name {
@@ -1059,14 +1006,6 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 })
             }
 
-            fn dinoco_transaction_many_to_many_writes(
-                &self,
-                parent: &#name,
-            ) -> ::dinoco::anyhow::Result<::std::vec::Vec<::dinoco::ManyToManyWriteQuery>> {
-                let mut writes = ::std::vec::Vec::new();
-                #(#many_to_many_transaction_insert_steps)*
-                Ok(writes)
-            }
         }
 
         impl ::dinoco::DinocoCountModel<#name> for #count_name {

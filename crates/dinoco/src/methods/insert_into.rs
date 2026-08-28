@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoProjection, DinocoRowModel, InsertQuery, TransactionCommand};
+use dinoco_engine::{DinocoProjection, DinocoRowModel};
 
 use crate::{
-    CreateError, DinocoInsertable, InsertPayload, IntoTransactionOperation, MutationExecutor,
-    execute_insert_models_returning, execute_insert_payloads, execute_insert_payloads_returning, reload_inserted,
+    CreateError, DinocoInsertable, InsertPayload, MutationExecutor, execute_insert_models_returning,
+    execute_insert_payloads, execute_insert_payloads_returning, reload_inserted,
 };
 
 pub struct Insert<M, V = M> {
@@ -90,68 +90,5 @@ where
 
         rows.pop()
             .ok_or_else(|| anyhow::anyhow!("Record from table '{}' could not be loaded after insert.", M::TABLE_NAME))
-    }
-}
-
-impl<M, V> IntoTransactionOperation for Insert<M, V>
-where
-    M: DinocoInsertable + DinocoProjection<M> + DinocoRowModel + 'static,
-    V: InsertPayload<M>,
-{
-    fn into_transaction_operation(self) -> TransactionCommand {
-        let item = self.item.expect("insert_into().values(...) must be called before adding it to a transaction");
-
-        if V::HAS_TRANSACTION_NESTED {
-            return TransactionCommand::invalid(
-                "Nested relation inserts are not supported inside a transaction batch yet.",
-            );
-        }
-
-        let model = item.dinoco_insert_model();
-        let writes = match item.dinoco_transaction_many_to_many_writes(&model) {
-            Ok(writes) => writes,
-            Err(error) => return TransactionCommand::invalid(error.to_string()),
-        };
-        TransactionCommand::insert(InsertQuery {
-            table: M::TABLE_NAME,
-            fields: M::INSERT_FIELDS.to_vec(),
-            rows: vec![model.dinoco_insert_values()],
-            returning: None,
-        })
-        .with_appended_many_to_many_connects(writes)
-    }
-}
-
-impl<M, V, S> IntoTransactionOperation for InsertReturning<M, V, S>
-where
-    M: DinocoInsertable + DinocoProjection<M> + DinocoRowModel + 'static,
-    V: InsertPayload<M>,
-    S: DinocoProjection<M> + DinocoRowModel,
-{
-    fn into_transaction_operation(self) -> TransactionCommand {
-        let item =
-            self.item.expect("insert_into().values(...).returning() must be called before adding it to a transaction");
-
-        if V::HAS_TRANSACTION_NESTED {
-            return TransactionCommand::invalid(
-                "Nested relation inserts are not supported inside a transaction batch yet.",
-            );
-        }
-
-        let model = item.dinoco_insert_model();
-        let writes = match item.dinoco_transaction_many_to_many_writes(&model) {
-            Ok(writes) => writes,
-            Err(error) => return TransactionCommand::invalid(error.to_string()),
-        };
-        TransactionCommand::insert_returning::<S>(
-            InsertQuery {
-                table: M::TABLE_NAME,
-                fields: M::INSERT_FIELDS.to_vec(),
-                rows: vec![model.dinoco_insert_values()],
-                returning: Some(S::FIELDS),
-            },
-            format!("Record from table '{}' could not be returned after insert.", M::TABLE_NAME),
-        )
-        .with_appended_many_to_many_connects(writes)
     }
 }

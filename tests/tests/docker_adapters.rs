@@ -1,6 +1,4 @@
-use dinoco::{
-    Entity, EntityExtend, count, find_first, find_many, insert_into, insert_many, transaction, transactions, update,
-};
+use dinoco::{Entity, EntityExtend, count, find_first, find_many, insert_into, insert_many, transaction, update};
 use dinoco_engine::{
     Backend, CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler,
     MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex, MigrationIndexKind,
@@ -231,7 +229,7 @@ async fn mysql_adapter_runs_all_dinoco_methods() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn sqlite_adapter_commits_and_rolls_back_transaction_batches() -> anyhow::Result<()> {
+async fn sqlite_adapter_commits_and_rolls_back_transaction_callbacks() -> anyhow::Result<()> {
     let path = format!("/private/tmp/dinoco-adapter-transactions-{}-{}.sqlite", std::process::id(), monotonic());
     let adapter = SqliteAdapter::new(path.clone()).await.map_err(anyhow::Error::msg)?;
     reset_transaction_schema(&adapter).await?;
@@ -241,7 +239,7 @@ async fn sqlite_adapter_commits_and_rolls_back_transaction_batches() -> anyhow::
 }
 
 #[tokio::test]
-async fn postgres_adapter_commits_and_rolls_back_transaction_batches() -> anyhow::Result<()> {
+async fn postgres_adapter_commits_and_rolls_back_transaction_callbacks() -> anyhow::Result<()> {
     let _guard = POSTGRES_TEST_LOCK.lock().await;
     let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
     reset_transaction_schema(&adapter).await?;
@@ -249,7 +247,7 @@ async fn postgres_adapter_commits_and_rolls_back_transaction_batches() -> anyhow
 }
 
 #[tokio::test]
-async fn mysql_adapter_commits_and_rolls_back_transaction_batches() -> anyhow::Result<()> {
+async fn mysql_adapter_commits_and_rolls_back_transaction_callbacks() -> anyhow::Result<()> {
     let _guard = MYSQL_TEST_LOCK.lock().await;
     let adapter = MySqlAdapter::new(MYSQL_URL);
     reset_transaction_schema(&adapter).await?;
@@ -1032,31 +1030,32 @@ async fn run_all_methods(client: DinocoClient) -> anyhow::Result<()> {
 
 async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     let account = TransactionAccount::new("committed".to_string(), "commit@dinoco.rs".to_string());
-    let mut committed = transactions(transaction![
-        insert_into::<TransactionAccount>().values(&account),
+    transaction(&client, |tx| async move {
+        insert_into::<TransactionAccount>().values(&account).execute(tx).await?;
+        Ok(())
+    })
+    .await?;
+    assert_eq!(
         find_first::<TransactionAccount>()
             .where_(|item| item.id.eq("ignored-before"))
             .where_complex(|item, m| m.and([item.id.eq("committed"), m.not(item.email.eq("blocked@dinoco.rs"))]))
-            .where_(|item| item.id.eq("ignored-after")),
-        count::<TransactionAccount>(),
-    ])
-    .execute(&client)
-    .await?;
-    committed.take::<()>(0)?;
-    assert_eq!(
-        committed.take::<Option<TransactionAccount>>(1)?.expect("transaction account").email,
+            .where_(|item| item.id.eq("ignored-after"))
+            .execute(&client)
+            .await?
+            .expect("transaction account")
+            .email,
         "commit@dinoco.rs"
     );
-    assert_eq!(committed.take::<TransactionAccountCount>(2)?.total, 1);
+    assert_eq!(count::<TransactionAccount>().execute(&client).await?.total, 1);
 
     let first = TransactionAccount::new("duplicate".to_string(), "first@dinoco.rs".to_string());
     let duplicate = TransactionAccount::new("duplicate".to_string(), "second@dinoco.rs".to_string());
     assert!(
-        transactions(transaction![
-            insert_into::<TransactionAccount>().values(&first),
-            insert_into::<TransactionAccount>().values(&duplicate),
-        ])
-        .execute(&client)
+        transaction(&client, |tx| async move {
+            insert_into::<TransactionAccount>().values(&first).execute(tx).await?;
+            insert_into::<TransactionAccount>().values(&duplicate).execute(tx).await?;
+            Ok(())
+        })
         .await
         .is_err()
     );
@@ -1069,14 +1068,17 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     insert_into::<AdapterTransactionBusiness>().values(&business).execute(&client).await?;
     insert_into::<AdapterTransactionSystem>().values(&system).execute(&client).await?;
 
-    let mut connected = transactions(transaction![
+    let business_id = business.id.clone();
+    let system_id = system.id.clone();
+    transaction(&client, |tx| async move {
         update::<AdapterTransactionBusiness>()
-            .where_(|item| item.id.eq(&business.id))
-            .update(|item| item.system_id.connect(&system.id)),
-    ])
-    .execute(&client)
+            .where_(|item| item.id.eq(&business_id))
+            .update(|item| item.system_id.connect(&system_id))
+            .execute(tx)
+            .await?;
+        Ok(())
+    })
     .await?;
-    connected.take::<()>(0)?;
     let loaded = find_many::<AdapterTransactionBusiness>()
         .where_(|item| item.id.eq(&business.id))
         .includes(|item| item.systems())
@@ -1084,13 +1086,17 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
         .await?;
     assert_eq!(loaded[0].systems.len(), 1);
 
-    let duplicate = transactions(transaction![
+    let business_id = business.id.clone();
+    let system_id = system.id.clone();
+    let duplicate = transaction(&client, |tx| async move {
         update::<AdapterTransactionBusiness>()
-            .where_(|item| item.id.eq(&business.id))
+            .where_(|item| item.id.eq(&business_id))
             .update(|item| item.name.set("After".to_string()))
-            .update(|item| item.system_id.connect(&system.id)),
-    ])
-    .execute(&client)
+            .update(|item| item.system_id.connect(&system_id))
+            .execute(tx)
+            .await?;
+        Ok(())
+    })
     .await;
     assert!(duplicate.is_err());
 
@@ -1102,14 +1108,17 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     assert_eq!(loaded[0].name, "Before");
     assert_eq!(loaded[0].systems.len(), 1);
 
-    let mut disconnected = transactions(transaction![
+    let business_id = business.id.clone();
+    let system_id = system.id.clone();
+    transaction(&client, |tx| async move {
         update::<AdapterTransactionBusiness>()
-            .where_(|item| item.id.eq(&business.id))
-            .update(|item| item.system_id.disconnect(&system.id)),
-    ])
-    .execute(&client)
+            .where_(|item| item.id.eq(&business_id))
+            .update(|item| item.system_id.disconnect(&system_id))
+            .execute(tx)
+            .await?;
+        Ok(())
+    })
     .await?;
-    disconnected.take::<()>(0)?;
     let loaded = find_many::<AdapterTransactionBusiness>()
         .where_(|item| item.id.eq(&business.id))
         .includes(|item| item.systems())
@@ -1126,14 +1135,12 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     for system in &mut extra_systems {
         system.business_id = Some(business.id.clone());
     }
-    let mut inserted = transactions(transaction![
-        insert_into::<AdapterTransactionSystem>().values(&finance),
-        insert_many::<AdapterTransactionSystem>().values(&extra_systems),
-    ])
-    .execute(&client)
+    transaction(&client, |tx| async move {
+        insert_into::<AdapterTransactionSystem>().values(&finance).execute(tx).await?;
+        insert_many::<AdapterTransactionSystem>().values(&extra_systems).execute(tx).await?;
+        Ok(())
+    })
     .await?;
-    inserted.take::<()>(0)?;
-    inserted.take::<()>(1)?;
     let loaded = find_many::<AdapterTransactionBusiness>()
         .where_(|item| item.id.eq(&business.id))
         .includes(|item| item.systems())

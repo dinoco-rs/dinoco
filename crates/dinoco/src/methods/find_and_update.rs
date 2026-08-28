@@ -1,14 +1,10 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{
-    DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, TransactionCommand, UpdateQuery, UpdateSet,
-    WhereComplex,
-};
+use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, UpdateQuery, UpdateSet, WhereComplex};
 
 use crate::{
-    AtomicUpdateError, DinocoRelationValue, IntoTransactionOperation, MutationExecutor, duplicate_update_field,
-    execute_relation_update_sets, has_many_to_many_update_sets, load_update_matches, split_update_sets,
-    transaction_many_to_many_writes,
+    AtomicUpdateError, DinocoRelationValue, MutationExecutor, duplicate_update_field, execute_relation_update_sets,
+    has_many_to_many_update_sets, load_update_matches, split_update_sets,
 };
 
 pub struct FindAndUpdate<M> {
@@ -97,52 +93,5 @@ where
         let mut rows = client.atomic_update_returning::<M>(query).await.map_err(AtomicUpdateError::from_database)?;
 
         rows.pop().ok_or(AtomicUpdateError::RowNotAffected)
-    }
-}
-
-impl<M> IntoTransactionOperation for FindAndUpdate<M>
-where
-    M: DinocoEntity + DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
-{
-    fn into_transaction_operation(self) -> TransactionCommand {
-        if self.sets.is_empty() {
-            return TransactionCommand::invalid(format!(
-                "find_and_update::<{}>() requires at least one .update(...) call.",
-                M::TABLE_NAME
-            ));
-        }
-
-        let (sets, connects, disconnects) = split_update_sets(self.sets);
-        let (connects, disconnects) =
-            match transaction_many_to_many_writes(M::TABLE_NAME, &self.conditions, connects, disconnects) {
-                Ok(writes) => writes,
-                Err(error) => return TransactionCommand::invalid(error.to_string()),
-            };
-        let missing_message = format!("Record from table '{}' could not be found for update.", M::TABLE_NAME);
-        let command = if sets.is_empty() {
-            TransactionCommand::find_one::<M>(
-                FindQuery {
-                    fields: <M as DinocoProjection<M>>::FIELDS,
-                    from: M::TABLE_NAME,
-                    conditions: self.conditions,
-                    limit: -1,
-                    skip: -1,
-                    order_by: None,
-                },
-                missing_message,
-            )
-        } else {
-            TransactionCommand::update_returning_one::<M>(
-                UpdateQuery {
-                    table: M::TABLE_NAME,
-                    sets,
-                    conditions: self.conditions,
-                    returning: Some(<M as DinocoProjection<M>>::FIELDS),
-                },
-                missing_message,
-            )
-        };
-
-        command.with_many_to_many_writes(connects, disconnects)
     }
 }

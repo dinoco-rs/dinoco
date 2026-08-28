@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{CountQuery, DinocoClient, DinocoEntity, FindWhere, TransactionCommand};
+use dinoco_engine::{DinocoClient, DinocoEntity, FindWhere};
 
-use crate::{CountLoader, DinocoCountModel, IntoCountLoader, IntoTransactionOperation, execute_count};
+use crate::{CountLoader, IntoCountLoader, execute_count};
 
 pub struct Count<M>
 where
@@ -50,33 +50,4 @@ where
     {
         execute_count::<M>(self.conditions, self.counts, client).await
     }
-}
-
-impl<M> IntoTransactionOperation for Count<M>
-where
-    M: DinocoEntity,
-    M::Count: DinocoCountModel<M> + Send + 'static,
-{
-    fn into_transaction_operation(self) -> TransactionCommand {
-        if !self.counts.is_empty() {
-            return TransactionCommand::invalid(
-                "count().includes(...) is not supported inside a transaction batch yet.",
-            );
-        }
-
-        TransactionCommand::count(
-            CountQuery { table: M::TABLE_NAME, conditions: self.conditions },
-            transaction_count_result::<M>,
-        )
-    }
-}
-
-fn transaction_count_result<M>(total: i64) -> M::Count
-where
-    M: DinocoEntity,
-    M::Count: DinocoCountModel<M>,
-{
-    let mut count = M::Count::default();
-    count.dinoco_set_total(total);
-    count
 }

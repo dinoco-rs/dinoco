@@ -1,12 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
 
 use crate::ast::{
-    Attribute, AttributeArgument, AttributeValue, ConfigBlock, ConfigEntry, ConfigValue, EnumDef, FieldType, Model,
-    ModelField, Schema, SchemaItem, WorkspaceConfig,
+    Attribute, AttributeArgument, AttributeValue, ConfigBlock, ConfigEntry, ConfigImport, ConfigValue, CustomDerive,
+    EnumDef, FieldType, Import, Model, ModelField, Schema, SchemaItem, SourceOrigin, WorkspaceConfig,
 };
 use crate::error::CompileError;
 
@@ -17,15 +17,21 @@ pub type CompileResult<T> = Result<T, CompileError>;
 struct DinocoPestParser;
 
 pub fn parse_schema(source: &str) -> CompileResult<Schema> {
-    let mut pairs = DinocoPestParser::parse(Rule::schema, source).map_err(CompileError::from)?;
+    parse_schema_with_file(source, "schema.dinoco")
+}
+
+pub(crate) fn parse_schema_with_file(source: &str, file: &str) -> CompileResult<Schema> {
+    let mut pairs =
+        DinocoPestParser::parse(Rule::schema, source).map_err(|error| CompileError::from(error).with_file(file))?;
     let schema = pairs.next().expect("schema pair");
     let mut items = Vec::new();
 
     for pair in schema.into_inner() {
         match pair.as_rule() {
-            Rule::config_block => items.push(SchemaItem::Config(parse_config(pair)?)),
-            Rule::enum_block => items.push(SchemaItem::Enum(parse_enum(pair)?)),
-            Rule::model_block => items.push(SchemaItem::Model(parse_model(pair)?)),
+            Rule::import_statement => items.push(SchemaItem::Import(parse_import(pair, file)?)),
+            Rule::config_block => items.push(SchemaItem::Config(parse_config(pair, file)?)),
+            Rule::enum_block => items.push(SchemaItem::Enum(parse_enum(pair, file)?)),
+            Rule::model_block => items.push(SchemaItem::Model(parse_model(pair, file)?)),
             Rule::EOI => {}
             _ => return Err(pair_error(&pair, "unexpected schema item")),
         }
@@ -34,17 +40,32 @@ pub fn parse_schema(source: &str) -> CompileResult<Schema> {
     Ok(Schema { items })
 }
 
-fn parse_config(pair: Pair<'_, Rule>) -> CompileResult<ConfigBlock> {
+fn parse_import(pair: Pair<'_, Rule>, file: &str) -> CompileResult<Import> {
+    let origin = pair_origin(&pair, file);
+    let mut symbols = Vec::new();
+    let mut path = None;
+    for item in pair.into_inner() {
+        match item.as_rule() {
+            Rule::ident => symbols.push(item.as_str().to_string()),
+            Rule::string_literal => path = Some(unquote(item.as_str())),
+            _ => return Err(pair_error(&item, "unexpected import token").with_file(file)),
+        }
+    }
+    Ok(Import { symbols, path: path.ok_or_else(|| CompileError::at("expected import path", &origin))?, origin })
+}
+
+fn parse_config(pair: Pair<'_, Rule>, file: &str) -> CompileResult<ConfigBlock> {
+    let origin = pair_origin(&pair, file);
     let mut entries = Vec::new();
     let mut workspaces = Vec::new();
 
     for pair in pair.into_inner() {
         match pair.as_rule() {
-            Rule::config_entry => entries.push(parse_config_entry(pair)?),
+            Rule::config_entry => entries.push(parse_config_entry(pair, file)?),
             Rule::workspace_block => {
                 for workspace in pair.into_inner() {
                     if workspace.as_rule() == Rule::workspace_entry {
-                        workspaces.push(parse_workspace(workspace)?);
+                        workspaces.push(parse_workspace(workspace, file)?);
                     }
                 }
             }
@@ -52,25 +73,164 @@ fn parse_config(pair: Pair<'_, Rule>) -> CompileResult<ConfigBlock> {
         }
     }
 
-    Ok(ConfigBlock { entries, workspaces })
+    let custom_derives = parse_custom_derives(&entries)?;
+    let imports = parse_config_imports(&entries)?;
+    Ok(ConfigBlock { entries, workspaces, custom_derives, imports, origin })
 }
 
-fn parse_workspace(pair: Pair<'_, Rule>) -> CompileResult<WorkspaceConfig> {
+fn parse_workspace(pair: Pair<'_, Rule>, file: &str) -> CompileResult<WorkspaceConfig> {
+    let origin = pair_origin(&pair, file);
     let mut inner = pair.into_inner();
     let name = expect_rule(&mut inner, Rule::ident, "expected workspace name")?.as_str().to_string();
     let entries = inner
         .filter(|pair| pair.as_rule() == Rule::config_entry)
-        .map(parse_config_entry)
+        .map(|entry| parse_config_entry(entry, file))
         .collect::<CompileResult<Vec<_>>>()?;
-    Ok(WorkspaceConfig { name, entries })
+    Ok(WorkspaceConfig { name, entries, origin })
 }
 
-fn parse_config_entry(pair: Pair<'_, Rule>) -> CompileResult<ConfigEntry> {
+fn parse_config_entry(pair: Pair<'_, Rule>, file: &str) -> CompileResult<ConfigEntry> {
+    let origin = pair_origin(&pair, file);
     let mut inner = pair.into_inner();
     let key = expect_rule(&mut inner, Rule::ident, "expected config key")?.as_str().to_string();
-    let value = parse_config_value(expect_rule(&mut inner, Rule::config_value, "expected config value")?)?;
+    let value = parse_config_value(expect_rule(&mut inner, Rule::config_value, "expected config value")?, file)?;
 
-    Ok(ConfigEntry { key, value })
+    Ok(ConfigEntry { key, value, origin })
+}
+
+fn parse_custom_derives(entries: &[ConfigEntry]) -> CompileResult<Vec<CustomDerive>> {
+    let Some(entry) = entries.iter().find(|entry| entry.key == "custom_derives") else {
+        return Ok(Vec::new());
+    };
+    let ConfigValue::Array(values) = &entry.value else {
+        return Err(CompileError::at("`config.custom_derives` must be an array of objects", &entry.origin));
+    };
+
+    values
+        .iter()
+        .map(|value| {
+            let ConfigValue::Object(properties) = value else {
+                return Err(CompileError::at("Every `config.custom_derives` item must be an object", &entry.origin));
+            };
+            let mut keys = HashSet::new();
+            for property in properties {
+                if !keys.insert(property.key.as_str()) {
+                    return Err(CompileError::at(
+                        format!("Custom derive key `{}` is declared more than once", property.key),
+                        &property.origin,
+                    ));
+                }
+                if !matches!(property.key.as_str(), "into" | "derive" | "import") {
+                    return Err(CompileError::at(
+                        format!("Unknown custom derive key `{}`", property.key),
+                        &property.origin,
+                    ));
+                }
+            }
+            let missing = ["into", "derive", "import"]
+                .into_iter()
+                .filter(|key| !keys.contains(key))
+                .map(|key| format!("`{key}`"))
+                .collect::<Vec<_>>();
+            if !missing.is_empty() {
+                return Err(CompileError::at(
+                    format!(
+                        "Custom derive requires all three keys: `into`, `derive`, and `import`; missing {}",
+                        missing.join(", ")
+                    ),
+                    properties.first().map_or(&entry.origin, |property| &property.origin),
+                ));
+            }
+            let string_property = |key: &str| -> CompileResult<&str> {
+                let property = properties.iter().find(|property| property.key == key).ok_or_else(|| {
+                    CompileError::at(format!("Custom derive requires `{key} = \"...\"`"), &entry.origin)
+                })?;
+                match &property.value {
+                    ConfigValue::String(value) if !value.trim().is_empty() => Ok(value),
+                    _ => Err(CompileError::at(
+                        format!("Custom derive `{key}` must be a non-empty string"),
+                        &property.origin,
+                    )),
+                }
+            };
+            let into = string_property("into")?;
+            if !matches!(into, "enum" | "struct") {
+                let origin = &properties.iter().find(|property| property.key == "into").unwrap().origin;
+                return Err(CompileError::at("Custom derive `into` must be `enum` or `struct`", origin));
+            }
+            let derive = string_property("derive")?;
+            let derive_origin = &properties.iter().find(|property| property.key == "derive").unwrap().origin;
+            if !valid_derive_path(derive) {
+                return Err(CompileError::at(
+                    "Custom derive `derive` must be a valid Rust derive path such as `ZodSchema` or `crate::ZodSchema`",
+                    derive_origin,
+                ));
+            }
+            let import = string_property("import")?;
+            let import_origin = &properties.iter().find(|property| property.key == "import").unwrap().origin;
+            let import_statement = import.trim().trim_end_matches(';').trim();
+            if import.contains('\n')
+                || import.contains('\r')
+                || !import_statement.strip_prefix("use ").is_some_and(|path| !path.trim().is_empty())
+            {
+                return Err(CompileError::at(
+                    "Custom derive `import` must be a single Rust `use ...` statement",
+                    import_origin,
+                ));
+            }
+            Ok(CustomDerive {
+                into: into.to_string(),
+                derive: derive.to_string(),
+                import: import.to_string(),
+                origin: properties
+                    .first()
+                    .map(|property| property.origin.clone())
+                    .unwrap_or_else(|| entry.origin.clone()),
+            })
+        })
+        .collect()
+}
+
+fn parse_config_imports(entries: &[ConfigEntry]) -> CompileResult<Vec<ConfigImport>> {
+    let Some(entry) = entries.iter().find(|entry| entry.key == "imports") else {
+        return Ok(Vec::new());
+    };
+    let ConfigValue::Array(values) = &entry.value else {
+        return Err(CompileError::at("`config.imports` must be an array of non-empty file paths", &entry.origin));
+    };
+
+    let mut paths = HashSet::new();
+    values
+        .iter()
+        .map(|value| {
+            let ConfigValue::String(path) = value else {
+                return Err(CompileError::at(
+                    "Every `config.imports` item must be a non-empty string path",
+                    &entry.origin,
+                ));
+            };
+            if path.trim().is_empty() {
+                return Err(CompileError::at("`config.imports` paths cannot be empty", &entry.origin));
+            }
+            if !paths.insert(path.as_str()) {
+                return Err(CompileError::at(
+                    format!("Schema path `{path}` is listed more than once in `config.imports`"),
+                    &entry.origin,
+                ));
+            }
+            Ok(ConfigImport { path: path.clone(), origin: entry.origin.clone() })
+        })
+        .collect()
+}
+
+fn valid_derive_path(value: &str) -> bool {
+    let value = value.trim().strip_prefix("::").unwrap_or(value.trim());
+    !value.is_empty()
+        && value.split("::").all(|segment| {
+            let mut characters = segment.chars();
+            characters.next().is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
+                && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+        })
 }
 
 pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
@@ -82,7 +242,7 @@ pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
     validate_relation_pairs(schema)?;
     validate_primary_keys(schema)?;
 
-    let mut uses_snowflake = false;
+    let mut snowflake_origin = None;
 
     for model in schema.models() {
         for field in &model.fields {
@@ -96,36 +256,35 @@ pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
             if let AttributeValue::Call { name, .. } = value {
                 match name.as_str() {
                     "uuid" if field.ty.name != "String" => {
-                        return Err(CompileError::new("uuid() defaults are only supported for String fields", 1, 1));
+                        return Err(CompileError::at(
+                            "uuid() defaults are only supported for String fields",
+                            &default.origin,
+                        ));
                     }
                     "snowflake" if field.ty.name != "Integer" => {
-                        return Err(CompileError::new(
+                        return Err(CompileError::at(
                             "snowflake() defaults are only supported for Integer fields",
-                            1,
-                            1,
+                            &default.origin,
                         ));
                     }
                     "autoincrement" if field.ty.name != "Integer" => {
-                        return Err(CompileError::new(
+                        return Err(CompileError::at(
                             "autoincrement() defaults are only supported for Integer fields",
-                            1,
-                            1,
+                            &default.origin,
                         ));
                     }
                     "now" if field.ty.name != "DateTime" && field.ty.name != "Date" => {
-                        return Err(CompileError::new(
+                        return Err(CompileError::at(
                             "now() defaults are only supported for DateTime or Date fields",
-                            1,
-                            1,
+                            &default.origin,
                         ));
                     }
-                    "snowflake" => uses_snowflake = true,
+                    "snowflake" => snowflake_origin = Some(&default.origin),
                     "uuid" | "autoincrement" | "now" => {}
                     _ => {
-                        return Err(CompileError::new(
+                        return Err(CompileError::at(
                             "unsupported @default() function. Supported: autoincrement(), uuid(), snowflake(), now()",
-                            1,
-                            1,
+                            &default.origin,
                         ));
                     }
                 }
@@ -133,20 +292,19 @@ pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
         }
     }
 
-    if uses_snowflake {
+    if let Some(origin) = snowflake_origin {
         let configs = schema.config().into_iter().flat_map(config_entry_scopes).collect::<Vec<_>>();
         if configs.is_empty() {
-            return Err(CompileError::new("snowflake() requires config.snowflake_node_id = env(\"...\")", 1, 1));
+            return Err(CompileError::at("snowflake() requires config.snowflake_node_id = env(\"...\")", origin));
         }
         for (scope, entries) in configs {
             let has_node_id = entries
                 .iter()
                 .any(|entry| entry.key == "snowflake_node_id" && matches!(entry.value, ConfigValue::Env(_)));
             if !has_node_id {
-                return Err(CompileError::new(
+                return Err(CompileError::at(
                     format!("snowflake() requires {scope}.snowflake_node_id = env(\"...\")"),
-                    1,
-                    1,
+                    origin,
                 ));
             }
         }
@@ -158,120 +316,159 @@ pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
 fn validate_declarations(schema: &Schema) -> CompileResult<()> {
     const SCALAR_TYPES: [&str; 7] = ["String", "Boolean", "Integer", "Float", "DateTime", "Date", "Json"];
 
-    if schema.items.iter().filter(|item| matches!(item, SchemaItem::Config(_))).count() > 1 {
-        return schema_error("Only one `config` block is allowed");
+    let configs = schema
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchemaItem::Config(config) => Some(config),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if let [first, second, ..] = configs.as_slice() {
+        return Err(CompileError::at("Only one `config` block is allowed", &second.origin)
+            .with_related("first config block is here", &first.origin));
     }
 
-    for config in schema.items.iter().filter_map(|item| match item {
-        SchemaItem::Config(config) => Some(config),
-        _ => None,
-    }) {
-        let mut keys = HashSet::new();
+    for config in configs {
+        let mut keys = HashMap::new();
         for entry in &config.entries {
-            if !keys.insert(entry.key.as_str()) {
-                return schema_error(format!("Config key `{}` is declared more than once", entry.key));
+            if let Some(first) = keys.insert(entry.key.as_str(), &entry.origin) {
+                return Err(CompileError::at(
+                    format!("Config key `{}` is declared more than once", entry.key),
+                    &entry.origin,
+                )
+                .with_related("first declaration is here", first));
             }
         }
 
-        if !config.entries.is_empty() && !config.workspaces.is_empty() {
-            return schema_error(
+        if config.entries.iter().any(|entry| !matches!(entry.key.as_str(), "custom_derives" | "imports"))
+            && !config.workspaces.is_empty()
+        {
+            return source_error(
+                &config.origin,
                 "A `config` block cannot mix top-level database settings with `workspace` settings; remove the top-level `database` and `database_url` entries",
             );
         }
 
-        let mut workspace_names = HashSet::new();
+        let mut workspace_names = HashMap::new();
         for workspace in &config.workspaces {
-            if !workspace_names.insert(workspace.name.as_str()) {
-                return schema_error(format!("Workspace `{}` is declared more than once", workspace.name));
+            if let Some(first) = workspace_names.insert(workspace.name.as_str(), &workspace.origin) {
+                return Err(CompileError::at(
+                    format!("Workspace `{}` is declared more than once", workspace.name),
+                    &workspace.origin,
+                )
+                .with_related("first declaration is here", first));
             }
-            let mut keys = HashSet::new();
+            let mut keys = HashMap::new();
             for entry in &workspace.entries {
-                if !keys.insert(entry.key.as_str()) {
-                    return schema_error(format!(
-                        "Config key `{}` is declared more than once in workspace `{}`",
-                        entry.key, workspace.name
-                    ));
+                if let Some(first) = keys.insert(entry.key.as_str(), &entry.origin) {
+                    return Err(CompileError::at(
+                        format!(
+                            "Config key `{}` is declared more than once in workspace `{}`",
+                            entry.key, workspace.name
+                        ),
+                        &entry.origin,
+                    )
+                    .with_related("first declaration is here", first));
                 }
             }
         }
     }
 
-    let mut type_names = HashSet::new();
+    let mut type_names = HashMap::new();
     for item in &schema.items {
-        let name = match item {
-            SchemaItem::Enum(item) => Some(item.name.as_str()),
-            SchemaItem::Model(item) => Some(item.name.as_str()),
-            SchemaItem::Config(_) => None,
+        let declaration = match item {
+            SchemaItem::Enum(item) => Some((item.name.as_str(), &item.origin)),
+            SchemaItem::Model(item) => Some((item.name.as_str(), &item.origin)),
+            SchemaItem::Import(_) | SchemaItem::Config(_) => None,
         };
-        if let Some(name) = name {
+        if let Some((name, origin)) = declaration {
             if SCALAR_TYPES.contains(&name) {
-                return schema_error(format!("Type `{name}` conflicts with a built-in scalar type"));
+                return source_error(origin, format!("Type `{name}` conflicts with a built-in scalar type"));
             }
-            if !type_names.insert(name) {
-                return schema_error(format!("Type `{name}` is declared more than once"));
+            if let Some(first) = type_names.insert(name, origin) {
+                return Err(CompileError::at(format!("Type `{name}` is declared more than once"), origin)
+                    .with_related("first declaration is here", first));
             }
         }
     }
 
     for item in schema.enums() {
         if item.values.is_empty() {
-            return schema_error(format!("Enum `{}` must contain at least one value", item.name));
+            return source_error(&item.origin, format!("Enum `{}` must contain at least one value", item.name));
         }
         let mut values = HashSet::new();
         for value in &item.values {
             if !values.insert(value.as_str()) {
-                return schema_error(format!("Enum value `{}.{value}` is declared more than once", item.name));
+                return source_error(
+                    &item.origin,
+                    format!("Enum value `{}.{value}` is declared more than once", item.name),
+                );
             }
         }
     }
 
     for model in schema.models() {
         if model.fields.is_empty() {
-            return schema_error(format!("Model `{}` must contain at least one field", model.name));
+            return source_error(&model.origin, format!("Model `{}` must contain at least one field", model.name));
         }
-        let mut field_names = HashSet::new();
+        let mut field_names = HashMap::new();
         for field in &model.fields {
             if is_rust_keyword(&field.name) {
-                return schema_error(format!(
-                    "Field `{}.{}` conflicts with a reserved Rust keyword; rename it (for example, use `_{}`)",
-                    model.name, field.name, field.name
-                ));
+                return source_error(
+                    &field.origin,
+                    format!(
+                        "Field `{}.{}` conflicts with a reserved Rust keyword; rename it (for example, use `_{}`)",
+                        model.name, field.name, field.name
+                    ),
+                );
             }
-            if !field_names.insert(field.name.as_str()) {
-                return schema_error(format!("Field `{}.{}` is declared more than once", model.name, field.name));
+            if let Some(first) = field_names.insert(field.name.as_str(), &field.origin) {
+                return Err(CompileError::at(
+                    format!("Field `{}.{}` is declared more than once", model.name, field.name),
+                    &field.origin,
+                )
+                .with_related("first declaration is here", first));
             }
 
             let scalar = SCALAR_TYPES.contains(&field.ty.name.as_str());
             let enum_type = schema.enums().any(|item| item.name == field.ty.name);
             let model_type = schema.models().any(|item| item.name == field.ty.name);
             if !scalar && !enum_type && !model_type {
-                return schema_error(format!(
-                    "Field `{}.{}` uses unknown type `{}`",
-                    model.name, field.name, field.ty.name
+                return Err(CompileError::at(
+                    format!("Field `{}.{}` uses unknown type `{}`", model.name, field.name, field.ty.name),
+                    &field.origin,
                 ));
             }
             if field.ty.list && !model_type {
-                return schema_error(format!(
-                    "Field `{}.{}` is a list of `{}`, but only model relation fields may be lists",
-                    model.name, field.name, field.ty.name
-                ));
+                return source_error(
+                    &field.origin,
+                    format!(
+                        "Field `{}.{}` is a list of `{}`, but only model relation fields may be lists",
+                        model.name, field.name, field.ty.name
+                    ),
+                );
             }
             if field.ty.list && field.ty.optional {
-                return schema_error(format!(
-                    "Relation list `{}.{}` cannot be optional; remove `?` from the field type",
-                    model.name, field.name
-                ));
+                return source_error(
+                    &field.origin,
+                    format!(
+                        "Relation list `{}.{}` cannot be optional; remove `?` from the field type",
+                        model.name, field.name
+                    ),
+                );
             }
 
-            let mut attributes = HashSet::new();
+            let mut attributes = HashMap::new();
             for attribute in &field.attributes {
                 if matches!(attribute.name.as_str(), "id" | "unique" | "default" | "relation" | "index" | "fulltext")
-                    && !attributes.insert(attribute.name.as_str())
+                    && let Some(first) = attributes.insert(attribute.name.as_str(), &attribute.origin)
                 {
-                    return schema_error(format!(
-                        "Field `{}.{}` declares @{} more than once",
-                        model.name, field.name, attribute.name
-                    ));
+                    return Err(CompileError::at(
+                        format!("Field `{}.{}` declares @{} more than once", model.name, field.name, attribute.name),
+                        &attribute.origin,
+                    )
+                    .with_related("first declaration is here", first));
                 }
             }
         }
@@ -281,7 +478,7 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
 }
 
 fn validate_index_attributes(schema: &Schema) -> CompileResult<()> {
-    let mut mapped_names = HashSet::new();
+    let mut mapped_names = HashMap::new();
 
     for model in schema.models() {
         let composite_indexes = model
@@ -293,46 +490,58 @@ fn validate_index_attributes(schema: &Schema) -> CompileResult<()> {
             .flat_map(|attribute| attribute.field_names().unwrap_or_default())
             .collect::<HashSet<_>>();
         if let Some(field) = composite_indexes.intersection(&composite_fulltexts).next() {
-            return schema_error(format!(
-                "Field `{}.{field}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because both \
-                 declare an index",
-                model.name
-            ));
+            return source_error(
+                &model.origin,
+                format!(
+                    "Field `{}.{field}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because both \
+                     declare an index",
+                    model.name
+                ),
+            );
         }
 
         for field in &model.fields {
             if let Some(fulltext) = field.attributes.iter().find(|attribute| attribute.name == "fulltext") {
                 if field.ty.name != "String" || field.ty.list || field.is_relation(schema) {
-                    return schema_error(format!(
-                        "Field `{}.{}` uses @fulltext, but full-text search is only supported on String fields",
-                        model.name, field.name
-                    ));
+                    return source_error(
+                        &fulltext.origin,
+                        format!(
+                            "Field `{}.{}` uses @fulltext, but full-text search is only supported on String fields",
+                            model.name, field.name
+                        ),
+                    );
                 }
                 if !fulltext.arguments.is_empty() {
-                    return schema_error(format!(
-                        "@fulltext on `{}.{}` does not accept arguments",
-                        model.name, field.name
-                    ));
+                    return source_error(
+                        &fulltext.origin,
+                        format!("@fulltext on `{}.{}` does not accept arguments", model.name, field.name),
+                    );
                 }
                 if field.attributes.iter().any(|attribute| attribute.name == "index")
                     || composite_indexes.contains(field.name.as_str())
                 {
-                    return schema_error(format!(
-                        "Field `{}.{}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because \
-                         both declare an index",
-                        model.name, field.name
-                    ));
+                    return source_error(
+                        &field.origin,
+                        format!(
+                            "Field `{}.{}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because \
+                             both declare an index",
+                            model.name, field.name
+                        ),
+                    );
                 }
             }
 
             if composite_fulltexts.contains(field.name.as_str())
                 && field.attributes.iter().any(|attribute| attribute.name == "index")
             {
-                return schema_error(format!(
-                    "Field `{}.{}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because both \
-                     declare an index",
-                    model.name, field.name
-                ));
+                return source_error(
+                    &field.origin,
+                    format!(
+                        "Field `{}.{}` cannot combine @index and @fulltext (including @@indexes/@@fulltexts) because both \
+                         declare an index",
+                        model.name, field.name
+                    ),
+                );
             }
 
             let Some(index) = field.attributes.iter().find(|attribute| attribute.name == "index") else {
@@ -340,45 +549,55 @@ fn validate_index_attributes(schema: &Schema) -> CompileResult<()> {
             };
 
             if field.is_relation(schema) || field.ty.list {
-                return schema_error(format!(
-                    "Field `{}.{}` uses @index, but indexes must be declared on scalar or enum fields",
-                    model.name, field.name
-                ));
+                return source_error(
+                    &index.origin,
+                    format!(
+                        "Field `{}.{}` uses @index, but indexes must be declared on scalar or enum fields",
+                        model.name, field.name
+                    ),
+                );
             }
 
             if index.arguments.len() > 1 {
-                return schema_error(format!(
-                    "@index on `{}.{}` accepts only the optional `map` argument",
-                    model.name, field.name
-                ));
+                return source_error(
+                    &index.origin,
+                    format!("@index on `{}.{}` accepts only the optional `map` argument", model.name, field.name),
+                );
             }
 
             let Some(argument) = index.arguments.first() else {
                 continue;
             };
             let AttributeArgument::Named { key, value } = argument else {
-                return schema_error(format!(
-                    "@index on `{}.{}` accepts only `map: \"index_name\"`",
-                    model.name, field.name
-                ));
+                return source_error(
+                    &index.origin,
+                    format!("@index on `{}.{}` accepts only `map: \"index_name\"`", model.name, field.name),
+                );
             };
             if key != "map" {
-                return schema_error(format!(
-                    "@index on `{}.{}` does not support `{key}`; use `map: \"index_name\"`",
-                    model.name, field.name
-                ));
+                return source_error(
+                    &index.origin,
+                    format!(
+                        "@index on `{}.{}` does not support `{key}`; use `map: \"index_name\"`",
+                        model.name, field.name
+                    ),
+                );
             }
             let Some(name) = attribute_string_or_ident(value) else {
-                return schema_error(format!(
-                    "@index map on `{}.{}` must be a string or identifier",
-                    model.name, field.name
-                ));
+                return source_error(
+                    &index.origin,
+                    format!("@index map on `{}.{}` must be a string or identifier", model.name, field.name),
+                );
             };
             if name.trim().is_empty() {
-                return schema_error(format!("@index map on `{}.{}` cannot be empty", model.name, field.name));
+                return source_error(
+                    &index.origin,
+                    format!("@index map on `{}.{}` cannot be empty", model.name, field.name),
+                );
             }
-            if !mapped_names.insert(name) {
-                return schema_error(format!("Index name `{name}` is declared more than once"));
+            if let Some(first) = mapped_names.insert(name, &index.origin) {
+                return Err(CompileError::at(format!("Index name `{name}` is declared more than once"), &index.origin)
+                    .with_related("first declaration is here", first));
             }
         }
     }
@@ -391,33 +610,42 @@ fn validate_model_attributes(schema: &Schema) -> CompileResult<()> {
         let known = ["ids", "uniques", "indexes", "fulltexts", "table_name"];
         for attribute in &model.attributes {
             if !known.contains(&attribute.name.as_str()) {
-                return schema_error(format!(
-                    "Unknown model attribute `@@{}` on model `{}`",
-                    attribute.name, model.name
-                ));
+                return source_error(
+                    &attribute.origin,
+                    format!("Unknown model attribute `@@{}` on model `{}`", attribute.name, model.name),
+                );
             }
         }
 
         let ids = model.attributes("ids").collect::<Vec<_>>();
         if ids.len() > 1 {
-            return schema_error(format!(
-                "Model `{}` declares @@ids more than once; exactly one primary key is allowed",
-                model.name
-            ));
+            return Err(CompileError::at(
+                format!("Model `{}` declares @@ids more than once; exactly one primary key is allowed", model.name),
+                &ids[1].origin,
+            )
+            .with_related("first declaration is here", &ids[0].origin));
         }
-        if model.attributes("table_name").count() > 1 {
-            return schema_error(format!("Model `{}` declares @@table_name more than once", model.name));
+        let table_names = model.attributes("table_name").collect::<Vec<_>>();
+        if table_names.len() > 1 {
+            return Err(CompileError::at(
+                format!("Model `{}` declares @@table_name more than once", model.name),
+                &table_names[1].origin,
+            )
+            .with_related("first declaration is here", &table_names[0].origin));
         }
 
         if let Some(table_name) = model.attribute("table_name") {
             let [AttributeArgument::Value(AttributeValue::String(name))] = table_name.arguments.as_slice() else {
-                return schema_error(format!(
-                    "@@table_name on model `{}` requires exactly one non-empty string",
-                    model.name
-                ));
+                return source_error(
+                    &table_name.origin,
+                    format!("@@table_name on model `{}` requires exactly one non-empty string", model.name),
+                );
             };
             if name.trim().is_empty() {
-                return schema_error(format!("@@table_name on model `{}` cannot be empty", model.name));
+                return source_error(
+                    &table_name.origin,
+                    format!("@@table_name on model `{}` cannot be empty", model.name),
+                );
             }
         }
 
@@ -435,66 +663,81 @@ fn validate_model_attributes(schema: &Schema) -> CompileResult<()> {
             }
 
             let Some(fields) = attribute.field_names() else {
-                return schema_error(format!(
-                    "@@{} on model `{}` requires exactly one array of field identifiers",
-                    attribute.name, model.name
-                ));
+                return source_error(
+                    &attribute.origin,
+                    format!(
+                        "@@{} on model `{}` requires exactly one array of field identifiers",
+                        attribute.name, model.name
+                    ),
+                );
             };
             if fields.is_empty() {
-                return schema_error(format!("@@{} on model `{}` cannot be empty", attribute.name, model.name));
+                return source_error(
+                    &attribute.origin,
+                    format!("@@{} on model `{}` cannot be empty", attribute.name, model.name),
+                );
             }
 
             let mut seen = HashSet::new();
             for name in &fields {
                 if !seen.insert(*name) {
-                    return schema_error(format!(
-                        "@@{} on model `{}` contains duplicate field `{name}`",
-                        attribute.name, model.name
-                    ));
+                    return source_error(
+                        &attribute.origin,
+                        format!("@@{} on model `{}` contains duplicate field `{name}`", attribute.name, model.name),
+                    );
                 }
                 let Some(field) = model.fields.iter().find(|field| field.name == *name) else {
-                    return schema_error(format!(
-                        "@@{} on model `{}` refers to missing field `{name}`",
-                        attribute.name, model.name
-                    ));
+                    return source_error(
+                        &attribute.origin,
+                        format!("@@{} on model `{}` refers to missing field `{name}`", attribute.name, model.name),
+                    );
                 };
                 if field.ty.list || field.is_relation(schema) {
-                    return schema_error(format!(
-                        "@@{} on model `{}` may only contain scalar or enum fields; `{name}` is a relation/list",
-                        attribute.name, model.name
-                    ));
+                    return source_error(
+                        &attribute.origin,
+                        format!(
+                            "@@{} on model `{}` may only contain scalar or enum fields; `{name}` is a relation/list",
+                            attribute.name, model.name
+                        ),
+                    );
                 }
                 if attribute.name == "ids" && field.ty.optional {
-                    return schema_error(format!(
-                        "Composite primary key field `{}.{name}` must be required",
-                        model.name
-                    ));
+                    return source_error(
+                        &attribute.origin,
+                        format!("Composite primary key field `{}.{name}` must be required", model.name),
+                    );
                 }
                 if attribute.name == "fulltexts" && field.ty.name != "String" {
-                    return schema_error(format!(
-                        "@@fulltexts on model `{}` may only contain String fields; `{name}` is `{}`",
-                        model.name, field.ty.name
-                    ));
+                    return source_error(
+                        &attribute.origin,
+                        format!(
+                            "@@fulltexts on model `{}` may only contain String fields; `{name}` is `{}`",
+                            model.name, field.ty.name
+                        ),
+                    );
                 }
             }
 
             let signature = format!("{}:{}", attribute.name, fields.join(","));
             if !declarations.insert(signature) {
-                return schema_error(format!(
-                    "Model `{}` declares @@{}([{}]) more than once",
-                    model.name,
-                    attribute.name,
-                    fields.join(", ")
-                ));
+                return source_error(
+                    &attribute.origin,
+                    format!(
+                        "Model `{}` declares @@{}([{}]) more than once",
+                        model.name,
+                        attribute.name,
+                        fields.join(", ")
+                    ),
+                );
             }
 
             if attribute.name == "fulltexts" {
                 for name in fields {
                     if !fulltext_fields.insert(name) {
-                        return schema_error(format!(
-                            "Field `{}.{name}` belongs to more than one full-text index",
-                            model.name
-                        ));
+                        return source_error(
+                            &attribute.origin,
+                            format!("Field `{}.{name}` belongs to more than one full-text index", model.name),
+                        );
                     }
                 }
             }
@@ -515,27 +758,30 @@ fn validate_primary_keys(schema: &Schema) -> CompileResult<()> {
 
         match primary_key_declarations {
             0 => {
-                return schema_error(format!(
-                    "Model `{}` must declare exactly one primary key using @id or @@ids([...])",
-                    model.name
-                ));
+                return source_error(
+                    &model.origin,
+                    format!("Model `{}` must declare exactly one primary key using @id or @@ids([...])", model.name),
+                );
             }
             1 => {}
             _ => {
-                return schema_error(format!(
-                    "Model `{}` declares multiple primary keys; use exactly one @id or one @@ids([...])",
-                    model.name
-                ));
+                return source_error(
+                    &model.origin,
+                    format!(
+                        "Model `{}` declares multiple primary keys; use exactly one @id or one @@ids([...])",
+                        model.name
+                    ),
+                );
             }
         }
 
         if let [field] = field_ids.as_slice()
             && (field.ty.optional || field.ty.list || field.is_relation(schema))
         {
-            return schema_error(format!(
-                "Primary key `{}.{}` must be a required scalar or enum field",
-                model.name, field.name
-            ));
+            return source_error(
+                &field.origin,
+                format!("Primary key `{}.{}` must be a required scalar or enum field", model.name, field.name),
+            );
         }
     }
 
@@ -547,8 +793,25 @@ fn validate_config_values(schema: &Schema) -> CompileResult<()> {
         SchemaItem::Config(config) => Some(config),
         _ => None,
     }) {
-        for (scope, entries) in config_entry_scopes(config) {
-            validate_config_scope(&scope, entries)?;
+        let database_entries = config
+            .entries
+            .iter()
+            .filter(|entry| !matches!(entry.key.as_str(), "custom_derives" | "imports"))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !database_entries.is_empty() {
+            validate_config_scope("config", &database_entries)?;
+        }
+        for workspace in &config.workspaces {
+            if let Some(entry) =
+                workspace.entries.iter().find(|entry| matches!(entry.key.as_str(), "custom_derives" | "imports"))
+            {
+                return Err(CompileError::at(
+                    format!("`{}` must be declared at the top level of `config`", entry.key),
+                    &entry.origin,
+                ));
+            }
+            validate_config_scope(&format!("config.workspace.{}", workspace.name), &workspace.entries)?;
         }
     }
 
@@ -680,19 +943,22 @@ fn validate_relation_attributes(schema: &Schema) -> CompileResult<()> {
         for field in &model.fields {
             let relation_count = field.attributes.iter().filter(|attribute| attribute.name == "relation").count();
             if relation_count > 1 {
-                return schema_error(format!(
-                    "Relation field `{}.{}` declares @relation more than once",
-                    model.name, field.name
-                ));
+                return source_error(
+                    &field.origin,
+                    format!("Relation field `{}.{}` declares @relation more than once", model.name, field.name),
+                );
             }
             if relation_count == 0 {
                 continue;
             }
             if !field.is_relation(schema) {
-                return schema_error(format!(
-                    "Field `{}.{}` uses @relation, but `{}` is not a model",
-                    model.name, field.name, field.ty.name
-                ));
+                return source_error(
+                    &field.origin,
+                    format!(
+                        "Field `{}.{}` uses @relation, but `{}` is not a model",
+                        model.name, field.name, field.ty.name
+                    ),
+                );
             }
 
             relation_definition(model, field)?;
@@ -741,18 +1007,24 @@ fn validate_relation_pairs(schema: &Schema) -> CompileResult<()> {
                 [] => {
                     let relation_suffix =
                         relation_name.map(|name| format!(" using @relation(name: \"{name}\")")).unwrap_or_default();
-                    return schema_error(format!(
-                        "Relation field `{}.{}` targets model `{}`{relation_suffix}, but `{}` has no compatible \
-                         opposite relation field pointing back to `{}`",
-                        model.name, field.name, target.name, target.name, model.name
-                    ));
+                    return source_error(
+                        &field.origin,
+                        format!(
+                            "Relation field `{}.{}` targets model `{}`{relation_suffix}, but `{}` has no compatible \
+                             opposite relation field pointing back to `{}`",
+                            model.name, field.name, target.name, target.name, model.name
+                        ),
+                    );
                 }
                 _ => {
-                    return schema_error(format!(
-                        "Ambiguous relation field `{}.{}`: model `{}` has multiple possible opposite fields \
-                         pointing back to `{}`; add matching @relation(name: \"...\") attributes to both sides",
-                        model.name, field.name, target.name, model.name
-                    ));
+                    return source_error(
+                        &field.origin,
+                        format!(
+                            "Ambiguous relation field `{}.{}`: model `{}` has multiple possible opposite fields \
+                             pointing back to `{}`; add matching @relation(name: \"...\") attributes to both sides",
+                            model.name, field.name, target.name, model.name
+                        ),
+                    );
                 }
             }
         }
@@ -772,20 +1044,26 @@ fn validate_relation_cardinality(
     opposite_definition: &RelationDefinition,
 ) -> CompileResult<()> {
     if model.name == target.name && definition.name.is_none() {
-        return schema_error(format!(
-            "Self relation `{}.{}` must declare the same non-empty @relation(name: \"...\") on both sides",
-            model.name, field.name
-        ));
+        return source_error(
+            &field.origin,
+            format!(
+                "Self relation `{}.{}` must declare the same non-empty @relation(name: \"...\") on both sides",
+                model.name, field.name
+            ),
+        );
     }
 
     match (field.ty.list, opposite.ty.list) {
         (true, true) => {
             if definition.has_keys() || opposite_definition.has_keys() {
-                return schema_error(format!(
-                    "Many-to-many relation `{}.{}` <-> `{}.{}` cannot declare fields/references; implicit join \
-                     relations require two unmapped list fields",
-                    model.name, field.name, target.name, opposite.name
-                ));
+                return source_error(
+                    &field.origin,
+                    format!(
+                        "Many-to-many relation `{}.{}` <-> `{}.{}` cannot declare fields/references; implicit join \
+                         relations require two unmapped list fields",
+                        model.name, field.name, target.name, opposite.name
+                    ),
+                );
             }
             reject_non_owning_options(model, field, definition)?;
             reject_non_owning_options(target, opposite, opposite_definition)?;
@@ -819,19 +1097,30 @@ fn validate_one_to_many_pair(
     owner_definition: &RelationDefinition,
 ) -> CompileResult<()> {
     if !owner_definition.has_keys() {
-        return schema_error(format!(
-            "One-to-many relation `{}.{}` <-> `{}.{}` requires fields/references on the singular FK-owning side \
-             `{}.{}`",
-            list_model.name, list_field.name, owner_model.name, owner_field.name, owner_model.name, owner_field.name
-        ));
+        return source_error(
+            &owner_field.origin,
+            format!(
+                "One-to-many relation `{}.{}` <-> `{}.{}` requires fields/references on the singular FK-owning side \
+                 `{}.{}`",
+                list_model.name,
+                list_field.name,
+                owner_model.name,
+                owner_field.name,
+                owner_model.name,
+                owner_field.name
+            ),
+        );
     }
 
     validate_owner_keys(schema, owner_model, owner_field, list_model, owner_definition)?;
     if relation_is_unique(owner_model, owner_field, owner_definition) {
-        return schema_error(format!(
-            "Relation `{}.{}` is unique, so its opposite `{}.{}` must be singular instead of a list",
-            owner_model.name, owner_field.name, list_model.name, list_field.name
-        ));
+        return source_error(
+            &owner_field.origin,
+            format!(
+                "Relation `{}.{}` is unique, so its opposite `{}.{}` must be singular instead of a list",
+                owner_model.name, owner_field.name, list_model.name, list_field.name
+            ),
+        );
     }
 
     reject_non_owning_options(list_model, list_field, list_definition)?;
@@ -841,13 +1130,16 @@ fn validate_one_to_many_pair(
         let owner_fields = owner_definition.fields.as_deref().expect("checked owner fields");
         let owner_references = owner_definition.references.as_deref().expect("checked owner references");
         if list_fields != owner_references || list_references != owner_fields {
-            return schema_error(format!(
-                "List relation `{}.{}` must mirror the owning side: expected fields: [{}], references: [{}]",
-                list_model.name,
-                list_field.name,
-                owner_references.join(", "),
-                owner_fields.join(", ")
-            ));
+            return source_error(
+                &list_field.origin,
+                format!(
+                    "List relation `{}.{}` must mirror the owning side: expected fields: [{}], references: [{}]",
+                    list_model.name,
+                    list_field.name,
+                    owner_references.join(", "),
+                    owner_fields.join(", ")
+                ),
+            );
         }
         validate_key_field_names(schema, list_model, list_field, owner_model, list_definition, false)?;
     }
@@ -865,47 +1157,64 @@ fn validate_one_to_one_pair(
     opposite: &ModelField,
     opposite_definition: &RelationDefinition,
 ) -> CompileResult<()> {
-    let (owner_model, owner_field, owner_definition, inverse_model, inverse_field, inverse_definition) =
-        match (definition.has_keys(), opposite_definition.has_keys()) {
-            (true, false) => (model, field, definition, target, opposite, opposite_definition),
-            (false, true) => (target, opposite, opposite_definition, model, field, definition),
-            (false, false) => {
-                return schema_error(format!(
+    let (owner_model, owner_field, owner_definition, inverse_model, inverse_field, inverse_definition) = match (
+        definition.has_keys(),
+        opposite_definition.has_keys(),
+    ) {
+        (true, false) => (model, field, definition, target, opposite, opposite_definition),
+        (false, true) => (target, opposite, opposite_definition, model, field, definition),
+        (false, false) => {
+            return source_error(
+                &field.origin,
+                format!(
                     "One-to-one relation `{}.{}` <-> `{}.{}` requires fields/references on exactly one FK-owning side",
                     model.name, field.name, target.name, opposite.name
-                ));
-            }
-            (true, true) => {
-                return schema_error(format!(
+                ),
+            );
+        }
+        (true, true) => {
+            return source_error(
+                &field.origin,
+                format!(
                     "One-to-one relation `{}.{}` <-> `{}.{}` declares fields/references on both sides; only one side \
-                     may own the foreign key",
+                         may own the foreign key",
                     model.name, field.name, target.name, opposite.name
-                ));
-            }
-        };
+                ),
+            );
+        }
+    };
 
     validate_owner_keys(schema, owner_model, owner_field, inverse_model, owner_definition)?;
     reject_non_owning_options(inverse_model, inverse_field, inverse_definition)?;
     if owner_field.attributes.iter().any(|attribute| attribute.name == "unique")
         && owner_definition.fields.as_ref().is_some_and(|fields| fields.len() != 1)
     {
-        return schema_error(format!(
-            "Composite one-to-one relation `{}.{}` cannot place @unique on the relation field; declare \
-             @@uniques([...]) for the complete local foreign-key tuple",
-            owner_model.name, owner_field.name
-        ));
+        return source_error(
+            &owner_field.origin,
+            format!(
+                "Composite one-to-one relation `{}.{}` cannot place @unique on the relation field; declare \
+                 @@uniques([...]) for the complete local foreign-key tuple",
+                owner_model.name, owner_field.name
+            ),
+        );
     }
     if !relation_is_unique(owner_model, owner_field, owner_definition) {
-        return schema_error(format!(
-            "One-to-one relation `{}.{}` requires @unique on the relation field or its local foreign-key field",
-            owner_model.name, owner_field.name
-        ));
+        return source_error(
+            &owner_field.origin,
+            format!(
+                "One-to-one relation `{}.{}` requires @unique on the relation field or its local foreign-key field",
+                owner_model.name, owner_field.name
+            ),
+        );
     }
     if !inverse_field.ty.optional {
-        return schema_error(format!(
-            "The non-owning side `{}.{}` of a one-to-one relation must be optional because it has no local foreign key",
-            inverse_model.name, inverse_field.name
-        ));
+        return source_error(
+            &inverse_field.origin,
+            format!(
+                "The non-owning side `{}.{}` of a one-to-one relation must be optional because it has no local foreign key",
+                inverse_model.name, inverse_field.name
+            ),
+        );
     }
 
     Ok(())
@@ -920,31 +1229,38 @@ fn validate_owner_keys(
 ) -> CompileResult<()> {
     let local_fields = validate_key_field_names(schema, model, field, target, definition, true)?;
     let relation_is_optional = local_fields.iter().any(|local| local.ty.optional);
-    if field.ty.optional != relation_is_optional {
-        return schema_error(format!(
-            "Relation `{}.{}` optionality must match its local foreign key: use `{}` because fields [{}] are {}",
-            model.name,
-            field.name,
-            if relation_is_optional { format!("{}?", field.ty.name) } else { field.ty.name.clone() },
-            definition.fields.as_deref().unwrap_or_default().join(", "),
-            if relation_is_optional { "nullable" } else { "required" }
-        ));
+    if !field.ty.optional && relation_is_optional {
+        return source_error(
+            &field.origin,
+            format!(
+                "Relation `{}.{}` has an optionality mismatch: a required relation cannot use nullable local foreign-key fields [{}]",
+                model.name,
+                field.name,
+                definition.fields.as_deref().unwrap_or_default().join(", "),
+            ),
+        );
     }
 
     for (action_name, action) in &definition.actions {
-        if action == "SetNull" && local_fields.iter().any(|local| !local.ty.optional) {
-            return schema_error(format!(
-                "{action_name}: SetNull on `{}.{}` requires every local foreign-key field to be optional",
-                model.name, field.name
-            ));
+        if action == "SetNull" && !field.ty.optional && local_fields.iter().any(|local| !local.ty.optional) {
+            return source_error(
+                &field.origin,
+                format!(
+                    "{action_name}: SetNull on required relation `{}.{}` requires every local foreign-key field to be optional",
+                    model.name, field.name
+                ),
+            );
         }
         if action == "SetDefault"
             && local_fields.iter().any(|local| !local.attributes.iter().any(|attribute| attribute.name == "default"))
         {
-            return schema_error(format!(
-                "{action_name}: SetDefault on `{}.{}` requires every local foreign-key field to define @default(...)",
-                model.name, field.name
-            ));
+            return source_error(
+                &field.origin,
+                format!(
+                    "{action_name}: SetDefault on `{}.{}` requires every local foreign-key field to define @default(...)",
+                    model.name, field.name
+                ),
+            );
         }
     }
 
@@ -962,66 +1278,87 @@ fn validate_key_field_names<'a>(
     let fields = definition.fields.as_deref().expect("relation key fields were checked");
     let references = definition.references.as_deref().expect("relation key references were checked");
     if fields.len() != references.len() {
-        return schema_error(format!(
-            "Relation `{}.{}` must have the same number of fields ({}) and references ({})",
-            model.name,
-            field.name,
-            fields.len(),
-            references.len()
-        ));
+        return source_error(
+            &field.origin,
+            format!(
+                "Relation `{}.{}` must have the same number of fields ({}) and references ({})",
+                model.name,
+                field.name,
+                fields.len(),
+                references.len()
+            ),
+        );
     }
 
     let mut local_fields = Vec::with_capacity(fields.len());
     for (local_name, reference_name) in fields.iter().zip(references) {
         let Some(local) = model.fields.iter().find(|candidate| candidate.name == *local_name) else {
-            return schema_error(format!(
-                "Relation `{}.{}` refers to missing local field `{}.{local_name}`",
-                model.name, field.name, model.name
-            ));
+            return source_error(
+                &field.origin,
+                format!(
+                    "Relation `{}.{}` refers to missing local field `{}.{local_name}`",
+                    model.name, field.name, model.name
+                ),
+            );
         };
         let Some(reference) = target.fields.iter().find(|candidate| candidate.name == *reference_name) else {
-            return schema_error(format!(
-                "Relation `{}.{}` refers to missing target field `{}.{reference_name}`",
-                model.name, field.name, target.name
-            ));
+            return source_error(
+                &field.origin,
+                format!(
+                    "Relation `{}.{}` refers to missing target field `{}.{reference_name}`",
+                    model.name, field.name, target.name
+                ),
+            );
         };
         if local.ty.list || local.is_relation(schema) {
-            return schema_error(format!(
-                "Relation key `{}.{}` must be a scalar or enum field, not a relation/list field",
-                model.name, local.name
-            ));
+            return source_error(
+                &local.origin,
+                format!(
+                    "Relation key `{}.{}` must be a scalar or enum field, not a relation/list field",
+                    model.name, local.name
+                ),
+            );
         }
         if reference.ty.list || reference.is_relation(schema) {
-            return schema_error(format!(
-                "Referenced key `{}.{}` must be a scalar or enum field, not a relation/list field",
-                target.name, reference.name
-            ));
+            return source_error(
+                &reference.origin,
+                format!(
+                    "Referenced key `{}.{}` must be a scalar or enum field, not a relation/list field",
+                    target.name, reference.name
+                ),
+            );
         }
         if local.ty.name != reference.ty.name {
-            return schema_error(format!(
-                "Relation `{}.{}` has incompatible key types: `{}.{}` is `{}`, but `{}.{}` is `{}`",
-                model.name,
-                field.name,
-                model.name,
-                local.name,
-                local.ty.name,
-                target.name,
-                reference.name,
-                reference.ty.name
-            ));
+            return source_error(
+                &field.origin,
+                format!(
+                    "Relation `{}.{}` has incompatible key types: `{}.{}` is `{}`, but `{}.{}` is `{}`",
+                    model.name,
+                    field.name,
+                    model.name,
+                    local.name,
+                    local.ty.name,
+                    target.name,
+                    reference.name,
+                    reference.ty.name
+                ),
+            );
         }
         local_fields.push(local);
     }
 
     if require_unique_reference && !model_has_unique_key(target, references) {
-        return schema_error(format!(
-            "Relation `{}.{}` references `{}.[{}]`, which must declare @id or @unique, or match @@ids([...]) or \
-             @@uniques([...])",
-            model.name,
-            field.name,
-            target.name,
-            references.join(", ")
-        ));
+        return source_error(
+            &field.origin,
+            format!(
+                "Relation `{}.{}` references `{}.[{}]`, which must declare @id or @unique, or match @@ids([...]) or \
+                 @@uniques([...])",
+                model.name,
+                field.name,
+                target.name,
+                references.join(", ")
+            ),
+        );
     }
 
     Ok(local_fields)
@@ -1029,11 +1366,14 @@ fn validate_key_field_names<'a>(
 
 fn reject_non_owning_options(model: &Model, field: &ModelField, definition: &RelationDefinition) -> CompileResult<()> {
     if definition.has_map || !definition.actions.is_empty() {
-        return schema_error(format!(
-            "Relation `{}.{}` does not own a foreign key, so map/onDelete/onUpdate must be declared on the singular \
-             side with fields/references",
-            model.name, field.name
-        ));
+        return source_error(
+            &field.origin,
+            format!(
+                "Relation `{}.{}` does not own a foreign key, so map/onDelete/onUpdate must be declared on the singular \
+                 side with fields/references",
+                model.name, field.name
+            ),
+        );
     }
     Ok(())
 }
@@ -1045,10 +1385,13 @@ fn validate_many_to_many_id(schema: &Schema, model: &Model) -> CompileResult<()>
         .filter(|field| field.attributes.iter().any(|attribute| attribute.name == "id"))
         .collect::<Vec<_>>();
     if ids.len() != 1 || ids[0].ty.list || ids[0].ty.optional || ids[0].is_relation(schema) {
-        return schema_error(format!(
-            "Implicit many-to-many relations require model `{}` to have exactly one scalar @id field",
-            model.name
-        ));
+        return source_error(
+            &model.origin,
+            format!(
+                "Implicit many-to-many relations require model `{}` to have exactly one scalar @id field",
+                model.name
+            ),
+        );
     }
     Ok(())
 }
@@ -1099,24 +1442,24 @@ fn relation_definition(model: &Model, field: &ModelField) -> CompileResult<Relat
         match argument {
             AttributeArgument::Named { key, .. } => {
                 if !matches!(key.as_str(), "name" | "fields" | "references" | "onDelete" | "onUpdate" | "map") {
-                    return schema_error(format!(
-                        "Unknown @relation argument `{key}` on `{}.{}`",
-                        model.name, field.name
-                    ));
+                    return source_error(
+                        &relation.origin,
+                        format!("Unknown @relation argument `{key}` on `{}.{}`", model.name, field.name),
+                    );
                 }
                 if !named.insert(key.as_str()) {
-                    return schema_error(format!(
-                        "Duplicate @relation argument `{key}` on `{}.{}`",
-                        model.name, field.name
-                    ));
+                    return source_error(
+                        &relation.origin,
+                        format!("Duplicate @relation argument `{key}` on `{}.{}`", model.name, field.name),
+                    );
                 }
             }
             AttributeArgument::Value(value) => {
                 if positional_name.is_some() {
-                    return schema_error(format!(
-                        "Relation `{}.{}` accepts at most one positional name",
-                        model.name, field.name
-                    ));
+                    return source_error(
+                        &relation.origin,
+                        format!("Relation `{}.{}` accepts at most one positional name", model.name, field.name),
+                    );
                 }
                 positional_name = Some(non_empty_string_or_ident(value, "relation name", model, field)?);
             }
@@ -1128,10 +1471,10 @@ fn relation_definition(model: &Model, field: &ModelField) -> CompileResult<Relat
         .map(|value| non_empty_string_or_ident(value, "relation name", model, field))
         .transpose()?;
     if positional_name.is_some() && named_name.is_some() {
-        return schema_error(format!(
-            "Relation `{}.{}` declares its name both positionally and with `name:`",
-            model.name, field.name
-        ));
+        return source_error(
+            &relation.origin,
+            format!("Relation `{}.{}` declares its name both positionally and with `name:`", model.name, field.name),
+        );
     }
     let fields = relation
         .argument("fields")
@@ -1142,16 +1485,16 @@ fn relation_definition(model: &Model, field: &ModelField) -> CompileResult<Relat
         .map(|value| relation_identifier_array(value, "references", model, field))
         .transpose()?;
     if fields.is_some() != references.is_some() {
-        return schema_error(format!(
-            "Relation `{}.{}` must declare `fields` and `references` together",
-            model.name, field.name
-        ));
+        return source_error(
+            &relation.origin,
+            format!("Relation `{}.{}` must declare `fields` and `references` together", model.name, field.name),
+        );
     }
     if fields.as_ref().is_some_and(|fields| fields.len() != references.as_ref().map_or(0, Vec::len)) {
-        return schema_error(format!(
-            "Relation `{}.{}` must have the same number of fields and references",
-            model.name, field.name
-        ));
+        return source_error(
+            &relation.origin,
+            format!("Relation `{}.{}` must have the same number of fields and references", model.name, field.name),
+        );
     }
 
     if let Some(value) = relation.argument("map") {
@@ -1165,10 +1508,13 @@ fn relation_definition(model: &Model, field: &ModelField) -> CompileResult<Relat
         };
         let action = non_empty_string_or_ident(value, action_name, model, field)?;
         if !matches!(action.as_str(), "Cascade" | "Restrict" | "NoAction" | "SetNull" | "SetDefault") {
-            return schema_error(format!(
-                "{action_name} on `{}.{}` must be one of: Cascade, Restrict, NoAction, SetNull, SetDefault",
-                model.name, field.name
-            ));
+            return source_error(
+                &relation.origin,
+                format!(
+                    "{action_name} on `{}.{}` must be one of: Cascade, Restrict, NoAction, SetNull, SetDefault",
+                    model.name, field.name
+                ),
+            );
         }
         actions.push((action_name.to_string(), action));
     }
@@ -1189,29 +1535,38 @@ fn relation_identifier_array(
     field: &ModelField,
 ) -> CompileResult<Vec<String>> {
     let AttributeValue::Array(values) = value else {
-        return schema_error(format!(
-            "@relation({argument}: ...) on `{}.{}` must be a non-empty array of field identifiers",
-            model.name, field.name
-        ));
+        return source_error(
+            &field.origin,
+            format!(
+                "@relation({argument}: ...) on `{}.{}` must be a non-empty array of field identifiers",
+                model.name, field.name
+            ),
+        );
     };
     if values.is_empty() {
-        return schema_error(format!("@relation({argument}: ...) on `{}.{}` cannot be empty", model.name, field.name));
+        return source_error(
+            &field.origin,
+            format!("@relation({argument}: ...) on `{}.{}` cannot be empty", model.name, field.name),
+        );
     }
 
     let mut seen = HashSet::new();
     let mut names = Vec::with_capacity(values.len());
     for value in values {
         let AttributeValue::Ident(name) = value else {
-            return schema_error(format!(
-                "@relation({argument}: ...) on `{}.{}` only accepts field identifiers",
-                model.name, field.name
-            ));
+            return source_error(
+                &field.origin,
+                format!("@relation({argument}: ...) on `{}.{}` only accepts field identifiers", model.name, field.name),
+            );
         };
         if !seen.insert(name.as_str()) {
-            return schema_error(format!(
-                "@relation({argument}: ...) on `{}.{}` contains duplicate field `{name}`",
-                model.name, field.name
-            ));
+            return source_error(
+                &field.origin,
+                format!(
+                    "@relation({argument}: ...) on `{}.{}` contains duplicate field `{name}`",
+                    model.name, field.name
+                ),
+            );
         }
         names.push(name.clone());
     }
@@ -1225,16 +1580,23 @@ fn non_empty_string_or_ident(
     field: &ModelField,
 ) -> CompileResult<String> {
     let Some(value) = attribute_string_or_ident(value) else {
-        return schema_error(format!("{label} on `{}.{}` must be a string or identifier", model.name, field.name));
+        return source_error(
+            &field.origin,
+            format!("{label} on `{}.{}` must be a string or identifier", model.name, field.name),
+        );
     };
     if value.trim().is_empty() {
-        return schema_error(format!("{label} on `{}.{}` cannot be empty", model.name, field.name));
+        return source_error(&field.origin, format!("{label} on `{}.{}` cannot be empty", model.name, field.name));
     }
     Ok(value.to_string())
 }
 
 fn schema_error<T>(message: impl Into<String>) -> CompileResult<T> {
     Err(CompileError::new(message, 1, 1))
+}
+
+fn source_error<T>(origin: &SourceOrigin, message: impl Into<String>) -> CompileResult<T> {
+    Err(CompileError::at(message, origin))
 }
 
 fn is_rust_keyword(name: &str) -> bool {
@@ -1312,14 +1674,23 @@ fn attribute_string_or_ident(value: &AttributeValue) -> Option<&str> {
     }
 }
 
-fn parse_config_value(pair: Pair<'_, Rule>) -> CompileResult<ConfigValue> {
+fn parse_config_value(pair: Pair<'_, Rule>, file: &str) -> CompileResult<ConfigValue> {
     let error = pair_position_error(&pair, "expected config value");
     let value = pair.into_inner().next().ok_or(error)?;
 
     match value.as_rule() {
         Rule::config_array => {
-            let values = value.into_inner().map(parse_config_value).collect::<CompileResult<Vec<_>>>()?;
+            let values =
+                value.into_inner().map(|value| parse_config_value(value, file)).collect::<CompileResult<Vec<_>>>()?;
             Ok(ConfigValue::Array(values))
+        }
+        Rule::config_object => {
+            let entries = value
+                .into_inner()
+                .filter(|pair| pair.as_rule() == Rule::config_entry)
+                .map(|entry| parse_config_entry(entry, file))
+                .collect::<CompileResult<Vec<_>>>()?;
+            Ok(ConfigValue::Object(entries))
         }
         Rule::env_call => {
             let error = pair_position_error(&value, "expected env name");
@@ -1338,7 +1709,8 @@ fn parse_config_value(pair: Pair<'_, Rule>) -> CompileResult<ConfigValue> {
     }
 }
 
-fn parse_enum(pair: Pair<'_, Rule>) -> CompileResult<EnumDef> {
+fn parse_enum(pair: Pair<'_, Rule>, file: &str) -> CompileResult<EnumDef> {
+    let origin = pair_origin(&pair, file);
     let mut inner = pair.into_inner();
     let name = expect_rule(&mut inner, Rule::ident, "expected enum name")?.as_str().to_string();
     let values = inner
@@ -1351,10 +1723,11 @@ fn parse_enum(pair: Pair<'_, Rule>) -> CompileResult<EnumDef> {
         })
         .collect::<CompileResult<Vec<_>>>()?;
 
-    Ok(EnumDef { name, values })
+    Ok(EnumDef { name, values, origin })
 }
 
-fn parse_model(pair: Pair<'_, Rule>) -> CompileResult<Model> {
+fn parse_model(pair: Pair<'_, Rule>, file: &str) -> CompileResult<Model> {
+    let origin = pair_origin(&pair, file);
     let mut inner = pair.into_inner();
     let name = expect_rule(&mut inner, Rule::ident, "expected model name")?.as_str().to_string();
     let mut fields = Vec::new();
@@ -1362,16 +1735,17 @@ fn parse_model(pair: Pair<'_, Rule>) -> CompileResult<Model> {
 
     for pair in inner {
         match pair.as_rule() {
-            Rule::model_field => fields.push(parse_model_field(pair)?),
-            Rule::model_attribute => attributes.push(parse_attribute(pair)?),
+            Rule::model_field => fields.push(parse_model_field(pair, file)?),
+            Rule::model_attribute => attributes.push(parse_attribute(pair, file)?),
             _ => return Err(pair_error(&pair, "unexpected model token")),
         }
     }
 
-    Ok(Model { name, fields, attributes })
+    Ok(Model { name, fields, attributes, origin })
 }
 
-fn parse_model_field(pair: Pair<'_, Rule>) -> CompileResult<ModelField> {
+fn parse_model_field(pair: Pair<'_, Rule>, file: &str) -> CompileResult<ModelField> {
+    let origin = pair_origin(&pair, file);
     let mut inner = pair.into_inner();
     let name = expect_rule(&mut inner, Rule::ident, "expected field name")?.as_str().to_string();
     let ty_name = expect_rule(&mut inner, Rule::field_type, "expected field type")?
@@ -1388,15 +1762,16 @@ fn parse_model_field(pair: Pair<'_, Rule>) -> CompileResult<ModelField> {
         match pair.as_rule() {
             Rule::field_optional => optional = true,
             Rule::field_list => list = true,
-            Rule::attribute => attributes.push(parse_attribute(pair)?),
+            Rule::attribute => attributes.push(parse_attribute(pair, file)?),
             _ => return Err(pair_error(&pair, "unexpected field token")),
         }
     }
 
-    Ok(ModelField { name, ty: FieldType { name: ty_name, optional, list }, attributes })
+    Ok(ModelField { name, ty: FieldType { name: ty_name, optional, list }, attributes, origin })
 }
 
-fn parse_attribute(pair: Pair<'_, Rule>) -> CompileResult<Attribute> {
+fn parse_attribute(pair: Pair<'_, Rule>, file: &str) -> CompileResult<Attribute> {
+    let origin = pair_origin(&pair, file);
     let mut inner = pair.into_inner();
     let name = expect_rule(&mut inner, Rule::ident, "expected attribute name")?.as_str().to_string();
     let arguments = inner
@@ -1405,7 +1780,7 @@ fn parse_attribute(pair: Pair<'_, Rule>) -> CompileResult<Attribute> {
         .transpose()?
         .unwrap_or_default();
 
-    Ok(Attribute { name, arguments })
+    Ok(Attribute { name, arguments, origin })
 }
 
 fn parse_attribute_arguments(pair: Pair<'_, Rule>) -> CompileResult<Vec<AttributeArgument>> {
@@ -1480,6 +1855,11 @@ fn pair_error(pair: &Pair<'_, Rule>, message: impl Into<String>) -> CompileError
 
 fn pair_position_error(pair: &Pair<'_, Rule>, message: impl Into<String>) -> CompileError {
     pair_error(pair, message)
+}
+
+fn pair_origin(pair: &Pair<'_, Rule>, file: &str) -> SourceOrigin {
+    let (line, column) = pair.as_span().start_pos().line_col();
+    SourceOrigin::new(file, line, column)
 }
 
 fn unquote(value: &str) -> String {

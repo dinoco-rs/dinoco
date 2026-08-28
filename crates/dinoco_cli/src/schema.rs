@@ -31,7 +31,7 @@ pub struct RuntimeConfig {
 pub fn read_schema() -> anyhow::Result<(String, Schema)> {
     let path = Path::new("dinoco/schema.dinoco");
     let source = fs::read_to_string(path).context("dinoco/schema.dinoco was not found. Run `dinoco init`.")?;
-    let schema = dinoco_compiler::compile(&source).map_err(|err| anyhow!(err.to_string()))?;
+    let schema = dinoco_compiler::compile_file(path).map_err(|err| anyhow!(err.to_string()))?;
 
     validate_schema_relations(&schema)?;
 

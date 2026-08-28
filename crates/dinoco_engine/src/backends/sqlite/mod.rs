@@ -8,7 +8,7 @@ mod compiler;
 
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoSqlite, DinocoValue,
-    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind, TransactionResults,
+    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
 };
 
 #[derive(Clone)]
@@ -153,40 +153,6 @@ impl SqliteAdapter {
         self.with_logger
     }
 
-    pub(crate) async fn execute_compiled_transaction(
-        &self,
-        commands: Vec<CompiledTransactionCommand>,
-    ) -> anyhow::Result<TransactionResults> {
-        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
-
-        conn.interact(move |conn| -> anyhow::Result<TransactionResults> {
-            let transaction = conn.transaction()?;
-            let execution = (|| {
-                let mut values = Vec::with_capacity(commands.len());
-
-                for command in commands {
-                    let raw = execute_transaction_command(&transaction, &command)?;
-                    values.push(command.finish(raw)?);
-                }
-
-                Ok(values)
-            })();
-
-            match execution {
-                Ok(values) => {
-                    transaction.commit()?;
-                    Ok(TransactionResults::new(values))
-                }
-                Err(error) => {
-                    transaction.rollback().context("Failed to roll back sqlite transaction")?;
-                    Err(error)
-                }
-            }
-        })
-        .await
-        .map_err(|err| anyhow!(err.to_string()))?
-    }
-
     pub(crate) async fn begin_live_transaction(
         &self,
     ) -> anyhow::Result<tokio::sync::mpsc::Sender<LiveTransactionMessage>> {
@@ -279,7 +245,6 @@ fn execute_transaction_statement(
         return match command.kind {
             TransactionCommandKind::Rows => Ok(RawTransactionOutput::Rows(Vec::new())),
             TransactionCommandKind::Execute => Ok(RawTransactionOutput::Affected(0)),
-            TransactionCommandKind::Count => Ok(RawTransactionOutput::Count(0)),
         };
     }
 
@@ -303,11 +268,6 @@ fn execute_transaction_statement(
         TransactionCommandKind::Execute => {
             let mut statement = transaction.prepare_cached(&command.sql)?;
             Ok(RawTransactionOutput::Affected(statement.execute(params_refs.as_slice())?))
-        }
-        TransactionCommandKind::Count => {
-            let mut statement = transaction.prepare_cached(&command.sql)?;
-            let total = statement.query_row(params_refs.as_slice(), |row| row.get(0))?;
-            Ok(RawTransactionOutput::Count(total))
         }
     }
 }

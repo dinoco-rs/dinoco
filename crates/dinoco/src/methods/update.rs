@@ -1,14 +1,9 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{
-    DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, TransactionCommand, UpdateQuery, UpdateSet,
-};
+use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, UpdateQuery, UpdateSet};
 
 use crate::{DinocoRelationValue, has_many_to_many_update_sets, load_update_matches};
-use crate::{
-    IntoTransactionOperation, MutationExecutor, UpdateError, duplicate_update_field, execute_relation_update_sets,
-    split_update_sets, transaction_many_to_many_writes,
-};
+use crate::{MutationExecutor, UpdateError, duplicate_update_field, execute_relation_update_sets, split_update_sets};
 
 pub struct Update<M> {
     sets: Vec<UpdateSet>,
@@ -142,79 +137,5 @@ where
         let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: Some(S::FIELDS) };
 
         client.update_returning::<S>(query).await.map_err(|error| UpdateError::from_database(error).into())
-    }
-}
-
-impl<M> IntoTransactionOperation for Update<M>
-where
-    M: DinocoEntity,
-{
-    fn into_transaction_operation(self) -> TransactionCommand {
-        if self.sets.is_empty() {
-            return TransactionCommand::invalid(format!(
-                "update::<{}>() requires at least one .update(...) call.",
-                M::TABLE_NAME
-            ));
-        }
-
-        let (sets, connects, disconnects) = split_update_sets(self.sets);
-        let (connects, disconnects) =
-            match transaction_many_to_many_writes(M::TABLE_NAME, &self.conditions, connects, disconnects) {
-                Ok(writes) => writes,
-                Err(error) => return TransactionCommand::invalid(error.to_string()),
-            };
-        let command = if sets.is_empty() {
-            TransactionCommand::empty_write()
-        } else {
-            TransactionCommand::update(UpdateQuery {
-                table: M::TABLE_NAME,
-                sets,
-                conditions: self.conditions,
-                returning: None,
-            })
-        };
-
-        command.with_many_to_many_writes(connects, disconnects)
-    }
-}
-
-impl<M, S> IntoTransactionOperation for UpdateReturning<M, S>
-where
-    M: DinocoEntity,
-    S: DinocoProjection<M> + DinocoRowModel,
-{
-    fn into_transaction_operation(self) -> TransactionCommand {
-        if self.sets.is_empty() {
-            return TransactionCommand::invalid(format!(
-                "update::<{}>() requires at least one .update(...) call.",
-                M::TABLE_NAME
-            ));
-        }
-
-        let (sets, connects, disconnects) = split_update_sets(self.sets);
-        let (connects, disconnects) =
-            match transaction_many_to_many_writes(M::TABLE_NAME, &self.conditions, connects, disconnects) {
-                Ok(writes) => writes,
-                Err(error) => return TransactionCommand::invalid(error.to_string()),
-            };
-        let command = if sets.is_empty() {
-            TransactionCommand::find_many::<S>(FindQuery {
-                fields: S::FIELDS,
-                from: M::TABLE_NAME,
-                conditions: self.conditions,
-                limit: -1,
-                skip: -1,
-                order_by: None,
-            })
-        } else {
-            TransactionCommand::update_returning::<S>(UpdateQuery {
-                table: M::TABLE_NAME,
-                sets,
-                conditions: self.conditions,
-                returning: Some(S::FIELDS),
-            })
-        };
-
-        command.with_many_to_many_writes(connects, disconnects)
     }
 }

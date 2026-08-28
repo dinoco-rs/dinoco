@@ -39,7 +39,11 @@ impl DinocoLanguageServer {
 
     async fn update_document(&self, uri: Url, text: String, version: i32) {
         let state = DocumentState::new(text, version);
-        let diagnostics = diagnostics::analyze(&state.text, &state.index);
+        let diagnostics = if is_main_schema(&uri) {
+            diagnostics::analyze(&state.text, &state.index)
+        } else {
+            diagnostics::analyze_imported(&state.text, &state.index)
+        };
         if let Ok(mut documents) = self.documents.write() {
             documents.insert(uri.clone(), state);
         }
@@ -109,6 +113,13 @@ impl DinocoLanguageServer {
         }
         actions
     }
+}
+
+fn is_main_schema(uri: &Url) -> bool {
+    let Some(mut segments) = uri.path_segments() else {
+        return false;
+    };
+    segments.next_back() == Some("schema.dinoco") && segments.next_back() == Some("dinoco")
 }
 
 #[tower_lsp::async_trait]
@@ -614,6 +625,7 @@ fn config_description(name: &str) -> Option<&'static str> {
         "connection" => Some("Selects PostgreSQL `direct` or `pgbouncer` connection behavior."),
         "database_url" => Some("Primary database URL. It must be loaded through `env(...)`."),
         "read_replicas" => Some("Optional environment-backed URLs used in round-robin reads."),
+        "imports" => Some("Imports every declaration from schema files listed by the main `schema.dinoco`."),
         "snowflake_node_id" => Some("Environment-backed node ID required by `snowflake()`."),
         "with_logger" => Some("Enables SQL query logging when set to `true`. Defaults to `false`."),
         "min_connection" => Some("Minimum PostgreSQL Direct pool size. Defaults to `2`."),
@@ -626,6 +638,14 @@ fn config_description(name: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_schema_dinoco_is_treated_as_the_database_entrypoint() {
+        assert!(is_main_schema(&Url::parse("file:///project/dinoco/schema.dinoco").unwrap()));
+        assert!(!is_main_schema(&Url::parse("file:///project/dinoco/models/account.dinoco").unwrap()));
+        assert!(!is_main_schema(&Url::parse("file:///project/dinoco/enums.dinoco").unwrap()));
+        assert!(!is_main_schema(&Url::parse("file:///project/dinoco/models/schema.dinoco").unwrap()));
+    }
 
     #[test]
     fn calculates_close_type_fixes() {

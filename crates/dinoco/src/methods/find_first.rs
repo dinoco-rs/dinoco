@@ -4,7 +4,7 @@ use dinoco_engine::{
     DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, WhereComplex,
 };
 
-use crate::{IncludeLoader, IntoIncludeLoader, IntoTransactionOperation, load_includes};
+use crate::{IncludeLoader, IntoIncludeLoader, load_includes};
 
 pub struct FindFirst<M, S = M> {
     query: FindQuery,
@@ -100,21 +100,5 @@ pub fn find_first<M: DinocoEntity + DinocoRowModel>() -> FindFirst<M> {
         complex_where: false,
         select_marker: PhantomData,
         marker: PhantomData,
-    }
-}
-
-impl<M, S> IntoTransactionOperation for FindFirst<M, S>
-where
-    M: DinocoEntity + DinocoRowModel,
-    S: DinocoRowModel,
-{
-    fn into_transaction_operation(self) -> dinoco_engine::TransactionCommand {
-        if !self.includes.is_empty() {
-            return dinoco_engine::TransactionCommand::invalid(
-                "find_first().includes(...) is not supported inside a transaction batch yet.",
-            );
-        }
-
-        dinoco_engine::TransactionCommand::find_first::<S>(self.query)
     }
 }

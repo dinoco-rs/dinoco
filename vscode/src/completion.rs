@@ -158,6 +158,12 @@ fn config_completions(prefix: &str) -> Vec<CompletionItem> {
                 "Environment-backed read replicas",
                 "[env(\"${1:DATABASE_REPLICA_URL}\")]",
             )],
+            "imports" => vec![snippet(
+                "schema files",
+                CompletionItemKind::FILE,
+                "Import every declaration from schema files",
+                "[\"${1:models/account.dinoco}\"]",
+            )],
             "with_logger" => vec![
                 value("true", CompletionItemKind::VALUE, "Enable SQL query logging", "true"),
                 value("false", CompletionItemKind::VALUE, "Disable SQL query logging", "false"),
@@ -198,6 +204,12 @@ fn config_completions(prefix: &str) -> Vec<CompletionItem> {
             "database_url = env(\"${1:DATABASE_URL}\")",
         ),
         snippet("read_replicas", CompletionItemKind::PROPERTY, "Read replica URLs", "read_replicas = [${1}]"),
+        snippet(
+            "imports",
+            CompletionItemKind::PROPERTY,
+            "Schema files imported by schema.dinoco",
+            "imports = [\"${1:models/account.dinoco}\"]",
+        ),
         snippet(
             "snowflake_node_id",
             CompletionItemKind::PROPERTY,
@@ -541,5 +553,18 @@ model Token {
             panic!("array response");
         };
         assert!(items.iter().any(|item| item.label == "USER"));
+    }
+
+    #[test]
+    fn suggests_main_schema_config_imports() {
+        let source = "config {\n    \n}";
+        let index = DocumentIndex::new(source);
+        let response = complete(source, &index, Position::new(1, 4));
+        let CompletionResponse::Array(items) = response else {
+            panic!("array response");
+        };
+
+        let imports = items.iter().find(|item| item.label == "imports").expect("imports completion");
+        assert_eq!(imports.insert_text.as_deref(), Some("imports = [\"${1:models/account.dinoco}\"]"));
     }
 }

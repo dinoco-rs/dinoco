@@ -8,7 +8,7 @@ mod compiler;
 
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoRowModel, DinocoValue,
-    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind, TransactionResults,
+    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
 };
 
 #[derive(Clone)]
@@ -68,31 +68,6 @@ impl MySqlAdapter {
 
     pub(crate) fn logger_enabled(&self) -> bool {
         self.with_logger
-    }
-
-    pub(crate) async fn execute_compiled_transaction(
-        &self,
-        commands: Vec<CompiledTransactionCommand>,
-    ) -> anyhow::Result<TransactionResults> {
-        let mut conn = self.pool.get_conn().await.context("Failed to get mysql connection from pool")?;
-        let mut transaction = conn.start_transaction(TxOpts::default()).await?;
-        let mut values = Vec::with_capacity(commands.len());
-
-        for command in commands {
-            let execution =
-                execute_transaction_command(&mut transaction, &command).await.and_then(|raw| command.finish(raw));
-
-            match execution {
-                Ok(value) => values.push(value),
-                Err(error) => {
-                    transaction.rollback().await.context("Failed to roll back mysql transaction")?;
-                    return Err(error);
-                }
-            }
-        }
-
-        transaction.commit().await?;
-        Ok(TransactionResults::new(values))
     }
 
     pub(crate) async fn begin_live_transaction(
@@ -244,7 +219,6 @@ async fn execute_transaction_statement(
         return match command.kind {
             TransactionCommandKind::Rows => Ok(RawTransactionOutput::Rows(Vec::new())),
             TransactionCommandKind::Execute => Ok(RawTransactionOutput::Affected(0)),
-            TransactionCommandKind::Count => Ok(RawTransactionOutput::Count(0)),
         };
     }
 
@@ -262,11 +236,6 @@ async fn execute_transaction_statement(
         TransactionCommandKind::Execute => {
             transaction.exec_drop(&command.sql, mysql_params(&command.params)).await?;
             Ok(RawTransactionOutput::Affected(transaction.affected_rows() as usize))
-        }
-        TransactionCommandKind::Count => {
-            let total =
-                transaction.exec_first::<i64, _, _>(&command.sql, mysql_params(&command.params)).await?.unwrap_or(0);
-            Ok(RawTransactionOutput::Count(total))
         }
     }
 }

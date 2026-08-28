@@ -1,4 +1,7 @@
-use dinoco_compiler::{ConfigValue, compile};
+use std::fs;
+
+use dinoco_compiler::{ConfigValue, compile, compile_file, parse};
+use tempfile::tempdir;
 
 #[test]
 fn compile_parses_config_enums_models_and_relations() {
@@ -544,4 +547,385 @@ fn compile_accepts_attached_large_schema_when_available() {
     let schema = compile(&schema_source).expect("attached schema should compile");
     assert!(schema.enums().any(|item| item.name == "AudioStatus"));
     assert!(schema.models().any(|model| model.name == "PlaylistTrack"));
+}
+
+#[test]
+fn compile_file_resolves_recursive_explicit_imports_and_normalized_paths() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::create_dir_all(project.path().join("models")).expect("models directory");
+    fs::create_dir_all(project.path().join("shared")).expect("shared directory");
+    fs::write(
+        &root,
+        r#"import { Business } from "./models/../models/business.dinoco"
+import { AccountType } from "shared/enums.dinoco"
+
+model Account {
+    id   String @id
+    kind AccountType
+}
+"#,
+    )
+    .expect("root schema");
+    fs::write(
+        project.path().join("models/business.dinoco"),
+        r#"import { BusinessStatus } from "../shared/enums.dinoco"
+
+model Business {
+    id     String @id
+    status BusinessStatus
+}
+"#,
+    )
+    .expect("business schema");
+    fs::write(
+        project.path().join("shared/enums.dinoco"),
+        "enum BusinessStatus { active inactive }\nenum AccountType { owner member }\n",
+    )
+    .expect("enum schema");
+
+    let schema = compile_file(&root).expect("complete import tree should compile");
+
+    assert!(schema.models().any(|model| model.name == "Account"));
+    let business = schema.models().find(|model| model.name == "Business").expect("imported model");
+    assert_eq!(business.origin.file, "models/business.dinoco");
+    assert_eq!(business.origin.line, 3);
+    assert!(schema.enums().any(|item| item.name == "BusinessStatus"));
+    assert!(schema.enums().any(|item| item.name == "AccountType"));
+}
+
+#[test]
+fn compile_file_imports_all_symbols_listed_in_the_main_config() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::create_dir_all(project.path().join("domain")).expect("domain directory");
+    fs::create_dir_all(project.path().join("shared")).expect("shared directory");
+    fs::write(
+        &root,
+        r#"config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+    imports = ["./domain/models.dinoco", "shared/../shared/enums.dinoco"]
+}
+
+model Dashboard {
+    id     String @id
+    status Status
+}
+"#,
+    )
+    .expect("root schema");
+    fs::write(
+        project.path().join("domain/models.dinoco"),
+        r#"import { Status } from "../shared/enums.dinoco"
+
+model Account { id String @id }
+model Business { id String @id status Status }
+"#,
+    )
+    .expect("models schema");
+    fs::write(project.path().join("shared/enums.dinoco"), "enum Status { active inactive }\n").expect("enum schema");
+
+    let schema = compile_file(&root).expect("config imports should expose every direct declaration to the root");
+
+    assert_eq!(schema.config_imports().count(), 2);
+    assert!(schema.models().any(|model| model.name == "Account"));
+    assert!(schema.models().any(|model| model.name == "Business"));
+    assert!(schema.models().any(|model| model.name == "Dashboard"));
+    assert!(schema.enums().any(|item| item.name == "Status"));
+}
+
+#[test]
+fn config_imports_do_not_leak_the_main_scope_into_child_files() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::write(
+        &root,
+        r#"config {
+    imports = ["business.dinoco", "status.dinoco"]
+}
+"#,
+    )
+    .expect("root schema");
+    fs::write(project.path().join("business.dinoco"), "model Business {\n    id String @id\n    status Status\n}\n")
+        .expect("business schema");
+    fs::write(project.path().join("status.dinoco"), "enum Status { active }\n").expect("status schema");
+
+    let error = compile_file(&root).expect_err("children must keep using named imports");
+
+    assert!(error.message.contains("neither declared nor imported"), "{error}");
+    assert_eq!(error.file.as_deref(), Some("business.dinoco"));
+    assert_eq!(error.line, 3);
+}
+
+#[test]
+fn config_imports_support_workspace_configs() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::write(
+        &root,
+        r#"config {
+    imports = ["models.dinoco"]
+
+    workspace {
+        dev {
+            database = "sqlite"
+            database_url = env("DEV_DATABASE_URL")
+        }
+    }
+}
+"#,
+    )
+    .expect("root schema");
+    fs::write(project.path().join("models.dinoco"), "model Account { id String @id }\n").expect("models schema");
+
+    let schema = compile_file(&root).expect("global imports may accompany workspace database settings");
+    let selected = schema.for_workspace("dev").expect("dev workspace");
+    assert_eq!(selected.config_imports().count(), 1);
+    assert!(selected.models().any(|model| model.name == "Account"));
+}
+
+#[test]
+fn config_imports_validate_shape_scope_and_duplicate_paths() {
+    compile(r#"config { imports = [] }"#).expect("an empty import list is valid");
+
+    for (source, expected) in [
+        (r#"config { imports = "models.dinoco" }"#, "must be an array"),
+        (r#"config { imports = [models] }"#, "must be a non-empty string"),
+        (r#"config { imports = [1] }"#, "must be a non-empty string"),
+        (r#"config { imports = [true] }"#, "must be a non-empty string"),
+        (r#"config { imports = [env("SCHEMA_FILE")] }"#, "must be a non-empty string"),
+        (r#"config { imports = [{}] }"#, "must be a non-empty string"),
+        (r#"config { imports = [""] }"#, "cannot be empty"),
+        (r#"config { imports = ["models.dinoco", "models.dinoco"] }"#, "listed more than once"),
+        (
+            r#"config { workspace { dev { imports = ["models.dinoco"] database = "sqlite" database_url = env("URL") } } }"#,
+            "must be declared at the top level",
+        ),
+    ] {
+        let error = compile(source).expect_err(expected);
+        assert!(error.message.contains(expected), "{error}");
+        assert_eq!(error.file.as_deref(), Some("schema.dinoco"));
+    }
+
+    let file_mode = compile(r#"config { imports = ["models.dinoco"] }"#)
+        .expect_err("valid config imports still require schema.dinoco file resolution");
+    assert!(file_mode.message.contains("requires file-based compilation"), "{file_mode}");
+
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::write(&root, r#"config { imports = ["models.dinoco", "./models.dinoco"] }"#).expect("root schema");
+    fs::write(project.path().join("models.dinoco"), "model Account { id String @id }\n").expect("models schema");
+    let duplicate = compile_file(&root).expect_err("normalized duplicate paths must fail");
+    assert!(duplicate.message.contains("imported more than once"), "{duplicate}");
+}
+
+#[test]
+fn compile_file_keeps_each_files_symbol_scope_explicit() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::write(&root, "import { Business } from \"business.dinoco\"\nimport { Status } from \"status.dinoco\"\n")
+        .expect("root schema");
+    fs::write(project.path().join("business.dinoco"), "model Business {\n    id String @id\n    status Status\n}\n")
+        .expect("business schema");
+    fs::write(project.path().join("status.dinoco"), "enum Status { active }\n").expect("enum schema");
+
+    let error = compile_file(&root).expect_err("an import in the root must not leak into another file");
+
+    assert!(error.message.contains("neither declared nor imported"), "{error}");
+    assert_eq!(error.file.as_deref(), Some("business.dinoco"));
+    assert_eq!(error.line, 3);
+
+    fs::write(
+        &root,
+        "import { Business } from \"business.dinoco\"\nmodel Account {\n    id String @id\n    status Status\n}\n",
+    )
+    .expect("root schema");
+    fs::write(
+        project.path().join("business.dinoco"),
+        "import { Status } from \"status.dinoco\"\nmodel Business { id String @id status Status }\n",
+    )
+    .expect("business schema");
+    let root_error = compile_file(&root).expect_err("transitive imports must not leak into the main file");
+    assert!(root_error.message.contains("neither declared nor imported"), "{root_error}");
+    assert_eq!(root_error.file.as_deref(), Some("schema.dinoco"));
+    assert_eq!(root_error.line, 4);
+}
+
+#[test]
+fn compile_file_reports_unknown_relations_at_the_original_field() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::write(&root, "import { Business } from \"business.dinoco\"\n").expect("root schema");
+    fs::write(
+        project.path().join("business.dinoco"),
+        "model Business {\n    id         String @id\n    account_id String\n    account    Account @relation(fields: [account_id], references: [id])\n}\n",
+    )
+    .expect("business schema");
+
+    let error = compile_file(&root).expect_err("unknown relation model must fail in the declaring file");
+
+    assert_eq!(error.message, "Relation `Business.account` references unknown model `Account`");
+    assert_eq!(error.file.as_deref(), Some("business.dinoco"));
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 5);
+}
+
+#[test]
+fn compile_file_reports_invalid_imports_with_their_origin() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::write(&root, "import { Missing } from \"shared.dinoco\"\n").expect("root schema");
+    fs::write(project.path().join("shared.dinoco"), "enum Present { yes }\n").expect("shared schema");
+
+    let unknown = compile_file(&root).expect_err("unknown imported symbols must fail");
+    assert!(unknown.message.contains("Imported symbol `Missing` does not exist"), "{unknown}");
+    assert_eq!(unknown.file.as_deref(), Some("schema.dinoco"));
+    assert_eq!(unknown.line, 1);
+
+    fs::write(&root, "import { Present } from \"shared.dinoco\"\nimport { Extra } from \"./shared.dinoco\"\n")
+        .expect("duplicate imports");
+    fs::write(project.path().join("shared.dinoco"), "enum Present { yes }\nenum Extra { yes }\n")
+        .expect("shared schema");
+    let duplicate = compile_file(&root).expect_err("normalized duplicate file imports must fail");
+    assert!(duplicate.message.contains("imported more than once"), "{duplicate}");
+    assert_eq!(duplicate.line, 2);
+
+    fs::write(&root, "import { MissingFile } from \"absent.dinoco\"\n").expect("missing import");
+    let missing = compile_file(&root).expect_err("missing imported files must fail");
+    assert!(missing.message.contains("could not be resolved"), "{missing}");
+    assert_eq!(missing.file.as_deref(), Some("schema.dinoco"));
+}
+
+#[test]
+fn compile_file_rejects_cycles_and_config_outside_the_main_schema() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::write(&root, "import { A } from \"a.dinoco\"\n").expect("root schema");
+    fs::write(project.path().join("a.dinoco"), "import { B } from \"b.dinoco\"\nmodel A { id String @id }\n")
+        .expect("a schema");
+    fs::write(project.path().join("b.dinoco"), "import { A } from \"a.dinoco\"\nmodel B { id String @id }\n")
+        .expect("b schema");
+
+    let cycle = compile_file(&root).expect_err("circular imports must fail");
+    assert!(cycle.message.contains("Circular import detected"), "{cycle}");
+    assert!(cycle.message.contains("a.dinoco -> b.dinoco -> a.dinoco"), "{cycle}");
+    assert_eq!(cycle.file.as_deref(), Some("b.dinoco"));
+
+    fs::write(&root, "import { A } from \"a.dinoco\"\n").expect("root schema");
+    fs::write(project.path().join("a.dinoco"), "config { database = \"sqlite\" }\nmodel A { id String @id }\n")
+        .expect("imported config");
+    let config = compile_file(&root).expect_err("only the main schema may configure the project");
+    assert!(config.message.contains("Only `schema.dinoco` may declare a `config` block"), "{config}");
+    assert_eq!(config.file.as_deref(), Some("a.dinoco"));
+}
+
+#[test]
+fn compile_file_reports_both_origins_for_global_duplicate_symbols() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
+    fs::write(&root, "import { MarkerA } from \"a.dinoco\"\nimport { MarkerB } from \"b.dinoco\"\n")
+        .expect("root schema");
+    fs::write(project.path().join("a.dinoco"), "model User { id String @id }\nenum MarkerA { yes }\n")
+        .expect("a schema");
+    fs::write(project.path().join("b.dinoco"), "\nmodel User { id String @id }\nenum MarkerB { yes }\n")
+        .expect("b schema");
+
+    let error = compile_file(&root).expect_err("global duplicate declarations must fail");
+
+    assert!(error.message.contains("Symbol `User` is declared more than once"), "{error}");
+    assert_eq!(error.file.as_deref(), Some("b.dinoco"));
+    assert_eq!(error.line, 2);
+    assert_eq!(error.related.len(), 1);
+    assert_eq!(error.related[0].file, "a.dinoco");
+    assert_eq!(error.related[0].line, 1);
+}
+
+#[test]
+fn compile_file_only_accepts_schema_dinoco_as_the_entrypoint() {
+    let project = tempdir().expect("temp project");
+    let path = project.path().join("main.dinoco");
+    fs::write(&path, "model User { id String @id }\n").expect("schema");
+
+    let error = compile_file(&path).expect_err("the entrypoint name is fixed");
+    assert!(error.message.contains("must be named `schema.dinoco`"), "{error}");
+}
+
+#[test]
+fn parser_preserves_origins_for_imports_enums_models_fields_relations_and_custom_derives() {
+    let schema = parse(
+        r#"import { Account } from "account.dinoco"
+config {
+    custom_derives = [{ into = "struct" derive = "Validate" import = "use validator::Validate;" }]
+}
+enum Status { active }
+model Business {
+    id      String  @id
+    account Account @relation(fields: [id], references: [id])
+}
+"#,
+    )
+    .expect("syntax and custom derive config should parse");
+
+    let import = schema.imports().next().expect("import");
+    assert_eq!((import.origin.file.as_str(), import.origin.line, import.origin.column), ("schema.dinoco", 1, 1));
+    let custom = schema.custom_derives().next().expect("custom derive");
+    assert_eq!((custom.origin.file.as_str(), custom.origin.line), ("schema.dinoco", 3));
+    let status = schema.enums().next().expect("enum");
+    assert_eq!((status.origin.file.as_str(), status.origin.line), ("schema.dinoco", 5));
+    let business = schema.models().next().expect("model");
+    assert_eq!((business.origin.file.as_str(), business.origin.line), ("schema.dinoco", 6));
+    let account = business.fields.iter().find(|field| field.name == "account").expect("relation field");
+    assert_eq!((account.origin.file.as_str(), account.origin.line, account.origin.column), ("schema.dinoco", 8, 5));
+    let relation = account.attributes.iter().find(|attribute| attribute.name == "relation").expect("relation");
+    assert_eq!((relation.origin.file.as_str(), relation.origin.line), ("schema.dinoco", 8));
+}
+
+#[test]
+fn compile_validates_custom_derive_objects_with_source_locations() {
+    let invalid_into = compile(
+        r#"config {
+    custom_derives = [
+        { into = "table" derive = "Validate" import = "use validator::Validate;" }
+    ]
+}
+"#,
+    )
+    .expect_err("custom derive targets are restricted");
+    assert!(invalid_into.message.contains("must be `enum` or `struct`"), "{invalid_into}");
+    assert_eq!(invalid_into.file.as_deref(), Some("schema.dinoco"));
+    assert_eq!(invalid_into.line, 3);
+
+    for (source, expected) in [
+        (r#"config { custom_derives = [{}] }"#, "missing `into`, `derive`, `import`"),
+        (r#"config { custom_derives = [{ derive = "X" import = "use x::X;" }] }"#, "missing `into`"),
+        (r#"config { custom_derives = [{ into = "enum" import = "use x::X;" }] }"#, "missing `derive`"),
+        (r#"config { custom_derives = [{ into = "enum" derive = "X" }] }"#, "missing `import`"),
+        (r#"config { custom_derives = [{ into = "enum" }] }"#, "missing `derive`, `import`"),
+        (
+            r#"config { custom_derives = [{ into = "enum" derive = "X" derive = "Y" import = "use x::X;" }] }"#,
+            "declared more than once",
+        ),
+        (r#"config { custom_derives = ["X"] }"#, "must be an object"),
+        (
+            r#"config { custom_derives = [{ into = "" derive = "X" import = "use x::X;" }] }"#,
+            "`into` must be a non-empty string",
+        ),
+        (
+            r#"config { custom_derives = [{ into = "enum" derive = "" import = "use x::X;" }] }"#,
+            "`derive` must be a non-empty string",
+        ),
+        (
+            r#"config { custom_derives = [{ into = "enum" derive = "X" import = "" }] }"#,
+            "`import` must be a non-empty string",
+        ),
+        (
+            r#"config { custom_derives = [{ into = "enum" derive = "not a path" import = "use x::X;" }] }"#,
+            "valid Rust derive path",
+        ),
+        (r#"config { custom_derives = [{ into = "enum" derive = "X" import = "x::X" }] }"#, "Rust `use ...` statement"),
+    ] {
+        let error = compile(source).expect_err(expected);
+        assert!(error.message.contains(expected), "{error}");
+    }
 }

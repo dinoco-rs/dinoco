@@ -3,9 +3,9 @@ use crate::{
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
     FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
-    ManyToManyWriteQuery, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey,
-    MigrationIndexKind, ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
-    RenameColumnMigration, RenameTableMigration, UpdateQuery,
+    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndexKind, ReferentialAction,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration, RenameTableMigration,
+    UpdateQuery,
 };
 
 use super::{PgBouncerAdapter, PostgresAdapter};
@@ -52,14 +52,6 @@ impl DinocoSqlCompiler for PostgresAdapter {
         query: ManyToManyRelationCountQuery,
     ) -> (String, Vec<DinocoValue>) {
         compile_many_to_many_relation_count_query(query)
-    }
-
-    fn compile_connect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
-        compile_connect_many_to_many_query(query)
-    }
-
-    fn compile_disconnect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
-        compile_disconnect_many_to_many_query(query)
     }
 
     fn compile_create_migrations_table(&self) -> String {
@@ -173,14 +165,6 @@ impl DinocoSqlCompiler for PgBouncerAdapter {
         query: ManyToManyRelationCountQuery,
     ) -> (String, Vec<DinocoValue>) {
         compile_many_to_many_relation_count_query(query)
-    }
-
-    fn compile_connect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
-        compile_connect_many_to_many_query(query)
-    }
-
-    fn compile_disconnect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
-        compile_disconnect_many_to_many_query(query)
     }
 
     fn compile_create_migrations_table(&self) -> String {
@@ -754,48 +738,6 @@ fn compile_many_to_many_relation_count_query(query: ManyToManyRelationCountQuery
         query.join_parent_field,
     );
     append_and_conditions(&mut sql, &mut params, query.child_conditions, Some(query.child_table), &mut placeholders);
-
-    (sql, params)
-}
-
-fn compile_connect_many_to_many_query(query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
-    let mut placeholders = Placeholder::default();
-    let child_placeholder = placeholders.next();
-    let mut sql = format!(
-        "INSERT INTO {} ({}, {}) SELECT {}, {child_placeholder} FROM {}",
-        sql_identifier(query.join_table),
-        sql_identifier(query.join_parent_field),
-        sql_identifier(query.join_child_field),
-        qualify_field(query.parent_field, Some(query.parent_table)),
-        sql_identifier(query.parent_table),
-    );
-    let mut params = vec![query.child_value];
-    params.extend(append_conditions(&mut sql, query.parent_conditions, Some(query.parent_table), &mut placeholders));
-
-    (sql, params)
-}
-
-fn compile_disconnect_many_to_many_query(query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
-    let mut placeholders = Placeholder::default();
-    let child_placeholder = placeholders.next();
-    let mut parent_sql = format!(
-        "SELECT {} FROM {}",
-        qualify_field(query.parent_field, Some(query.parent_table)),
-        sql_identifier(query.parent_table),
-    );
-    let mut params = vec![query.child_value];
-    params.extend(append_conditions(
-        &mut parent_sql,
-        query.parent_conditions,
-        Some(query.parent_table),
-        &mut placeholders,
-    ));
-    let sql = format!(
-        "DELETE FROM {} WHERE {} = {child_placeholder} AND {} IN ({parent_sql})",
-        sql_identifier(query.join_table),
-        sql_identifier(query.join_child_field),
-        sql_identifier(query.join_parent_field),
-    );
 
     (sql, params)
 }

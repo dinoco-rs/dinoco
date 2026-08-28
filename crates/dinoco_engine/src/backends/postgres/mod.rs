@@ -10,7 +10,7 @@ mod compiler;
 
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoRowModel, DinocoValue,
-    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind, TransactionResults,
+    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -159,31 +159,6 @@ impl PostgresAdapter {
         self.with_logger
     }
 
-    pub(crate) async fn execute_compiled_transaction(
-        &self,
-        commands: Vec<CompiledTransactionCommand>,
-    ) -> anyhow::Result<TransactionResults> {
-        let mut conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
-        let transaction = conn.transaction().await?;
-        let mut values = Vec::with_capacity(commands.len());
-
-        for command in commands {
-            let execution =
-                execute_transaction_command(&transaction, &command).await.and_then(|raw| command.finish(raw));
-
-            match execution {
-                Ok(value) => values.push(value),
-                Err(error) => {
-                    transaction.rollback().await.context("Failed to roll back postgres transaction")?;
-                    return Err(error);
-                }
-            }
-        }
-
-        transaction.commit().await?;
-        Ok(TransactionResults::new(values))
-    }
-
     pub(crate) async fn begin_live_transaction(
         &self,
     ) -> anyhow::Result<tokio::sync::mpsc::Sender<LiveTransactionMessage>> {
@@ -277,7 +252,6 @@ async fn execute_transaction_statement(
         return match command.kind {
             TransactionCommandKind::Rows => Ok(RawTransactionOutput::Rows(Vec::new())),
             TransactionCommandKind::Execute => Ok(RawTransactionOutput::Affected(0)),
-            TransactionCommandKind::Count => Ok(RawTransactionOutput::Count(0)),
         };
     }
 
@@ -299,10 +273,6 @@ async fn execute_transaction_statement(
         TransactionCommandKind::Execute => {
             let affected = transaction.execute(command.sql.as_str(), &params).await?;
             Ok(RawTransactionOutput::Affected(affected as usize))
-        }
-        TransactionCommandKind::Count => {
-            let row = transaction.query_one(command.sql.as_str(), &params).await?;
-            Ok(RawTransactionOutput::Count(row.try_get(0)?))
         }
     }
 }

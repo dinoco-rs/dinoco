@@ -3,9 +3,9 @@ use crate::{
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
     FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
-    ManyToManyWriteQuery, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey,
-    MigrationIndexKind, MySqlAdapter, ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
-    RenameColumnMigration, RenameTableMigration, UpdateQuery,
+    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndexKind, MySqlAdapter,
+    ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration,
+    RenameTableMigration, UpdateQuery,
 };
 
 impl DinocoSqlCompiler for MySqlAdapter {
@@ -146,39 +146,6 @@ impl DinocoSqlCompiler for MySqlAdapter {
         query: ManyToManyRelationCountQuery,
     ) -> (String, Vec<DinocoValue>) {
         compile_many_to_many_relation_count_query(query)
-    }
-
-    fn compile_connect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
-        let mut sql = format!(
-            "INSERT INTO {} ({}, {}) SELECT {}, ? FROM {}",
-            sql_identifier(query.join_table),
-            sql_identifier(query.join_parent_field),
-            sql_identifier(query.join_child_field),
-            qualify_field(query.parent_field, Some(query.parent_table)),
-            sql_identifier(query.parent_table),
-        );
-        let mut params = vec![query.child_value];
-        params.extend(append_conditions(&mut sql, query.parent_conditions, Some(query.parent_table)));
-
-        (sql, params)
-    }
-
-    fn compile_disconnect_many_to_many_query(&self, query: ManyToManyWriteQuery) -> (String, Vec<DinocoValue>) {
-        let mut parent_sql = format!(
-            "SELECT {} FROM {}",
-            qualify_field(query.parent_field, Some(query.parent_table)),
-            sql_identifier(query.parent_table),
-        );
-        let mut params = vec![query.child_value];
-        params.extend(append_conditions(&mut parent_sql, query.parent_conditions, Some(query.parent_table)));
-        let sql = format!(
-            "DELETE FROM {} WHERE {} = ? AND {} IN ({parent_sql})",
-            sql_identifier(query.join_table),
-            sql_identifier(query.join_child_field),
-            sql_identifier(query.join_parent_field),
-        );
-
-        (sql, params)
     }
 
     fn compile_create_migrations_table(&self) -> String {

@@ -65,10 +65,24 @@ pub fn render_models(schema: &Schema) -> String {
 
 pub fn render_models_mod(schema: &Schema) -> String {
     let mut out = String::new();
+    push_custom_imports(&mut out, schema, "enum");
     for item in schema.enums() {
-        out.push_str(
-            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize, ::dinoco::DinocoEnum)]\n",
+        let derives = merged_derives(
+            &[
+                "Debug",
+                "Clone",
+                "Copy",
+                "PartialEq",
+                "Eq",
+                "Default",
+                "::dinoco::serde::Serialize",
+                "::dinoco::serde::Deserialize",
+                "::dinoco::DinocoEnum",
+            ],
+            schema,
+            "enum",
         );
+        out.push_str(&format!("#[derive({})]\n", derives.join(", ")));
         out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
         out.push_str(&format!("pub enum {} {{\n", item.name));
         for (index, value) in item.values.iter().enumerate() {
@@ -96,14 +110,16 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
     let mut out = String::new();
     out.push_str("#[allow(unused_imports)]\n");
     out.push_str("use super::*;\n");
-    out.push_str("use dinoco::Entity;\n\n");
+    out.push_str("use dinoco::Entity;\n");
+    push_custom_imports(&mut out, schema, "struct");
+    out.push('\n');
+    let mut base = vec!["Debug", "Clone"];
     if model_supports_copy(model, schema) {
-        out.push_str(
-            "#[derive(Debug, Clone, Copy, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n",
-        );
-    } else {
-        out.push_str("#[derive(Debug, Clone, Entity, ::dinoco::serde::Serialize, ::dinoco::serde::Deserialize)]\n");
+        base.push("Copy");
     }
+    base.extend(["Entity", "::dinoco::serde::Serialize", "::dinoco::serde::Deserialize"]);
+    let derives = merged_derives(&base, schema, "struct");
+    out.push_str(&format!("#[derive({})]\n", derives.join(", ")));
     out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
     out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", escape_rust_string(&model_table_name(model))));
     out.push_str(&format!("pub struct {} {{\n", model.name));
@@ -171,7 +187,7 @@ fn render_dinoco_mod_with_migrations(schema: &Schema, migrations: &[(String, Str
     let max_connection = config_integer(config, "max_connection").unwrap_or(10);
     let read_replica_envs = config_env_array(config, "read_replicas");
 
-    let mut out = String::new();
+    let mut out = String::from("#![allow(dead_code)]\n\n");
     out.push_str("pub mod models;\n\n");
     out.push_str("pub use models::*;\n\n");
     out.push_str("pub async fn connect() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n");
@@ -253,6 +269,35 @@ fn config_env_array<'a>(config: Option<&'a dinoco_compiler::ConfigBlock>, key: &
             _ => None,
         })
         .collect()
+}
+
+fn merged_derives(base: &[&str], schema: &Schema, target: &str) -> Vec<String> {
+    let mut derives = base.iter().map(|derive| (*derive).to_string()).collect::<Vec<_>>();
+    let mut names =
+        derives.iter().map(|derive| derive.rsplit("::").next().unwrap_or(derive).to_string()).collect::<BTreeSet<_>>();
+    for custom in schema.custom_derives().filter(|custom| custom.into == target) {
+        let short = custom.derive.rsplit("::").next().unwrap_or(&custom.derive);
+        if names.insert(short.to_string()) {
+            derives.push(custom.derive.clone());
+        }
+    }
+    derives
+}
+
+fn push_custom_imports(out: &mut String, schema: &Schema, target: &str) {
+    let imports = schema
+        .custom_derives()
+        .filter(|custom| custom.into == target)
+        .map(|custom| custom.import.trim().trim_end_matches(';'))
+        .filter(|import| !import.is_empty())
+        .collect::<BTreeSet<_>>();
+    for import in &imports {
+        out.push_str(import);
+        out.push_str(";\n");
+    }
+    if !out.is_empty() && !imports.is_empty() {
+        out.push('\n');
+    }
 }
 
 fn runtime_migrations(workspace: Option<&str>) -> anyhow::Result<Vec<(String, String)>> {
@@ -660,7 +705,7 @@ fn dinoco_formatter_like(schema: &Schema) -> String {
             let value = match &entry.value {
                 ConfigValue::String(value) | ConfigValue::Ident(value) => value.clone(),
                 ConfigValue::Env(value) => value.clone(),
-                ConfigValue::Array(_) => "[]".to_string(),
+                ConfigValue::Array(_) | ConfigValue::Object(_) => "[]".to_string(),
                 ConfigValue::Boolean(value) => value.to_string(),
                 ConfigValue::Integer(value) => value.to_string(),
             };

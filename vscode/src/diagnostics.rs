@@ -13,6 +13,14 @@ pub const CODE_MISSING_DATABASE_URL: &str = "dinoco.missingDatabaseUrl";
 pub const CODE_MISSING_SNOWFLAKE_NODE_ID: &str = "dinoco.missingSnowflakeNodeId";
 
 pub fn analyze(source: &str, index: &DocumentIndex) -> Vec<Diagnostic> {
+    analyze_document(source, index, true)
+}
+
+pub fn analyze_imported(source: &str, index: &DocumentIndex) -> Vec<Diagnostic> {
+    analyze_document(source, index, false)
+}
+
+fn analyze_document(source: &str, index: &DocumentIndex, require_config: bool) -> Vec<Diagnostic> {
     let schema = match dinoco_compiler::parse(source) {
         Ok(schema) => schema,
         Err(error) => {
@@ -32,11 +40,16 @@ pub fn analyze(source: &str, index: &DocumentIndex) -> Vec<Diagnostic> {
 
     let mut diagnostics = Vec::new();
     validate_top_level(index, &mut diagnostics);
-    validate_config(&schema, index, &mut diagnostics);
+    if require_config || schema.config().is_some() {
+        validate_config(&schema, index, &mut diagnostics);
+    }
     validate_models(&schema, index, &mut diagnostics);
     validate_relation_pairs(&schema, index, &mut diagnostics);
 
-    if let Err(error) = dinoco_compiler::compile(source)
+    if require_config
+        && schema.imports().next().is_none()
+        && schema.config_imports().next().is_none()
+        && let Err(error) = dinoco_compiler::compile(source)
         && !diagnostics.iter().any(|item| item.message == error.message)
     {
         diagnostics.push(diagnostic(
@@ -100,8 +113,13 @@ fn validate_config(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
     };
 
     let config_index = index.config();
-    if !config.entries.is_empty() && !config.workspaces.is_empty() {
-        for entry in &config.entries {
+    let database_entries = config
+        .entries
+        .iter()
+        .filter(|entry| !matches!(entry.key.as_str(), "custom_derives" | "imports"))
+        .collect::<Vec<_>>();
+    if !database_entries.is_empty() && !config.workspaces.is_empty() {
+        for entry in database_entries {
             diagnostics.push(diagnostic(
                 config_entry_range(config_index, &entry.key),
                 DiagnosticSeverity::ERROR,
@@ -144,6 +162,8 @@ fn validate_config_entries(
         "with_logger",
         "min_connection",
         "max_connection",
+        "custom_derives",
+        "imports",
     ];
     let mut seen = HashSet::new();
     for entry in entries {
@@ -179,6 +199,15 @@ fn validate_config_entries(
                 DiagnosticSeverity::ERROR,
                 "dinoco.invalidReadReplicas",
                 "`read_replicas` must be an array containing only non-empty env(\"...\") values.",
+            )),
+            ("imports", ConfigValue::Array(values))
+                if values.iter().all(|value| matches!(value, ConfigValue::String(path) if !path.trim().is_empty())) => {
+            }
+            ("imports", _) => diagnostics.push(diagnostic(
+                range,
+                DiagnosticSeverity::ERROR,
+                "dinoco.invalidImports",
+                "`imports` must be an array containing only non-empty schema file paths.",
             )),
             ("snowflake_node_id", ConfigValue::Env(name)) if !name.trim().is_empty() => {}
             ("snowflake_node_id", _) => diagnostics.push(diagnostic(
@@ -313,6 +342,8 @@ fn config_integer(entries: &[ConfigEntry], key: &str) -> Option<i64> {
 fn validate_models(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec<Diagnostic>) {
     let models = schema.models().map(|model| model.name.as_str()).collect::<HashSet<_>>();
     let enums = schema.enums().map(|item| item.name.as_str()).collect::<HashSet<_>>();
+    let imports = schema.imports().flat_map(|import| import.symbols.iter().map(String::as_str)).collect::<HashSet<_>>();
+    let has_config_imports = schema.config_imports().next().is_some();
 
     for item in schema.enums() {
         let Some(enum_index) = index.enum_(&item.name) else {
@@ -381,7 +412,9 @@ fn validate_models(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
 
             let known = scalar_types().contains(&field.ty.name.as_str())
                 || models.contains(field.ty.name.as_str())
-                || enums.contains(field.ty.name.as_str());
+                || enums.contains(field.ty.name.as_str())
+                || imports.contains(field.ty.name.as_str())
+                || has_config_imports;
             if !known {
                 diagnostics.push(diagnostic(
                     field_index.ty.range,
@@ -1030,6 +1063,11 @@ fn validate_relation(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let Some(target) = schema.models().find(|candidate| candidate.name == field.ty.name) else {
+        if schema.imports().any(|import| import.symbols.iter().any(|symbol| symbol == &field.ty.name))
+            || schema.config_imports().next().is_some()
+        {
+            return;
+        }
         diagnostics.push(diagnostic(
             field_index.ty.range,
             DiagnosticSeverity::ERROR,
@@ -1315,6 +1353,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn imported_documents_do_not_require_a_config_block() {
+        let source = r#"enum AccountType {
+            Personal
+            Business
+        }"#;
+        let diagnostics = analyze_imported(source, &DocumentIndex::new(source));
+
+        assert!(
+            diagnostics.iter().all(|item| {
+                item.code != Some(NumberOrString::String(CODE_MISSING_CONFIG.into()))
+                    && item.code != Some(NumberOrString::String("dinoco.schema".into()))
+            }),
+            "{diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn imported_documents_still_report_local_model_problems() {
+        let source = "model Account { email String }";
+        let diagnostics = analyze_imported(source, &DocumentIndex::new(source));
+
+        assert!(
+            diagnostics.iter().any(|item| item.code == Some(NumberOrString::String("dinoco.missingPrimaryKey".into()))),
+            "{diagnostics:#?}"
+        );
+    }
+
+    #[test]
     fn reports_semantic_schema_problems() {
         let source = r#"config {
             database = "postgresql"
@@ -1340,6 +1406,33 @@ mod tests {
         "#;
         let diagnostics = analyze(source, &DocumentIndex::new(source));
         assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    }
+
+    #[test]
+    fn accepts_types_loaded_by_main_config_imports() {
+        let source = r#"config {
+            imports = ["types.dinoco"]
+            database = "sqlite"
+            database_url = env("DATABASE_URL")
+        }
+        model Dashboard {
+            id         String @id
+            status     Status
+            account_id String?
+            account    Account? @relation(fields: [account_id], references: [id])
+        }"#;
+        let diagnostics = analyze(source, &DocumentIndex::new(source));
+
+        assert!(
+            !diagnostics.iter().any(|item| {
+                matches!(
+                    &item.code,
+                    Some(NumberOrString::String(code))
+                        if code == CODE_UNKNOWN_TYPE || code == "dinoco.invalidRelationTarget"
+                )
+            }),
+            "{diagnostics:#?}"
+        );
     }
 
     #[test]

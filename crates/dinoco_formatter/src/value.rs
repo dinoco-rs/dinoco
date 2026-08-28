@@ -10,7 +10,28 @@ pub fn format_config_value(value: &ConfigValue, config: &FormatterConfig, indent
         ConfigValue::Integer(value) => value.to_string(),
         ConfigValue::Ident(value) => value.clone(),
         ConfigValue::Array(values) => format_config_array(values, config, indent_level),
+        ConfigValue::Object(entries) => format_config_object(entries, config, indent_level),
     }
+}
+
+fn format_config_object(
+    entries: &[dinoco_compiler::ConfigEntry],
+    config: &FormatterConfig,
+    indent_level: usize,
+) -> String {
+    let inner_indent = config.indent().repeat(indent_level + 1);
+    let outer_indent = config.indent().repeat(indent_level);
+    let mut out = String::from("{\n");
+    for entry in entries {
+        out.push_str(&inner_indent);
+        out.push_str(&entry.key);
+        out.push_str(" = ");
+        out.push_str(&format_config_value(&entry.value, config, indent_level + 1));
+        out.push('\n');
+    }
+    out.push_str(&outer_indent);
+    out.push('}');
+    out
 }
 
 pub fn format_attribute_value(value: &AttributeValue) -> String {

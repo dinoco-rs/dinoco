@@ -7,9 +7,11 @@ pub fn format_config(block: &ConfigBlock, config: &FormatterConfig) -> String {
     let indent = config.indent();
     let mut out = String::from("config {\n");
 
-    if block.workspaces.is_empty() {
-        format_entries(&mut out, &block.entries, config, 1);
-    } else {
+    format_entries(&mut out, &block.entries, config, 1);
+    if !block.workspaces.is_empty() {
+        if !block.entries.is_empty() {
+            out.push('\n');
+        }
         out.push_str(&indent);
         out.push_str("workspace {\n");
         for (index, workspace) in block.workspaces.iter().enumerate() {

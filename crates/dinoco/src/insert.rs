@@ -4,10 +4,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dinoco_engine::{
-    DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
-    ManyToManyWriteQuery,
-};
+use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery};
 
 pub type Uuid = String;
 pub type Snowflake = i64;
@@ -26,7 +23,6 @@ where
     M: DinocoInsertable,
 {
     const HAS_NESTED: bool = false;
-    const HAS_TRANSACTION_NESTED: bool = false;
 
     fn dinoco_insert_model(&self) -> M;
 
@@ -36,10 +32,6 @@ where
     {
         Box::pin(async { Ok(()) })
     }
-
-    fn dinoco_transaction_many_to_many_writes(&self, _parent: &M) -> anyhow::Result<Vec<ManyToManyWriteQuery>> {
-        Ok(Vec::new())
-    }
 }
 
 impl<M, V> InsertPayload<M> for &V
@@ -48,7 +40,6 @@ where
     V: InsertPayload<M>,
 {
     const HAS_NESTED: bool = V::HAS_NESTED;
-    const HAS_TRANSACTION_NESTED: bool = V::HAS_TRANSACTION_NESTED;
 
     fn dinoco_insert_model(&self) -> M {
         (*self).dinoco_insert_model()
@@ -59,10 +50,6 @@ where
         C: crate::MutationExecutor + 'a,
     {
         (*self).dinoco_insert_nested(parent, client)
-    }
-
-    fn dinoco_transaction_many_to_many_writes(&self, parent: &M) -> anyhow::Result<Vec<ManyToManyWriteQuery>> {
-        (*self).dinoco_transaction_many_to_many_writes(parent)
     }
 }
 

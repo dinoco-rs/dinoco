@@ -428,6 +428,25 @@ fn rejects_relation_optionality_and_unsafe_referential_actions() {
 }
 
 #[test]
+fn accepts_an_optional_relation_with_a_required_foreign_key_and_set_null() {
+    compile(
+        r#"
+        model Account {
+            id      Integer  @id
+            profile Profile?
+        }
+
+        model Profile {
+            id         Integer  @id
+            account_id Integer  @unique
+            account    Account? @relation(fields: [account_id], references: [id], onDelete: SetNull)
+        }
+        "#,
+    )
+    .expect("an optional relation may use a required FK, including SetNull");
+}
+
+#[test]
 fn rejects_one_to_many_without_an_owner_or_with_wrong_inverse_keys() {
     let missing_owner = compile(
         r#"

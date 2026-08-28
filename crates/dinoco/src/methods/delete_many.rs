@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, TransactionCommand};
+use dinoco_engine::{DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere};
 
-use crate::{DeleteError, IntoTransactionOperation, MutationExecutor};
+use crate::{DeleteError, MutationExecutor};
 pub struct DeleteMany<M> {
     conditions: Vec<FindWhere>,
     marker: PhantomData<M>,
@@ -64,28 +64,5 @@ where
         let query = DeleteQuery { table: M::TABLE_NAME, conditions: self.conditions, returning: Some(S::FIELDS) };
 
         client.delete_returning::<S>(query).await.map_err(|error| DeleteError::from_database(error).into())
-    }
-}
-
-impl<M> IntoTransactionOperation for DeleteMany<M>
-where
-    M: DinocoEntity,
-{
-    fn into_transaction_operation(self) -> TransactionCommand {
-        TransactionCommand::delete(DeleteQuery { table: M::TABLE_NAME, conditions: self.conditions, returning: None })
-    }
-}
-
-impl<M, S> IntoTransactionOperation for DeleteManyReturning<M, S>
-where
-    M: DinocoEntity,
-    S: DinocoProjection<M> + DinocoRowModel,
-{
-    fn into_transaction_operation(self) -> TransactionCommand {
-        TransactionCommand::delete_returning::<S>(DeleteQuery {
-            table: M::TABLE_NAME,
-            conditions: self.conditions,
-            returning: Some(S::FIELDS),
-        })
     }
 }

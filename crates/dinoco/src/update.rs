@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use dinoco_engine::{
     DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
-    ManyToManyUpdate, ManyToManyWriteQuery, UpdateOperation, UpdateSet,
+    ManyToManyUpdate, UpdateOperation, UpdateSet,
 };
 
 use crate::{DinocoRelationValue, MutationExecutor};
@@ -334,53 +334,6 @@ pub(crate) fn duplicate_update_field(sets: &[UpdateSet]) -> Option<&'static str>
 pub(crate) fn has_many_to_many_update_sets(sets: &[UpdateSet]) -> bool {
     sets.iter().any(|set| {
         matches!(set.operation, UpdateOperation::ConnectManyToMany(_) | UpdateOperation::DisconnectManyToMany(_))
-    })
-}
-
-pub(crate) fn transaction_many_to_many_writes(
-    parent_table: &'static str,
-    parent_conditions: &[FindWhere],
-    connects: Vec<UpdateSet>,
-    disconnects: Vec<UpdateSet>,
-) -> anyhow::Result<(Vec<ManyToManyWriteQuery>, Vec<ManyToManyWriteQuery>)> {
-    let connects = connects
-        .into_iter()
-        .map(|set| transaction_many_to_many_write(parent_table, parent_conditions, set, true))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let disconnects = disconnects
-        .into_iter()
-        .map(|set| transaction_many_to_many_write(parent_table, parent_conditions, set, false))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    Ok((connects, disconnects))
-}
-
-fn transaction_many_to_many_write(
-    parent_table: &'static str,
-    parent_conditions: &[FindWhere],
-    set: UpdateSet,
-    connect: bool,
-) -> anyhow::Result<ManyToManyWriteQuery> {
-    let relation = match set.operation {
-        UpdateOperation::ConnectManyToMany(relation) if connect => relation,
-        UpdateOperation::DisconnectManyToMany(relation) if !connect => relation,
-        UpdateOperation::Connect | UpdateOperation::Disconnect => {
-            anyhow::bail!(
-                "transaction relation writes require an implicit many-to-many virtual key; '{}' is a materialized field",
-                set.field,
-            )
-        }
-        _ => anyhow::bail!("transaction relation write '{}' has an unexpected operation", set.field),
-    };
-
-    Ok(ManyToManyWriteQuery {
-        parent_table,
-        join_table: relation.join_table,
-        parent_field: relation.parent_field,
-        join_parent_field: relation.join_parent_field,
-        join_child_field: relation.join_child_field,
-        child_value: set.value,
-        parent_conditions: parent_conditions.to_vec(),
     })
 }
 

@@ -145,17 +145,6 @@ pub struct ManyToManyUpdate {
 }
 
 #[derive(Debug, Clone)]
-pub struct ManyToManyWriteQuery {
-    pub parent_table: &'static str,
-    pub join_table: &'static str,
-    pub parent_field: &'static str,
-    pub join_parent_field: &'static str,
-    pub join_child_field: &'static str,
-    pub child_value: DinocoValue,
-    pub parent_conditions: Vec<FindWhere>,
-}
-
-#[derive(Debug, Clone)]
 pub struct DeleteQuery {
     pub table: &'static str,
     pub conditions: Vec<FindWhere>,

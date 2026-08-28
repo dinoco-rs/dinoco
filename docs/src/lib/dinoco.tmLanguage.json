@@ -4,6 +4,7 @@
   "scopeName": "source.dinoco",
   "patterns": [
     { "include": "#comments" },
+    { "include": "#import-statement" },
     { "include": "#config-block" },
     { "include": "#enum-block" },
     { "include": "#model-block" },
@@ -24,6 +25,27 @@
       "endCaptures": { "0": { "name": "punctuation.definition.string.end.dinoco" } },
       "patterns": [
         { "name": "constant.character.escape.dinoco", "match": "\\\\(?:[\\\"nrt]|u[0-9A-Fa-f]{4})" }
+      ]
+    },
+    "import-statement": {
+      "name": "meta.import.dinoco",
+      "begin": "^\\s*(import)\\b",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.import.dinoco" }
+      },
+      "end": "(?<=\")",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        {
+          "match": "\\b(from)\\b",
+          "captures": {
+            "1": { "name": "keyword.control.import.dinoco" }
+          }
+        },
+        { "name": "punctuation.section.braces.dinoco", "match": "[{}]" },
+        { "name": "punctuation.separator.comma.dinoco", "match": "," },
+        { "name": "entity.name.type.import.dinoco", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" }
       ]
     },
     "config-block": {

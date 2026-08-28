@@ -7,9 +7,9 @@ pub use postgres::*;
 pub use sqlite::*;
 
 use crate::{
-    CompiledTransactionCommand, CountQuery, DeleteQuery, DinocoAdapter, DinocoRowModel, DinocoSqlCompiler, FindQuery,
-    InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery,
-    RelationJoinQuery, TransactionCommand, TransactionResults, UpdateQuery,
+    CountQuery, DeleteQuery, DinocoAdapter, DinocoRowModel, DinocoSqlCompiler, FindQuery, InsertQuery,
+    ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
+    UpdateQuery,
 };
 
 pub enum Backend {
@@ -51,48 +51,6 @@ impl Backend {
     fn log_query(&self, sql: &str, params: &[crate::DinocoValue]) {
         if self.logger_enabled() {
             println!("SQL: {}, params: {:#?}", sql, params);
-        }
-    }
-
-    fn log_transaction(&self, commands: &[CompiledTransactionCommand]) {
-        for command in commands {
-            for statement in &command.statements {
-                self.log_query(&statement.sql, &statement.params);
-            }
-        }
-    }
-
-    pub async fn execute_transaction(&self, commands: Vec<TransactionCommand>) -> anyhow::Result<TransactionResults> {
-        match self {
-            Backend::Sqlite(adapter) => {
-                let commands =
-                    commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
-                self.log_transaction(&commands);
-                adapter.execute_compiled_transaction(commands).await
-            }
-            Backend::Postgres(adapter) => {
-                let commands =
-                    commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
-                self.log_transaction(&commands);
-                adapter.execute_compiled_transaction(commands).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let commands =
-                    commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
-                self.log_transaction(&commands);
-                adapter.inner().execute_compiled_transaction(commands).await
-            }
-            Backend::Mysql(adapter) => {
-                if commands.iter().any(TransactionCommand::has_returning_write) {
-                    anyhow::bail!(
-                        "MySQL transaction batches do not support `.returning::<T>()` or `find_and_update::<T>()` yet."
-                    );
-                }
-                let commands =
-                    commands.into_iter().map(|command| command.compile(adapter)).collect::<anyhow::Result<Vec<_>>>()?;
-                self.log_transaction(&commands);
-                adapter.execute_compiled_transaction(commands).await
-            }
         }
     }
 

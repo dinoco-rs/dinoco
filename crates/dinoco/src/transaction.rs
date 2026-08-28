@@ -1,6 +1,6 @@
 use dinoco_engine::{
     DeleteQuery, DinocoClient, DinocoRowModel, FindQuery, InsertQuery, TransactionCommand, TransactionExecutor,
-    TransactionResults, UpdateQuery,
+    UpdateQuery,
 };
 use std::sync::Arc;
 
@@ -207,10 +207,37 @@ impl MutationExecutor for TransactionExecutor {
         Ok(0)
     }
 
-    async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>
+    async fn insert_returning<M>(&self, mut query: InsertQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
+        if self.is_mysql() {
+            let returning = query
+                .returning
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("MySQL insert returning fallback requires a returning projection."))?;
+            let id_index = query
+                .fields
+                .iter()
+                .position(|field| *field == "id")
+                .ok_or_else(|| anyhow::anyhow!("MySQL insert returning fallback requires an `id` field."))?;
+            let ids = query.rows.iter().map(|row| row[id_index].clone()).collect::<Vec<_>>();
+            let table = query.table;
+
+            self.execute::<()>(TransactionCommand::insert(query)).await?;
+
+            return self
+                .execute(TransactionCommand::find_many::<M>(FindQuery {
+                    fields: returning,
+                    from: table,
+                    conditions: vec![dinoco_engine::FindWhere::Batch("id", ids)],
+                    limit: -1,
+                    skip: -1,
+                    order_by: None,
+                }))
+                .await;
+        }
+
         self.execute(TransactionCommand::insert_returning_many::<M>(query)).await
     }
 
@@ -333,59 +360,4 @@ where
             }
         }
     }
-}
-
-pub trait IntoTransactionOperation {
-    fn into_transaction_operation(self) -> TransactionCommand;
-}
-
-#[derive(Default)]
-pub struct Transaction {
-    commands: Vec<TransactionCommand>,
-}
-
-pub type Transcation = Transaction;
-
-impl Transaction {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn push<O>(&mut self, operation: O)
-    where
-        O: IntoTransactionOperation,
-    {
-        self.commands.push(operation.into_transaction_operation());
-    }
-
-    pub fn len(&self) -> usize {
-        self.commands.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.commands.is_empty()
-    }
-}
-
-pub struct Transactions {
-    transaction: Transaction,
-}
-
-pub fn transactions(transaction: Transaction) -> Transactions {
-    Transactions { transaction }
-}
-
-impl Transactions {
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<TransactionResults> {
-        client.backend.execute_transaction(self.transaction.commands).await
-    }
-}
-
-#[macro_export]
-macro_rules! transaction {
-    ($($operation:expr),* $(,)?) => {{
-        let mut transaction = $crate::Transaction::new();
-        $(transaction.push($operation);)*
-        transaction
-    }};
 }

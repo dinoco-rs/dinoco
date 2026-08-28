@@ -1,0 +1,20 @@
+config {
+    database       = "sqlite"
+    database_url   = env("DATABASE_URL")
+    imports        = [
+        "teste/models.dinoco",
+        "teste/enums.dinoco"
+    ]
+    custom_derives = [
+        {
+            into = "enum"
+            derive = "ZodSchema"
+            import = "use zod_rs::prelude::*;"
+        },
+        {
+            into = "struct"
+            derive = "ZodSchema"
+            import = "use zod_rs::prelude::*;"
+        }
+    ]
+}
