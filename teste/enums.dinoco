@@ -1,9 +1,0 @@
-enum AccountType {
-    OWNER
-    MEMBER
-}
-
-enum BusinessStatus {
-    ACTIVE
-    INACTIVE
-}
