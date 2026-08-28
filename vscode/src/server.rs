@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::RwLock;
 
 use tower_lsp::jsonrpc::{Error as LspError, Result as LspResult};
@@ -6,31 +8,46 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::completion;
+use crate::completion::ImportCompletionContext;
 use crate::diagnostics::{self, CODE_MISSING_CONFIG, CODE_MISSING_DATABASE_URL, CODE_UNKNOWN_TYPE};
 use crate::document::{BlockKind, DocumentIndex, ResolvedSymbol, scalar_types};
+use crate::workspace::{ImportGraph, SchemaFile, WorkspaceCache, canonical_path, import_path_suggestions};
 
 #[derive(Debug, Clone)]
 struct DocumentState {
-    text: String,
-    index: DocumentIndex,
+    file: Arc<SchemaFile>,
     version: i32,
 }
 
 impl DocumentState {
     fn new(text: String, version: i32) -> Self {
-        let index = DocumentIndex::new(&text);
-        Self { text, index, version }
+        Self { file: Arc::new(SchemaFile::new(text)), version }
+    }
+
+    fn text(&self) -> &str {
+        &self.file.source
+    }
+
+    fn index(&self) -> &DocumentIndex {
+        &self.file.index
     }
 }
 
 pub struct DinocoLanguageServer {
     client: Client,
     documents: RwLock<HashMap<Url, DocumentState>>,
+    workspace: RwLock<WorkspaceCache>,
+    project_diagnostic_files: RwLock<HashMap<PathBuf, HashSet<Url>>>,
 }
 
 impl DinocoLanguageServer {
     pub fn new(client: Client) -> Self {
-        Self { client, documents: RwLock::new(HashMap::new()) }
+        Self {
+            client,
+            documents: RwLock::new(HashMap::new()),
+            workspace: RwLock::new(WorkspaceCache::default()),
+            project_diagnostic_files: RwLock::new(HashMap::new()),
+        }
     }
 
     fn document(&self, uri: &Url) -> Option<DocumentState> {
@@ -40,20 +57,25 @@ impl DinocoLanguageServer {
     async fn update_document(&self, uri: Url, text: String, version: i32) {
         let state = DocumentState::new(text, version);
         let diagnostics = if is_main_schema(&uri) {
-            diagnostics::analyze(&state.text, &state.index)
+            diagnostics::analyze(state.text(), state.index())
         } else {
-            diagnostics::analyze_imported(&state.text, &state.index)
+            diagnostics::analyze_imported(state.text(), state.index())
         };
         if let Ok(mut documents) = self.documents.write() {
             documents.insert(uri.clone(), state);
         }
+        if let Ok(path) = uri.to_file_path()
+            && let Ok(mut workspace) = self.workspace.write()
+        {
+            workspace.invalidate(&path);
+        }
         self.client.publish_diagnostics(uri, diagnostics, Some(version)).await;
     }
 
-    fn hover_for(&self, state: &DocumentState, position: Position) -> Option<Hover> {
-        let token = state.index.token_symbol_at(position)?;
-        let contents = if let Some(symbol) = state.index.resolve_symbol(position) {
-            hover_resolved_symbol(&state.index, &symbol)?
+    fn hover_for(&self, state: &DocumentState, index: &DocumentIndex, position: Position) -> Option<Hover> {
+        let token = state.index().token_symbol_at(position)?;
+        let contents = if let Some(symbol) = index.resolve_symbol(position) {
+            hover_resolved_symbol(index, &symbol)?
         } else if scalar_types().contains(&token.name.as_str()) {
             format!("```dinoco\n{}\n```\n\n{}", token.name, scalar_description(&token.name))
         } else if let Some(description) = keyword_description(&token.name) {
@@ -72,7 +94,13 @@ impl DinocoLanguageServer {
         })
     }
 
-    fn quick_fixes(&self, uri: &Url, state: &DocumentState, params: &CodeActionParams) -> Vec<CodeActionOrCommand> {
+    fn quick_fixes(
+        &self,
+        uri: &Url,
+        state: &DocumentState,
+        index: &DocumentIndex,
+        params: &CodeActionParams,
+    ) -> Vec<CodeActionOrCommand> {
         let mut actions = Vec::new();
         for item in &params.context.diagnostics {
             let Some(NumberOrString::String(code)) = &item.code else {
@@ -83,11 +111,11 @@ impl DinocoLanguageServer {
                     range: Range::new(Position::new(0, 0), Position::new(0, 0)),
                     new_text: "config {\n    database = \"postgresql\"\n    database_url = env(\"DATABASE_URL\")\n    read_replicas = []\n}\n\n".to_string(),
                 }),
-                CODE_MISSING_DATABASE_URL => state.index.config().map(|config| TextEdit {
+                CODE_MISSING_DATABASE_URL => state.index().config().map(|config| TextEdit {
                     range: Range::new(config.body_range.start, config.body_range.start),
                     new_text: "\n    database_url = env(\"DATABASE_URL\")".to_string(),
                 }),
-                CODE_UNKNOWN_TYPE => unknown_type_fix(&state.index, item),
+                CODE_UNKNOWN_TYPE => unknown_type_fix(index, item),
                 _ => None,
             };
             let Some(edit) = edit else {
@@ -113,6 +141,156 @@ impl DinocoLanguageServer {
         }
         actions
     }
+
+    fn overlays(&self) -> HashMap<PathBuf, Arc<SchemaFile>> {
+        self.documents
+            .read()
+            .map(|documents| {
+                documents
+                    .iter()
+                    .filter_map(|(uri, state)| {
+                        let path = uri.to_file_path().ok()?;
+                        Some((canonical_path(&path)?, state.file.clone()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn import_graph(&self, uri: &Url) -> Option<(PathBuf, ImportGraph)> {
+        let path = canonical_path(&uri.to_file_path().ok()?)?;
+        let overlays = self.overlays();
+        let graph = self.workspace.write().ok()?.load_graph(&path, &overlays);
+        Some((path, graph))
+    }
+
+    fn project_import_graph(&self, uri: &Url) -> Option<(PathBuf, ImportGraph)> {
+        let path = canonical_path(&uri.to_file_path().ok()?)?;
+        let root = self.project_root(&path)?;
+        let overlays = self.overlays();
+        let mut workspace = self.workspace.write().ok()?;
+        let mut graph = workspace.load_graph(&root, &overlays);
+        if !graph.files.contains_key(&path) {
+            graph = workspace.load_graph(&path, &overlays);
+        }
+        Some((path, graph))
+    }
+
+    fn semantic_index(&self, uri: &Url, state: &DocumentState) -> (DocumentIndex, Option<(PathBuf, ImportGraph)>) {
+        let Some((path, graph)) = self.import_graph(uri) else {
+            return (state.index().clone(), None);
+        };
+        let index = state.index().with_external_declarations(graph.visible_declarations(&path));
+        (index, Some((path, graph)))
+    }
+
+    fn import_completion(
+        &self,
+        uri: &Url,
+        _state: &DocumentState,
+        context: ImportCompletionContext,
+    ) -> Option<CompletionResponse> {
+        let current = uri.to_file_path().ok()?;
+        match context {
+            ImportCompletionContext::Symbols { path: Some(import_path) } => {
+                if Path::new(&import_path).extension().and_then(|extension| extension.to_str()) != Some("dinoco") {
+                    return Some(CompletionResponse::Array(Vec::new()));
+                }
+                let overlays = self.overlays();
+                let (_, target) = self.workspace.write().ok()?.load_import_target(&current, &import_path, &overlays)?;
+                Some(completion::import_symbol_completions(&target.index))
+            }
+            ImportCompletionContext::Symbols { path: None } => Some(CompletionResponse::Array(Vec::new())),
+            ImportCompletionContext::Path { fragment, replace, quoted } => {
+                Some(completion::import_path_completions(import_path_suggestions(&current, &fragment), replace, quoted))
+            }
+        }
+    }
+
+    fn project_root(&self, file: &Path) -> Option<PathBuf> {
+        if file.file_name().and_then(|name| name.to_str()) == Some("schema.dinoco") {
+            return canonical_path(file);
+        }
+        if let Some(root) = self.workspace.read().ok()?.known_root_for(file) {
+            return Some(root);
+        }
+        for directory in file.parent()?.ancestors() {
+            let candidate = directory.join("schema.dinoco");
+            if candidate.is_file() {
+                return canonical_path(&candidate);
+            }
+        }
+        None
+    }
+
+    async fn validate_project_on_save(&self, uri: &Url) {
+        let Ok(saved_path) = uri.to_file_path() else {
+            return;
+        };
+        if let Ok(mut workspace) = self.workspace.write() {
+            workspace.invalidate(&saved_path);
+        }
+        let Some(root) = self.project_root(&saved_path) else {
+            return;
+        };
+        let overlays = self.overlays();
+        let graph = match self.workspace.write() {
+            Ok(mut workspace) => workspace.load_graph(&root, &overlays),
+            Err(_) => return,
+        };
+        let compile_error = dinoco_compiler::compile_file(&root).err();
+        self.publish_project_diagnostics(&root, graph, compile_error).await;
+    }
+
+    async fn publish_project_diagnostics(
+        &self,
+        root: &Path,
+        graph: ImportGraph,
+        compile_error: Option<dinoco_compiler::CompileError>,
+    ) {
+        let mut files = graph.files.keys().filter_map(|path| Url::from_file_path(path).ok()).collect::<HashSet<_>>();
+        let previous = self
+            .project_diagnostic_files
+            .read()
+            .ok()
+            .and_then(|projects| projects.get(root).cloned())
+            .unwrap_or_default();
+        let mut project_diagnostic = None;
+        if let Some(error) = compile_error {
+            project_diagnostic = compile_error_diagnostic(root, &graph, error);
+            if let Some((uri, _)) = &project_diagnostic {
+                files.insert(uri.clone());
+            }
+        }
+
+        let publish_files = files.union(&previous).cloned().collect::<Vec<_>>();
+        for uri in publish_files {
+            let state = self.document(&uri);
+            let graph_file = uri
+                .to_file_path()
+                .ok()
+                .and_then(|path| canonical_path(&path))
+                .and_then(|path| graph.files.get(&path).cloned());
+            let file = state.as_ref().map(|state| state.file.clone()).or(graph_file);
+            let mut diagnostics = file.as_ref().map_or_else(Vec::new, |file| {
+                if uri.to_file_path().ok().and_then(|path| canonical_path(&path)).as_deref() == Some(root) {
+                    diagnostics::analyze(&file.source, &file.index)
+                } else {
+                    diagnostics::analyze_imported(&file.source, &file.index)
+                }
+            });
+            if let Some((target, diagnostic)) = &project_diagnostic
+                && target == &uri
+                && !diagnostics.iter().any(|item| item.message == diagnostic.message)
+            {
+                diagnostics.push(diagnostic.clone());
+            }
+            self.client.publish_diagnostics(uri, diagnostics, state.map(|state| state.version)).await;
+        }
+        if let Ok(mut tracked) = self.project_diagnostic_files.write() {
+            tracked.insert(root.to_path_buf(), files);
+        }
+    }
 }
 
 fn is_main_schema(uri: &Url) -> bool {
@@ -134,6 +312,79 @@ fn format_document_source(
     }
 }
 
+fn compile_error_diagnostic(
+    root: &Path,
+    graph: &ImportGraph,
+    error: dinoco_compiler::CompileError,
+) -> Option<(Url, Diagnostic)> {
+    let path = diagnostic_path(root, error.file.as_deref());
+    let uri = Url::from_file_path(&path).ok()?;
+    let source = graph
+        .files
+        .get(&path)
+        .map(|file| file.source.clone())
+        .or_else(|| std::fs::read_to_string(&path).ok())
+        .unwrap_or_default();
+    let start = compiler_position(&source, error.line, error.column);
+    let related_information = error
+        .related
+        .into_iter()
+        .filter_map(|related| {
+            let path = diagnostic_path(root, Some(&related.file));
+            let uri = Url::from_file_path(&path).ok()?;
+            let source = graph
+                .files
+                .get(&path)
+                .map(|file| file.source.clone())
+                .or_else(|| std::fs::read_to_string(&path).ok())
+                .unwrap_or_default();
+            let start = compiler_position(&source, related.line, related.column);
+            Some(DiagnosticRelatedInformation {
+                location: Location::new(uri, Range::new(start, Position::new(start.line, start.character + 1))),
+                message: related.message,
+            })
+        })
+        .collect::<Vec<_>>();
+    Some((
+        uri,
+        Diagnostic {
+            range: Range::new(start, Position::new(start.line, start.character + 1)),
+            severity: Some(DiagnosticSeverity::ERROR),
+            code: Some(NumberOrString::String("dinoco.project".to_string())),
+            source: Some("dinoco".to_string()),
+            message: error.message,
+            related_information: (!related_information.is_empty()).then_some(related_information),
+            ..Diagnostic::default()
+        },
+    ))
+}
+
+fn diagnostic_path(root: &Path, file: Option<&str>) -> PathBuf {
+    let Some(file) = file else {
+        return root.to_path_buf();
+    };
+    let file = Path::new(file);
+    let path = if file.is_absolute() {
+        file.to_path_buf()
+    } else {
+        root.parent().unwrap_or_else(|| Path::new(".")).join(file)
+    };
+    canonical_path(&path).unwrap_or(path)
+}
+
+fn compiler_position(source: &str, line: usize, column: usize) -> Position {
+    let line_index = line.saturating_sub(1);
+    let character = source
+        .lines()
+        .nth(line_index)
+        .unwrap_or_default()
+        .chars()
+        .take(column.saturating_sub(1))
+        .map(char::len_utf16)
+        .sum::<usize>() as u32;
+    Position::new(line_index as u32, character)
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for DinocoLanguageServer {
     async fn initialize(&self, _: InitializeParams) -> LspResult<InitializeResult> {
@@ -143,7 +394,7 @@ impl LanguageServer for DinocoLanguageServer {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
                     open_close: Some(true),
                     change: Some(TextDocumentSyncKind::FULL),
-                    save: Some(TextDocumentSyncSaveOptions::Supported(true)),
+                    save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions { include_text: Some(true) })),
                     ..TextDocumentSyncOptions::default()
                 })),
                 completion_provider: Some(CompletionOptions {
@@ -155,6 +406,10 @@ impl LanguageServer for DinocoLanguageServer {
                         ":".into(),
                         "=".into(),
                         "[".into(),
+                        "{".into(),
+                        "\"".into(),
+                        "/".into(),
+                        ".".into(),
                     ]),
                     ..CompletionOptions::default()
                 }),
@@ -207,7 +462,18 @@ impl LanguageServer for DinocoLanguageServer {
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         if let Some(text) = params.text {
             let version = self.document(&params.text_document.uri).map_or(0, |document| document.version);
-            self.update_document(params.text_document.uri, text, version).await;
+            self.update_document(params.text_document.uri.clone(), text, version).await;
+        }
+        self.validate_project_on_save(&params.text_document.uri).await;
+    }
+
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        if let Ok(mut workspace) = self.workspace.write() {
+            for change in params.changes {
+                if let Ok(path) = change.uri.to_file_path() {
+                    workspace.invalidate(&path);
+                }
+            }
         }
     }
 
@@ -224,7 +490,11 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&uri) else {
             return Ok(None);
         };
-        Ok(Some(completion::complete(&state.text, &state.index, position)))
+        if let Some(context) = completion::import_completion_context(state.text(), position) {
+            return Ok(self.import_completion(&uri, &state, context));
+        }
+        let (index, _) = self.semantic_index(&uri, &state);
+        Ok(Some(completion::complete(state.text(), &index, position)))
     }
 
     async fn signature_help(&self, params: SignatureHelpParams) -> LspResult<Option<SignatureHelp>> {
@@ -233,13 +503,17 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&uri) else {
             return Ok(None);
         };
-        Ok(completion::signature(&state.text, position))
+        Ok(completion::signature(state.text(), position))
     }
 
     async fn hover(&self, params: HoverParams) -> LspResult<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
-        Ok(self.document(&uri).and_then(|state| self.hover_for(&state, position)))
+        let Some(state) = self.document(&uri) else {
+            return Ok(None);
+        };
+        let (index, _) = self.semantic_index(&uri, &state);
+        Ok(self.hover_for(&state, &index, position))
     }
 
     async fn goto_definition(&self, params: GotoDefinitionParams) -> LspResult<Option<GotoDefinitionResponse>> {
@@ -248,8 +522,17 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&uri) else {
             return Ok(None);
         };
-        let Some(range) = state.index.resolve_symbol(position).and_then(|symbol| state.index.definition(&symbol))
-        else {
+        let (index, graph) = self.semantic_index(&uri, &state);
+        let Some(symbol) = index.resolve_symbol(position) else {
+            return Ok(None);
+        };
+        if let Some((path, graph)) = graph
+            && let Some((definition_path, range)) = graph.definition(&path, &symbol)
+            && let Ok(definition_uri) = Url::from_file_path(definition_path)
+        {
+            return Ok(Some(GotoDefinitionResponse::Scalar(Location::new(definition_uri, range))));
+        }
+        let Some(range) = state.index().definition(&symbol) else {
             return Ok(None);
         };
         Ok(Some(GotoDefinitionResponse::Scalar(Location::new(uri, range))))
@@ -261,17 +544,40 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&uri) else {
             return Ok(None);
         };
-        let Some(symbol) = state.index.resolve_symbol(position) else {
+        let (index, _) = self.semantic_index(&uri, &state);
+        let Some(symbol) = index.resolve_symbol(position) else {
             return Ok(None);
         };
-        let definition = state.index.definition(&symbol);
-        let locations = state
-            .index
-            .occurrences(&symbol)
-            .into_iter()
-            .filter(|range| params.context.include_declaration || Some(*range) != definition)
-            .map(|range| Location::new(uri.clone(), range))
-            .collect();
+        let locations = if let Some((current, graph)) = self.project_import_graph(&uri) {
+            let definition = graph.definition(&current, &symbol).map(|(path, range)| (path.to_path_buf(), range));
+            graph
+                .files
+                .iter()
+                .filter_map(|(path, file)| Some((Url::from_file_path(path).ok()?, path, file)))
+                .flat_map(|(item_uri, path, file)| {
+                    let definition = definition.clone();
+                    file.index
+                        .occurrences(&symbol)
+                        .into_iter()
+                        .filter(move |range| {
+                            params.context.include_declaration
+                                || definition.as_ref().is_none_or(|(definition_path, definition_range)| {
+                                    definition_path != path || definition_range != range
+                                })
+                        })
+                        .map(move |range| Location::new(item_uri.clone(), range))
+                })
+                .collect()
+        } else {
+            let definition = state.index().definition(&symbol);
+            state
+                .index()
+                .occurrences(&symbol)
+                .into_iter()
+                .filter(|range| params.context.include_declaration || Some(*range) != definition)
+                .map(|range| Location::new(uri.clone(), range))
+                .collect()
+        };
         Ok(Some(locations))
     }
 
@@ -281,12 +587,13 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&uri) else {
             return Ok(None);
         };
-        let Some(symbol) = state.index.resolve_symbol(position) else {
+        let (index, _) = self.semantic_index(&uri, &state);
+        let Some(symbol) = index.resolve_symbol(position) else {
             return Ok(None);
         };
         Ok(Some(
             state
-                .index
+                .index()
                 .occurrences(&symbol)
                 .into_iter()
                 .map(|range| DocumentHighlight { range, kind: Some(DocumentHighlightKind::TEXT) })
@@ -298,11 +605,12 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&params.text_document.uri) else {
             return Ok(None);
         };
-        if state.index.resolve_symbol(params.position).is_none() {
+        let (index, _) = self.semantic_index(&params.text_document.uri, &state);
+        if index.resolve_symbol(params.position).is_none() {
             return Ok(None);
         }
         Ok(state
-            .index
+            .index()
             .token_symbol_at(params.position)
             .map(|token| PrepareRenameResponse::RangeWithPlaceholder { range: token.range, placeholder: token.name }))
     }
@@ -316,23 +624,41 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&uri) else {
             return Ok(None);
         };
-        let Some(symbol) = state.index.resolve_symbol(position) else {
+        let (index, _) = self.semantic_index(&uri, &state);
+        let Some(symbol) = index.resolve_symbol(position) else {
             return Ok(None);
         };
-        let edits = state
-            .index
-            .occurrences(&symbol)
-            .into_iter()
-            .map(|range| TextEdit { range, new_text: params.new_name.clone() })
-            .collect();
-        Ok(Some(WorkspaceEdit { changes: Some(HashMap::from([(uri, edits)])), ..WorkspaceEdit::default() }))
+        let changes = if let Some((_, graph)) = self.project_import_graph(&uri) {
+            graph
+                .files
+                .iter()
+                .filter_map(|(path, file)| {
+                    let edits = file
+                        .index
+                        .occurrences(&symbol)
+                        .into_iter()
+                        .map(|range| TextEdit { range, new_text: params.new_name.clone() })
+                        .collect::<Vec<_>>();
+                    if edits.is_empty() { None } else { Some((Url::from_file_path(path).ok()?, edits)) }
+                })
+                .collect()
+        } else {
+            let edits = state
+                .index()
+                .occurrences(&symbol)
+                .into_iter()
+                .map(|range| TextEdit { range, new_text: params.new_name.clone() })
+                .collect();
+            HashMap::from([(uri, edits)])
+        };
+        Ok(Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }))
     }
 
     async fn document_symbol(&self, params: DocumentSymbolParams) -> LspResult<Option<DocumentSymbolResponse>> {
         let Some(state) = self.document(&params.text_document.uri) else {
             return Ok(None);
         };
-        let symbols = state.index.blocks.iter().map(document_symbol).collect();
+        let symbols = state.index().blocks.iter().map(document_symbol).collect();
         Ok(Some(DocumentSymbolResponse::Nested(symbols)))
     }
 
@@ -342,7 +668,7 @@ impl LanguageServer for DinocoLanguageServer {
         };
         Ok(Some(
             state
-                .index
+                .index()
                 .blocks
                 .iter()
                 .filter(|block| block.range.start.line < block.range.end.line)
@@ -369,13 +695,15 @@ impl LanguageServer for DinocoLanguageServer {
             .positions
             .into_iter()
             .map(|position| {
-                let document =
-                    SelectionRange { range: Range::new(Position::new(0, 0), state.index.end_position()), parent: None };
-                let Some(block) = state.index.block_at(position) else {
+                let document = SelectionRange {
+                    range: Range::new(Position::new(0, 0), state.index().end_position()),
+                    parent: None,
+                };
+                let Some(block) = state.index().block_at(position) else {
                     return document;
                 };
                 let block_range = SelectionRange { range: block.range, parent: Some(Box::new(document)) };
-                if let Some((_, field)) = state.index.field_at(position) {
+                if let Some((_, field)) = state.index().field_at(position) {
                     SelectionRange { range: field.range, parent: Some(Box::new(block_range)) }
                 } else {
                     block_range
@@ -393,13 +721,13 @@ impl LanguageServer for DinocoLanguageServer {
             indent_width: params.options.tab_size.max(1) as usize,
             final_newline: true,
         };
-        let formatted = format_document_source(&params.text_document.uri, &state.text, &config)
+        let formatted = format_document_source(&params.text_document.uri, state.text(), &config)
             .map_err(|error| LspError::invalid_params(format!("Cannot format an invalid Dinoco schema: {error}")))?;
-        if formatted == state.text {
+        if formatted == state.text() {
             return Ok(Some(Vec::new()));
         }
         Ok(Some(vec![TextEdit {
-            range: Range::new(Position::new(0, 0), state.index.end_position()),
+            range: Range::new(Position::new(0, 0), state.index().end_position()),
             new_text: formatted,
         }]))
     }
@@ -409,7 +737,8 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&uri) else {
             return Ok(None);
         };
-        Ok(Some(self.quick_fixes(&uri, &state, &params)))
+        let (index, _) = self.semantic_index(&uri, &state);
+        Ok(Some(self.quick_fixes(&uri, &state, &index, &params)))
     }
 }
 
@@ -649,6 +978,10 @@ fn config_description(name: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
     use super::*;
 
     #[test]
@@ -696,5 +1029,28 @@ mod tests {
     #[test]
     fn edit_distance_handles_insertions() {
         assert_eq!(edit_distance("strng", "string"), 1);
+    }
+
+    #[test]
+    fn project_compile_errors_are_published_at_the_imported_file() {
+        let project = tempdir().expect("project");
+        let root = project.path().join("schema.dinoco");
+        let child = project.path().join("business.dinoco");
+        fs::write(&root, "import { Business } from \"business.dinoco\"\n").expect("root");
+        fs::write(
+            &child,
+            "model Business {\n    id String @id\n    account Account @relation(fields: [id], references: [id])\n}\n",
+        )
+        .expect("child");
+        let root = canonical_path(&root).expect("canonical root");
+        let mut cache = WorkspaceCache::default();
+        let graph = cache.load_graph(&root, &HashMap::new());
+        let error = dinoco_compiler::compile_file(&root).expect_err("project error");
+
+        let (uri, diagnostic) = compile_error_diagnostic(&root, &graph, error).expect("diagnostic");
+
+        assert_eq!(uri.to_file_path().expect("file uri"), canonical_path(&child).expect("canonical child"));
+        assert_eq!(diagnostic.range.start.line, 2);
+        assert_eq!(diagnostic.code, Some(NumberOrString::String("dinoco.project".to_string())));
     }
 }

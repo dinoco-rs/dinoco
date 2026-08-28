@@ -1,11 +1,118 @@
 use std::collections::HashSet;
 
 use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
-    ParameterInformation, ParameterLabel, Position, SignatureHelp, SignatureInformation,
+    CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit, Documentation, InsertTextFormat,
+    MarkupContent, MarkupKind, ParameterInformation, ParameterLabel, Position, Range, SignatureHelp,
+    SignatureInformation, TextEdit,
 };
 
 use crate::document::{BlockKind, DocumentIndex, FieldInfo, line_prefix, scalar_types};
+use crate::workspace::ImportPathSuggestion;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportCompletionContext {
+    Symbols { path: Option<String> },
+    Path { fragment: String, replace: Range, quoted: bool },
+}
+
+pub fn import_completion_context(source: &str, position: Position) -> Option<ImportCompletionContext> {
+    let line = source.lines().nth(position.line as usize)?;
+    let cursor = utf16_byte_offset(line, position.character);
+    let trimmed_start = line.len() - line.trim_start().len();
+    if !line[trimmed_start..].starts_with("import") {
+        return None;
+    }
+
+    let open = line.find('{')?;
+    let close = line[open + 1..].find('}').map(|offset| open + 1 + offset);
+    if cursor > open && close.is_none_or(|close| cursor <= close) {
+        let path = close.and_then(|close| import_path_after(&line[close + 1..]));
+        return Some(ImportCompletionContext::Symbols { path });
+    }
+
+    let close = close?;
+    let after_close = &line[close + 1..];
+    let from_offset = after_close.find("from").map(|offset| close + 1 + offset)?;
+    let after_from = from_offset + "from".len();
+    if cursor < after_from {
+        return None;
+    }
+    let tail = &line[after_from..];
+    if let Some(quote_offset) = tail.find('"') {
+        let quote = after_from + quote_offset;
+        if cursor <= quote {
+            return None;
+        }
+        let close_quote = line[quote + 1..].find('"').map(|offset| quote + 1 + offset).unwrap_or(cursor);
+        if cursor > close_quote {
+            return None;
+        }
+        let end = close_quote.max(cursor);
+        return Some(ImportCompletionContext::Path {
+            fragment: line[quote + 1..cursor].to_string(),
+            replace: Range::new(
+                Position::new(position.line, utf16_len(&line[..quote + 1])),
+                Position::new(position.line, utf16_len(&line[..end])),
+            ),
+            quoted: true,
+        });
+    }
+
+    let value_start = after_from + tail.len() - tail.trim_start().len();
+    if cursor < value_start {
+        return None;
+    }
+    Some(ImportCompletionContext::Path {
+        fragment: line[value_start..cursor].trim().to_string(),
+        replace: Range::new(
+            Position::new(position.line, utf16_len(&line[..value_start])),
+            Position::new(position.line, utf16_len(&line[..cursor])),
+        ),
+        quoted: false,
+    })
+}
+
+pub fn import_symbol_completions(index: &DocumentIndex) -> CompletionResponse {
+    let items = index
+        .declarations()
+        .filter_map(|block| {
+            let name = block.name.as_ref()?;
+            match block.kind {
+                BlockKind::Model => Some(value(&name.name, CompletionItemKind::CLASS, "Imported model", &name.name)),
+                BlockKind::Enum => Some(value(&name.name, CompletionItemKind::ENUM, "Imported enum", &name.name)),
+                BlockKind::Config => None,
+            }
+        })
+        .collect();
+    CompletionResponse::Array(items)
+}
+
+pub fn import_path_completions(
+    suggestions: Vec<ImportPathSuggestion>,
+    replace: Range,
+    quoted: bool,
+) -> CompletionResponse {
+    CompletionResponse::Array(
+        suggestions
+            .into_iter()
+            .map(|suggestion| {
+                let kind = if suggestion.directory { CompletionItemKind::FOLDER } else { CompletionItemKind::FILE };
+                let new_text = if quoted { suggestion.path.clone() } else { format!("\"{}\"", suggestion.path) };
+                CompletionItem {
+                    label: suggestion.path,
+                    kind: Some(kind),
+                    detail: Some(if suggestion.directory {
+                        "Dinoco schema directory".to_string()
+                    } else {
+                        "Dinoco schema file".to_string()
+                    }),
+                    text_edit: Some(CompletionTextEdit::Edit(TextEdit { range: replace, new_text })),
+                    ..CompletionItem::default()
+                }
+            })
+            .collect(),
+    )
+}
 
 pub fn complete(source: &str, index: &DocumentIndex, position: Position) -> CompletionResponse {
     let prefix = line_prefix(source, position);
@@ -112,6 +219,12 @@ pub fn signature(source: &str, position: Position) -> Option<SignatureHelp> {
 
 fn root_completions() -> Vec<CompletionItem> {
     vec![
+        snippet(
+            "import",
+            CompletionItemKind::MODULE,
+            "Import models or enums from another schema file",
+            "import { ${1:Symbol} } from \"${2:./models.dinoco}\"",
+        ),
         snippet(
             "config",
             CompletionItemKind::MODULE,
@@ -272,7 +385,7 @@ fn model_completions(prefix: &str, index: &DocumentIndex) -> Vec<CompletionItem>
             .iter()
             .map(|name| value(name, CompletionItemKind::TYPE_PARAMETER, scalar_documentation(name), name))
             .collect::<Vec<_>>();
-        for block in &index.blocks {
+        for block in index.declarations() {
             let Some(name) = &block.name else {
                 continue;
             };
@@ -524,6 +637,27 @@ fn parameter(label: &str, documentation: &str) -> ParameterInformation {
     }
 }
 
+fn import_path_after(source: &str) -> Option<String> {
+    let source = source.trim_start().strip_prefix("from")?.trim_start().strip_prefix('"')?;
+    let end = source.find('"')?;
+    Some(source[..end].to_string())
+}
+
+fn utf16_byte_offset(value: &str, target: u32) -> usize {
+    let mut utf16 = 0u32;
+    for (index, character) in value.char_indices() {
+        if utf16 >= target {
+            return index;
+        }
+        utf16 += character.len_utf16() as u32;
+    }
+    value.len()
+}
+
+fn utf16_len(value: &str) -> u32 {
+    value.encode_utf16().count() as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -566,5 +700,48 @@ model Token {
 
         let imports = items.iter().find(|item| item.label == "imports").expect("imports completion");
         assert_eq!(imports.insert_text.as_deref(), Some("imports = [\"${1:models/account.dinoco}\"]"));
+    }
+
+    #[test]
+    fn imported_declarations_participate_in_model_type_completion() {
+        let source = "model Account {\n    session \n}";
+        let local = DocumentIndex::new(source);
+        let imported = DocumentIndex::new("model Session { id String @id }\nenum SessionState { ACTIVE EXPIRED }");
+        let semantic = local.with_external_declarations(imported.blocks);
+        let CompletionResponse::Array(items) = complete(source, &semantic, Position::new(1, 12)) else {
+            panic!("completion array");
+        };
+
+        assert!(items.iter().any(|item| item.label == "Session"));
+        assert!(items.iter().any(|item| item.label == "SessionState"));
+    }
+
+    #[test]
+    fn recognizes_symbol_completion_only_with_a_complete_import_path() {
+        let source = "import {  } from \"./entities.dinoco\"";
+        assert_eq!(
+            import_completion_context(source, Position::new(0, 9)),
+            Some(ImportCompletionContext::Symbols { path: Some("./entities.dinoco".to_string()) })
+        );
+
+        let incomplete = "import {  } from \"./missing";
+        assert_eq!(
+            import_completion_context(incomplete, Position::new(0, 9)),
+            Some(ImportCompletionContext::Symbols { path: None })
+        );
+    }
+
+    #[test]
+    fn recognizes_import_path_completion_ranges() {
+        let source = "import { Account } from \"./ent\"";
+        let context = import_completion_context(source, Position::new(0, 30)).expect("import path context");
+        assert_eq!(
+            context,
+            ImportCompletionContext::Path {
+                fragment: "./ent".to_string(),
+                replace: Range::new(Position::new(0, 25), Position::new(0, 30)),
+                quoted: true,
+            }
+        );
     }
 }

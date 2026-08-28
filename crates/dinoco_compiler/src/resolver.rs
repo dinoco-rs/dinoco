@@ -23,7 +23,6 @@ struct Resolver {
     states: HashMap<PathBuf, VisitState>,
     schemas: HashMap<PathBuf, Schema>,
     order: Vec<PathBuf>,
-    stack: Vec<PathBuf>,
 }
 
 pub(crate) fn compile_file(path: &Path) -> CompileResult<Schema> {
@@ -36,8 +35,7 @@ pub(crate) fn compile_file(path: &Path) -> CompileResult<Schema> {
             .with_file(path.display().to_string())
     })?;
     let root_dir = canonical.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
-    let mut resolver =
-        Resolver { root_dir, states: HashMap::new(), schemas: HashMap::new(), order: Vec::new(), stack: Vec::new() };
+    let mut resolver = Resolver { root_dir, states: HashMap::new(), schemas: HashMap::new(), order: Vec::new() };
     resolver.load(canonical.clone(), None, true)?;
     resolver.validate_duplicate_symbols()?;
 
@@ -54,18 +52,9 @@ pub(crate) fn compile_file(path: &Path) -> CompileResult<Schema> {
 impl Resolver {
     fn load(&mut self, canonical: PathBuf, via: Option<&Import>, root: bool) -> CompileResult<()> {
         match self.states.get(&canonical) {
-            Some(VisitState::Complete) => return Ok(()),
-            Some(VisitState::Visiting) => {
-                let origin = via.map(|import| &import.origin).cloned().unwrap_or_default();
-                let mut cycle = self
-                    .stack
-                    .iter()
-                    .skip_while(|path| **path != canonical)
-                    .map(|path| self.display_path(path))
-                    .collect::<Vec<_>>();
-                cycle.push(self.display_path(&canonical));
-                return Err(CompileError::at(format!("Circular import detected: {}", cycle.join(" -> ")), &origin));
-            }
+            // A visiting schema has already been parsed and cached. Reusing it
+            // closes a circular import without traversing that file again.
+            Some(VisitState::Complete | VisitState::Visiting) => return Ok(()),
             None => {}
         }
 
@@ -86,7 +75,6 @@ impl Resolver {
 
         self.validate_import_declarations(&schema)?;
         self.states.insert(canonical.clone(), VisitState::Visiting);
-        self.stack.push(canonical.clone());
         self.schemas.insert(canonical.clone(), schema);
 
         let mut imports = self.schemas[&canonical].imports().cloned().collect::<Vec<_>>();
@@ -114,7 +102,6 @@ impl Resolver {
         }
         self.validate_file_scope(&canonical, &resolved_imports)?;
 
-        self.stack.pop();
         self.states.insert(canonical.clone(), VisitState::Complete);
         self.order.push(canonical);
         Ok(())

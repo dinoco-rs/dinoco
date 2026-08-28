@@ -798,20 +798,47 @@ fn compile_file_reports_invalid_imports_with_their_origin() {
 }
 
 #[test]
-fn compile_file_rejects_cycles_and_config_outside_the_main_schema() {
+fn compile_file_supports_circular_imports_for_relations_without_duplicating_models() {
     let project = tempdir().expect("temp project");
     let root = project.path().join("schema.dinoco");
-    fs::write(&root, "import { A } from \"a.dinoco\"\n").expect("root schema");
-    fs::write(project.path().join("a.dinoco"), "import { B } from \"b.dinoco\"\nmodel A { id String @id }\n")
-        .expect("a schema");
-    fs::write(project.path().join("b.dinoco"), "import { A } from \"a.dinoco\"\nmodel B { id String @id }\n")
-        .expect("b schema");
+    fs::write(&root, "import { Account } from \"entities/account.dinoco\"\n").expect("root schema");
+    fs::create_dir(project.path().join("entities")).expect("entities directory");
+    fs::write(
+        project.path().join("entities/account.dinoco"),
+        r#"import { Session } from "session.dinoco"
 
-    let cycle = compile_file(&root).expect_err("circular imports must fail");
-    assert!(cycle.message.contains("Circular import detected"), "{cycle}");
-    assert!(cycle.message.contains("a.dinoco -> b.dinoco -> a.dinoco"), "{cycle}");
-    assert_eq!(cycle.file.as_deref(), Some("b.dinoco"));
+model Account {
+    id       String    @id
+    sessions Session[] @relation(fields: [id], references: [account_id])
+}
+"#,
+    )
+    .expect("account schema");
+    fs::write(
+        project.path().join("entities/session.dinoco"),
+        r#"import { Account } from "account.dinoco"
 
+model Session {
+    id         String  @id
+    account_id String
+    account    Account @relation(fields: [account_id], references: [id])
+}
+"#,
+    )
+    .expect("session schema");
+
+    let schema = compile_file(&root).expect("circular relation imports should compile");
+    let model_names = schema.models().map(|model| model.name.as_str()).collect::<Vec<_>>();
+
+    assert_eq!(model_names.len(), 2);
+    assert!(model_names.contains(&"Account"));
+    assert!(model_names.contains(&"Session"));
+}
+
+#[test]
+fn compile_file_rejects_config_outside_the_main_schema() {
+    let project = tempdir().expect("temp project");
+    let root = project.path().join("schema.dinoco");
     fs::write(&root, "import { A } from \"a.dinoco\"\n").expect("root schema");
     fs::write(project.path().join("a.dinoco"), "config { database = \"sqlite\" }\nmodel A { id String @id }\n")
         .expect("imported config");

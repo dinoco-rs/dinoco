@@ -113,6 +113,7 @@ impl Token {
 #[derive(Debug, Clone)]
 pub struct DocumentIndex {
     pub blocks: Vec<BlockInfo>,
+    external_blocks: Vec<BlockInfo>,
     tokens: Vec<Token>,
     end: Position,
 }
@@ -130,7 +131,7 @@ impl DocumentIndex {
         let tokens = tokenize(source, &positions);
         let blocks = parse_blocks(&tokens);
 
-        Self { blocks, tokens, end: positions.position(source.len()) }
+        Self { blocks, external_blocks: Vec::new(), tokens, end: positions.position(source.len()) }
     }
 
     pub fn end_position(&self) -> Position {
@@ -142,13 +143,13 @@ impl DocumentIndex {
     }
 
     pub fn model(&self, name: &str) -> Option<&BlockInfo> {
-        self.blocks.iter().find(|block| {
+        self.declarations().find(|block| {
             block.kind == BlockKind::Model && block.name.as_ref().is_some_and(|symbol| symbol.name == name)
         })
     }
 
     pub fn enum_(&self, name: &str) -> Option<&BlockInfo> {
-        self.blocks.iter().find(|block| {
+        self.declarations().find(|block| {
             block.kind == BlockKind::Enum && block.name.as_ref().is_some_and(|symbol| symbol.name == name)
         })
     }
@@ -180,13 +181,22 @@ impl DocumentIndex {
     }
 
     pub fn type_names(&self) -> Vec<String> {
-        self.blocks
-            .iter()
+        self.declarations()
             .filter_map(|block| match block.kind {
                 BlockKind::Model | BlockKind::Enum => block.name.as_ref().map(|name| name.name.clone()),
                 BlockKind::Config => None,
             })
             .collect()
+    }
+
+    pub fn with_external_declarations(&self, declarations: impl IntoIterator<Item = BlockInfo>) -> Self {
+        let mut index = self.clone();
+        index.external_blocks = declarations.into_iter().collect();
+        index
+    }
+
+    pub fn declarations(&self) -> impl Iterator<Item = &BlockInfo> {
+        self.blocks.iter().chain(&self.external_blocks)
     }
 
     pub fn resolve_symbol(&self, position: Position) -> Option<ResolvedSymbol> {
@@ -280,6 +290,10 @@ impl DocumentIndex {
 
     pub fn occurrences(&self, target: &ResolvedSymbol) -> Vec<Range> {
         let mut ranges = Vec::new();
+
+        if let ResolvedSymbol::Type(name) = target {
+            ranges.extend(self.import_symbol_occurrences(name));
+        }
 
         for block in &self.blocks {
             if let (ResolvedSymbol::Type(target_name), Some(name)) = (target, &block.name)
@@ -381,10 +395,33 @@ impl DocumentIndex {
 
     pub fn is_named_type(&self, name: &str) -> bool {
         !SCALAR_TYPES.contains(&name)
-            && self.blocks.iter().any(|block| {
+            && self.declarations().any(|block| {
                 block.name.as_ref().is_some_and(|symbol| symbol.name == name)
                     && matches!(block.kind, BlockKind::Model | BlockKind::Enum)
             })
+    }
+
+    fn import_symbol_occurrences(&self, name: &str) -> Vec<Range> {
+        let mut occurrences = Vec::new();
+        let mut cursor = 0usize;
+        while cursor < self.tokens.len() {
+            if self.tokens[cursor].kind != TokenKind::Ident || self.tokens[cursor].text != "import" {
+                cursor += 1;
+                continue;
+            }
+            cursor += 1;
+            if !self.tokens.get(cursor).is_some_and(|token| token.is_symbol("{")) {
+                continue;
+            }
+            cursor += 1;
+            while cursor < self.tokens.len() && !self.tokens[cursor].is_symbol("}") {
+                if self.tokens[cursor].kind == TokenKind::Ident && self.tokens[cursor].text == name {
+                    occurrences.push(self.tokens[cursor].range);
+                }
+                cursor += 1;
+            }
+        }
+        occurrences
     }
 }
 
@@ -827,5 +864,17 @@ model User {
             index.resolve_symbol(value.start),
             Some(ResolvedSymbol::EnumValue { enum_name: "Role".into(), value: "USER".into() })
         );
+    }
+
+    #[test]
+    fn type_occurrences_include_named_imports_without_mixing_external_ranges() {
+        let source = "import { Account } from \"account.dinoco\"\nmodel Session { id String @id account Account }";
+        let local = DocumentIndex::new(source);
+        let imported = DocumentIndex::new("model Account { id String @id }");
+        let index = local.with_external_declarations(imported.blocks);
+        let account_type = index.model("Session").expect("session").field("account").expect("account").ty.range;
+
+        assert_eq!(index.resolve_symbol(account_type.start), Some(ResolvedSymbol::Type("Account".to_string())));
+        assert_eq!(index.occurrences(&ResolvedSymbol::Type("Account".to_string())).len(), 2);
     }
 }

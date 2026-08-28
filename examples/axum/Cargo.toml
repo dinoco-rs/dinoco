@@ -1,12 +1,12 @@
 [package]
 name = "dinoco-example-axum"
-version = "1.2.5"
+version = "1.2.6"
 edition = "2024"
 publish = false
 
 [dependencies]
 anyhow = "1"
 axum = "0.8"
-dinoco = { path = "../../crates/dinoco", version = "1.2.5" }
+dinoco = { path = "../../crates/dinoco", version = "1.2.6" }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

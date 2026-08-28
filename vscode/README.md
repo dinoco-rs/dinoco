@@ -4,10 +4,11 @@ Dinoco provides first-class editing and database workflows for `.dinoco` schemas
 
 ## Language intelligence
 
-- Live syntax and semantic diagnostics while a schema is being edited
-- Context-aware completion for models, enums, scalar types, defaults, relations, local keys, referenced keys, and referential actions
+- Live local diagnostics plus complete project validation on save
+- Circular-safe, cached indexing of every reachable imported schema
+- Context-aware completion for import paths, imported models/enums, scalar types, defaults, relations, local keys, referenced keys, and referential actions
 - Hover documentation for types, fields, attributes, generators, configuration, and relation behavior
-- Go to definition, find references, safe rename, symbol outline, folding, and smart selection ranges
+- Cross-file go to definition, find references, safe rename, symbol outline, folding, and smart selection ranges
 - Formatting powered by the same formatter used by the Dinoco toolchain
 - Quick fixes for incomplete configuration and close type-name typos
 

@@ -1,6 +1,6 @@
 [package]
 name = "dinoco"
-version = "1.2.5"
+version = "1.2.6"
 edition = "2024"
 license = "Apache-2.0"
 description = "A modern Rust ORM for schema-driven queries, migrations, and database operations."
@@ -10,9 +10,9 @@ readme = "../../crates.md"
 keywords = ["orm", "database", "sql", "migrations", "rust"]
 
 [dependencies]
-dinoco_engine = { path = "../dinoco_engine", version = "1.2.5" }
-dinoco_derives = { path = "../dinoco_derives", version = "1.2.5" }
-dinoco_cli = { path = "../dinoco_cli", version = "1.2.5" }
+dinoco_engine = { path = "../dinoco_engine", version = "1.2.6" }
+dinoco_derives = { path = "../dinoco_derives", version = "1.2.6" }
+dinoco_cli = { path = "../dinoco_cli", version = "1.2.6" }
 
 uuid = { version = "1.18.1", features = ["v7"] }
 
