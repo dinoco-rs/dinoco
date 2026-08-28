@@ -39,8 +39,8 @@ fn analyze_document(source: &str, index: &DocumentIndex, require_config: bool) -
     };
 
     let mut diagnostics = Vec::new();
-    validate_top_level(index, &mut diagnostics);
-    if require_config || schema.config().is_some() {
+    validate_top_level(index, require_config, &mut diagnostics);
+    if require_config {
         validate_config(&schema, index, &mut diagnostics);
     }
     validate_models(&schema, index, &mut diagnostics);
@@ -63,7 +63,7 @@ fn analyze_document(source: &str, index: &DocumentIndex, require_config: bool) -
     diagnostics
 }
 
-fn validate_top_level(index: &DocumentIndex, diagnostics: &mut Vec<Diagnostic>) {
+fn validate_top_level(index: &DocumentIndex, require_config: bool, diagnostics: &mut Vec<Diagnostic>) {
     let mut declarations: HashMap<&str, Range> = HashMap::new();
     for block in &index.blocks {
         let Some(name) = &block.name else {
@@ -80,7 +80,7 @@ fn validate_top_level(index: &DocumentIndex, diagnostics: &mut Vec<Diagnostic>) 
         }
     }
 
-    if index.blocks.iter().filter(|block| block.kind == BlockKind::Config).count() > 1 {
+    if require_config && index.blocks.iter().filter(|block| block.kind == BlockKind::Config).count() > 1 {
         for block in index.blocks.iter().filter(|block| block.kind == BlockKind::Config).skip(1) {
             diagnostics.push(diagnostic(
                 block.range,
@@ -1376,6 +1376,53 @@ mod tests {
 
         assert!(
             diagnostics.iter().any(|item| item.code == Some(NumberOrString::String("dinoco.missingPrimaryKey".into()))),
+            "{diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn imported_documents_never_report_project_config_problems() {
+        let source = r#"config {
+            database = "invalid"
+            database = "sqlite"
+            database_url = "inline.db"
+            read_replicas = ["inline.db"]
+            snowflake_node_id = 1
+            with_logger = "yes"
+            min_connection = 20
+            max_connection = 10
+            unknown = true
+        }
+        config {}
+        model Account {
+            id Integer @id @default(snowflake())
+        }"#;
+        let diagnostics = analyze_imported(source, &DocumentIndex::new(source));
+        let project_config_codes = [
+            CODE_MISSING_CONFIG,
+            CODE_MISSING_DATABASE_URL,
+            CODE_MISSING_SNOWFLAKE_NODE_ID,
+            "dinoco.ambiguousConfig",
+            "dinoco.duplicateConfig",
+            "dinoco.duplicateConfigKey",
+            "dinoco.invalidConnection",
+            "dinoco.invalidDatabase",
+            "dinoco.invalidDatabaseUrl",
+            "dinoco.invalidImports",
+            "dinoco.invalidLogger",
+            "dinoco.invalidPoolRange",
+            "dinoco.invalidPoolSize",
+            "dinoco.invalidReadReplicas",
+            "dinoco.invalidSnowflakeNodeId",
+            "dinoco.missingDatabase",
+            "dinoco.unknownConfigKey",
+            "dinoco.unsupportedPoolSize",
+        ];
+
+        assert!(
+            diagnostics.iter().all(|item| {
+                !matches!(&item.code, Some(NumberOrString::String(code)) if project_config_codes.contains(&code.as_str()))
+            }),
             "{diagnostics:#?}"
         );
     }

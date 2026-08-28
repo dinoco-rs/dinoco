@@ -1,8 +1,8 @@
 {
 	"name": "dinoco-docs",
-	"description": "Official Dinoco v1.2.4 documentation",
+	"description": "Official Dinoco v1.2.5 documentation",
 	"private": true,
-	"version": "1.2.4",
+	"version": "1.2.5",
 	"packageManager": "yarn@1.22.22",
 	"scripts": {
 		"build": "next build",

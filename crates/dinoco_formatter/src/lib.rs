@@ -44,6 +44,15 @@ pub fn format_from_raw_with_config(source: &str, config: &FormatterConfig) -> Re
     Ok(format_schema_with_layout(&schema, config, &layout))
 }
 
+/// Formats an imported schema document without requiring the main project's
+/// database configuration to be present in the fragment.
+pub fn format_fragment_from_raw_with_config(source: &str, config: &FormatterConfig) -> Result<String, CompileError> {
+    let schema = dinoco_compiler::parse(source)?;
+    let layout = LayoutHints::from_source(source, &schema);
+
+    Ok(format_schema_with_layout(&schema, config, &layout))
+}
+
 pub fn format_schema(schema: &Schema, config: &FormatterConfig) -> String {
     let mut blocks = Vec::new();
 
@@ -122,6 +131,16 @@ mod tests {
         assert!(formatted.contains("into = \"enum\""));
         assert!(formatted.contains("derive = \"ZodSchema\""));
         assert!(formatted.contains("import = \"use zod_rs::prelude::*\""));
+    }
+
+    #[test]
+    fn formats_imported_snowflake_models_without_project_config() {
+        let raw = "model Account{id Integer @id @default(snowflake())}";
+
+        let formatted =
+            format_fragment_from_raw_with_config(raw, &FormatterConfig::default()).expect("format fragment");
+
+        assert!(formatted.contains("@default(snowflake())"));
     }
 
     #[test]

@@ -122,6 +122,18 @@ fn is_main_schema(uri: &Url) -> bool {
     segments.next_back() == Some("schema.dinoco") && segments.next_back() == Some("dinoco")
 }
 
+fn format_document_source(
+    uri: &Url,
+    source: &str,
+    config: &dinoco_formatter::FormatterConfig,
+) -> Result<String, dinoco_compiler::CompileError> {
+    if is_main_schema(uri) {
+        dinoco_formatter::format_from_raw_with_config(source, config)
+    } else {
+        dinoco_formatter::format_fragment_from_raw_with_config(source, config)
+    }
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for DinocoLanguageServer {
     async fn initialize(&self, _: InitializeParams) -> LspResult<InitializeResult> {
@@ -381,7 +393,7 @@ impl LanguageServer for DinocoLanguageServer {
             indent_width: params.options.tab_size.max(1) as usize,
             final_newline: true,
         };
-        let formatted = dinoco_formatter::format_from_raw_with_config(&state.text, &config)
+        let formatted = format_document_source(&params.text_document.uri, &state.text, &config)
             .map_err(|error| LspError::invalid_params(format!("Cannot format an invalid Dinoco schema: {error}")))?;
         if formatted == state.text {
             return Ok(Some(Vec::new()));
@@ -645,6 +657,28 @@ mod tests {
         assert!(!is_main_schema(&Url::parse("file:///project/dinoco/models/account.dinoco").unwrap()));
         assert!(!is_main_schema(&Url::parse("file:///project/dinoco/enums.dinoco").unwrap()));
         assert!(!is_main_schema(&Url::parse("file:///project/dinoco/models/schema.dinoco").unwrap()));
+    }
+
+    #[test]
+    fn formatting_imported_snowflake_models_does_not_require_project_config() {
+        let uri = Url::parse("file:///project/dinoco/models/account.dinoco").unwrap();
+        let source = "model Account{id Integer @id @default(snowflake())}";
+
+        let formatted = format_document_source(&uri, source, &dinoco_formatter::FormatterConfig::default())
+            .expect("imported document should format");
+
+        assert!(formatted.contains("@default(snowflake())"));
+    }
+
+    #[test]
+    fn formatting_main_snowflake_models_still_requires_project_config() {
+        let uri = Url::parse("file:///project/dinoco/schema.dinoco").unwrap();
+        let source = "model Account{id Integer @id @default(snowflake())}";
+
+        let error = format_document_source(&uri, source, &dinoco_formatter::FormatterConfig::default())
+            .expect_err("main schema must still validate project config");
+
+        assert!(error.message.contains("snowflake_node_id"));
     }
 
     #[test]
