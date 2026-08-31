@@ -20,7 +20,7 @@ fn desired_schema_indexes_explicit_fields_primary_keys_and_every_foreign_key() {
             slug      String  @index(map: "idx_post_slug_custom")
             tenant_id Integer
             user_id   Integer
-            author    User @relation(fields: [tenant_id, user_id], references: [tenant, id])
+            author    User? @relation(fields: [tenant_id, user_id], references: [tenant, id])
         }
 
         model Group {

@@ -1396,7 +1396,7 @@ model ZParent {
 model AChild {
     id        String  @id
     parent_id String
-    parent    ZParent @relation(fields: [parent_id], references: [id])
+    parent    ZParent? @relation(fields: [parent_id], references: [id])
 }
 "#;
 
@@ -1414,7 +1414,7 @@ model AParent {
 model ZChild {
     id        String  @id
     parent_id String
-    parent    AParent @relation(fields: [parent_id], references: [id])
+    parent    AParent? @relation(fields: [parent_id], references: [id])
 }
 "#;
 

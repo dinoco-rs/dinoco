@@ -948,6 +948,15 @@ fn validate_relation_attributes(schema: &Schema) -> CompileResult<()> {
                     format!("Relation field `{}.{}` declares @relation more than once", model.name, field.name),
                 );
             }
+            if field.is_relation(schema) && !field.ty.list && !field.ty.optional {
+                return source_error(
+                    &field.origin,
+                    format!(
+                        "Singular relation `{}.{}` must be optional; use `{}?` because relation fields are unloaded by default",
+                        model.name, field.name, field.ty.name
+                    ),
+                );
+            }
             if relation_count == 0 {
                 continue;
             }
@@ -1207,16 +1216,6 @@ fn validate_one_to_one_pair(
             ),
         );
     }
-    if !inverse_field.ty.optional {
-        return source_error(
-            &inverse_field.origin,
-            format!(
-                "The non-owning side `{}.{}` of a one-to-one relation must be optional because it has no local foreign key",
-                inverse_model.name, inverse_field.name
-            ),
-        );
-    }
-
     Ok(())
 }
 
@@ -1228,25 +1227,12 @@ fn validate_owner_keys(
     definition: &RelationDefinition,
 ) -> CompileResult<()> {
     let local_fields = validate_key_field_names(schema, model, field, target, definition, true)?;
-    let relation_is_optional = local_fields.iter().any(|local| local.ty.optional);
-    if !field.ty.optional && relation_is_optional {
-        return source_error(
-            &field.origin,
-            format!(
-                "Relation `{}.{}` has an optionality mismatch: a required relation cannot use nullable local foreign-key fields [{}]",
-                model.name,
-                field.name,
-                definition.fields.as_deref().unwrap_or_default().join(", "),
-            ),
-        );
-    }
-
     for (action_name, action) in &definition.actions {
-        if action == "SetNull" && !field.ty.optional && local_fields.iter().any(|local| !local.ty.optional) {
+        if action == "SetNull" && local_fields.iter().any(|local| !local.ty.optional) {
             return source_error(
                 &field.origin,
                 format!(
-                    "{action_name}: SetNull on required relation `{}.{}` requires every local foreign-key field to be optional",
+                    "{action_name}: SetNull on relation `{}.{}` requires every local foreign-key field to be optional",
                     model.name, field.name
                 ),
             );

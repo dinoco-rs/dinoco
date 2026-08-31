@@ -1657,13 +1657,13 @@ mod tests {
             model Post {
                 id        Integer @id @default(autoincrement())
                 author_id Integer
-                author    User    @relation(fields: [author_id], references: [id], onDelete: Cascade)
+                author    User?    @relation(fields: [author_id], references: [id], onDelete: Cascade)
             }
 
             model Profile {
                 id      Integer @id @default(autoincrement())
                 user_id Integer @unique
-                user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+                user    User?    @relation(fields: [user_id], references: [id], onDelete: Cascade)
             }
 
             model Group {

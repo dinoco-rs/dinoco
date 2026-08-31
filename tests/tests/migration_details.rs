@@ -60,7 +60,7 @@ async fn sqlite_introspection_preserves_explicit_and_relation_indexes_without_fa
             id      Integer @id @default(autoincrement())
             title   String  @index
             user_id Integer
-            user    User @relation(fields: [user_id], references: [id])
+            user    User? @relation(fields: [user_id], references: [id])
         }
         "#,
     )?;

@@ -369,7 +369,7 @@ fn compile_rejects_invalid_index_and_fulltext_declarations() {
         model Post {
             id      Integer @id
             user_id Integer
-            user    User @index @relation(fields: [user_id], references: [id])
+            user    User? @index @relation(fields: [user_id], references: [id])
         }
         "#,
     )
@@ -821,7 +821,7 @@ model Account {
 model Session {
     id         String  @id
     account_id String
-    account    Account @relation(fields: [account_id], references: [id])
+    account    Account? @relation(fields: [account_id], references: [id])
 }
 "#,
     )
@@ -888,7 +888,7 @@ config {
 enum Status { active }
 model Business {
     id      String  @id
-    account Account @relation(fields: [id], references: [id])
+    account Account? @relation(fields: [id], references: [id])
 }
 "#,
     )

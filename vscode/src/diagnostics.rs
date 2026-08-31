@@ -426,6 +426,17 @@ fn validate_models(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
 
             let relations =
                 field.attributes.iter().filter(|attribute| attribute.name == "relation").collect::<Vec<_>>();
+            if field.is_relation(schema) && !field.ty.list && !field.ty.optional {
+                diagnostics.push(diagnostic(
+                    field_index.ty.range,
+                    DiagnosticSeverity::ERROR,
+                    "dinoco.singularRelationMustBeOptional",
+                    format!(
+                        "Singular relation `{}.{}` must be optional; use `{}?` because relation fields are unloaded by default.",
+                        model.name, field.name, field.ty.name
+                    ),
+                ));
+            }
             if relations.len() > 1 {
                 diagnostics.push(diagnostic(
                     field_index.name.range,
@@ -603,7 +614,6 @@ fn validate_relation_pair_shape(
             }
         }
         (true, false) => validate_one_to_many_diagnostics(
-            schema,
             index,
             model,
             field,
@@ -614,7 +624,6 @@ fn validate_relation_pair_shape(
             diagnostics,
         ),
         (false, true) => validate_one_to_many_diagnostics(
-            schema,
             index,
             target,
             opposite,
@@ -625,7 +634,6 @@ fn validate_relation_pair_shape(
             diagnostics,
         ),
         (false, false) => validate_one_to_one_diagnostics(
-            schema,
             index,
             model,
             field,
@@ -640,7 +648,6 @@ fn validate_relation_pair_shape(
 
 #[allow(clippy::too_many_arguments)]
 fn validate_one_to_many_diagnostics(
-    schema: &Schema,
     index: &DocumentIndex,
     list_model: &Model,
     list_field: &ModelField,
@@ -672,7 +679,6 @@ fn validate_one_to_many_diagnostics(
     };
 
     validate_owner_diagnostics(
-        schema,
         index,
         owner_model,
         owner_field,
@@ -714,7 +720,6 @@ fn validate_one_to_many_diagnostics(
 
 #[allow(clippy::too_many_arguments)]
 fn validate_one_to_one_diagnostics(
-    schema: &Schema,
     index: &DocumentIndex,
     model: &Model,
     field: &ModelField,
@@ -763,7 +768,6 @@ fn validate_one_to_one_diagnostics(
         };
 
     validate_owner_diagnostics(
-        schema,
         index,
         owner_model,
         owner_field,
@@ -797,23 +801,10 @@ fn validate_one_to_one_diagnostics(
             ),
         ));
     }
-    if !inverse_field.ty.optional {
-        diagnostics.push(diagnostic(
-            indexed_field(index, inverse_model, inverse_field).map_or(default_range(), |item| item.ty.range),
-            DiagnosticSeverity::ERROR,
-            "dinoco.requiredInverseOneToOne",
-            format!(
-                "The non-owning side `{}.{}` of a one-to-one relation must be optional because it has no local \
-                 foreign key",
-                inverse_model.name, inverse_field.name
-            ),
-        ));
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn validate_owner_diagnostics(
-    schema: &Schema,
     index: &DocumentIndex,
     model: &Model,
     field: &ModelField,
@@ -855,23 +846,6 @@ fn validate_owner_diagnostics(
         ));
     }
 
-    let optional = local_fields.iter().any(|local| local.ty.optional);
-    if field.ty.optional != optional {
-        diagnostics.push(diagnostic(
-            field_index.ty.range,
-            DiagnosticSeverity::ERROR,
-            "dinoco.relationOptionalityMismatch",
-            format!(
-                "Relation `{}.{}` optionality must match its local foreign key: use `{}` because fields [{}] are {}.",
-                model.name,
-                field.name,
-                if optional { format!("{}?", field.ty.name) } else { field.ty.name.clone() },
-                fields.join(", "),
-                if optional { "nullable" } else { "required" }
-            ),
-        ));
-    }
-
     let relation = field.attributes.iter().find(|attribute| attribute.name == "relation");
     for action in ["onDelete", "onUpdate"] {
         let Some(value) = relation.and_then(|relation| attribute_ident(relation, action)) else {
@@ -896,8 +870,6 @@ fn validate_owner_diagnostics(
             ));
         }
     }
-
-    let _ = schema;
 }
 
 fn validate_non_owning_options(
@@ -1555,7 +1527,7 @@ mod tests {
             .collect::<HashSet<_>>();
 
         assert!(codes.contains("dinoco.oneToOneRequiresUnique"), "{diagnostics:#?}");
-        assert!(codes.contains("dinoco.relationOptionalityMismatch"), "{diagnostics:#?}");
+        assert!(codes.contains("dinoco.singularRelationMustBeOptional"), "{diagnostics:#?}");
     }
 
     #[test]
@@ -1569,7 +1541,7 @@ mod tests {
             id        Integer @id
             tenant_id Integer
             user_id   Integer
-            user      User @unique @relation(fields: [tenant_id, user_id], references: [tenant, id])
+            user      User? @unique @relation(fields: [tenant_id, user_id], references: [tenant, id])
         }"#;
         let diagnostics = analyze(source, &DocumentIndex::new(source));
         let item = diagnostics
@@ -1589,7 +1561,7 @@ mod tests {
         model Post {
             id      Integer @id
             user_id Integer
-            user    User @relation(fields: [user_id], references: [id])
+            user    User? @relation(fields: [user_id], references: [id])
         }"#;
         let diagnostics = analyze(source, &DocumentIndex::new(source));
 

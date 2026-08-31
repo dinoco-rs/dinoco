@@ -406,13 +406,13 @@ model Account {{
 model Business {{
     id         Integer @id @default(autoincrement())
     account_id Integer
-    account    Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+    account    Account? @relation(fields: [account_id], references: [id], onDelete: Cascade)
 }}
 
 model Profile {{
     id         Integer @id @default(autoincrement())
     account_id Integer @unique
-    account    Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+    account    Account? @relation(fields: [account_id], references: [id], onDelete: Cascade)
 }}
 
 model Address {{

@@ -491,7 +491,7 @@ model Post {
     title   String @index
     summary String @fulltext
     user_id String
-    user    User @relation(fields: [user_id], references: [id])
+    user    User? @relation(fields: [user_id], references: [id])
 }
 "#;
 

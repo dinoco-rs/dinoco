@@ -101,7 +101,7 @@ fn validates_the_opposite_requirement_from_either_model() {
 
         model Business {
             id      Integer @id
-            account Account
+            account Account?
         }
         "#,
     )
@@ -123,7 +123,7 @@ fn accepts_bidirectional_relation_with_fields_and_references() {
         model Business {
             id         Integer @id
             account_id Integer
-            account    Account @relation(fields: [account_id], references: [id])
+            account    Account? @relation(fields: [account_id], references: [id])
         }
         "#,
     )
@@ -144,8 +144,8 @@ fn accepts_matching_named_relations_between_the_same_models() {
             id         Integer @id
             owner_id   Integer
             auditor_id Integer
-            owner      Account @relation(name: "BusinessOwner", fields: [owner_id], references: [id])
-            auditor    Account @relation(name: "BusinessAuditor", fields: [auditor_id], references: [id])
+            owner      Account? @relation(name: "BusinessOwner", fields: [owner_id], references: [id])
+            auditor    Account? @relation(name: "BusinessAuditor", fields: [auditor_id], references: [id])
         }
         "#,
     )
@@ -164,7 +164,7 @@ fn rejects_mismatched_relation_names() {
         model Business {
             id         Integer @id
             account_id Integer
-            account    Account @relation(name: "BusinessAccount", fields: [account_id], references: [id])
+            account    Account? @relation(name: "BusinessAccount", fields: [account_id], references: [id])
         }
         "#,
     )
@@ -187,8 +187,8 @@ fn rejects_ambiguous_unnamed_relations() {
             id         Integer @id
             owner_id   Integer
             auditor_id Integer
-            owner      Account @relation(fields: [owner_id], references: [id])
-            auditor    Account @relation(fields: [auditor_id], references: [id])
+            owner      Account? @relation(fields: [owner_id], references: [id])
+            auditor    Account? @relation(fields: [auditor_id], references: [id])
         }
         "#,
     )
@@ -276,7 +276,7 @@ fn rejects_incomplete_empty_and_mismatched_relation_key_arrays() {
             model Post {
                 id      Integer @id
                 user_id Integer
-                user    User @relation(fields: [user_id])
+                user    User? @relation(fields: [user_id])
             }
             "#,
             "together",
@@ -291,7 +291,7 @@ fn rejects_incomplete_empty_and_mismatched_relation_key_arrays() {
             model Post {
                 id      Integer @id
                 user_id Integer
-                user    User @relation(fields: [], references: [])
+                user    User? @relation(fields: [], references: [])
             }
             "#,
             "cannot be empty",
@@ -308,7 +308,7 @@ fn rejects_incomplete_empty_and_mismatched_relation_key_arrays() {
                 id        Integer @id
                 user_id   Integer
                 tenant_id Integer
-                user      User @relation(fields: [user_id, tenant_id], references: [id])
+                user      User? @relation(fields: [user_id, tenant_id], references: [id])
             }
             "#,
             "same number",
@@ -330,7 +330,7 @@ fn rejects_missing_non_scalar_mismatched_and_non_unique_relation_keys() {
             model User { id Integer @id posts Post[] }
             model Post {
                 id   Integer @id
-                user User @relation(fields: [missing_id], references: [id])
+                user User? @relation(fields: [missing_id], references: [id])
             }
             "#,
             "missing local field",
@@ -342,8 +342,8 @@ fn rejects_missing_non_scalar_mismatched_and_non_unique_relation_keys() {
             model Post {
                 id       Integer @id
                 other_id Integer
-                other    Other @relation(fields: [other_id], references: [id])
-                user     User @relation(fields: [other], references: [id])
+                other    Other? @relation(fields: [other_id], references: [id])
+                user     User? @relation(fields: [other], references: [id])
             }
             model Other { id Integer @id posts Post[] }
             "#,
@@ -356,7 +356,7 @@ fn rejects_missing_non_scalar_mismatched_and_non_unique_relation_keys() {
             model Post {
                 id      Integer @id
                 user_id Integer
-                user    User @relation(fields: [user_id], references: [id])
+                user    User? @relation(fields: [user_id], references: [id])
             }
             "#,
             "incompatible key types",
@@ -372,7 +372,7 @@ fn rejects_missing_non_scalar_mismatched_and_non_unique_relation_keys() {
             model Post {
                 id         Integer @id
                 account_id Integer
-                user       User @relation(fields: [account_id], references: [account])
+                user       User? @relation(fields: [account_id], references: [account])
             }
             "#,
             "must declare @id or @unique",
@@ -386,19 +386,20 @@ fn rejects_missing_non_scalar_mismatched_and_non_unique_relation_keys() {
 }
 
 #[test]
-fn rejects_relation_optionality_and_unsafe_referential_actions() {
-    let optionality = compile(
+fn requires_optional_singular_relations_and_validates_referential_actions() {
+    let required_relation = compile(
         r#"
         model User { id Integer @id posts Post[] }
         model Post {
             id      Integer @id
-            user_id Integer?
+            user_id Integer
             user    User @relation(fields: [user_id], references: [id])
         }
         "#,
     )
-    .expect_err("nullable FK requires an optional relation");
-    assert!(optionality.message.contains("optionality"), "{optionality}");
+    .expect_err("singular relation navigation must be optional");
+    assert!(required_relation.message.contains("must be optional"), "{required_relation}");
+    assert!(required_relation.message.contains("User?"), "{required_relation}");
 
     let set_null = compile(
         r#"
@@ -406,7 +407,7 @@ fn rejects_relation_optionality_and_unsafe_referential_actions() {
         model Post {
             id      Integer @id
             user_id Integer
-            user    User @relation(fields: [user_id], references: [id], onDelete: SetNull)
+            user    User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
         }
         "#,
     )
@@ -419,7 +420,7 @@ fn rejects_relation_optionality_and_unsafe_referential_actions() {
         model Post {
             id      Integer @id
             user_id Integer
-            user    User @relation(fields: [user_id], references: [id], onUpdate: SetDefault)
+            user    User? @relation(fields: [user_id], references: [id], onUpdate: SetDefault)
         }
         "#,
     )
@@ -428,9 +429,9 @@ fn rejects_relation_optionality_and_unsafe_referential_actions() {
 }
 
 #[test]
-fn accepts_an_optional_relation_with_a_required_foreign_key_and_set_null() {
-    compile(
-        r#"
+fn accepts_an_optional_relation_with_required_or_optional_foreign_keys() {
+    for foreign_key_type in ["Integer", "Integer?"] {
+        let schema = r#"
         model Account {
             id      Integer  @id
             profile Profile?
@@ -438,12 +439,13 @@ fn accepts_an_optional_relation_with_a_required_foreign_key_and_set_null() {
 
         model Profile {
             id         Integer  @id
-            account_id Integer  @unique
-            account    Account? @relation(fields: [account_id], references: [id], onDelete: SetNull)
+            account_id FOREIGN_KEY_TYPE @unique
+            account    Account? @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
         }
-        "#,
-    )
-    .expect("an optional relation may use a required FK, including SetNull");
+        "#
+        .replace("FOREIGN_KEY_TYPE", foreign_key_type);
+        compile(&schema).unwrap_or_else(|error| panic!("{foreign_key_type} foreign key should compile: {error}"));
+    }
 }
 
 #[test]
@@ -456,7 +458,7 @@ fn rejects_one_to_many_without_an_owner_or_with_wrong_inverse_keys() {
         }
         model Post {
             id   Integer @id
-            user User
+            user User?
         }
         "#,
     )
@@ -473,7 +475,7 @@ fn rejects_one_to_many_without_an_owner_or_with_wrong_inverse_keys() {
         model Post {
             id      Integer @id
             user_id Integer
-            user    User @relation(fields: [user_id], references: [id])
+            user    User? @relation(fields: [user_id], references: [id])
         }
         "#,
     )
@@ -526,12 +528,12 @@ fn validates_one_to_one_ownership_uniqueness_and_inverse_optionality() {
         model Profile {
             id      Integer @id
             user_id Integer @unique
-            user    User @relation(fields: [user_id], references: [id])
+            user    User? @relation(fields: [user_id], references: [id])
         }
         "#,
     )
     .expect_err("non-owning one-to-one side cannot be required");
-    assert!(required_inverse.message.contains("non-owning side"), "{required_inverse}");
+    assert!(required_inverse.message.contains("must be optional"), "{required_inverse}");
 
     let composite_relation_unique = compile(
         r#"
@@ -544,7 +546,7 @@ fn validates_one_to_one_ownership_uniqueness_and_inverse_optionality() {
             id        Integer @id
             tenant_id Integer
             user_id   Integer
-            user      User @unique @relation(fields: [tenant_id, user_id], references: [tenant, id])
+            user      User? @unique @relation(fields: [tenant_id, user_id], references: [tenant, id])
         }
         "#,
     )
@@ -608,7 +610,7 @@ fn rejects_referential_actions_on_the_non_owning_side() {
         model Post {
             id      Integer @id
             user_id Integer
-            user    User @relation(fields: [user_id], references: [id])
+            user    User? @relation(fields: [user_id], references: [id])
         }
         "#,
     )

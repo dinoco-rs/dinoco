@@ -259,7 +259,7 @@ fn codegen_preserves_uuid_and_snowflake_types_on_relation_keys() {
         model Session {
             id         Integer  @id @default(snowflake())
             account_id Integer
-            account    Account  @relation(fields: [account_id], references: [id])
+            account    Account?  @relation(fields: [account_id], references: [id])
         }
 
         model System {
@@ -274,6 +274,7 @@ fn codegen_preserves_uuid_and_snowflake_types_on_relation_keys() {
 
     assert!(models.contains("pub organization_id: Option<::dinoco::Uuid>"));
     assert!(models.contains("pub account_id: ::dinoco::Snowflake"));
+    assert!(models.contains("pub account: Option<Account>"));
     assert!(!models.contains("pub struct AccountSystem"));
     assert!(models.contains("pub account_id: Option<::dinoco::Snowflake>"));
     assert!(models.contains("pub system_id: Option<::dinoco::Snowflake>"));
