@@ -14,7 +14,7 @@ The main `schema.dinoco` can now load complete child files with `config.imports 
 
 Child files can import direct declarations with `import { Model, Enum } from "relative/path.dinoco"`. The compiler resolves the complete import tree, normalizes relative paths, reports missing dependencies at their source, and preserves the originating file and line in schema diagnostics.
 
-`config.custom_derives` can apply additional Rust derives globally to generated enums or model structs. Each entry declares its target, derive path, and `use` statement; codegen deduplicates repeated derives and imports. Generated `dinoco/mod.rs` files now include `#![allow(dead_code)]`.
+`config.custom_derives` can apply additional Rust derives globally to generated enums or model structs. Each entry declares its target, derive path, and `use` statement; codegen deduplicates repeated derives and imports. Generated `dinoco/mod.rs` files now include `#![allow(unused)]`.
 
 Optional generated enums are now explicitly identified as enum scalars throughout codegen and derives. `Enum?` fields compile as `Option<Enum>`, optional defaults use `Some(Variant)`, and database `NULL` decodes to `None`.
 

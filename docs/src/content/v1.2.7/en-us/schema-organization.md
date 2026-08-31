@@ -164,7 +164,7 @@ pub enum BusinessStatus {
 }
 ```
 
-Generated files are replaced when models are regenerated, so configure derives in the schema instead of editing generated Rust. The generated `dinoco/mod.rs` also starts with `#![allow(dead_code)]`, preventing unused generated helpers from producing warnings.
+Generated files are replaced when models are regenerated, so configure derives in the schema instead of editing generated Rust. The generated `dinoco/mod.rs` also starts with `#![allow(unused)]`, suppressing unused warnings only within that module and the files it imports.
 
 ## Complete example
 

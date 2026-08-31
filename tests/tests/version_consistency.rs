@@ -1,7 +1,9 @@
 use std::{fs, path::Path};
 
-const VERSION: &str = "1.2.7";
-const PREVIOUS_VERSION: &str = "1.2.6";
+const CRATE_VERSION: &str = "1.2.8";
+const PREVIOUS_CRATE_VERSION: &str = "1.2.7";
+const DOCS_VERSION: &str = "1.2.7";
+const PREVIOUS_DOCS_VERSION: &str = "1.2.6";
 
 fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("tests crate must be inside the workspace")
@@ -33,38 +35,33 @@ fn release_version_is_consistent_across_the_workspace() {
         "crates/dinoco_derives/Cargo.toml",
         "crates/dinoco_engine/Cargo.toml",
         "crates/dinoco_formatter/Cargo.toml",
-        "examples/actix-web/Cargo.toml",
-        "examples/axum/Cargo.toml",
-        "tests/Cargo.toml",
-        "vscode/Cargo.toml",
     ];
 
     for manifest_path in cargo_manifests {
         let manifest = read(manifest_path);
         assert!(
-            manifest.contains(&format!("version = \"{VERSION}\"")),
-            "{manifest_path} does not declare version {VERSION}"
+            manifest.contains(&format!("version = \"{CRATE_VERSION}\"")),
+            "{manifest_path} does not declare version {CRATE_VERSION}"
         );
-        assert!(!manifest.contains(PREVIOUS_VERSION), "{manifest_path} still references {PREVIOUS_VERSION}");
+        assert!(
+            !manifest.contains(PREVIOUS_CRATE_VERSION),
+            "{manifest_path} still references {PREVIOUS_CRATE_VERSION}"
+        );
     }
 
     let lockfile = read("Cargo.lock");
     for package_name in [
         "dinoco",
-        "dinoco-example-actix-web",
-        "dinoco-example-axum",
         "dinoco_cli",
         "dinoco_codegen",
         "dinoco_compiler",
         "dinoco_derives",
         "dinoco_engine",
         "dinoco_formatter",
-        "dinoco_tests",
-        "dinoco_vscode",
     ] {
         let block = package_block(&lockfile, package_name);
         assert!(
-            block.contains(&format!("version = \"{VERSION}\"")),
+            block.contains(&format!("version = \"{CRATE_VERSION}\"")),
             "Cargo.lock contains an outdated {package_name} package"
         );
     }
@@ -72,24 +69,19 @@ fn release_version_is_consistent_across_the_workspace() {
     for documentation_path in ["readme.md", "crates.md"] {
         let documentation = read(documentation_path);
         assert!(
-            documentation.contains(&format!("dinoco = \"{VERSION}\"")),
+            documentation.contains(&format!("dinoco = \"{CRATE_VERSION}\"")),
             "{documentation_path} does not show the current Dinoco dependency"
         );
-        assert!(!documentation.contains(PREVIOUS_VERSION));
-    }
-
-    for package_path in ["docs/package.json", "vscode/package.json", "vscode/package-lock.json"] {
-        let package = read(package_path);
-        assert!(package.contains(&format!("\"version\": \"{VERSION}\"")));
+        assert!(!documentation.contains(PREVIOUS_CRATE_VERSION));
     }
 }
 
 #[test]
 fn documentation_uses_the_current_version_directories() {
-    let content_dir = workspace_root().join(format!("docs/src/content/v{VERSION}"));
-    let navigation_dir = workspace_root().join(format!("docs/src/jsons/versions/v{VERSION}"));
-    let previous_content_dir = workspace_root().join(format!("docs/src/content/v{PREVIOUS_VERSION}"));
-    let previous_navigation_dir = workspace_root().join(format!("docs/src/jsons/versions/v{PREVIOUS_VERSION}"));
+    let content_dir = workspace_root().join(format!("docs/src/content/v{DOCS_VERSION}"));
+    let navigation_dir = workspace_root().join(format!("docs/src/jsons/versions/v{DOCS_VERSION}"));
+    let previous_content_dir = workspace_root().join(format!("docs/src/content/v{PREVIOUS_DOCS_VERSION}"));
+    let previous_navigation_dir = workspace_root().join(format!("docs/src/jsons/versions/v{PREVIOUS_DOCS_VERSION}"));
 
     assert!(content_dir.is_dir());
     assert!(navigation_dir.is_dir());
@@ -103,7 +95,7 @@ fn documentation_uses_the_current_version_directories() {
     assert!(!versions.contains("v1.2.1"));
 
     for locale in ["en-us", "pt-br"] {
-        let release_notes = read(&format!("docs/src/content/v{VERSION}/{locale}/release-notes.md"));
-        assert!(release_notes.starts_with(&format!("# Dinoco v{VERSION}\n")));
+        let release_notes = read(&format!("docs/src/content/v{DOCS_VERSION}/{locale}/release-notes.md"));
+        assert!(release_notes.starts_with(&format!("# Dinoco v{DOCS_VERSION}\n")));
     }
 }

@@ -42,7 +42,7 @@ Add Dinoco to your `Cargo.toml` dependencies:
 
 ```toml
 [dependencies]
-dinoco = "1.2.7"
+dinoco = "1.2.8"
 ```
 
 ## 📄 License

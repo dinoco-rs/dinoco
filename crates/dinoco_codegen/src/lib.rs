@@ -187,7 +187,7 @@ fn render_dinoco_mod_with_migrations(schema: &Schema, migrations: &[(String, Str
     let max_connection = config_integer(config, "max_connection").unwrap_or(10);
     let read_replica_envs = config_env_array(config, "read_replicas");
 
-    let mut out = String::from("#![allow(dead_code)]\n\n");
+    let mut out = String::from("#![allow(unused)]\n\n");
     out.push_str("pub mod models;\n\n");
     out.push_str("pub use models::*;\n\n");
     out.push_str("pub async fn connect() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n");

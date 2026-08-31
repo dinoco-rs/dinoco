@@ -82,7 +82,7 @@ model Business {
     let generated_models = fs::read_to_string(project.join("dinoco/models/mod.rs")).expect("generated models module");
     let generated_business =
         fs::read_to_string(project.join("dinoco/models/business.rs")).expect("generated business model");
-    assert!(generated_mod.starts_with("#![allow(dead_code)]"));
+    assert!(generated_mod.starts_with("#![allow(unused)]"));
     assert!(generated_models.contains("pub enum BusinessStatus"));
     assert!(generated_models.contains("use schema_macros::EnumSchema;"));
     assert!(generated_models.contains("::dinoco::DinocoEnum, EnumSchema)]"));

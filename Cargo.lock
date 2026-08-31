@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco"
-version = "1.2.7"
+version = "1.2.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -931,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_cli"
-version = "1.2.7"
+version = "1.2.8"
 dependencies = [
  "anyhow",
  "clap",
@@ -951,7 +951,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_codegen"
-version = "1.2.7"
+version = "1.2.8"
 dependencies = [
  "anyhow",
  "dinoco_compiler",
@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_compiler"
-version = "1.2.7"
+version = "1.2.8"
 dependencies = [
  "pest",
  "pest_derive",
@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_derives"
-version = "1.2.7"
+version = "1.2.8"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_engine"
-version = "1.2.7"
+version = "1.2.8"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -999,7 +999,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_formatter"
-version = "1.2.7"
+version = "1.2.8"
 dependencies = [
  "dinoco_compiler",
 ]

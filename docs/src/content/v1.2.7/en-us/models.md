@@ -156,6 +156,6 @@ dinoco/
 
 `dinoco/mod.rs` exports all models and a `connect()` function. Enums stay compact in `models/mod.rs` through `DinocoEnum`. One model per file keeps reviews focused.
 
-The generated root module starts with `#![allow(dead_code)]`, so helpers that are not used by every application do not create warnings. Additional derives and their imports belong in `config.custom_derives`; see [Schema organization](/v1.2.7/guide/schema-organization#custom-derives).
+The generated root module starts with `#![allow(unused)]`, so warnings from the generated module and the files it imports are suppressed. Additional derives and their imports belong in `config.custom_derives`; see [Schema organization](/v1.2.7/guide/schema-organization#custom-derives).
 
 An implicit many-to-many relation keeps its pivot internal. `Post` receives a virtual `tag_id` and `Tag` receives `post_id`; use those write-only fields to connect and disconnect links.

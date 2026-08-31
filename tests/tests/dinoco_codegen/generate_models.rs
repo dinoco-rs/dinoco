@@ -45,7 +45,7 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     assert!(models.contains("#[dinoco(fulltext)]\n    pub email: String"));
     assert!(models.contains("pub tokens: Vec<UserToken>"));
     assert!(models.contains("pub user: Option<User>"));
-    assert!(dinoco_mod.starts_with("#![allow(dead_code)]\n\n"));
+    assert!(dinoco_mod.starts_with("#![allow(unused)]\n\n"));
     assert!(dinoco_mod.contains("pub mod models;"));
     assert!(dinoco_mod.contains("pub const MIGRATIONS:"));
     assert!(dinoco_mod.contains("pub async fn migrate("));

@@ -138,4 +138,4 @@ dinoco/
 
 `dinoco/mod.rs` exporta models e `connect()`. Enums ficam compactos em `models/mod.rs` usando `DinocoEnum`, e cada model tem seu próprio arquivo.
 
-O módulo raiz gerado começa com `#![allow(dead_code)]`, evitando warnings para helpers que não são usados por todas as aplicações. Derives adicionais e seus imports devem ser configurados em `config.custom_derives`; consulte [Organização do schema](/v1.2.7/guide/schema-organization#custom-derives).
+O módulo raiz gerado começa com `#![allow(unused)]`, suprimindo warnings do módulo gerado e dos arquivos que ele importa. Derives adicionais e seus imports devem ser configurados em `config.custom_derives`; consulte [Organização do schema](/v1.2.7/guide/schema-organization#custom-derives).
