@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use dinoco_cli::db::{CliDatabase, DatabaseSchema, DatabaseTable};
 use dinoco_cli::sql::{
     MigrationStep, desired_database_schema, generate_create_table_migrations, plan_database_migration,
-    plan_schema_migration,
+    plan_schema_migration, plan_sqlite_database_migration,
 };
 use dinoco_engine::{
     CreateIndexMigration, DinocoAdapter, DinocoSqlCompiler, MigrationColumn, MigrationColumnType, SqliteAdapter,
@@ -137,6 +137,43 @@ fn dropping_an_empty_table_is_still_destructive() {
     );
 }
 
+#[test]
+fn sqlite_planner_rejects_ambiguous_column_rename_mappings() {
+    let make_column = |name: &str| MigrationColumn {
+        name: name.to_string(),
+        ty: MigrationColumnType::String,
+        primary_key: false,
+        unique: false,
+        nullable: true,
+        default: None,
+    };
+    let current = DatabaseSchema {
+        tables: vec![DatabaseTable {
+            name: "item".to_string(),
+            row_count: 1,
+            columns: vec![make_column("first_old_name"), make_column("second_old_name")],
+            foreign_keys: Vec::new(),
+            indexes: Vec::new(),
+        }],
+        enums: Vec::new(),
+    };
+    let desired = DatabaseSchema {
+        tables: vec![DatabaseTable {
+            name: "item".to_string(),
+            row_count: 0,
+            columns: vec![make_column("new_name")],
+            foreign_keys: Vec::new(),
+            indexes: Vec::new(),
+        }],
+        enums: Vec::new(),
+    };
+
+    let plan = plan_sqlite_database_migration(&desired, &current);
+    assert_eq!(plan.errors.len(), 1, "an ambiguous rename must be a blocking planner diagnostic");
+    assert!(plan.errors[0].contains("first_old_name"));
+    assert!(plan.errors[0].contains("second_old_name"));
+}
+
 #[tokio::test]
 async fn sqlite_migration_statements_roll_back_as_one_unit() -> anyhow::Result<()> {
     let path = temp_database("transaction");
@@ -157,6 +194,47 @@ async fn sqlite_migration_statements_roll_back_as_one_unit() -> anyhow::Result<(
         inspected.tables.iter().all(|table| table.name != "should_rollback"),
         "a failed migration must leave no partially-created table"
     );
+
+    drop(database);
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_sqlite_rebuild_rolls_back_cascades_and_restores_foreign_keys() -> anyhow::Result<()> {
+    let path = temp_database("rebuild-rollback");
+    let adapter = SqliteAdapter::new(path.to_string_lossy().to_string()).await.map_err(anyhow::Error::msg)?;
+    let database = CliDatabase::Sqlite(adapter);
+    database
+        .execute_transaction(&[
+            "CREATE TABLE parent (id INTEGER PRIMARY KEY);".to_string(),
+            "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES parent(id) ON DELETE CASCADE);"
+                .to_string(),
+            "INSERT INTO parent (id) VALUES (1);".to_string(),
+            "INSERT INTO child (id, parent_id) VALUES (1, 1);".to_string(),
+        ])
+        .await?;
+
+    database
+        .execute_transaction(&[
+            "/* dinoco-sqlite-table-rebuild: parent */".to_string(),
+            "CREATE TABLE __dinoco_rebuild_parent (id INTEGER PRIMARY KEY);".to_string(),
+            "INSERT INTO __dinoco_rebuild_parent SELECT * FROM parent;".to_string(),
+            "DROP TABLE parent;".to_string(),
+            "ALTER TABLE __dinoco_rebuild_parent RENAME TO parent;".to_string(),
+            "THIS IS NOT VALID SQL;".to_string(),
+        ])
+        .await
+        .expect_err("the rebuild must roll back atomically");
+
+    let schema = database.inspect_schema().await?;
+    assert_eq!(schema.tables.iter().find(|table| table.name == "parent").unwrap().row_count, 1);
+    assert_eq!(schema.tables.iter().find(|table| table.name == "child").unwrap().row_count, 1);
+    let error = database
+        .execute("INSERT INTO child (id, parent_id) VALUES (2, 999)")
+        .await
+        .expect_err("foreign-key enforcement must be restored after rollback");
+    assert!(error.to_string().to_ascii_lowercase().contains("foreign key"), "{error:#}");
 
     drop(database);
     let _ = std::fs::remove_file(path);

@@ -120,18 +120,22 @@ impl CliDatabase {
             Self::Sqlite(adapter) => {
                 let conn = adapter.pool.get().await.context("failed to get sqlite connection from pool")?;
                 let statements = statements.to_vec();
+                let rebuild = statements.iter().any(|statement| statement.contains("dinoco-sqlite-table-rebuild"));
 
                 conn.interact(move |conn| -> anyhow::Result<()> {
-                    let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-                    transaction.pragma_update(None, "defer_foreign_keys", true)?;
-                    ensure_sqlite_migration_checksum_guard(&transaction)?;
-                    transaction.authorizer(Some(sqlite_migration_authorizer))?;
-                    let execution = statements.iter().try_for_each(|statement| transaction.execute_batch(statement));
-                    transaction.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
-                    execution?;
-                    ensure_sqlite_foreign_key_integrity(&transaction)?;
-                    transaction.commit()?;
-                    Ok(())
+                    with_sqlite_foreign_keys_suspended(conn, rebuild, |conn| {
+                        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                        transaction.pragma_update(None, "defer_foreign_keys", true)?;
+                        ensure_sqlite_migration_checksum_guard(&transaction)?;
+                        transaction.authorizer(Some(sqlite_migration_authorizer))?;
+                        let execution =
+                            statements.iter().try_for_each(|statement| transaction.execute_batch(statement));
+                        transaction.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
+                        execution?;
+                        ensure_sqlite_foreign_key_integrity(&transaction)?;
+                        transaction.commit()?;
+                        Ok(())
+                    })
                 })
                 .await
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?
@@ -186,19 +190,22 @@ impl CliDatabase {
         let conn = adapter.pool.get().await.context("failed to get sqlite history connection from pool")?;
 
         conn.interact(move |conn| -> anyhow::Result<()> {
-            let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            transaction.pragma_update(None, "defer_foreign_keys", true)?;
-            if generated {
-                transaction.authorizer(Some(sqlite_migration_authorizer))?;
-            } else {
-                transaction.authorizer(Some(sqlite_custom_migration_authorizer))?;
-            }
-            let replay = transaction.execute_batch(&sql);
-            transaction.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
-            replay?;
-            ensure_sqlite_foreign_key_integrity(&transaction)?;
-            transaction.commit()?;
-            Ok(())
+            let rebuild = sql.contains("dinoco-sqlite-table-rebuild");
+            with_sqlite_foreign_keys_suspended(conn, rebuild, |conn| {
+                let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                transaction.pragma_update(None, "defer_foreign_keys", true)?;
+                if generated {
+                    transaction.authorizer(Some(sqlite_migration_authorizer))?;
+                } else {
+                    transaction.authorizer(Some(sqlite_custom_migration_authorizer))?;
+                }
+                let replay = transaction.execute_batch(&sql);
+                transaction.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
+                replay?;
+                ensure_sqlite_foreign_key_integrity(&transaction)?;
+                transaction.commit()?;
+                Ok(())
+            })
         })
         .await
         .map_err(|err| anyhow::anyhow!(err.to_string()))?
@@ -217,72 +224,10 @@ impl CliDatabase {
         let conn = adapter.pool.get().await.context("failed to get sqlite migration connection from pool")?;
 
         conn.interact(move |conn| -> anyhow::Result<bool> {
-            let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            transaction.pragma_update(None, "defer_foreign_keys", true)?;
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS dinoco_migrations (
-                        name TEXT PRIMARY KEY,
-                        applied_at TEXT DEFAULT CURRENT_TIMESTAMP
-                    );
-                    CREATE TABLE IF NOT EXISTS dinoco_migration_checksums (
-                        name TEXT PRIMARY KEY,
-                        checksum TEXT NOT NULL
-                    );",
-            )?;
-            ensure_sqlite_migration_checksum_guard(&transaction)?;
-            let already_applied: bool = transaction.query_row(
-                "SELECT EXISTS(SELECT 1 FROM dinoco_migrations WHERE name = ?1)",
-                [&name],
-                |row| row.get(0),
-            )?;
-            if already_applied {
-                let recorded_checksum = transaction
-                    .query_row(
-                        "SELECT checksum FROM dinoco_migration_checksums WHERE name = ?1",
-                        [&name],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()?;
-                match recorded_checksum {
-                    Some(recorded) if recorded == checksum => {}
-                    Some(recorded) => {
-                        anyhow::bail!(
-                            "Migration `{name}` was applied concurrently with checksum {recorded}, but this runner validated checksum {checksum}. Refusing to continue with divergent migration history."
-                        );
-                    }
-                    None => {
-                        anyhow::bail!(
-                            "Migration `{name}` was applied concurrently without a checksum record. Refusing to continue with unverifiable migration history."
-                        );
-                    }
-                }
-                ensure_sqlite_foreign_key_integrity(&transaction)?;
-                transaction.commit()?;
-                return Ok(false);
-            }
-
-            if generated {
-                transaction.authorizer(Some(sqlite_migration_authorizer))?;
-            } else {
-                transaction.authorizer(Some(sqlite_custom_migration_authorizer))?;
-            }
-            let application = transaction.execute_batch(&sql);
-            transaction.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
-            application?;
-            transaction.execute("INSERT OR IGNORE INTO dinoco_migrations (name) VALUES (?1)", [&name])?;
-            transaction.execute(
-                "INSERT INTO dinoco_migration_checksums (name, checksum) VALUES (?1, ?2)
-                 ON CONFLICT(name) DO UPDATE SET checksum =
-                     CASE
-                         WHEN dinoco_migration_checksums.checksum = excluded.checksum
-                         THEN dinoco_migration_checksums.checksum
-                         ELSE NULL
-                     END",
-                rusqlite::params![&name, &checksum],
-            )?;
-            ensure_sqlite_foreign_key_integrity(&transaction)?;
-            transaction.commit()?;
-            Ok(true)
+            let rebuild = sql.contains("dinoco-sqlite-table-rebuild");
+            with_sqlite_foreign_keys_suspended(conn, rebuild, |conn| {
+                apply_sqlite_migration_transaction(conn, &name, &sql, &checksum, generated)
+            })
         })
         .await
         .map_err(|err| anyhow::anyhow!(err.to_string()))?
@@ -1897,6 +1842,103 @@ fn is_migration_metadata_table(table: &str) -> bool {
         table,
         "_dinoco_migrations" | "dinoco_migrations" | "dinoco_migration_checksums" | "dinoco_migration_schemas"
     )
+}
+
+fn apply_sqlite_migration_transaction(
+    connection: &mut rusqlite::Connection,
+    name: &str,
+    sql: &str,
+    checksum: &str,
+    generated: bool,
+) -> anyhow::Result<bool> {
+    let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    transaction.pragma_update(None, "defer_foreign_keys", true)?;
+    transaction.execute_batch(
+        "CREATE TABLE IF NOT EXISTS dinoco_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS dinoco_migration_checksums (
+            name TEXT PRIMARY KEY,
+            checksum TEXT NOT NULL
+        );",
+    )?;
+    ensure_sqlite_migration_checksum_guard(&transaction)?;
+    let already_applied: bool =
+        transaction
+            .query_row("SELECT EXISTS(SELECT 1 FROM dinoco_migrations WHERE name = ?1)", [name], |row| row.get(0))?;
+    if already_applied {
+        let recorded_checksum = transaction
+            .query_row("SELECT checksum FROM dinoco_migration_checksums WHERE name = ?1", [name], |row| {
+                row.get::<_, String>(0)
+            })
+            .optional()?;
+        match recorded_checksum {
+            Some(recorded) if recorded == checksum => {}
+            Some(recorded) => {
+                anyhow::bail!(
+                    "Migration `{name}` was applied concurrently with checksum {recorded}, but this runner validated checksum {checksum}. Refusing to continue with divergent migration history."
+                );
+            }
+            None => {
+                anyhow::bail!(
+                    "Migration `{name}` was applied concurrently without a checksum record. Refusing to continue with unverifiable migration history."
+                );
+            }
+        }
+        ensure_sqlite_foreign_key_integrity(&transaction)?;
+        transaction.commit()?;
+        return Ok(false);
+    }
+
+    if generated {
+        transaction.authorizer(Some(sqlite_migration_authorizer))?;
+    } else {
+        transaction.authorizer(Some(sqlite_custom_migration_authorizer))?;
+    }
+    let application = transaction.execute_batch(sql);
+    transaction.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
+    application?;
+    transaction.execute("INSERT OR IGNORE INTO dinoco_migrations (name) VALUES (?1)", [name])?;
+    transaction.execute(
+        "INSERT INTO dinoco_migration_checksums (name, checksum) VALUES (?1, ?2)
+         ON CONFLICT(name) DO UPDATE SET checksum =
+             CASE
+                 WHEN dinoco_migration_checksums.checksum = excluded.checksum
+                 THEN dinoco_migration_checksums.checksum
+                 ELSE NULL
+             END",
+        rusqlite::params![name, checksum],
+    )?;
+    ensure_sqlite_foreign_key_integrity(&transaction)?;
+    transaction.commit()?;
+    Ok(true)
+}
+
+fn with_sqlite_foreign_keys_suspended<T>(
+    connection: &mut rusqlite::Connection,
+    suspend: bool,
+    operation: impl FnOnce(&mut rusqlite::Connection) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    if suspend {
+        connection.pragma_update(None, "foreign_keys", false)?;
+    }
+
+    let result = operation(connection);
+    let restore = if suspend {
+        connection.pragma_update(None, "foreign_keys", true).map_err(anyhow::Error::from)
+    } else {
+        Ok(())
+    };
+
+    match (result, restore) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error.context("failed to restore SQLite foreign-key enforcement")),
+        (Err(error), Err(restore)) => Err(error.context(format!(
+            "the migration failed and SQLite foreign-key enforcement could not be restored: {restore}"
+        ))),
+    }
 }
 
 fn ensure_sqlite_foreign_key_integrity(transaction: &rusqlite::Transaction<'_>) -> anyhow::Result<()> {

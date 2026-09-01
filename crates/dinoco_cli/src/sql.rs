@@ -15,6 +15,7 @@ use crate::db::{DatabaseEnum, DatabaseSchema, DatabaseTable};
 pub struct MigrationPlan {
     pub steps: Vec<MigrationStep>,
     pub warnings: Vec<MigrationWarning>,
+    pub errors: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,28 @@ pub enum MigrationStep {
     DropForeignKey(DropForeignKeyMigration),
     CreateIndex(CreateIndexMigration),
     DropIndex(DropIndexMigration),
+    RebuildTable(SqliteTableRebuild),
+}
+
+#[derive(Debug, Clone)]
+pub struct SqliteTableRebuild {
+    pub current: DatabaseTable,
+    pub desired: DatabaseTable,
+    pub column_mappings: Vec<SqliteColumnMapping>,
+    pub foreign_key_checks: Vec<SqliteForeignKeyCheck>,
+    pub changes: Vec<MigrationStep>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SqliteColumnMapping {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SqliteForeignKeyCheck {
+    pub table: String,
+    pub foreign_key: MigrationForeignKey,
 }
 
 #[derive(Debug, Clone)]
@@ -172,6 +195,138 @@ pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchem
     plan
 }
 
+/// Produces the regular schema diff and lowers table changes that SQLite cannot
+/// express safely with `ALTER TABLE` into explicit, data-preserving rebuilds.
+pub fn plan_sqlite_database_migration(desired: &DatabaseSchema, current: &DatabaseSchema) -> MigrationPlan {
+    let mut plan = plan_database_migration(desired, current);
+    let (current, _) = normalize_legacy_table_names(desired, current);
+    let dropped_tables = plan
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            MigrationStep::DropTable(item) => Some(item.table.clone()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let rebuild_tables = plan
+        .steps
+        .iter()
+        .filter_map(sqlite_rebuild_table)
+        .filter(|table| !dropped_tables.contains(*table))
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    if rebuild_tables.is_empty() {
+        return plan;
+    }
+
+    let current_tables = current.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
+    let desired_tables = desired.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
+    let renames = plan
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            MigrationStep::RenameColumn(item) => Some(((item.table.clone(), item.to.clone()), item.from.clone())),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let foreign_key_checks = desired
+        .tables
+        .iter()
+        .flat_map(|table| {
+            table.foreign_keys.iter().filter_map(|foreign_key| {
+                (rebuild_tables.contains(table.name.as_str())
+                    || rebuild_tables.contains(foreign_key.references_table.as_str()))
+                .then(|| SqliteForeignKeyCheck { table: table.name.clone(), foreign_key: foreign_key.clone() })
+            })
+        })
+        .collect::<Vec<_>>();
+    let rebuild_changes = rebuild_tables
+        .iter()
+        .map(|table| {
+            let changes = plan
+                .steps
+                .iter()
+                .filter(|step| {
+                    step_table(step).is_some_and(|step_table| step_table == table)
+                        && !matches!(step, MigrationStep::RenameTable(_))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            (table.clone(), changes)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    plan.steps.retain(|step| {
+        step_table(step)
+            .is_none_or(|table| !rebuild_tables.contains(table) || matches!(step, MigrationStep::RenameTable(_)))
+    });
+
+    for table in rebuild_tables {
+        let current_table = current_tables.get(table.as_str()).expect("a rebuilt table exists in the current schema");
+        let desired_table = desired_tables.get(table.as_str()).expect("a rebuilt table exists in the desired schema");
+        let current_columns =
+            current_table.columns.iter().map(|column| (column.name.as_str(), column)).collect::<BTreeMap<_, _>>();
+        let column_mappings = desired_table
+            .columns
+            .iter()
+            .filter_map(|column| {
+                let source = renames
+                    .get(&(table.clone(), column.name.clone()))
+                    .map(String::as_str)
+                    .unwrap_or(column.name.as_str());
+                current_columns
+                    .contains_key(source)
+                    .then(|| SqliteColumnMapping { from: source.to_string(), to: column.name.clone() })
+            })
+            .collect();
+        plan.steps.push(MigrationStep::RebuildTable(SqliteTableRebuild {
+            current: (*current_table).clone(),
+            desired: (*desired_table).clone(),
+            column_mappings,
+            foreign_key_checks: foreign_key_checks.clone(),
+            changes: rebuild_changes.get(&table).cloned().unwrap_or_default(),
+        }));
+    }
+
+    plan
+}
+
+fn sqlite_rebuild_table(step: &MigrationStep) -> Option<&str> {
+    match step {
+        MigrationStep::AlterColumn(item) => Some(&item.table),
+        MigrationStep::DropColumn(item) => Some(&item.table),
+        MigrationStep::AddForeignKey(item) => Some(&item.table),
+        MigrationStep::DropForeignKey(item) => Some(&item.table),
+        MigrationStep::AddColumn(item)
+            if item.column.primary_key
+                || item.column.unique
+                || !item.column.nullable
+                    && matches!(item.column.default, None | Some(MigrationDefault::CurrentTimestamp)) =>
+        {
+            Some(&item.table)
+        }
+        _ => None,
+    }
+}
+
+fn step_table(step: &MigrationStep) -> Option<&str> {
+    match step {
+        MigrationStep::CreateTable(item) => Some(&item.table),
+        MigrationStep::DropTable(item) => Some(&item.table),
+        MigrationStep::RenameTable(item) => Some(&item.to),
+        MigrationStep::AddColumn(item) => Some(&item.table),
+        MigrationStep::DropColumn(item) => Some(&item.table),
+        MigrationStep::AlterColumn(item) => Some(&item.table),
+        MigrationStep::RenameColumn(item) => Some(&item.table),
+        MigrationStep::AddForeignKey(item) => Some(&item.table),
+        MigrationStep::DropForeignKey(item) => Some(&item.table),
+        MigrationStep::CreateIndex(item) => Some(&item.table),
+        MigrationStep::DropIndex(item) => Some(&item.table),
+        MigrationStep::RebuildTable(item) => Some(&item.desired.name),
+        MigrationStep::CreateEnum(_) | MigrationStep::DropEnum(_) | MigrationStep::AlterEnum(_) => None,
+    }
+}
+
 fn normalize_legacy_table_names(
     desired: &DatabaseSchema,
     current: &DatabaseSchema,
@@ -308,6 +463,17 @@ fn diff_columns(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired
             }));
             renamed_current.insert(*current_name);
             renamed_desired.insert(*desired_name);
+        } else if candidates.len() > 1 {
+            plan.errors.push(format!(
+                "Column `{}.{}` could be a rename of more than one removed column: {}. Add an intermediate migration with an unambiguous name or provide a reviewed custom mapping.",
+                desired_table.name,
+                desired_column.name,
+                candidates
+                    .iter()
+                    .map(|(_, column)| format!("`{}.{}`", current_table.name, column.name))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
     }
 

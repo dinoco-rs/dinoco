@@ -11,11 +11,15 @@ use sha2::{Digest, Sha256};
 
 use crate::db::CliDatabase;
 use crate::schema::{Database, RuntimeConfig, read_schema_for_workspace, runtime_config};
-use crate::sql::{MigrationPlan, MigrationStep, desired_database_schema, plan_database_migration};
+use crate::sql::{
+    MigrationPlan, MigrationStep, SqliteForeignKeyCheck, SqliteTableRebuild, desired_database_schema,
+    plan_database_migration, plan_sqlite_database_migration,
+};
 use crate::ui;
 
 const MIGRATION_CHECKSUM_MARKER: &str = "-- dinoco-checksum: ";
 const MIGRATION_CHECKSUM_PLACEHOLDER: &str = "__DINOCO_INTERNAL_SHA256_PLACEHOLDER_7F43A9C2__";
+const SQLITE_REBUILD_MARKER: &str = "dinoco-sqlite-table-rebuild";
 
 pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
     let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
@@ -48,7 +52,7 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
     if let Some(history) = &history {
         let pending = history.pending_names(&migrations)?;
         if !pending.is_empty() {
-            let drift = plan_database_migration(&history.expected, &current);
+            let drift = plan_migration(&db, &history.expected, &current);
             if drift.steps.is_empty() {
                 anyhow::bail!(
                     "Cannot generate a migration while local migrations are pending: {}. Run `dinoco migrate run` first.",
@@ -70,7 +74,7 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    let mut live_plan = plan_database_migration(&desired, &current);
+    let mut live_plan = plan_migration(&db, &desired, &current);
     mark_unvalidated_legacy_foreign_keys(&db, &mut live_plan);
     if let Some(server_history) =
         server_history.as_ref().filter(|history| !history.applied.is_empty() && history.expected.is_none())
@@ -104,9 +108,9 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
                     table.indexes = current_table.indexes.clone();
                 }
             }
-            plan_database_migration(&compatible_expected, &current)
+            plan_migration(&db, &compatible_expected, &current)
         } else {
-            plan_database_migration(expected, &current)
+            plan_migration(&db, expected, &current)
         }
     });
     let untracked_sqlite_schema = history
@@ -146,7 +150,7 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
         }
         repairing_drift = true;
         migration_plan =
-            plan_database_migration(&desired, history_expected.expect("drift requires canonical migration history"));
+            plan_migration(&db, &desired, history_expected.expect("drift requires canonical migration history"));
         make_table_drift_steps_idempotent(&mut live_plan, drift);
         make_table_drift_steps_idempotent(&mut migration_plan, drift);
     }
@@ -701,6 +705,7 @@ fn describe_drift_step(step: &MigrationStep) -> String {
         MigrationStep::DropForeignKey(item) => format!("Unexpected foreign key `{}.{}`", item.table, item.name),
         MigrationStep::CreateIndex(item) => format!("Missing index `{}.{}`", item.table, item.index.name),
         MigrationStep::DropIndex(item) => format!("Unexpected index `{}.{}`", item.table, item.index.name),
+        MigrationStep::RebuildTable(item) => format!("Changed table `{}`", item.desired.name),
     }
 }
 
@@ -998,6 +1003,18 @@ async fn apply_statements(db: &CliDatabase, statements: &[String]) -> anyhow::Re
     db.execute_transaction(&statements).await
 }
 
+fn plan_migration(
+    db: &CliDatabase,
+    desired: &crate::db::DatabaseSchema,
+    current: &crate::db::DatabaseSchema,
+) -> MigrationPlan {
+    if db.is_sqlite() {
+        plan_sqlite_database_migration(desired, current)
+    } else {
+        plan_database_migration(desired, current)
+    }
+}
+
 async fn ensure_live_schema_matches(db: &CliDatabase, desired: &crate::db::DatabaseSchema) -> anyhow::Result<()> {
     let current = db.inspect_schema().await?;
     let remaining = plan_database_migration(desired, &current);
@@ -1088,15 +1105,18 @@ fn compile_up_artifact(
         return (sql_body, Some(checksum));
     }
 
+    let rebuild = migration_statements.iter().any(|statement| statement.contains(SQLITE_REBUILD_MARKER));
+    let foreign_keys_before = if rebuild { "OFF" } else { "ON" };
+    let foreign_keys_after = if rebuild { "\n\nPRAGMA foreign_keys = ON;" } else { "" };
     let checksum_template = db.compile_insert_migration_checksum(migration_name, MIGRATION_CHECKSUM_PLACEHOLDER);
     let canonical = format!(
-        "PRAGMA foreign_keys = ON;\n\nBEGIN IMMEDIATE;\n\nPRAGMA defer_foreign_keys = ON;\n\n{sql_body}\n\n{};\n\nCOMMIT;\n\n{MIGRATION_CHECKSUM_MARKER}{MIGRATION_CHECKSUM_PLACEHOLDER}",
+        "PRAGMA foreign_keys = {foreign_keys_before};\n\nBEGIN IMMEDIATE;\n\nPRAGMA defer_foreign_keys = ON;\n\n{sql_body}\n\n{};\n\nCOMMIT;{foreign_keys_after}\n\n{MIGRATION_CHECKSUM_MARKER}{MIGRATION_CHECKSUM_PLACEHOLDER}",
         checksum_template.trim_end_matches(';')
     );
     let checksum = raw_migration_checksum(&canonical);
     let checksum_insert = db.compile_insert_migration_checksum(migration_name, &checksum);
     let artifact = format!(
-        "PRAGMA foreign_keys = ON;\n\nBEGIN IMMEDIATE;\n\nPRAGMA defer_foreign_keys = ON;\n\n{sql_body}\n\n{};\n\nCOMMIT;\n\n{MIGRATION_CHECKSUM_MARKER}{checksum}",
+        "PRAGMA foreign_keys = {foreign_keys_before};\n\nBEGIN IMMEDIATE;\n\nPRAGMA defer_foreign_keys = ON;\n\n{sql_body}\n\n{};\n\nCOMMIT;{foreign_keys_after}\n\n{MIGRATION_CHECKSUM_MARKER}{checksum}",
         checksum_insert.trim_end_matches(';')
     );
     (artifact, Some(checksum))
@@ -1121,8 +1141,12 @@ fn migration_checksum(db: &CliDatabase, migration_name: &str, sql: &str) -> anyh
     }
 
     let checksum_insert = db.compile_insert_migration_checksum(migration_name, declared);
-    let actual_suffix =
-        format!("{};\n\nCOMMIT;\n\n{MIGRATION_CHECKSUM_MARKER}{declared}", checksum_insert.trim_end_matches(';'));
+    let foreign_keys_after =
+        if normalized.contains(SQLITE_REBUILD_MARKER) { "\n\nPRAGMA foreign_keys = ON;" } else { "" };
+    let actual_suffix = format!(
+        "{};\n\nCOMMIT;{foreign_keys_after}\n\n{MIGRATION_CHECKSUM_MARKER}{declared}",
+        checksum_insert.trim_end_matches(';')
+    );
     let Some(prefix) = normalized.strip_suffix(&actual_suffix) else {
         anyhow::bail!(
             "Generated migration checksum metadata is malformed or does not match migration directory `{migration_name}`."
@@ -1130,7 +1154,7 @@ fn migration_checksum(db: &CliDatabase, migration_name: &str, sql: &str) -> anyh
     };
     let checksum_template = db.compile_insert_migration_checksum(migration_name, MIGRATION_CHECKSUM_PLACEHOLDER);
     let canonical_suffix = format!(
-        "{};\n\nCOMMIT;\n\n{MIGRATION_CHECKSUM_MARKER}{MIGRATION_CHECKSUM_PLACEHOLDER}",
+        "{};\n\nCOMMIT;{foreign_keys_after}\n\n{MIGRATION_CHECKSUM_MARKER}{MIGRATION_CHECKSUM_PLACEHOLDER}",
         checksum_template.trim_end_matches(';')
     );
     let computed = raw_migration_checksum(&format!("{prefix}{canonical_suffix}"));
@@ -1160,10 +1184,15 @@ fn managed_sqlite_migration_sql(sql: &str) -> anyhow::Result<String> {
         anyhow::bail!("Generated migration contains more than one Dinoco checksum marker.");
     }
 
-    let prefix = "PRAGMA foreign_keys = ON;\n\nBEGIN IMMEDIATE;\n\nPRAGMA defer_foreign_keys = ON;\n\n";
-    let suffix = format!("\n\nCOMMIT;\n\n{MIGRATION_CHECKSUM_MARKER}{}", markers[0]);
+    let rebuild = normalized.contains(SQLITE_REBUILD_MARKER);
+    let foreign_keys_before = if rebuild { "OFF" } else { "ON" };
+    let foreign_keys_after = if rebuild { "\n\nPRAGMA foreign_keys = ON;" } else { "" };
+    let prefix = format!(
+        "PRAGMA foreign_keys = {foreign_keys_before};\n\nBEGIN IMMEDIATE;\n\nPRAGMA defer_foreign_keys = ON;\n\n"
+    );
+    let suffix = format!("\n\nCOMMIT;{foreign_keys_after}\n\n{MIGRATION_CHECKSUM_MARKER}{}", markers[0]);
     let normalized_body = normalized
-        .strip_prefix(prefix)
+        .strip_prefix(&prefix)
         .and_then(|sql| sql.strip_suffix(&suffix))
         .context("generated SQLite migration is missing its managed transaction wrapper")?;
     let normalized_start = prefix.len();
@@ -1445,6 +1474,13 @@ fn push_normalized_newline(bytes: &[u8], output: &mut Vec<u8>, index: &mut usize
 }
 
 fn ensure_plan_is_supported(db: &CliDatabase, plan: &MigrationPlan) -> anyhow::Result<()> {
+    if !plan.errors.is_empty() {
+        anyhow::bail!(
+            "Dinoco found ambiguous schema changes and stopped before writing or recording migration history: {}",
+            plan.errors.join(" ")
+        );
+    }
+
     let primary_key_changes = plan
         .steps
         .iter()
@@ -1455,7 +1491,7 @@ fn ensure_plan_is_supported(db: &CliDatabase, plan: &MigrationPlan) -> anyhow::R
             _ => None,
         })
         .collect::<Vec<_>>();
-    if !primary_key_changes.is_empty() {
+    if !db.is_sqlite() && !primary_key_changes.is_empty() {
         anyhow::bail!(
             "Changing primary-key membership on existing columns requires a reviewed custom migration so dependent foreign keys and duplicate/null data can be handled explicitly: {}. Dinoco stopped before writing or applying a partial migration.",
             primary_key_changes.join(", ")
@@ -1472,7 +1508,7 @@ fn ensure_plan_is_supported(db: &CliDatabase, plan: &MigrationPlan) -> anyhow::R
             _ => None,
         })
         .collect::<Vec<_>>();
-    if !unique_changes.is_empty() {
+    if !db.is_sqlite() && !unique_changes.is_empty() {
         anyhow::bail!(
             "Changing @unique on existing columns requires a reviewed custom migration because constraint names and duplicate data must be verified explicitly: {}. Dinoco stopped before writing or applying a partial migration.",
             unique_changes.join(", ")
@@ -1525,46 +1561,28 @@ fn ensure_plan_is_supported(db: &CliDatabase, plan: &MigrationPlan) -> anyhow::R
         return Ok(());
     }
 
-    let dropped_tables = plan
-        .steps
-        .iter()
-        .filter_map(|step| match step {
-            MigrationStep::DropTable(item) => Some(item.table.as_str()),
-            _ => None,
-        })
-        .collect::<BTreeSet<_>>();
     let unsupported = plan
         .steps
         .iter()
         .filter_map(|step| match step {
-            MigrationStep::AlterColumn(item) => Some(format!("alter column `{}.{}`", item.table, item.desired.name)),
-            MigrationStep::AddColumn(item) if item.column.primary_key || item.column.unique => {
-                Some(format!("add constrained column `{}.{}`", item.table, item.column.name))
-            }
-            MigrationStep::AddColumn(item)
-                if !item.column.nullable
-                    && matches!(
-                        item.column.default,
-                        None | Some(dinoco_engine::MigrationDefault::CurrentTimestamp)
-                    ) =>
-            {
-                Some(format!(
-                    "add required column `{}.{}` without a SQLite-compatible constant default",
-                    item.table, item.column.name
-                ))
-            }
-            MigrationStep::AddForeignKey(item) => {
-                Some(format!("add foreign key `{}.{}`", item.table, item.foreign_key.name))
-            }
-            MigrationStep::DropForeignKey(item) if !dropped_tables.contains(item.table.as_str()) => {
-                Some(format!("drop foreign key `{}.{}`", item.table, item.name))
-            }
+            MigrationStep::RebuildTable(item) => item
+                .desired
+                .columns
+                .iter()
+                .filter(|column| !item.column_mappings.iter().any(|mapping| mapping.to == column.name))
+                .find(|column| item.current.row_count > 0 && !column.nullable && column.default.is_none())
+                .map(|column| {
+                    format!(
+                        "add required column `{}.{}` without a default to a table containing {} row(s)",
+                        item.desired.name, column.name, item.current.row_count
+                    )
+                }),
             _ => None,
         })
         .collect::<Vec<_>>();
     if !unsupported.is_empty() {
         anyhow::bail!(
-            "SQLite cannot safely apply the following generated changes in place: {}. Dinoco stopped before writing or recording a no-op migration; use a reviewed table-rebuild migration instead.",
+            "SQLite cannot populate the following rebuilt columns without inventing data: {}. Add a default, make the column optional, or provide a reviewed custom migration. Dinoco stopped before writing or recording migration history.",
             unsupported.join(", ")
         );
     }
@@ -1622,6 +1640,7 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     let mut drop_columns = Vec::new();
     let mut add_foreign_keys = Vec::new();
     let mut create_indexes = Vec::new();
+    let mut rebuild_tables = Vec::new();
     let mut drop_tables = Vec::new();
 
     for step in plan.steps {
@@ -1647,6 +1666,7 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
             MigrationStep::DropColumn(item) => drop_columns.push(item),
             MigrationStep::AddForeignKey(item) => add_foreign_keys.push(item),
             MigrationStep::CreateIndex(item) => create_indexes.push(item),
+            MigrationStep::RebuildTable(item) => rebuild_tables.push(item),
             MigrationStep::DropTable(item) => drop_tables.push(item),
         }
     }
@@ -1683,6 +1703,11 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     for item in drop_columns {
         statements.push(db.compile_drop_column_migration(item));
     }
+    let mut foreign_key_checks = Vec::new();
+    for item in rebuild_tables {
+        foreign_key_checks.extend(item.foreign_key_checks.clone());
+        statements.extend(compile_sqlite_table_rebuild(db, item));
+    }
     for item in create_indexes {
         statements.push(db.compile_create_index_migration(item));
     }
@@ -1699,7 +1724,344 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     for item in drop_enums {
         statements.extend(db.compile_drop_enum_migration(item));
     }
+    if db.is_sqlite() {
+        foreign_key_checks
+            .sort_by(|left, right| (&left.table, &left.foreign_key.name).cmp(&(&right.table, &right.foreign_key.name)));
+        foreign_key_checks.dedup_by(|left, right| left.table == right.table && left.foreign_key == right.foreign_key);
+        statements.extend(foreign_key_checks.into_iter().flat_map(compile_sqlite_foreign_key_check));
+    }
     statements
+}
+
+fn compile_sqlite_table_rebuild(db: &CliDatabase, rebuild: SqliteTableRebuild) -> Vec<String> {
+    let table = rebuild.desired.name.as_str();
+    let temporary = format!("__dinoco_rebuild_{table}");
+    let current_columns =
+        rebuild.current.columns.iter().map(|column| (column.name.as_str(), column)).collect::<BTreeMap<_, _>>();
+    let desired_columns =
+        rebuild.desired.columns.iter().map(|column| (column.name.as_str(), column)).collect::<BTreeMap<_, _>>();
+    let mappings =
+        rebuild.column_mappings.iter().map(|mapping| (mapping.to.as_str(), mapping)).collect::<BTreeMap<_, _>>();
+    let mut statements = vec![format!("/* dinoco-sqlite-table-rebuild: {} */", sqlite_identifier(table))];
+
+    for mapping in &rebuild.column_mappings {
+        let current = current_columns.get(mapping.from.as_str()).expect("mapped source column exists");
+        let desired = desired_columns.get(mapping.to.as_str()).expect("mapped destination column exists");
+        let source = sqlite_qualified_identifier(table, &mapping.from);
+        if !desired.nullable {
+            statements.extend(sqlite_rebuild_guard(
+                table,
+                &format!("{}_not_null", desired.name),
+                format!("{source} IS NULL"),
+                format!("Dinoco rebuild rejected NULL in required column {}.{}", table, desired.name),
+                source.clone(),
+            ));
+        }
+        if let dinoco_engine::MigrationColumnType::Enum { name, values } = &desired.ty {
+            let allowed = values.iter().map(|value| sqlite_string(value)).collect::<Vec<_>>().join(", ");
+            let enum_label = if name.is_empty() { "inline enum values" } else { name };
+            let rejected_values = match &current.ty {
+                dinoco_engine::MigrationColumnType::Enum { values: current_values, .. } => {
+                    current_values.iter().filter(|value| !values.contains(value)).cloned().collect::<Vec<_>>()
+                }
+                _ => Vec::new(),
+            };
+            let detail = if rejected_values.is_empty() {
+                format!("allowed: {}", values.join(", "))
+            } else {
+                format!("removed values: {}; allowed: {}", rejected_values.join(", "), values.join(", "))
+            };
+            statements.extend(sqlite_rebuild_guard(
+                table,
+                &format!("{}_enum", desired.name),
+                format!("{source} IS NOT NULL AND CAST({source} AS TEXT) NOT IN ({allowed})"),
+                format!(
+                    "Dinoco rebuild rejected value in {}.{} for enum {} ({detail})",
+                    table, desired.name, enum_label
+                ),
+                source.clone(),
+            ));
+        }
+        if let Some(condition) = sqlite_type_validation(&source, &current.ty, &desired.ty) {
+            statements.extend(sqlite_rebuild_guard(
+                table,
+                &format!("{}_type", desired.name),
+                format!("{source} IS NOT NULL AND ({condition})"),
+                format!(
+                    "Dinoco rebuild cannot safely convert value in {}.{} from {:?} to {:?}",
+                    table, desired.name, current.ty, desired.ty
+                ),
+                source,
+            ));
+        }
+    }
+
+    for desired in
+        rebuild.desired.columns.iter().filter(|column| {
+            !mappings.contains_key(column.name.as_str()) && !column.nullable && column.default.is_none()
+        })
+    {
+        statements.extend(sqlite_rebuild_guard(
+            table,
+            &format!("{}_missing_default", desired.name),
+            "1 = 1".to_string(),
+            format!("Dinoco rebuild cannot populate new required column {}.{} without a default", table, desired.name),
+            "'existing row'".to_string(),
+        ));
+    }
+
+    let unique_sets = sqlite_unique_sets(&rebuild.desired);
+    for (position, columns) in unique_sets.iter().enumerate() {
+        let Some(expressions) = columns
+            .iter()
+            .map(|column| {
+                let mapping = mappings.get(column.as_str())?;
+                let current = current_columns.get(mapping.from.as_str())?;
+                let desired = desired_columns.get(mapping.to.as_str())?;
+                Some(sqlite_copy_expression(
+                    &sqlite_qualified_identifier(table, &mapping.from),
+                    &current.ty,
+                    &desired.ty,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let non_null = expressions.iter().map(|expression| format!("{expression} IS NOT NULL")).collect::<Vec<_>>();
+        let condition = format!(
+            "{} GROUP BY {} HAVING COUNT(*) > 1",
+            if non_null.is_empty() { String::new() } else { non_null.join(" AND ") },
+            expressions.join(", ")
+        );
+        statements.extend(sqlite_rebuild_group_guard(
+            table,
+            &format!("unique_{position}"),
+            &condition,
+            format!("Dinoco rebuild found duplicate values for unique constraint on {}.{}", table, columns.join(",")),
+        ));
+    }
+
+    let mut create = rebuild.desired.clone();
+    create.name = temporary.clone();
+    statements.push(db.compile_create_table_migration(dinoco_engine::CreateTableMigration {
+        table: create.name,
+        columns: create.columns,
+        foreign_keys: create.foreign_keys,
+        if_not_exists: false,
+    }));
+
+    let copied = rebuild
+        .column_mappings
+        .iter()
+        .map(|mapping| {
+            let current = current_columns.get(mapping.from.as_str()).expect("mapped source column exists");
+            let desired = desired_columns.get(mapping.to.as_str()).expect("mapped destination column exists");
+            (
+                sqlite_identifier(&mapping.to),
+                sqlite_copy_expression(&sqlite_qualified_identifier(table, &mapping.from), &current.ty, &desired.ty),
+            )
+        })
+        .collect::<Vec<_>>();
+    if !copied.is_empty() {
+        statements.push(format!(
+            "INSERT INTO {} ({}) SELECT {} FROM {};",
+            sqlite_identifier(&temporary),
+            copied.iter().map(|(column, _)| column.as_str()).collect::<Vec<_>>().join(", "),
+            copied.iter().map(|(_, expression)| expression.as_str()).collect::<Vec<_>>().join(", "),
+            sqlite_identifier(table),
+        ));
+    }
+    statements.push(format!("DROP TABLE {};", sqlite_identifier(table)));
+    statements.extend(db.compile_rename_table_migration(dinoco_engine::RenameTableMigration {
+        from: temporary,
+        to: table.to_string(),
+    }));
+    statements.extend(
+        rebuild
+            .desired
+            .indexes
+            .iter()
+            .filter(|index| !crate::sql::index_is_primary_key(index, &rebuild.desired))
+            .cloned()
+            .map(|index| {
+                db.compile_create_index_migration(dinoco_engine::CreateIndexMigration {
+                    table: table.to_string(),
+                    index,
+                })
+            }),
+    );
+    statements
+}
+
+fn sqlite_unique_sets(table: &crate::db::DatabaseTable) -> Vec<Vec<String>> {
+    let mut sets = table
+        .columns
+        .iter()
+        .filter(|column| column.unique && !column.primary_key)
+        .map(|column| vec![column.name.clone()])
+        .collect::<Vec<_>>();
+    let primary =
+        table.columns.iter().filter(|column| column.primary_key).map(|column| column.name.clone()).collect::<Vec<_>>();
+    if !primary.is_empty() {
+        sets.push(primary);
+    }
+    sets.extend(
+        table
+            .indexes
+            .iter()
+            .filter(|index| index.kind == dinoco_engine::MigrationIndexKind::Unique)
+            .map(|index| index.columns.clone()),
+    );
+    sets.sort();
+    sets.dedup();
+    sets
+}
+
+fn sqlite_copy_expression(
+    source: &str,
+    current: &dinoco_engine::MigrationColumnType,
+    desired: &dinoco_engine::MigrationColumnType,
+) -> String {
+    use dinoco_engine::MigrationColumnType;
+    if current == desired
+        || matches!(
+            (current, desired),
+            (MigrationColumnType::String, MigrationColumnType::Text)
+                | (MigrationColumnType::Text, MigrationColumnType::String)
+        )
+    {
+        return source.to_string();
+    }
+    match desired {
+        MigrationColumnType::Integer => format!("CAST({source} AS INTEGER)"),
+        MigrationColumnType::Float => format!("CAST({source} AS REAL)"),
+        MigrationColumnType::Boolean => format!(
+            "CASE WHEN LOWER(CAST({source} AS TEXT)) = 'true' THEN 1 WHEN LOWER(CAST({source} AS TEXT)) = 'false' THEN 0 ELSE CAST({source} AS INTEGER) END"
+        ),
+        MigrationColumnType::Json => format!("CAST({source} AS BLOB)"),
+        MigrationColumnType::String
+        | MigrationColumnType::Text
+        | MigrationColumnType::DateTime
+        | MigrationColumnType::Date
+        | MigrationColumnType::Enum { .. } => format!("CAST({source} AS TEXT)"),
+    }
+}
+
+fn sqlite_type_validation(
+    source: &str,
+    current: &dinoco_engine::MigrationColumnType,
+    desired: &dinoco_engine::MigrationColumnType,
+) -> Option<String> {
+    use dinoco_engine::MigrationColumnType;
+    if current == desired || matches!(desired, MigrationColumnType::Enum { .. }) {
+        return None;
+    }
+    match desired {
+        MigrationColumnType::Integer => Some(format!(
+            "NOT (typeof({source}) = 'integer' OR typeof({source}) = 'real' AND {source} = CAST({source} AS INTEGER) OR typeof({source}) = 'text' AND printf('%lld', CAST({source} AS INTEGER)) = trim({source}))"
+        )),
+        MigrationColumnType::Boolean => Some(format!(
+            "NOT (typeof({source}) = 'integer' AND {source} IN (0, 1) OR typeof({source}) = 'text' AND LOWER(trim({source})) IN ('0', '1', 'true', 'false'))"
+        )),
+        MigrationColumnType::Float => Some(format!("typeof({source}) NOT IN ('integer', 'real')")),
+        MigrationColumnType::String
+        | MigrationColumnType::Text
+        | MigrationColumnType::DateTime
+        | MigrationColumnType::Date
+        | MigrationColumnType::Json
+        | MigrationColumnType::Enum { .. } => None,
+    }
+}
+
+fn sqlite_rebuild_guard(table: &str, suffix: &str, condition: String, message: String, value: String) -> Vec<String> {
+    let guard = format!("__dinoco_validate_{table}_{suffix}");
+    vec![
+        format!(
+            "CREATE TEMP TABLE {} (value TEXT, CONSTRAINT {} CHECK (0));",
+            sqlite_identifier(&guard),
+            sqlite_identifier(&message)
+        ),
+        format!(
+            "INSERT INTO {} (value) SELECT CAST({value} AS TEXT) FROM {} WHERE {condition} LIMIT 1;",
+            sqlite_identifier(&guard),
+            sqlite_identifier(table)
+        ),
+        format!("DROP TABLE {};", sqlite_identifier(&guard)),
+    ]
+}
+
+fn sqlite_rebuild_group_guard(table: &str, suffix: &str, condition: &str, message: String) -> Vec<String> {
+    let guard = format!("__dinoco_validate_{table}_{suffix}");
+    vec![
+        format!(
+            "CREATE TEMP TABLE {} (value TEXT, CONSTRAINT {} CHECK (0));",
+            sqlite_identifier(&guard),
+            sqlite_identifier(&message)
+        ),
+        format!(
+            "INSERT INTO {} (value) SELECT 'duplicate' FROM {} WHERE {condition} LIMIT 1;",
+            sqlite_identifier(&guard),
+            sqlite_identifier(table)
+        ),
+        format!("DROP TABLE {};", sqlite_identifier(&guard)),
+    ]
+}
+
+fn compile_sqlite_foreign_key_check(check: SqliteForeignKeyCheck) -> Vec<String> {
+    let foreign_key = check.foreign_key;
+    let guard = format!("__dinoco_validate_{}_{}", check.table, foreign_key.name);
+    let child = "child";
+    let parent = "parent";
+    let present = foreign_key
+        .columns
+        .iter()
+        .map(|column| format!("{child}.{} IS NOT NULL", sqlite_identifier(column)))
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    let matches = foreign_key
+        .columns
+        .iter()
+        .zip(&foreign_key.references_columns)
+        .map(|(column, reference)| {
+            format!("{parent}.{} = {child}.{}", sqlite_identifier(reference), sqlite_identifier(column))
+        })
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    let message = format!(
+        "Dinoco rebuild found invalid foreign key {} on {} ({}) referencing {} ({})",
+        foreign_key.name,
+        check.table,
+        foreign_key.columns.join(","),
+        foreign_key.references_table,
+        foreign_key.references_columns.join(",")
+    );
+    vec![
+        format!(
+            "CREATE TEMP TABLE {} (value TEXT, CONSTRAINT {} CHECK (0));",
+            sqlite_identifier(&guard),
+            sqlite_identifier(&message)
+        ),
+        format!(
+            "INSERT INTO {} (value) SELECT 'orphan' FROM {} AS {child} WHERE {present} AND NOT EXISTS (SELECT 1 FROM {} AS {parent} WHERE {matches}) LIMIT 1;",
+            sqlite_identifier(&guard),
+            sqlite_identifier(&check.table),
+            sqlite_identifier(&foreign_key.references_table),
+        ),
+        format!("DROP TABLE {};", sqlite_identifier(&guard)),
+    ]
+}
+
+fn sqlite_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn sqlite_qualified_identifier(table: &str, column: &str) -> String {
+    format!("{}.{}", sqlite_identifier(table), sqlite_identifier(column))
+}
+
+fn sqlite_string(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 fn preexisting_created_tables(plan: &MigrationPlan, current: &crate::db::DatabaseSchema) -> BTreeSet<String> {
@@ -1732,6 +2094,9 @@ fn compile_down_plan(
             MigrationStep::DropColumn(item) => Some(format!("column `{}.{}` was dropped", item.table, item.column)),
             MigrationStep::DropForeignKey(item) => {
                 Some(format!("foreign key `{}.{}` was dropped without its old definition", item.table, item.name))
+            }
+            MigrationStep::RebuildTable(item) => {
+                Some(format!("table `{}` was rebuilt with a changed schema", item.desired.name))
             }
             _ => None,
         })
@@ -1851,6 +2216,7 @@ fn compile_down_plan(
                     index: migration.index.clone(),
                 }));
             }
+            MigrationStep::RebuildTable(_) => {}
         }
     }
 
@@ -1988,6 +2354,14 @@ fn describe_step(step: &MigrationStep) -> String {
         MigrationStep::DropForeignKey(item) => format!("Drop foreign key `{}.{}`", item.table, item.name),
         MigrationStep::CreateIndex(item) => format!("Create index `{}.{}`", item.table, item.index.name),
         MigrationStep::DropIndex(item) => format!("Drop index `{}.{}`", item.table, item.index.name),
+        MigrationStep::RebuildTable(item) => {
+            let changes = item.changes.iter().map(describe_step).collect::<Vec<_>>().join("; ");
+            if changes.is_empty() {
+                format!("Rebuild table `{}`", item.desired.name)
+            } else {
+                format!("Rebuild table `{}`: {changes}", item.desired.name)
+            }
+        }
     }
 }
 

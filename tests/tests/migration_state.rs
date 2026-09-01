@@ -1082,6 +1082,153 @@ fn failed_generated_sqlite_migration_is_rolled_back_and_its_directory_is_removed
     assert_eq!(records, 1);
 }
 
+#[test]
+fn sqlite_rebuild_preserves_rows_across_type_default_enum_drop_and_unique_changes() {
+    let project = temp_project("sqlite-generic-rebuild");
+    write_project_schema(&project, SQLITE_REBUILD_INITIAL_SCHEMA);
+    let db_path = project.join("dev.sqlite");
+    assert_success(&run_cli(&project, &db_path, &["migrate", "generate"], &[]));
+
+    let conn = Connection::open(&db_path).expect("sqlite");
+    conn.execute(
+        "INSERT INTO item (code, status, obsolete, note, legacy_name) VALUES ('42', 'Active', true, 'kept', 'renamed')",
+        [],
+    )
+    .expect("seed item");
+    drop(conn);
+
+    write_project_schema(&project, SQLITE_REBUILD_DESIRED_SCHEMA);
+    let rebuilt = run_cli(&project, &db_path, &["migrate", "generate"], &[("DINOCO_CLI_CONFIRM_DESTRUCTIVE", "true")]);
+    assert_success(&rebuilt);
+
+    let migration = migration_dirs(&project).pop().expect("rebuild migration");
+    let up_sql = fs::read_to_string(migration.join("up.sql")).expect("up.sql");
+    assert!(up_sql.starts_with("PRAGMA foreign_keys = OFF;"), "{up_sql}");
+    assert!(up_sql.contains("dinoco-sqlite-table-rebuild"), "{up_sql}");
+    assert!(up_sql.contains("PRAGMA foreign_keys = ON;"), "{up_sql}");
+
+    let conn = Connection::open(&db_path).expect("sqlite");
+    let row: (i64, String, String, String, String, Option<String>) = conn
+        .query_row("SELECT code, typeof(code), status, added, note, display_name FROM item", [], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+        })
+        .expect("rebuilt row");
+    assert_eq!(
+        row,
+        (
+            42,
+            "integer".to_string(),
+            "Active".to_string(),
+            "created".to_string(),
+            "kept".to_string(),
+            Some("renamed".to_string())
+        )
+    );
+    assert!(!table_sql(&conn, "item").contains("obsolete"));
+    assert!(
+        conn.execute("INSERT INTO item (code, status) VALUES (42, 'Active')", []).is_err(),
+        "the rebuilt unique constraint must reject duplicates"
+    );
+    drop(conn);
+
+    write_project_schema(&project, SQLITE_REBUILD_FINAL_SCHEMA);
+    assert_success(&run_cli(
+        &project,
+        &db_path,
+        &["migrate", "generate"],
+        &[("DINOCO_CLI_CONFIRM_DESTRUCTIVE", "true")],
+    ));
+    let conn = Connection::open(&db_path).expect("sqlite");
+    let preserved: (String, Option<String>) = conn
+        .query_row("SELECT status, note FROM item WHERE code = 42", [], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("row after removing enum and constraints");
+    assert_eq!(preserved, ("Active".to_string(), Some("kept".to_string())));
+    conn.execute("INSERT INTO item (code, status, added) VALUES (42, 'free-form', 'manual')", [])
+        .expect("removed unique and enum constraints");
+}
+
+#[test]
+fn sqlite_rebuild_rejects_a_removed_enum_value_and_rolls_everything_back() {
+    let project = temp_project("sqlite-enum-rebuild-rollback");
+    write_project_schema(&project, SQLITE_ENUM_INITIAL_SCHEMA);
+    let db_path = project.join("dev.sqlite");
+    assert_success(&run_cli(&project, &db_path, &["migrate", "generate"], &[]));
+
+    let conn = Connection::open(&db_path).expect("sqlite");
+    conn.execute("INSERT INTO item (status) VALUES ('Legacy')", []).expect("seed legacy enum value");
+    let old_sql = table_sql(&conn, "item");
+    drop(conn);
+
+    write_project_schema(&project, SQLITE_ENUM_DESIRED_SCHEMA);
+    let failed = run_cli(&project, &db_path, &["migrate", "generate"], &[("DINOCO_CLI_CONFIRM_DESTRUCTIVE", "true")]);
+    assert!(!failed.status.success(), "{}", combined_output(&failed));
+    let output = combined_output(&failed);
+    assert!(output.contains("item.status"), "{output}");
+    assert!(output.contains("removed values: Legacy"), "{output}");
+    assert!(output.contains("allowed: Active"), "{output}");
+    assert_eq!(migration_dirs(&project).len(), 1, "a failed rebuild must not publish migration history");
+
+    let conn = Connection::open(&db_path).expect("sqlite");
+    assert_eq!(table_sql(&conn, "item"), old_sql);
+    let status: String = conn.query_row("SELECT status FROM item", [], |row| row.get(0)).expect("preserved row");
+    assert_eq!(status, "Legacy");
+    let history: i64 = conn.query_row("SELECT COUNT(*) FROM dinoco_migrations", [], |row| row.get(0)).unwrap();
+    assert_eq!(history, 1);
+}
+
+#[test]
+fn sqlite_rebuild_rejects_an_unsafe_type_conversion_without_changing_the_primary_key() {
+    let project = temp_project("sqlite-type-rebuild-rollback");
+    write_project_schema(&project, SQLITE_STRING_ID_SCHEMA);
+    let db_path = project.join("dev.sqlite");
+    assert_success(&run_cli(&project, &db_path, &["migrate", "generate"], &[]));
+    let conn = Connection::open(&db_path).expect("sqlite");
+    conn.execute("INSERT INTO account (id) VALUES ('not-an-integer')", []).expect("seed string id");
+    drop(conn);
+
+    write_project_schema(&project, SQLITE_INTEGER_ID_SCHEMA);
+    let failed = run_cli(&project, &db_path, &["migrate", "generate"], &[("DINOCO_CLI_CONFIRM_DESTRUCTIVE", "true")]);
+    assert!(!failed.status.success(), "{}", combined_output(&failed));
+    let output = combined_output(&failed);
+    assert!(output.contains("account.id"), "{output}");
+    assert!(output.contains("Text") && output.contains("Integer"), "{output}");
+
+    let conn = Connection::open(&db_path).expect("sqlite");
+    let id: String = conn.query_row("SELECT id FROM account", [], |row| row.get(0)).expect("preserved id");
+    assert_eq!(id, "not-an-integer");
+    assert!(table_sql(&conn, "account").contains("TEXT"));
+    assert_eq!(migration_dirs(&project).len(), 1);
+}
+
+#[test]
+fn sqlite_rebuild_preserves_cascading_and_self_relations() {
+    let project = temp_project("sqlite-rebuild-relations");
+    write_project_schema(&project, SQLITE_RELATIONS_INITIAL_SCHEMA);
+    let db_path = project.join("dev.sqlite");
+    assert_success(&run_cli(&project, &db_path, &["migrate", "generate"], &[]));
+
+    let conn = Connection::open(&db_path).expect("sqlite");
+    conn.execute("INSERT INTO parent (id, name) VALUES (1, 'parent')", []).expect("seed parent");
+    conn.execute("INSERT INTO child (id, parent_id) VALUES (1, 1)", []).expect("seed child");
+    conn.execute("INSERT INTO node (id, label, parent_id) VALUES (1, 'root', NULL)", []).expect("seed root");
+    conn.execute("INSERT INTO node (id, label, parent_id) VALUES (2, 'child', 1)", []).expect("seed node child");
+    drop(conn);
+
+    write_project_schema(&project, SQLITE_RELATIONS_DESIRED_SCHEMA);
+    let rebuilt = run_cli(&project, &db_path, &["migrate", "generate"], &[("DINOCO_CLI_CONFIRM_DESTRUCTIVE", "true")]);
+    assert_success(&rebuilt);
+
+    let conn = Connection::open(&db_path).expect("sqlite");
+    let child_parent: i64 = conn.query_row("SELECT parent_id FROM child", [], |row| row.get(0)).unwrap();
+    let node_parent: i64 = conn.query_row("SELECT parent_id FROM node WHERE id = 2", [], |row| row.get(0)).unwrap();
+    assert_eq!((child_parent, node_parent), (1, 1));
+    assert!(conn.query_row("PRAGMA foreign_key_check", [], |_| Ok(())).is_err(), "foreign_key_check must be empty");
+    assert!(table_sql(&conn, "child").contains("ON DELETE SET NULL"));
+    assert!(table_sql(&conn, "node").contains("ON DELETE CASCADE"));
+    assert!(conn.execute("INSERT INTO parent (id, name) VALUES (2, 'parent')", []).is_err());
+    assert!(conn.execute("INSERT INTO node (id, label) VALUES (3, 'root')", []).is_err());
+}
+
 #[tokio::test]
 async fn sqlite_introspection_preserves_typed_defaults() {
     let project = temp_project("defaults");
@@ -1367,6 +1514,168 @@ config {
 model Account {
     id   String @id
     name String
+}
+"#;
+
+const SQLITE_REBUILD_INITIAL_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Item {
+    id       Integer @id @default(autoincrement())
+    code     String
+    status   String
+    obsolete Boolean?
+    note     String?
+    legacy_name String?
+}
+"#;
+
+const SQLITE_REBUILD_DESIRED_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum ItemStatus {
+    Active
+    Archived
+}
+
+model Item {
+    id     Integer    @id @default(autoincrement())
+    code   Integer    @unique
+    status ItemStatus
+    added  String     @default("created")
+    note   String
+    display_name String?
+}
+"#;
+
+const SQLITE_REBUILD_FINAL_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Item {
+    id     Integer @id @default(autoincrement())
+    code   Integer
+    status String
+    added  String
+    note   String?
+    display_name String?
+}
+"#;
+
+const SQLITE_ENUM_INITIAL_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum ItemStatus {
+    Active
+    Legacy
+}
+
+model Item {
+    id     Integer    @id @default(autoincrement())
+    status ItemStatus
+}
+"#;
+
+const SQLITE_ENUM_DESIRED_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+enum ItemStatus {
+    Active
+}
+
+model Item {
+    id     Integer    @id @default(autoincrement())
+    status ItemStatus
+}
+"#;
+
+const SQLITE_STRING_ID_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Account {
+    id String @id
+}
+"#;
+
+const SQLITE_INTEGER_ID_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Account {
+    id Integer @id
+}
+"#;
+
+const SQLITE_RELATIONS_INITIAL_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Parent {
+    id       Integer @id @default(autoincrement())
+    name     String
+    children Child[]
+}
+
+model Child {
+    id        Integer @id @default(autoincrement())
+    parent_id Integer
+    parent    Parent? @relation(fields: [parent_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}
+
+model Node {
+    id        Integer @id @default(autoincrement())
+    label     String
+    parent_id Integer?
+    parent    Node?   @relation(name: "NodeTree", fields: [parent_id], references: [id], onDelete: SetNull)
+    children  Node[]  @relation(name: "NodeTree")
+}
+"#;
+
+const SQLITE_RELATIONS_DESIRED_SCHEMA: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Parent {
+    id       Integer @id @default(autoincrement())
+    name     String  @unique
+    children Child[]
+}
+
+model Child {
+    id        Integer @id @default(autoincrement())
+    parent_id Integer?
+    parent    Parent? @relation(fields: [parent_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+}
+
+model Node {
+    id        Integer @id @default(autoincrement())
+    label     String  @unique
+    parent_id Integer?
+    parent    Node?   @relation(name: "NodeTree", fields: [parent_id], references: [id], onDelete: Cascade)
+    children  Node[]  @relation(name: "NodeTree")
 }
 "#;
 
