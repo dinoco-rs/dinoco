@@ -550,7 +550,11 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let one_arms = fields.iter().filter(|field| field.kind == FieldKind::BelongsTo).map(|field| {
             let relation_name = &field.name;
             let ident = &field.ident;
-            quote! { #relation_name => self.#ident = value, }
+            if field.boxed_relation {
+                quote! { #relation_name => self.#ident = value.map(::std::boxed::Box::new), }
+            } else {
+                quote! { #relation_name => self.#ident = value, }
+            }
         });
 
         quote! {
@@ -678,7 +682,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 }
             })
         } else {
-            let inner = option_inner(ty)?;
+            let inner = field.target_ty.as_ref()?;
 
             Some(quote! {
                 if let ::core::option::Option::Some(value) = &self.#ident {
@@ -1146,7 +1150,11 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
         let one_arms = fields.iter().filter(|field| field.kind == FieldKind::BelongsTo).map(|field| {
             let relation_name = &field.name;
             let ident = &field.ident;
-            quote! { #relation_name => self.#ident = value, }
+            if field.boxed_relation {
+                quote! { #relation_name => self.#ident = value.map(::std::boxed::Box::new), }
+            } else {
+                quote! { #relation_name => self.#ident = value, }
+            }
         });
 
         quote! {
@@ -1192,7 +1200,7 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
                 }
             })
         } else {
-            let inner = option_inner(ty)?;
+            let inner = field.target_ty.as_ref()?;
 
             Some(quote! {
                 if let ::core::option::Option::Some(value) = &self.#ident {
@@ -1333,6 +1341,7 @@ struct ParsedField {
     ty: Type,
     kind: FieldKind,
     target_ty: Option<Type>,
+    boxed_relation: bool,
     foreign_key: Option<String>,
     references: Option<String>,
     relation_name: Option<String>,
@@ -1517,6 +1526,7 @@ impl ParsedField {
                 ty: field.ty.clone(),
                 kind: FieldKind::Extra,
                 target_ty: None,
+                boxed_relation: false,
                 foreign_key,
                 references,
                 relation_name,
@@ -1554,6 +1564,7 @@ impl ParsedField {
                 ty: field.ty.clone(),
                 kind: FieldKind::ManyToManyKey,
                 target_ty: None,
+                boxed_relation: false,
                 foreign_key,
                 references,
                 relation_name,
@@ -1586,6 +1597,7 @@ impl ParsedField {
                 ty: field.ty.clone(),
                 kind: FieldKind::HasMany,
                 target_ty: Some(inner.clone()),
+                boxed_relation: false,
                 foreign_key,
                 references,
                 relation_name,
@@ -1603,7 +1615,8 @@ impl ParsedField {
         }
 
         if let Some(inner) = option_inner(&field.ty)
-            && is_custom_type(inner)
+            && let target = box_inner(inner).unwrap_or(inner)
+            && is_custom_type(target)
             && !enum_field
         {
             if relation_kind.is_none() {
@@ -1618,7 +1631,8 @@ impl ParsedField {
                 name,
                 ty: field.ty.clone(),
                 kind: FieldKind::BelongsTo,
-                target_ty: Some(inner.clone()),
+                target_ty: Some(target.clone()),
+                boxed_relation: box_inner(inner).is_some(),
                 foreign_key,
                 references,
                 relation_name,
@@ -1641,6 +1655,7 @@ impl ParsedField {
             ty: field.ty.clone(),
             kind: FieldKind::Scalar,
             target_ty: None,
+            boxed_relation: false,
             foreign_key: if foreign_key.is_none() && relation_kind == Some(FieldKind::HasMany) {
                 Some(format!("{parent_snake}_id"))
             } else {
@@ -1668,6 +1683,7 @@ struct ParsedExtendField {
     ty: Type,
     kind: FieldKind,
     target_ty: Option<Type>,
+    boxed_relation: bool,
     is_option: bool,
 }
 
@@ -1685,19 +1701,22 @@ impl ParsedExtendField {
                 ty: field.ty.clone(),
                 kind: FieldKind::HasMany,
                 target_ty: Some(inner.clone()),
+                boxed_relation: false,
                 is_option: false,
             });
         }
 
         if let Some(inner) = option_inner(&field.ty)
-            && is_custom_type(inner)
+            && let target = box_inner(inner).unwrap_or(inner)
+            && is_custom_type(target)
         {
             return Ok(Self {
                 ident,
                 name,
                 ty: field.ty.clone(),
                 kind: FieldKind::BelongsTo,
-                target_ty: Some(inner.clone()),
+                target_ty: Some(target.clone()),
+                boxed_relation: box_inner(inner).is_some(),
                 is_option: true,
             });
         }
@@ -1708,6 +1727,7 @@ impl ParsedExtendField {
             ty: field.ty.clone(),
             kind: FieldKind::Scalar,
             target_ty: None,
+            boxed_relation: false,
             is_option: option_inner(&field.ty).is_some(),
         })
     }
@@ -1869,6 +1889,23 @@ fn option_inner(ty: &Type) -> Option<&Type> {
         return None;
     };
 
+    Some(inner)
+}
+
+fn box_inner(ty: &Type) -> Option<&Type> {
+    let Type::Path(type_path) = ty else {
+        return None;
+    };
+    let segment = type_path.path.segments.last()?;
+    if segment.ident != "Box" {
+        return None;
+    }
+    let PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return None;
+    };
+    let GenericArgument::Type(inner) = args.args.first()? else {
+        return None;
+    };
     Some(inner)
 }
 

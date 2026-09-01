@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
-const CRATE_VERSION: &str = "1.2.8";
-const PREVIOUS_CRATE_VERSION: &str = "1.2.7";
+const CRATE_VERSION: &str = "1.2.9";
+const PREVIOUS_CRATE_VERSION: &str = "1.2.8";
 const DOCS_VERSION: &str = "1.2.7";
 const PREVIOUS_DOCS_VERSION: &str = "1.2.6";
 

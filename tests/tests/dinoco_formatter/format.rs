@@ -177,3 +177,61 @@ body String?
     assert!(formatted.contains("\n\n    @@indexes([tenantId, id])"));
     assert_eq!(formatted, dinoco_formatter::format_from_raw(&formatted).expect("idempotent format"));
 }
+
+#[test]
+fn formatter_groups_short_imports_and_wraps_long_imports() {
+    let raw = r#"import { FeeGroup } from "../fees.dinoco"
+
+
+import { CdnDocument } from "../../shared/cdn.dinoco"
+
+import { BusinessAccess, BusinessOffice, BusinessPermission, BusinessPermissionGroup, BusinessReview, BusinessDraft } from "./sharing.dinoco"
+
+
+model Example { id Integer @id }
+"#;
+
+    let formatted = dinoco_formatter::format_from_raw(raw).expect("format imports");
+
+    assert!(formatted.starts_with(
+        "import { FeeGroup } from \"../fees.dinoco\"\nimport { CdnDocument } from \"../../shared/cdn.dinoco\"\nimport {\n"
+    ));
+    assert!(formatted.contains(
+        "    BusinessPermissionGroup,\n    BusinessReview,\n    BusinessDraft,\n} from \"./sharing.dinoco\"\n\nmodel Example"
+    ));
+    assert_eq!(formatted, dinoco_formatter::format_from_raw(&formatted).expect("imports are idempotent"));
+}
+
+#[test]
+fn formatter_preserves_hash_and_slash_comments() {
+    let raw = r#"# declarations used by the API
+import { Status } from "../shared/status.dinoco" // keep the relative path
+
+// hierarchical records
+model Topic {
+    # stable identifier
+    id Integer @id // generated externally
+
+    // optional label
+    label String?
+}
+
+# end of schema
+"#;
+
+    let once = dinoco_formatter::format_from_raw(raw).expect("format comments");
+    let twice = dinoco_formatter::format_from_raw(&once).expect("format comments twice");
+
+    for comment in [
+        "# declarations used by the API",
+        "// keep the relative path",
+        "// hierarchical records",
+        "# stable identifier",
+        "// generated externally",
+        "// optional label",
+        "# end of schema",
+    ] {
+        assert_eq!(once.matches(comment).count(), 1, "{once}");
+    }
+    assert_eq!(once, twice);
+}

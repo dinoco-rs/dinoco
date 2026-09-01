@@ -57,6 +57,116 @@ struct NumericAccount {
     default_status: Option<OptionalStatus>,
 }
 
+#[derive(Debug, Clone, Entity, dinoco::serde::Serialize, dinoco::serde::Deserialize)]
+#[serde(crate = "::dinoco::serde")]
+#[dinoco(table_name = "topic_node")]
+struct TopicNode {
+    #[dinoco(primary_key)]
+    id: String,
+    label: String,
+    parent_id: Option<String>,
+
+    #[dinoco(many_to_one, relation_name = "TopicTree", foreign_key = "parent_id", references = "id")]
+    parent: Option<Box<TopicNode>>,
+
+    #[dinoco(one_to_many, relation_name = "TopicTree", foreign_key = "parent_id", references = "id")]
+    children: Vec<TopicNode>,
+}
+
+#[tokio::test]
+async fn sqlite_self_relations_work_across_crud_filters_includes_and_serde() -> anyhow::Result<()> {
+    let suffix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+    let path = format!("/private/tmp/dinoco-self-relation-{}-{suffix}.sqlite", std::process::id());
+    let adapter = SqliteAdapter::new(path.clone()).await.map_err(anyhow::Error::msg)?;
+    create_table(
+        &adapter,
+        "topic_node",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            column("label", MigrationColumnType::String),
+            nullable(column("parent_id", MigrationColumnType::String)),
+        ],
+    )
+    .await?;
+    let client = DinocoClient::new(Backend::Sqlite(adapter));
+
+    let mut root = TopicNode::new("root".to_string(), "Root".to_string());
+    root.children.push(TopicNode::new("child".to_string(), "Child".to_string()));
+    insert_into::<TopicNode>().values(&root).execute(&client).await?;
+
+    let loaded_root = find_first::<TopicNode>()
+        .where_(|node| node.id.eq("root"))
+        .includes(|node| {
+            node.children().where_complex(|child, logic| logic.or(child.label.eq("Child"), child.id.eq("missing")))
+        })
+        .execute(&client)
+        .await?
+        .expect("root");
+    assert_eq!(loaded_root.children.len(), 1);
+    assert_eq!(loaded_root.children[0].parent_id.as_deref(), Some("root"));
+
+    let loaded_child = find_first::<TopicNode>()
+        .where_(|node| node.parent_id.eq("root"))
+        .includes(|node| node.parent())
+        .execute(&client)
+        .await?
+        .expect("child");
+    assert_eq!(loaded_child.parent.as_deref().map(|node| node.id.as_str()), Some("root"));
+
+    let json = dinoco::serde_json::to_string(&loaded_child)?;
+    let decoded: TopicNode = dinoco::serde_json::from_str(&json)?;
+    assert_eq!(decoded.parent.as_deref().map(|node| node.id.as_str()), Some("root"));
+
+    insert_many::<TopicNode>()
+        .values([
+            TopicNode::new("other".to_string(), "Other".to_string()),
+            TopicNode::new("loose".to_string(), "Loose".to_string()),
+        ])
+        .execute(&client)
+        .await?;
+    let all = find_many::<TopicNode>()
+        .where_complex(|node, logic| logic.or(node.parent_id.null(), node.parent_id.eq("root")))
+        .execute(&client)
+        .await?;
+    assert_eq!(all.len(), 4);
+
+    dinoco::update::<TopicNode>()
+        .where_(|node| node.id.eq("child"))
+        .update(|node| node.parent_id.set(Some("other".to_string())))
+        .execute(&client)
+        .await?;
+    let moved = find_first::<TopicNode>()
+        .where_(|node| node.id.eq("child"))
+        .includes(|node| node.parent())
+        .execute(&client)
+        .await?
+        .expect("moved child");
+    assert_eq!(moved.parent.as_deref().map(|node| node.id.as_str()), Some("other"));
+
+    let detached = dinoco::find_and_update::<TopicNode>()
+        .where_(|node| node.id.eq("child"))
+        .update(|node| node.parent_id.set(None))
+        .execute(&client)
+        .await?;
+    assert_eq!(detached.parent_id, None);
+
+    dinoco::update_many::<TopicNode>()
+        .where_(|node| node.parent_id.null())
+        .update(|node| node.label.set("Top level".to_string()))
+        .execute(&client)
+        .await?;
+    let count = dinoco::count::<TopicNode>().includes(|node| node.children()).execute(&client).await?;
+    assert_eq!(count.total, 4);
+
+    dinoco::delete::<TopicNode>().where_(|node| node.id.eq("loose")).execute(&client).await?;
+    dinoco::delete_many::<TopicNode>().where_(|node| node.parent_id.null()).execute(&client).await?;
+    assert_eq!(dinoco::count::<TopicNode>().execute(&client).await?.total, 0);
+
+    drop(client);
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
 #[tokio::test]
 async fn sqlite_crud_relations_and_count_work_end_to_end() -> anyhow::Result<()> {
     let path = format!("/private/tmp/dinoco-test-{}.sqlite", std::process::id());

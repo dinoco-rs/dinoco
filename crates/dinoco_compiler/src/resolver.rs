@@ -119,12 +119,8 @@ impl Resolver {
             return Err(CompileError::at("Imported schema paths must end in `.dinoco`", &import.origin));
         }
         let joined = current.parent().unwrap_or_else(|| Path::new(".")).join(path);
-        fs::canonicalize(&joined).map_err(|error| {
-            CompileError::at(
-                format!("Imported schema `{}` could not be resolved: {error}", import.path),
-                &import.origin,
-            )
-        })
+        fs::canonicalize(&joined)
+            .map_err(|_| CompileError::at(format!("Import file `{}` was not found.", import.path), &import.origin))
     }
 
     fn validate_import_declarations(&self, schema: &Schema) -> CompileResult<()> {
@@ -172,7 +168,7 @@ impl Resolver {
         for symbol in &import.symbols {
             if !declarations.contains(symbol.as_str()) {
                 return Err(CompileError::at(
-                    format!("Imported symbol `{symbol}` does not exist in `{}`", self.display_path(imported_path)),
+                    format!("Imported symbol `{symbol}` was not found in `{}`.", import.path),
                     &import.origin,
                 ));
             }

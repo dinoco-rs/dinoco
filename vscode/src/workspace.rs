@@ -171,7 +171,7 @@ impl WorkspaceCache {
     }
 
     pub fn known_root_for(&self, file: &Path) -> Option<PathBuf> {
-        let file = canonical_path(file)?;
+        let file = canonical_path(file).unwrap_or_else(|| file.to_path_buf());
         self.known_roots
             .iter()
             .filter(|(_, files)| files.contains(&file))
@@ -180,9 +180,17 @@ impl WorkspaceCache {
     }
 
     pub fn invalidate(&mut self, path: &Path) {
-        if let Some(path) = canonical_path(path) {
-            self.files.remove(&path);
-        }
+        let path = canonical_path(path).unwrap_or_else(|| path.to_path_buf());
+        self.files.remove(&path);
+    }
+
+    pub fn known_roots_affected_by(&self, file: &Path) -> Vec<PathBuf> {
+        let file = canonical_path(file).unwrap_or_else(|| file.to_path_buf());
+        self.known_roots
+            .keys()
+            .filter(|root| root.parent().is_some_and(|directory| file.starts_with(directory)))
+            .cloned()
+            .collect()
     }
 
     fn load_disk_file(&mut self, path: &Path) -> Option<Arc<SchemaFile>> {

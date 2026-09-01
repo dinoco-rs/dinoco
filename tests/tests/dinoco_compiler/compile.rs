@@ -779,7 +779,7 @@ fn compile_file_reports_invalid_imports_with_their_origin() {
     fs::write(project.path().join("shared.dinoco"), "enum Present { yes }\n").expect("shared schema");
 
     let unknown = compile_file(&root).expect_err("unknown imported symbols must fail");
-    assert!(unknown.message.contains("Imported symbol `Missing` does not exist"), "{unknown}");
+    assert_eq!(unknown.message, "Imported symbol `Missing` was not found in `shared.dinoco`.");
     assert_eq!(unknown.file.as_deref(), Some("schema.dinoco"));
     assert_eq!(unknown.line, 1);
 
@@ -793,7 +793,7 @@ fn compile_file_reports_invalid_imports_with_their_origin() {
 
     fs::write(&root, "import { MissingFile } from \"absent.dinoco\"\n").expect("missing import");
     let missing = compile_file(&root).expect_err("missing imported files must fail");
-    assert!(missing.message.contains("could not be resolved"), "{missing}");
+    assert_eq!(missing.message, "Import file `absent.dinoco` was not found.");
     assert_eq!(missing.file.as_deref(), Some("schema.dinoco"));
 }
 

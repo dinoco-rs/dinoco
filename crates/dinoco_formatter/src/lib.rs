@@ -1,3 +1,4 @@
+mod comments;
 mod config;
 mod layout;
 mod model;
@@ -41,7 +42,7 @@ pub fn format_from_raw_with_config(source: &str, config: &FormatterConfig) -> Re
     };
     let layout = LayoutHints::from_source(source, &schema);
 
-    Ok(format_schema_with_layout(&schema, config, &layout))
+    Ok(comments::restore(source, &format_schema_with_layout(&schema, config, &layout)))
 }
 
 /// Formats an imported schema document without requiring the main project's
@@ -50,26 +51,25 @@ pub fn format_fragment_from_raw_with_config(source: &str, config: &FormatterConf
     let schema = dinoco_compiler::parse(source)?;
     let layout = LayoutHints::from_source(source, &schema);
 
-    Ok(format_schema_with_layout(&schema, config, &layout))
+    Ok(comments::restore(source, &format_schema_with_layout(&schema, config, &layout)))
 }
 
 pub fn format_schema(schema: &Schema, config: &FormatterConfig) -> String {
     let mut blocks = Vec::new();
 
     for item in &schema.items {
-        blocks.push(match item {
-            SchemaItem::Import(import) => format!(
-                "import {{ {} }} from \"{}\"",
-                import.symbols.join(", "),
-                import.path.replace('\\', "\\\\").replace('"', "\\\"")
-            ),
-            SchemaItem::Config(config_block) => format_config(config_block, config),
-            SchemaItem::Enum(enum_def) => format_enum(enum_def, config),
-            SchemaItem::Model(model) => format_model(model, config),
-        });
+        blocks.push((
+            matches!(item, SchemaItem::Import(_)),
+            match item {
+                SchemaItem::Import(import) => format_import(import, config),
+                SchemaItem::Config(config_block) => format_config(config_block, config),
+                SchemaItem::Enum(enum_def) => format_enum(enum_def, config),
+                SchemaItem::Model(model) => format_model(model, config),
+            },
+        ));
     }
 
-    let mut output = blocks.join("\n\n");
+    let mut output = join_blocks(blocks);
 
     if config.final_newline {
         output.push('\n');
@@ -82,21 +82,55 @@ fn format_schema_with_layout(schema: &Schema, config: &FormatterConfig, layout: 
     let mut blocks = Vec::new();
 
     for item in &schema.items {
-        blocks.push(match item {
-            SchemaItem::Import(import) => format!(
-                "import {{ {} }} from \"{}\"",
-                import.symbols.join(", "),
-                import.path.replace('\\', "\\\\").replace('"', "\\\"")
-            ),
-            SchemaItem::Config(config_block) => format_config(config_block, config),
-            SchemaItem::Enum(enum_def) => format_enum(enum_def, config),
-            SchemaItem::Model(model) => format_model_with_layout(model, config, layout.model_blank_lines(&model.name)),
-        });
+        blocks.push((
+            matches!(item, SchemaItem::Import(_)),
+            match item {
+                SchemaItem::Import(import) => format_import(import, config),
+                SchemaItem::Config(config_block) => format_config(config_block, config),
+                SchemaItem::Enum(enum_def) => format_enum(enum_def, config),
+                SchemaItem::Model(model) => {
+                    format_model_with_layout(model, config, layout.model_blank_lines(&model.name))
+                }
+            },
+        ));
     }
 
-    let mut output = blocks.join("\n\n");
+    let mut output = join_blocks(blocks);
     if config.final_newline {
         output.push('\n');
+    }
+    output
+}
+
+const IMPORT_LINE_WIDTH: usize = 100;
+
+fn format_import(import: &dinoco_compiler::Import, config: &FormatterConfig) -> String {
+    let path = import.path.replace('\\', "\\\\").replace('"', "\\\"");
+    let single_line = format!("import {{ {} }} from \"{path}\"", import.symbols.join(", "));
+    if single_line.len() <= IMPORT_LINE_WIDTH {
+        return single_line;
+    }
+
+    let indent = config.indent();
+    let mut output = String::from("import {\n");
+    for symbol in &import.symbols {
+        output.push_str(&indent);
+        output.push_str(symbol);
+        output.push_str(",\n");
+    }
+    output.push_str(&format!("}} from \"{path}\""));
+    output
+}
+
+fn join_blocks(blocks: Vec<(bool, String)>) -> String {
+    let mut output = String::new();
+    let mut previous_import = false;
+    for (index, (is_import, block)) in blocks.into_iter().enumerate() {
+        if index > 0 {
+            output.push_str(if previous_import && is_import { "\n" } else { "\n\n" });
+        }
+        output.push_str(&block);
+        previous_import = is_import;
     }
     output
 }

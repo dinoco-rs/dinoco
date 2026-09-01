@@ -387,7 +387,11 @@ fn rust_type(model: &Model, field: &ModelField, schema: &Schema) -> String {
     if field.ty.list {
         format!("Vec<{base}>")
     } else if field.ty.optional {
-        format!("Option<{base}>")
+        if field.is_relation(schema) && field.ty.name == model.name {
+            format!("Option<Box<{base}>>")
+        } else {
+            format!("Option<{base}>")
+        }
     } else {
         base
     }

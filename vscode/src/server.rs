@@ -69,7 +69,8 @@ impl DinocoLanguageServer {
         {
             workspace.invalidate(&path);
         }
-        self.client.publish_diagnostics(uri, diagnostics, Some(version)).await;
+        self.client.publish_diagnostics(uri.clone(), diagnostics, Some(version)).await;
+        self.validate_project_imports(&uri).await;
     }
 
     fn hover_for(&self, state: &DocumentState, index: &DocumentIndex, position: Position) -> Option<Hover> {
@@ -242,6 +243,21 @@ impl DinocoLanguageServer {
         self.publish_project_diagnostics(&root, graph, compile_error).await;
     }
 
+    async fn validate_project_imports(&self, uri: &Url) {
+        let Ok(path) = uri.to_file_path() else {
+            return;
+        };
+        let Some(root) = self.project_root(&path) else {
+            return;
+        };
+        let overlays = self.overlays();
+        let graph = match self.workspace.write() {
+            Ok(mut workspace) => workspace.load_graph(&root, &overlays),
+            Err(_) => return,
+        };
+        self.publish_project_diagnostics(&root, graph, None).await;
+    }
+
     async fn publish_project_diagnostics(
         &self,
         root: &Path,
@@ -266,19 +282,19 @@ impl DinocoLanguageServer {
         let publish_files = files.union(&previous).cloned().collect::<Vec<_>>();
         for uri in publish_files {
             let state = self.document(&uri);
-            let graph_file = uri
-                .to_file_path()
-                .ok()
-                .and_then(|path| canonical_path(&path))
-                .and_then(|path| graph.files.get(&path).cloned());
+            let canonical = uri.to_file_path().ok().and_then(|path| canonical_path(&path));
+            let graph_file = canonical.as_ref().and_then(|path| graph.files.get(path).cloned());
             let file = state.as_ref().map(|state| state.file.clone()).or(graph_file);
             let mut diagnostics = file.as_ref().map_or_else(Vec::new, |file| {
-                if uri.to_file_path().ok().and_then(|path| canonical_path(&path)).as_deref() == Some(root) {
+                if canonical.as_deref() == Some(root) {
                     diagnostics::analyze(&file.source, &file.index)
                 } else {
                     diagnostics::analyze_imported(&file.source, &file.index)
                 }
             });
+            if let (Some(path), Some(file)) = (canonical.as_deref(), file.as_deref()) {
+                diagnostics.extend(import_diagnostics(path, file, &graph));
+            }
             if let Some((target, diagnostic)) = &project_diagnostic
                 && target == &uri
                 && !diagnostics.iter().any(|item| item.message == diagnostic.message)
@@ -291,6 +307,85 @@ impl DinocoLanguageServer {
             tracked.insert(root.to_path_buf(), files);
         }
     }
+}
+
+fn import_diagnostics(path: &Path, file: &SchemaFile, graph: &ImportGraph) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for import in file.imports() {
+        let invalid_path_message = if import.path.trim().is_empty() {
+            Some("Import path cannot be empty".to_string())
+        } else if Path::new(&import.path).is_absolute() {
+            Some("Import paths must be relative to the declaring file".to_string())
+        } else if Path::new(&import.path).extension().and_then(|extension| extension.to_str()) != Some("dinoco") {
+            Some("Imported schema paths must end in `.dinoco`".to_string())
+        } else {
+            None
+        };
+        if let Some(message) = invalid_path_message {
+            diagnostics.push(Diagnostic {
+                range: import_value_range(&file.source, &import.path, &import.path),
+                severity: Some(DiagnosticSeverity::ERROR),
+                code: Some(NumberOrString::String("dinoco.invalidImportPath".to_string())),
+                source: Some("dinoco".to_string()),
+                message,
+                ..Diagnostic::default()
+            });
+            continue;
+        }
+        let Some(target_path) = crate::workspace::resolve_import_path(path, &import.path) else {
+            diagnostics.push(Diagnostic {
+                range: import_value_range(&file.source, &import.path, &import.path),
+                severity: Some(DiagnosticSeverity::ERROR),
+                code: Some(NumberOrString::String("dinoco.importFileNotFound".to_string())),
+                source: Some("dinoco".to_string()),
+                message: format!("Import file `{}` was not found.", import.path),
+                ..Diagnostic::default()
+            });
+            continue;
+        };
+        let Some(target) = graph.files.get(&target_path) else {
+            continue;
+        };
+        for symbol in &import.symbols {
+            let exists = target.index.blocks.iter().any(|block| {
+                matches!(block.kind, BlockKind::Model | BlockKind::Enum)
+                    && block.name.as_ref().is_some_and(|name| name.name == *symbol)
+            });
+            if !exists {
+                diagnostics.push(Diagnostic {
+                    range: import_value_range(&file.source, &import.path, symbol),
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    code: Some(NumberOrString::String("dinoco.importSymbolNotFound".to_string())),
+                    source: Some("dinoco".to_string()),
+                    message: format!("Imported symbol `{symbol}` was not found in `{}`.", import.path),
+                    ..Diagnostic::default()
+                });
+            }
+        }
+    }
+    diagnostics
+}
+
+fn import_value_range(source: &str, import_path: &str, value: &str) -> Range {
+    let quoted_path = format!("\"{import_path}\"");
+    let path_offset = source.find(&quoted_path).map(|offset| offset + 1);
+    let offset = if value == import_path {
+        path_offset
+    } else {
+        path_offset.and_then(|path_offset| {
+            let import_start = source[..path_offset].rfind("import").unwrap_or_default();
+            source[import_start..path_offset].find(value).map(|offset| import_start + offset)
+        })
+    };
+    let Some(offset) = offset.or_else(|| source.find(value)) else {
+        return Range::default();
+    };
+    let prefix = &source[..offset];
+    let line = prefix.bytes().filter(|byte| *byte == b'\n').count() as u32;
+    let line_start = prefix.rfind('\n').map_or(0, |index| index + 1);
+    let character = source[line_start..offset].encode_utf16().count() as u32;
+    let start = Position::new(line, character);
+    Range::new(start, Position::new(line, character + value.encode_utf16().count() as u32))
 }
 
 fn is_main_schema(uri: &Url) -> bool {
@@ -325,7 +420,7 @@ fn compile_error_diagnostic(
         .map(|file| file.source.clone())
         .or_else(|| std::fs::read_to_string(&path).ok())
         .unwrap_or_default();
-    let start = compiler_position(&source, error.line, error.column);
+    let range = compiler_error_range(&source, &error);
     let related_information = error
         .related
         .into_iter()
@@ -348,7 +443,7 @@ fn compile_error_diagnostic(
     Some((
         uri,
         Diagnostic {
-            range: Range::new(start, Position::new(start.line, start.character + 1)),
+            range,
             severity: Some(DiagnosticSeverity::ERROR),
             code: Some(NumberOrString::String("dinoco.project".to_string())),
             source: Some("dinoco".to_string()),
@@ -357,6 +452,29 @@ fn compile_error_diagnostic(
             ..Diagnostic::default()
         },
     ))
+}
+
+fn compiler_error_range(source: &str, error: &dinoco_compiler::CompileError) -> Range {
+    let fallback = compiler_position(source, error.line, error.column);
+    let target = error
+        .message
+        .strip_prefix("Imported symbol `")
+        .and_then(|message| message.split('`').next())
+        .or_else(|| error.message.strip_prefix("Imported schema `").and_then(|message| message.split('`').next()));
+    let target =
+        target.or_else(|| error.message.strip_prefix("Import file `").and_then(|message| message.split('`').next()));
+    let Some(target) = target else {
+        return Range::new(fallback, Position::new(fallback.line, fallback.character + 1));
+    };
+    let Some(line) = source.lines().nth(error.line.saturating_sub(1)) else {
+        return Range::new(fallback, Position::new(fallback.line, fallback.character + 1));
+    };
+    let Some(byte_column) = line.find(target) else {
+        return Range::new(fallback, Position::new(fallback.line, fallback.character + 1));
+    };
+    let character = line[..byte_column].encode_utf16().count() as u32;
+    let start = Position::new(error.line.saturating_sub(1) as u32, character);
+    Range::new(start, Position::new(start.line, start.character + target.encode_utf16().count() as u32))
 }
 
 fn diagnostic_path(root: &Path, file: Option<&str>) -> PathBuf {
@@ -468,11 +586,27 @@ impl LanguageServer for DinocoLanguageServer {
     }
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        let mut roots = HashSet::new();
         if let Ok(mut workspace) = self.workspace.write() {
             for change in params.changes {
                 if let Ok(path) = change.uri.to_file_path() {
+                    roots.extend(workspace.known_roots_affected_by(&path));
+                    for directory in path.parent().into_iter().flat_map(Path::ancestors) {
+                        let candidate = directory.join("schema.dinoco");
+                        if candidate.is_file()
+                            && let Some(candidate) = canonical_path(&candidate)
+                        {
+                            roots.insert(candidate);
+                            break;
+                        }
+                    }
                     workspace.invalidate(&path);
                 }
+            }
+        }
+        for root in roots {
+            if let Ok(uri) = Url::from_file_path(root) {
+                self.validate_project_on_save(&uri).await;
             }
         }
     }
@@ -1052,5 +1186,62 @@ mod tests {
         assert_eq!(uri.to_file_path().expect("file uri"), canonical_path(&child).expect("canonical child"));
         assert_eq!(diagnostic.range.start.line, 2);
         assert_eq!(diagnostic.code, Some(NumberOrString::String("dinoco.project".to_string())));
+    }
+
+    #[test]
+    fn import_diagnostics_select_the_missing_symbol_or_path() {
+        let project = tempdir().expect("project");
+        let root = project.path().join("schema.dinoco");
+        let child = project.path().join("models.dinoco");
+        fs::write(&child, "model Present { id String @id }\n").expect("child");
+        fs::write(&root, "import { Missing } from \"./models.dinoco\"\n").expect("root");
+
+        let root = canonical_path(&root).expect("canonical root");
+        let mut cache = WorkspaceCache::default();
+        let graph = cache.load_graph(&root, &HashMap::new());
+        let error = dinoco_compiler::compile_file(&root).expect_err("missing symbol");
+        let (_, diagnostic) = compile_error_diagnostic(&root, &graph, error).expect("symbol diagnostic");
+        assert_eq!(diagnostic.range, Range::new(Position::new(0, 9), Position::new(0, 16)));
+        let live = import_diagnostics(&root, &graph.files[&root], &graph);
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].code, Some(NumberOrString::String("dinoco.importSymbolNotFound".to_string())));
+        assert_eq!(live[0].range, diagnostic.range);
+
+        fs::write(&root, "import { Present } from \"../missing.dinoco\"\n").expect("missing path");
+        let mut cache = WorkspaceCache::default();
+        let graph = cache.load_graph(&root, &HashMap::new());
+        let error = dinoco_compiler::compile_file(&root).expect_err("missing file");
+        let (_, diagnostic) = compile_error_diagnostic(&root, &graph, error).expect("path diagnostic");
+        assert_eq!(diagnostic.range, Range::new(Position::new(0, 25), Position::new(0, 42)));
+        let live = import_diagnostics(&root, &graph.files[&root], &graph);
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].code, Some(NumberOrString::String("dinoco.importFileNotFound".to_string())));
+        assert_eq!(live[0].range, diagnostic.range);
+    }
+
+    #[test]
+    fn live_import_diagnostics_follow_transitive_content_changes() {
+        let project = tempdir().expect("project");
+        let root = project.path().join("schema.dinoco");
+        let first = project.path().join("first.dinoco");
+        let second = project.path().join("second.dinoco");
+        fs::write(&root, "import { First } from \"./first.dinoco\"\n").expect("root");
+        fs::write(&first, "import { Second } from \"./second.dinoco\"\nmodel First { id String @id second Second? }\n")
+            .expect("first");
+        fs::write(&second, "model Second { id String @id }\n").expect("second");
+        let root = canonical_path(&root).expect("root path");
+        let first = canonical_path(&first).expect("first path");
+
+        let mut cache = WorkspaceCache::default();
+        let graph = cache.load_graph(&root, &HashMap::new());
+        assert!(graph.files.iter().all(|(path, file)| import_diagnostics(path, file, &graph).is_empty()));
+
+        fs::write(&second, "model Renamed { id String @id }\n").expect("rename second");
+        cache.invalidate(&second);
+        let graph = cache.load_graph(&root, &HashMap::new());
+        let diagnostics = import_diagnostics(&first, &graph.files[&first], &graph);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].range, Range::new(Position::new(0, 9), Position::new(0, 15)));
+        assert!(diagnostics[0].message.contains("Imported symbol `Second`"));
     }
 }

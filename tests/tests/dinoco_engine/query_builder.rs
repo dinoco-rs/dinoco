@@ -1,7 +1,41 @@
 use dinoco_engine::{
     DeleteQuery, DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    MySqlAdapter, PostgresAdapter, SqliteAdapter, UpdateOperation, UpdateQuery, UpdateSet,
+    MySqlAdapter, PostgresAdapter, RelationJoinQuery, SqliteAdapter, UpdateOperation, UpdateQuery, UpdateSet,
 };
+
+#[tokio::test]
+async fn relation_join_compilers_alias_both_sides_of_self_relations() -> anyhow::Result<()> {
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let query = || RelationJoinQuery {
+        query: FindQuery {
+            fields: &["id", "label", "parent_id"],
+            from: "topic_node",
+            conditions: vec![FindWhere::Eq("label", DinocoValue::String("Root".to_string()))],
+            limit: -1,
+            skip: -1,
+            order_by: None,
+        },
+        parent_table: "topic_node",
+        child_table: "topic_node",
+        parent_field: "parent_id",
+        child_field: "id",
+        key_count: 1,
+    };
+
+    for sql in [
+        sqlite.compile_relation_join_query(query()).0,
+        mysql.compile_relation_join_query(query()).0,
+        postgres.compile_relation_join_query(query()).0,
+    ] {
+        assert!(sql.contains("topic_node AS __dinoco_parent LEFT JOIN topic_node AS __dinoco_child"), "{sql}");
+        assert!(sql.contains("__dinoco_parent.parent_id = __dinoco_child.id"), "{sql}");
+        assert!(sql.contains("__dinoco_child.label"), "{sql}");
+    }
+
+    Ok(())
+}
 
 #[tokio::test]
 async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {

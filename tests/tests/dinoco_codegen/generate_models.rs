@@ -558,3 +558,101 @@ fn codegen_marks_optional_enums_as_scalars_and_wraps_optional_defaults() {
     assert!(generated.contains("#[dinoco(enum)]\n    pub required_status: Status"));
     assert!(generated.contains("#[dinoco(enum, default = Status::Disabled)]"));
 }
+
+#[test]
+fn codegen_boxes_only_optional_singular_self_relations() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Topic {
+            id        Integer @id
+            parent_id Integer?
+            parent    Topic?  @relation(name: "TopicTree", fields: [parent_id], references: [id])
+            children  Topic[] @relation(name: "TopicTree")
+            audits    TopicAudit[]
+        }
+
+        model TopicAudit {
+            id       Integer @id
+            topic_id Integer
+            topic    Topic? @relation(fields: [topic_id], references: [id])
+        }
+        "#,
+    )
+    .expect("self relation schema");
+    let topic = schema.models().find(|model| model.name == "Topic").expect("topic");
+    let audit = schema.models().find(|model| model.name == "TopicAudit").expect("audit");
+    let topic = dinoco_codegen::render_model_file(topic, &schema);
+    let audit = dinoco_codegen::render_model_file(audit, &schema);
+
+    assert!(topic.contains("pub parent: Option<Box<Topic>>"), "{topic}");
+    assert!(topic.contains("pub children: Vec<Topic>"), "{topic}");
+    assert!(audit.contains("pub topic: Option<Topic>"), "{audit}");
+    assert!(!audit.contains("Option<Box<Topic>>"), "{audit}");
+}
+
+#[test]
+fn generated_self_relation_model_compiles_with_public_orm_builders_and_serde() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Topic {
+            id        Integer @id
+            parent_id Integer?
+            parent    Topic?  @relation(name: "TopicTree", fields: [parent_id], references: [id])
+            children  Topic[] @relation(name: "TopicTree")
+        }
+        "#,
+    )
+    .expect("self relation schema");
+    let topic = schema.models().next().expect("topic");
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("workspace");
+    let fixture = tempfile::tempdir().expect("fixture");
+    std::fs::create_dir_all(fixture.path().join("src/models")).expect("models directory");
+    std::fs::write(
+        fixture.path().join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"dinoco_self_relation_compile\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[dependencies]\ndinoco = {{ path = {:?} }}\n",
+            workspace.join("crates/dinoco")
+        ),
+    )
+    .expect("manifest");
+    std::fs::write(fixture.path().join("src/models/mod.rs"), dinoco_codegen::render_models_mod(&schema))
+        .expect("models module");
+    std::fs::write(fixture.path().join("src/models/topic.rs"), dinoco_codegen::render_model_file(topic, &schema))
+        .expect("topic model");
+    std::fs::write(
+        fixture.path().join("src/main.rs"),
+        r#"
+mod models;
+
+use models::Topic;
+
+fn main() {
+    let mut root = Topic::new(1);
+    root.children.push(Topic::new(2));
+    root.parent = Some(Box::new(Topic::new(3)));
+    let json = dinoco::serde_json::to_string(&root).unwrap();
+    let _: Topic = dinoco::serde_json::from_str(&json).unwrap();
+
+    let _ = dinoco::find_first::<Topic>().where_(|node| node.parent_id.eq(1)).includes(|node| node.parent());
+    let _ = dinoco::find_many::<Topic>().where_complex(|node, logic| logic.or(node.parent_id.null(), node.id.eq(1))).includes(|node| node.children());
+    let _ = dinoco::insert_into::<Topic>().values(&root);
+    let _ = dinoco::insert_many::<Topic>().values([root.clone()]);
+    let _ = dinoco::update::<Topic>().where_(|node| node.id.eq(2)).update(|node| node.parent_id.set(Some(1)));
+    let _ = dinoco::update_many::<Topic>().where_(|node| node.parent_id.not_null()).update(|node| node.parent_id.set(None));
+    let _ = dinoco::find_and_update::<Topic>().where_(|node| node.id.eq(2)).update(|node| node.parent_id.set(None));
+    let _ = dinoco::delete::<Topic>().where_(|node| node.id.eq(2));
+    let _ = dinoco::delete_many::<Topic>().where_(|node| node.parent_id.null());
+    let _ = dinoco::count::<Topic>().includes(|node| node.children());
+}
+"#,
+    )
+    .expect("main source");
+
+    let output = std::process::Command::new("cargo")
+        .args(["check", "--quiet", "--offline"])
+        .env("CARGO_TARGET_DIR", workspace.join("target"))
+        .current_dir(fixture.path())
+        .output()
+        .expect("cargo check generated self relation");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+}

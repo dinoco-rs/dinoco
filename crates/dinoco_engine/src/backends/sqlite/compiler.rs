@@ -114,25 +114,27 @@ impl DinocoSqlCompiler for SqliteAdapter {
         }
 
         let placeholders = vec!["?"; query.key_count].join(", ");
+        let (parent_qualifier, child_qualifier) = relation_join_qualifiers(&query);
+        let (parent_source, child_source) = relation_join_sources(&query);
         let mut sql = format!(
             "SELECT {} FROM {} LEFT JOIN {} ON {}.{} = {}.{}",
             relation_join_fields(&query).join(", "),
-            query.parent_table,
-            query.child_table,
-            query.parent_table,
+            parent_source,
+            child_source,
+            parent_qualifier,
             query.parent_field,
-            query.child_table,
+            child_qualifier,
             query.child_field,
         );
         let params = append_join_conditions(
             &mut sql,
-            query.parent_table,
+            parent_qualifier,
             query.parent_field,
-            query.child_table,
+            child_qualifier,
             placeholders,
             query.query.conditions,
         );
-        append_order_by(&mut sql, query.query.order_by, Some(query.child_table));
+        append_order_by(&mut sql, query.query.order_by, Some(child_qualifier));
 
         (sql, params)
     }
@@ -392,11 +394,13 @@ fn compile_partitioned_relation_batch_query(
 
 fn compile_partitioned_relation_join_query(query: RelationJoinQuery) -> (String, Vec<DinocoValue>) {
     let placeholders = vec!["?"; query.key_count].join(", ");
-    let partition_field = format!("{}.{}", query.parent_table, query.parent_field);
+    let (parent_qualifier, child_qualifier) = relation_join_qualifiers(&query);
+    let (parent_source, child_source) = relation_join_sources(&query);
+    let partition_field = format!("{parent_qualifier}.{}", query.parent_field);
     let order_by = relation_partition_order_by(
-        query.child_table,
+        child_qualifier,
         query.query.order_by.clone(),
-        &format!("{}.{}", query.child_table, query.child_field),
+        &format!("{child_qualifier}.{}", query.child_field),
     );
     let mut fields = relation_join_fields(&query);
     fields.push(format!("ROW_NUMBER() OVER (PARTITION BY {partition_field} ORDER BY {order_by}) AS __dinoco_row_num"));
@@ -404,18 +408,18 @@ fn compile_partitioned_relation_join_query(query: RelationJoinQuery) -> (String,
     let mut inner_sql = format!(
         "SELECT {} FROM {} LEFT JOIN {} ON {}.{} = {}.{}",
         fields.join(", "),
-        query.parent_table,
-        query.child_table,
-        query.parent_table,
+        parent_source,
+        child_source,
+        parent_qualifier,
         query.parent_field,
-        query.child_table,
+        child_qualifier,
         query.child_field,
     );
     let mut params = append_join_conditions(
         &mut inner_sql,
-        query.parent_table,
+        parent_qualifier,
         query.parent_field,
-        query.child_table,
+        child_qualifier,
         placeholders,
         query.query.conditions,
     );
@@ -514,13 +518,30 @@ fn append_row_window(
 }
 
 fn relation_join_fields(query: &RelationJoinQuery) -> Vec<String> {
+    let (parent_qualifier, child_qualifier) = relation_join_qualifiers(query);
     let mut fields =
-        query.query.fields.iter().map(|field| qualify_field(field, Some(query.child_table))).collect::<Vec<_>>();
+        query.query.fields.iter().map(|field| qualify_field(field, Some(child_qualifier))).collect::<Vec<_>>();
 
-    fields.push(qualify_field(query.child_field, Some(query.child_table)));
-    fields.push(format!("{} AS __dinoco_relation_key", qualify_field(query.parent_field, Some(query.parent_table))));
+    fields.push(qualify_field(query.child_field, Some(child_qualifier)));
+    fields.push(format!("{} AS __dinoco_relation_key", qualify_field(query.parent_field, Some(parent_qualifier))));
 
     fields
+}
+
+fn relation_join_qualifiers(query: &RelationJoinQuery) -> (&'static str, &'static str) {
+    if query.parent_table == query.child_table {
+        ("__dinoco_parent", "__dinoco_child")
+    } else {
+        (query.parent_table, query.child_table)
+    }
+}
+
+fn relation_join_sources(query: &RelationJoinQuery) -> (String, String) {
+    if query.parent_table == query.child_table {
+        (format!("{} AS __dinoco_parent", query.parent_table), format!("{} AS __dinoco_child", query.child_table))
+    } else {
+        (query.parent_table.to_string(), query.child_table.to_string())
+    }
 }
 
 fn append_find_tail(
