@@ -283,6 +283,17 @@ async fn implicit_many_to_many_uses_virtual_keys_for_insert_update_and_includes(
     assert_eq!(system_ids, ["system-b", "system-c", "system-d"]);
     assert!(loaded[0].systems.iter().all(|system| system.business_id.is_none()));
 
+    let loaded_systems = find_many::<System>()
+        .includes(|item| item.businesses().includes(|business| business.systems()))
+        .execute(&client)
+        .await?;
+
+    for system_id in ["system-b", "system-c", "system-d"] {
+        let loaded_system = loaded_systems.iter().find(|system| system.id == system_id).unwrap();
+        assert_eq!(loaded_system.businesses.len(), 1);
+        assert_eq!(loaded_system.businesses[0].systems.len(), 3);
+    }
+
     let _ = std::fs::remove_file(path);
     Ok(())
 }

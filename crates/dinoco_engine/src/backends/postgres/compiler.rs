@@ -686,12 +686,24 @@ fn compile_partitioned_relation_join_query(query: RelationJoinQuery) -> (String,
 
 fn compile_many_to_many_relation_query(query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>) {
     let mut placeholders = Placeholder::default();
-    let in_placeholders = (0..query.key_count).map(|_| placeholders.next()).collect::<Vec<_>>().join(", ");
+    let parent_ordinals = (0..query.key_count).map(|ordinal| format!("({ordinal})")).collect::<Vec<_>>().join(", ");
+    let parent_matches = (0..query.key_count)
+        .map(|ordinal| {
+            format!(
+                "(__dinoco_parent_keys.__dinoco_relation_ordinal = {ordinal} AND {}.{} = {})",
+                query.join_table,
+                query.join_parent_field,
+                placeholders.next()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" OR ");
     let partitioned = query.query.limit >= 0 || query.query.skip >= 0;
-    let partition_field = format!("{}.{}", query.join_table, query.join_parent_field);
+    let partition_field = "__dinoco_parent_keys.__dinoco_relation_ordinal";
     let mut fields =
         query.query.fields.iter().map(|field| qualify_field(field, Some(query.query.from))).collect::<Vec<_>>();
-    fields.push(format!("{partition_field} AS __dinoco_relation_key"));
+    fields.push(format!("{}.{} AS __dinoco_relation_key", query.join_table, query.join_parent_field));
+    fields.push("__dinoco_parent_keys.__dinoco_relation_ordinal".to_string());
 
     if partitioned {
         let order_by = relation_partition_order_by(
@@ -705,7 +717,7 @@ fn compile_many_to_many_relation_query(query: ManyToManyRelationQuery) -> (Strin
     }
 
     let mut sql = format!(
-        "SELECT {} FROM {} INNER JOIN {} ON {}.{} = {}.{} WHERE {partition_field} IN ({in_placeholders})",
+        "WITH __dinoco_parent_keys(__dinoco_relation_ordinal) AS (VALUES {parent_ordinals}) SELECT {} FROM __dinoco_parent_keys INNER JOIN {} ON {parent_matches} INNER JOIN {} ON {}.{} = {}.{}",
         fields.join(", "),
         query.join_table,
         query.query.from,

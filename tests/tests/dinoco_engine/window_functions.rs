@@ -1,6 +1,6 @@
 use dinoco_engine::{
-    DinocoAdapter, DinocoSqlCompiler, FindQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationJoinQuery,
-    SqliteAdapter,
+    DinocoAdapter, DinocoSqlCompiler, FindQuery, ManyToManyRelationQuery, MySqlAdapter, PostgresAdapter,
+    RelationBatchQuery, RelationJoinQuery, SqliteAdapter,
 };
 
 #[tokio::test]
@@ -31,21 +31,37 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     assert!(join_sql.contains("__dinoco_row_num <= ?"));
     assert_eq!(join_params.len(), 1);
 
-    let (many_to_many_sql, many_to_many_params) =
-        adapter.compile_many_to_many_relation_query(ManyToManyRelationQuery {
-            query: FindQuery::new(&["id", "name"], "system", 3, 1),
-            join_table: "_business_to_system",
-            parent_field: "id",
-            child_field: "id",
-            join_parent_field: "business_id",
-            join_child_field: "system_id",
-            key_count: 2,
-        });
+    let many_to_many_query = || ManyToManyRelationQuery {
+        query: FindQuery::new(&["id", "name"], "system", 3, 1),
+        join_table: "_business_to_system",
+        parent_field: "id",
+        child_field: "id",
+        join_parent_field: "business_id",
+        join_child_field: "system_id",
+        key_count: 2,
+    };
+    let (many_to_many_sql, many_to_many_params) = adapter.compile_many_to_many_relation_query(many_to_many_query());
 
     assert!(many_to_many_sql.contains("INNER JOIN system ON _business_to_system.system_id = system.id"));
-    assert!(many_to_many_sql.contains("PARTITION BY _business_to_system.business_id"));
-    assert!(many_to_many_sql.contains("_business_to_system.business_id IN (?, ?)"));
+    assert!(many_to_many_sql.contains("PARTITION BY __dinoco_parent_keys.__dinoco_relation_ordinal"));
+    assert!(many_to_many_sql.contains("__dinoco_parent_keys(__dinoco_relation_ordinal) AS (VALUES (0), (1))"));
+    assert!(many_to_many_sql.contains("_business_to_system.business_id = ?"));
     assert_eq!(many_to_many_params.len(), 2);
+
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let (mysql_sql, mysql_params) = mysql.compile_many_to_many_relation_query(many_to_many_query());
+    assert!(
+        mysql_sql.contains("WITH __dinoco_parent_keys AS (SELECT 0 AS __dinoco_relation_ordinal UNION ALL SELECT 1)")
+    );
+    assert_eq!(mysql_sql.matches("_business_to_system.business_id = ?").count(), 2);
+    assert_eq!(mysql_params.len(), 2);
+
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let (postgres_sql, postgres_params) = postgres.compile_many_to_many_relation_query(many_to_many_query());
+    assert!(postgres_sql.contains("__dinoco_parent_keys(__dinoco_relation_ordinal) AS (VALUES (0), (1))"));
+    assert!(postgres_sql.contains("_business_to_system.business_id = $1"));
+    assert!(postgres_sql.contains("_business_to_system.business_id = $2"));
+    assert_eq!(postgres_params.len(), 2);
 
     Ok(())
 }

@@ -338,13 +338,18 @@ where
         read_primary: bool,
     ) -> IncludeLoaderFuture<'a, S> {
         Box::pin(async move {
-            let keys = unique_relation_values(parents, self.parent_field);
+            let keys = if self.many_to_many.is_some() {
+                relation_values(parents, self.parent_field)
+            } else {
+                unique_relation_values(parents, self.parent_field)
+            };
 
             if keys.is_empty() {
                 return Ok(noop_include_applier());
             }
+            let key_count = keys.len();
 
-            let child_rows = if let Some(many_to_many) = self.many_to_many {
+            let (relation_keys, relation_ordinals, mut children) = if let Some(many_to_many) = self.many_to_many {
                 let query = ManyToManyRelationQuery {
                     query: self.query.clone(),
                     join_table: many_to_many.join_table,
@@ -354,18 +359,29 @@ where
                     join_child_field: many_to_many.join_child_field,
                     key_count: keys.len(),
                 };
-                client
+                let child_rows = client
                     .read_backend(read_primary)
-                    .query_many_to_many_relation::<RelationManyRow<C, CS>>(query, &keys)
-                    .await?
+                    .query_many_to_many_relation::<RelationManyOccurrenceRow<C, CS>>(query, &keys)
+                    .await?;
+
+                (
+                    Vec::new(),
+                    child_rows.iter().map(|row| row.ordinal).collect::<Vec<_>>(),
+                    child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>(),
+                )
             } else {
                 let mut find_query = self.query.clone();
                 find_query.conditions.push(FindWhere::Batch(self.child_field, keys));
                 let query = RelationBatchQuery { query: find_query, relation_key_field: self.child_field };
-                client.read_backend(read_primary).query_relation_batch::<RelationManyRow<C, CS>>(query).await?
+                let child_rows =
+                    client.read_backend(read_primary).query_relation_batch::<RelationManyRow<C, CS>>(query).await?;
+
+                (
+                    child_rows.iter().map(|row| relation_key(&row.key)).collect::<Vec<_>>(),
+                    Vec::new(),
+                    child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>(),
+                )
             };
-            let relation_keys = child_rows.iter().map(|row| relation_key(&row.key)).collect::<Vec<_>>();
-            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
             let appliers = futures::future::try_join_all(
                 self.includes.iter().map(|include| include.load_applier(client, &children, read_primary)),
             )
@@ -375,25 +391,51 @@ where
                 apply(&mut children);
             }
 
-            let mut grouped = HashMap::<RelationKey, Vec<CS>>::new();
-
-            for (key, child) in relation_keys.into_iter().zip(children) {
-                grouped.entry(key).or_default().push(child);
-            }
-
             let relation = self.relation;
             let parent_field = self.parent_field;
 
-            Ok(Box::new(move |parents: &mut [S]| {
-                for parent in parents {
-                    let values = parent
-                        .dinoco_relation_value(parent_field)
-                        .and_then(|key| grouped.remove(&relation_key(&key)))
-                        .unwrap_or_default();
+            if self.many_to_many.is_some() {
+                let mut grouped = (0..key_count).map(|_| Vec::new()).collect::<Vec<Vec<CS>>>();
 
-                    parent.dinoco_apply_many(relation, values);
+                for (ordinal, child) in relation_ordinals.into_iter().zip(children) {
+                    if let Some(values) = grouped.get_mut(ordinal) {
+                        values.push(child);
+                    }
                 }
-            }) as IncludeApplier<S>)
+
+                Ok(Box::new(move |parents: &mut [S]| {
+                    let mut ordinal = 0;
+
+                    for parent in parents {
+                        let values = if parent.dinoco_relation_value(parent_field).is_some() {
+                            let values = grouped.get_mut(ordinal).map(std::mem::take).unwrap_or_default();
+                            ordinal += 1;
+                            values
+                        } else {
+                            Vec::new()
+                        };
+
+                        parent.dinoco_apply_many(relation, values);
+                    }
+                }) as IncludeApplier<S>)
+            } else {
+                let mut grouped = HashMap::<RelationKey, Vec<CS>>::new();
+
+                for (key, child) in relation_keys.into_iter().zip(children) {
+                    grouped.entry(key).or_default().push(child);
+                }
+
+                Ok(Box::new(move |parents: &mut [S]| {
+                    for parent in parents {
+                        let values = parent
+                            .dinoco_relation_value(parent_field)
+                            .and_then(|key| grouped.remove(&relation_key(&key)))
+                            .unwrap_or_default();
+
+                        parent.dinoco_apply_many(relation, values);
+                    }
+                }) as IncludeApplier<S>)
+            }
         })
     }
 }
@@ -476,6 +518,68 @@ struct RelationManyRow<C, CS> {
     item: CS,
     key: DinocoValue,
     marker: PhantomData<C>,
+}
+
+struct RelationManyOccurrenceRow<C, CS> {
+    item: CS,
+    ordinal: usize,
+    marker: PhantomData<C>,
+}
+
+impl<C, CS> DinocoSqlite for RelationManyOccurrenceRow<C, CS>
+where
+    C: DinocoEntity,
+    CS: DinocoProjection<C>,
+{
+    fn from_sqlite_row(row: &dinoco_engine::SqliteRow<'_>) -> Option<Self> {
+        Some(Self {
+            item: CS::from_sqlite_row(row)?,
+            ordinal: row.get::<_, i64>(CS::FIELDS.len() + 1).ok()?.try_into().ok()?,
+            marker: PhantomData,
+        })
+    }
+}
+
+impl<C, CS> DinocoPostgres for RelationManyOccurrenceRow<C, CS>
+where
+    C: DinocoEntity,
+    CS: DinocoProjection<C>,
+{
+    fn from_deadpool_posgres_row(row: &dinoco_engine::DeadpoolPostgresRow) -> Option<Self> {
+        Some(Self {
+            item: CS::from_deadpool_posgres_row(row)?,
+            ordinal: row.try_get::<_, i64>(CS::FIELDS.len() + 1).ok()?.try_into().ok()?,
+            marker: PhantomData,
+        })
+    }
+
+    fn from_deadpool_postgres_row(row: &dinoco_engine::DeadpoolPostgresRow) -> Option<Self> {
+        Self::from_deadpool_posgres_row(row)
+    }
+
+    fn from_postgres_row(row: &dinoco_engine::PostgresRow) -> Option<Self> {
+        Some(Self {
+            item: CS::from_postgres_row(row)?,
+            ordinal: row.try_get::<_, i64>(CS::FIELDS.len() + 1).ok()?.try_into().ok()?,
+            marker: PhantomData,
+        })
+    }
+}
+
+impl<C, CS> DinocoMysql for RelationManyOccurrenceRow<C, CS>
+where
+    C: DinocoEntity,
+    CS: DinocoProjection<C>,
+{
+    fn from_mysql_row(row: &dinoco_engine::MysqlRow) -> Option<Self> {
+        let mut row = row.clone();
+
+        Some(Self {
+            item: CS::from_mysql_row(&row)?,
+            ordinal: row.take::<i64, _>(CS::FIELDS.len() + 1)?.try_into().ok()?,
+            marker: PhantomData,
+        })
+    }
 }
 
 impl<C, CS> DinocoSqlite for RelationManyRow<C, CS>
@@ -644,6 +748,13 @@ where
     }
 
     values
+}
+
+fn relation_values<S>(items: &[S], field: &'static str) -> Vec<DinocoValue>
+where
+    S: DinocoRelationValue,
+{
+    items.iter().filter_map(|item| item.dinoco_relation_value(field)).collect()
 }
 
 fn noop_include_applier<S>() -> IncludeApplier<S> {
