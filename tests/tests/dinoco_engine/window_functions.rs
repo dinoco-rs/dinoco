@@ -1,6 +1,6 @@
 use dinoco_engine::{
     DinocoAdapter, DinocoSqlCompiler, FindQuery, ManyToManyRelationQuery, MySqlAdapter, PostgresAdapter,
-    RelationBatchQuery, RelationJoinQuery, SqliteAdapter,
+    RelationBatchQuery, RelationJoinQuery, RelationOccurrenceQuery, SqliteAdapter,
 };
 
 #[tokio::test]
@@ -31,6 +31,20 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     assert!(join_sql.contains("__dinoco_row_num <= ?"));
     assert_eq!(join_params.len(), 1);
 
+    let occurrence_query = || RelationOccurrenceQuery {
+        query: FindQuery::new(&["id", "email"], "user", 2, 1),
+        child_field: "id",
+        key_count: 2,
+    };
+    let (occurrence_sql, occurrence_params) = adapter.compile_relation_occurrence_query(occurrence_query());
+    assert!(
+        occurrence_sql.contains(
+            "__dinoco_parent_keys(__dinoco_relation_ordinal, __dinoco_relation_key) AS (VALUES (0, ?), (1, ?))"
+        )
+    );
+    assert!(occurrence_sql.contains("PARTITION BY __dinoco_parent_keys.__dinoco_relation_ordinal"));
+    assert_eq!(occurrence_params.len(), 2);
+
     let many_to_many_query = || ManyToManyRelationQuery {
         query: FindQuery::new(&["id", "name"], "system", 3, 1),
         join_table: "_business_to_system",
@@ -49,6 +63,12 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     assert_eq!(many_to_many_params.len(), 2);
 
     let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let (mysql_occurrence_sql, mysql_occurrence_params) = mysql.compile_relation_occurrence_query(occurrence_query());
+    assert!(mysql_occurrence_sql.contains(
+        "WITH __dinoco_parent_keys AS (SELECT 0 AS __dinoco_relation_ordinal, ? AS __dinoco_relation_key UNION ALL SELECT 1, ?)"
+    ));
+    assert_eq!(mysql_occurrence_params.len(), 2);
+
     let (mysql_sql, mysql_params) = mysql.compile_many_to_many_relation_query(many_to_many_query());
     assert!(
         mysql_sql.contains("WITH __dinoco_parent_keys AS (SELECT 0 AS __dinoco_relation_ordinal UNION ALL SELECT 1)")
@@ -57,6 +77,15 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     assert_eq!(mysql_params.len(), 2);
 
     let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let (postgres_occurrence_sql, postgres_occurrence_params) =
+        postgres.compile_relation_occurrence_query(occurrence_query());
+    assert!(postgres_occurrence_sql.contains(
+        "__dinoco_parent_keys(__dinoco_relation_ordinal, __dinoco_relation_key) AS (VALUES (0, $1), (1, $2))"
+    ));
+    assert!(postgres_occurrence_sql.contains("__dinoco_row_num > $3"));
+    assert!(postgres_occurrence_sql.contains("__dinoco_row_num <= $4"));
+    assert_eq!(postgres_occurrence_params.len(), 2);
+
     let (postgres_sql, postgres_params) = postgres.compile_many_to_many_relation_query(many_to_many_query());
     assert!(postgres_sql.contains("__dinoco_parent_keys(__dinoco_relation_ordinal) AS (VALUES (0), (1))"));
     assert!(postgres_sql.contains("_business_to_system.business_id = $1"));

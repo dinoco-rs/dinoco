@@ -5,7 +5,8 @@ use crate::{
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeadpoolPostgresRow, DeleteQuery, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, FindQuery,
     InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, MysqlRow, PostgresRow, RelationBatchQuery,
-    RelationCountQuery, RelationJoinQuery, RenameColumnMigration, RenameTableMigration, SqliteRow, UpdateQuery,
+    RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration, RenameTableMigration,
+    SqliteRow, UpdateQuery,
 };
 
 #[async_trait]
@@ -45,6 +46,10 @@ pub trait DinocoSqlCompiler {
     fn compile_relation_count_query(&self, query: RelationCountQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_batch_query(&self, query: RelationBatchQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>);
+    #[doc(hidden)]
+    fn compile_relation_occurrence_query(&self, _query: RelationOccurrenceQuery) -> (String, Vec<DinocoValue>) {
+        panic!("relation occurrence queries are not supported by this SQL compiler")
+    }
     fn compile_many_to_many_relation_query(&self, query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>);
     fn compile_many_to_many_relation_count_query(
         &self,

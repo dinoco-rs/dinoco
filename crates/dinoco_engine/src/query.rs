@@ -184,6 +184,14 @@ pub struct RelationBatchQuery {
 }
 
 #[derive(Debug, Clone)]
+#[doc(hidden)]
+pub struct RelationOccurrenceQuery {
+    pub query: FindQuery,
+    pub child_field: &'static str,
+    pub key_count: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct ManyToManyRelationQuery {
     pub query: FindQuery,
     pub join_table: &'static str,

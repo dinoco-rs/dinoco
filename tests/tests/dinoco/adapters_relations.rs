@@ -31,6 +31,9 @@ pub struct Business {
     id: String,
     name: String,
 
+    #[dinoco(one_to_many, foreign_key = "business_id", references = "id")]
+    access: Vec<SystemAccess>,
+
     #[dinoco(
         many_to_many,
         foreign_key = "id",
@@ -58,6 +61,13 @@ pub struct System {
     #[dinoco(primary_key)]
     id: String,
     name: String,
+    category_id: Option<String>,
+
+    #[dinoco(many_to_one, foreign_key = "category_id", references = "id")]
+    category: Option<SystemCategory>,
+
+    #[dinoco(one_to_many, foreign_key = "system_id", references = "id")]
+    notes: Vec<SystemNote>,
 
     #[dinoco(
         many_to_many,
@@ -78,6 +88,41 @@ pub struct System {
         join_child_field = "business_id"
     )]
     business_id: Option<String>,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "relation_system_category")]
+pub struct SystemCategory {
+    #[dinoco(primary_key)]
+    id: String,
+    name: String,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "relation_system_note")]
+pub struct SystemNote {
+    #[dinoco(primary_key)]
+    id: String,
+    system_id: Option<String>,
+    body: String,
+
+    #[dinoco(many_to_one, foreign_key = "system_id", references = "id")]
+    system: Option<System>,
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "relation_system_access")]
+pub struct SystemAccess {
+    #[dinoco(primary_key)]
+    id: String,
+    business_id: Option<String>,
+    system_id: Option<String>,
+
+    #[dinoco(many_to_one, foreign_key = "business_id", references = "id")]
+    business: Option<Business>,
+
+    #[dinoco(many_to_one, foreign_key = "system_id", references = "id")]
+    system: Option<System>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, DinocoEnum)]
@@ -208,7 +253,27 @@ async fn implicit_many_to_many_uses_virtual_keys_for_insert_update_and_includes(
     create_table(
         adapter,
         "relation_system",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            column("name", MigrationColumnType::String),
+            nullable(column("category_id", MigrationColumnType::String)),
+        ],
+    )
+    .await?;
+    create_table(
+        adapter,
+        "relation_system_category",
         vec![primary(column("id", MigrationColumnType::String)), column("name", MigrationColumnType::String)],
+    )
+    .await?;
+    create_table(
+        adapter,
+        "relation_system_note",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            nullable(column("system_id", MigrationColumnType::String)),
+            column("body", MigrationColumnType::String),
+        ],
     )
     .await?;
     create_table(
@@ -217,9 +282,23 @@ async fn implicit_many_to_many_uses_virtual_keys_for_insert_update_and_includes(
         vec![column("business_id", MigrationColumnType::String), column("system_id", MigrationColumnType::String)],
     )
     .await?;
+    create_table(
+        adapter,
+        "relation_system_access",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            nullable(column("business_id", MigrationColumnType::String)),
+            nullable(column("system_id", MigrationColumnType::String)),
+        ],
+    )
+    .await?;
 
     let business = Business::new("business-a".to_string(), "Dinoco".to_string());
-    let system = System::new("system-a".to_string(), "Backoffice".to_string());
+    let category = SystemCategory::new("category-a".to_string(), "Operations".to_string());
+    insert_into::<SystemCategory>().values(&category).execute(&client).await?;
+
+    let mut system = System::new("system-a".to_string(), "Backoffice".to_string());
+    system.category_id = Some(category.id.clone());
     insert_into::<Business>().values(&business).execute(&client).await?;
     insert_into::<System>().values(&system).execute(&client).await?;
 
@@ -265,6 +344,7 @@ async fn implicit_many_to_many_uses_virtual_keys_for_insert_update_and_includes(
     assert!(loaded_systems[0].business_id.is_none());
 
     let mut inserted_system = System::new("system-b".to_string(), "ERP".to_string());
+    inserted_system.category_id = Some(category.id.clone());
     inserted_system.business_id = Some(business.id.clone());
     insert_into::<System>().values(&inserted_system).execute(&client).await?;
 
@@ -274,8 +354,20 @@ async fn implicit_many_to_many_uses_virtual_keys_for_insert_update_and_includes(
     ];
     for system in &mut inserted_systems {
         system.business_id = Some(business.id.clone());
+        system.category_id = Some(category.id.clone());
     }
     insert_many::<System>().values(&inserted_systems).execute(&client).await?;
+
+    let mut access = SystemAccess::new("access-a".to_string());
+    access.business_id = Some(business.id.clone());
+    access.system_id = Some(inserted_system.id.clone());
+    insert_into::<SystemAccess>().values(&access).execute(&client).await?;
+
+    for system_id in ["system-b", "system-c", "system-d"] {
+        let mut note = SystemNote::new(format!("note-{system_id}"), format!("Note for {system_id}"));
+        note.system_id = Some(system_id.to_string());
+        insert_into::<SystemNote>().values(&note).execute(&client).await?;
+    }
 
     let loaded = find_many::<Business>().includes(|item| item.systems()).execute(&client).await?;
     let mut system_ids = loaded[0].systems.iter().map(|system| system.id.as_str()).collect::<Vec<_>>();
@@ -283,8 +375,23 @@ async fn implicit_many_to_many_uses_virtual_keys_for_insert_update_and_includes(
     assert_eq!(system_ids, ["system-b", "system-c", "system-d"]);
     assert!(loaded[0].systems.iter().all(|system| system.business_id.is_none()));
 
+    let loaded = find_first::<Business>()
+        .where_(|item| item.id.eq(&business.id))
+        .includes(|item| item.access().includes(|access| access.system()))
+        .includes(|item| item.systems())
+        .execute(&client)
+        .await?
+        .expect("business");
+    assert_eq!(loaded.access.len(), 1);
+    assert_eq!(loaded.access[0].system.as_ref().map(|system| system.id.as_str()), Some("system-b"));
+    assert!(loaded.systems.iter().any(|system| system.id == "system-b"));
+
     let loaded_systems = find_many::<System>()
-        .includes(|item| item.businesses().includes(|business| business.systems()))
+        .includes(|item| {
+            item.businesses().includes(|business| {
+                business.systems().includes(|system| system.category()).includes(|system| system.notes())
+            })
+        })
         .execute(&client)
         .await?;
 
@@ -292,6 +399,11 @@ async fn implicit_many_to_many_uses_virtual_keys_for_insert_update_and_includes(
         let loaded_system = loaded_systems.iter().find(|system| system.id == system_id).unwrap();
         assert_eq!(loaded_system.businesses.len(), 1);
         assert_eq!(loaded_system.businesses[0].systems.len(), 3);
+        for nested_system in &loaded_system.businesses[0].systems {
+            assert_eq!(nested_system.category.as_ref().map(|category| category.id.as_str()), Some("category-a"));
+            assert_eq!(nested_system.notes.len(), 1);
+            assert_eq!(nested_system.notes[0].system_id.as_deref(), Some(nested_system.id.as_str()));
+        }
     }
 
     let _ = std::fs::remove_file(path);

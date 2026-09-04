@@ -9,7 +9,7 @@ pub use sqlite::*;
 use crate::{
     CountQuery, DeleteQuery, DinocoAdapter, DinocoRowModel, DinocoSqlCompiler, FindQuery, InsertQuery,
     ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
-    UpdateQuery,
+    RelationOccurrenceQuery, UpdateQuery,
 };
 
 pub enum Backend {
@@ -171,6 +171,33 @@ impl Backend {
 
                 adapter.query::<M>(&sql, &params).await
             }
+        }
+    }
+
+    #[doc(hidden)]
+    pub async fn query_relation_occurrences<M>(
+        &self,
+        query: RelationOccurrenceQuery,
+        params: &[crate::DinocoValue],
+    ) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        macro_rules! query {
+            ($adapter:expr) => {{
+                let (sql, extra_params) = $adapter.compile_relation_occurrence_query(query);
+                let mut params = params.to_vec();
+                params.extend(extra_params);
+                self.log_query(&sql, &params);
+                $adapter.query::<M>(&sql, &params).await
+            }};
+        }
+
+        match &self {
+            Backend::Sqlite(adapter) => query!(adapter),
+            Backend::Postgres(adapter) => query!(adapter),
+            Backend::PgBouncer(adapter) => query!(adapter),
+            Backend::Mysql(adapter) => query!(adapter),
         }
     }
 

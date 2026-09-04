@@ -4,8 +4,8 @@ use crate::{
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
     FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
     MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndexKind, MySqlAdapter,
-    ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RenameColumnMigration,
-    RenameTableMigration, UpdateQuery,
+    ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery,
+    RenameColumnMigration, RenameTableMigration, UpdateQuery,
 };
 
 impl DinocoSqlCompiler for MySqlAdapter {
@@ -137,6 +137,10 @@ impl DinocoSqlCompiler for MySqlAdapter {
         append_order_by(&mut sql, query.query.order_by, Some(child_qualifier));
 
         (sql, params)
+    }
+
+    fn compile_relation_occurrence_query(&self, query: RelationOccurrenceQuery) -> (String, Vec<DinocoValue>) {
+        compile_relation_occurrence_query(query)
     }
 
     fn compile_many_to_many_relation_query(&self, query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>) {
@@ -399,6 +403,53 @@ fn compile_partitioned_relation_join_query(query: RelationJoinQuery) -> (String,
     );
 
     append_row_window(&mut params, &mut inner_sql, query.query.skip, query.query.limit)
+}
+
+fn compile_relation_occurrence_query(query: RelationOccurrenceQuery) -> (String, Vec<DinocoValue>) {
+    let partitioned = query.query.limit >= 0 || query.query.skip >= 0;
+    let parent_keys = (0..query.key_count)
+        .map(|ordinal| {
+            if ordinal == 0 {
+                "SELECT 0 AS __dinoco_relation_ordinal, ? AS __dinoco_relation_key".to_string()
+            } else {
+                format!("SELECT {ordinal}, ?")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" UNION ALL ");
+    let partition_field = "__dinoco_parent_keys.__dinoco_relation_ordinal";
+    let mut fields =
+        query.query.fields.iter().map(|field| qualify_field(field, Some(query.query.from))).collect::<Vec<_>>();
+    fields.push("__dinoco_parent_keys.__dinoco_relation_key".to_string());
+    fields.push(partition_field.to_string());
+
+    if partitioned {
+        let order_by = relation_partition_order_by(
+            query.query.from,
+            query.query.order_by.clone(),
+            &format!("{}.{}", query.query.from, query.child_field),
+        );
+        fields.push(format!(
+            "ROW_NUMBER() OVER (PARTITION BY {partition_field} ORDER BY {order_by}) AS __dinoco_row_num"
+        ));
+    }
+
+    let mut sql = format!(
+        "WITH __dinoco_parent_keys AS ({parent_keys}) SELECT {} FROM __dinoco_parent_keys INNER JOIN {} ON __dinoco_parent_keys.__dinoco_relation_key = {}.{}",
+        fields.join(", "),
+        query.query.from,
+        query.query.from,
+        query.child_field,
+    );
+    let mut params = Vec::new();
+    collect_conditions_prefixed_with_and(&mut sql, &mut params, query.query.conditions, Some(query.query.from));
+
+    if partitioned {
+        append_row_window(&mut params, &mut sql, query.query.skip, query.query.limit)
+    } else {
+        append_order_by(&mut sql, query.query.order_by, Some(query.query.from));
+        (sql, params)
+    }
 }
 
 fn compile_many_to_many_relation_query(query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>) {
