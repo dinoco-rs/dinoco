@@ -39,11 +39,11 @@ produces the same output. It's configurable from VS Code settings:
 
 ```json
 {
-    "dinoco.formatter.maxWidth": 100,
-    "dinoco.formatter.useTabs": false,
-    "dinoco.formatter.useSpaces": true,
-    "dinoco.formatter.indentSize": 4,
-    "dinoco.formatter.removeComments": false
+	"dinoco.formatter.maxWidth": 100,
+	"dinoco.formatter.useTabs": false,
+	"dinoco.formatter.useSpaces": true,
+	"dinoco.formatter.indentSize": 4,
+	"dinoco.formatter.removeComments": false
 }
 ```
 
@@ -65,10 +65,10 @@ save with:
 
 ```json
 {
-    "[dinoco]": {
-        "editor.defaultFormatter": "dinoco-rs.dinoco-vscode",
-        "editor.formatOnSave": true
-    }
+	"[dinoco]": {
+		"editor.defaultFormatter": "dinoco-rs.dinoco-vscode",
+		"editor.formatOnSave": true
+	}
 }
 ```
 
@@ -79,4 +79,4 @@ The extension supports PostgreSQL, MySQL, and SQLite schemas.
 ## Learn more
 
 Full documentation for the Dinoco ORM, its schema language, CLI, and query
-API lives at [docs.dinoco.io](https://docs.dinoco.io).
+API lives at [docs.dinoco.io](https://dinoco.io).

@@ -17,5 +17,5 @@ pub fn error(message: impl AsRef<str>) {
 }
 
 pub fn docs(path: &str) {
-    println!("\nDocumentation: {}", format!("https://docs.dinoco.io{path}").cyan().underline());
+    println!("\nDocumentation: {}", format!("https://dinoco.io{path}").cyan().underline());
 }

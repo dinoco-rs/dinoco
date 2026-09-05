@@ -1,1 +1,1 @@
-export const SITE_URL = 'https://docs.dinoco.io';
+export const SITE_URL = 'https://dinoco.io';

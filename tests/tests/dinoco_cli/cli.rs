@@ -37,7 +37,7 @@ fn init_creates_english_colored_schema() {
     assert!(stdout.contains("Created dinoco/migrations/"));
     assert!(stdout.contains("Next steps:"));
     assert!(stdout.contains("DATABASE_URL"));
-    assert!(stdout.contains("https://docs.dinoco.io"));
+    assert!(stdout.contains("https://dinoco.io"));
     assert!(schema.contains("database"));
     assert!(schema.contains("\"postgresql\""));
     assert!(schema.contains("connection"));

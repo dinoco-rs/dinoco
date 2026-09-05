@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://crates.io/crates/dinoco"><img src="https://img.shields.io/crates/v/dinoco.svg?color=black" alt="Crates.io"></a>
-  <a href="https://docs.dinoco.io"><img src="https://img.shields.io/badge/docs-dinoco.io-black.svg" alt="Docs"></a>
+  <a href="https://dinoco.io"><img src="https://img.shields.io/badge/docs-dinoco.io-black.svg" alt="Docs"></a>
   <a href="https://github.com/theuszastro/dinoco/blob/main/LICENSE"><img src="https://img.shields.io/crates/l/dinoco.svg?color=black" alt="License"></a>
 </p>
 
