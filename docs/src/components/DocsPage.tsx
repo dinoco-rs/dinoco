@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import DocsContentNavigation from './DocsContentNavigation';
 import DocsSidebar from './DocsSidebar';
+import Footer from './Footer';
 import Header from './Header';
 import { getIntlMessages } from '../hooks/useIntl';
 import { type DocsInPageItemData, getAdjacentDocsItems, getLocalizedGroupName } from '../jsons/versions';
@@ -16,7 +17,6 @@ type DocsPageProps = {
 	children: React.ReactNode;
 	initialLocale: DocsLocale;
 	initialTheme: DocsTheme;
-	pathname: string;
 	resolved: ResolvedDocsPath;
 };
 
@@ -105,7 +105,7 @@ function renderInPageItems(items: DocsInPageItemData[], activeAnchorId: string |
 	});
 }
 
-const DocsPage = ({ children, initialLocale, initialTheme, pathname, resolved }: DocsPageProps): React.JSX.Element => {
+const DocsPage = ({ children, initialLocale, initialTheme, resolved }: DocsPageProps): React.JSX.Element => {
 	const intl = getIntlMessages(initialLocale);
 	const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 	const [activeAnchorId, setActiveAnchorId] = useState<string>();
@@ -114,12 +114,12 @@ const DocsPage = ({ children, initialLocale, initialTheme, pathname, resolved }:
 	const navigation = useMemo(
 		() =>
 			getAdjacentDocsItems({
-				versionName: resolved.version.name,
+				locale: initialLocale,
 				groupShortName: resolved.group.shortName,
 				sections: resolved.sections,
 				currentItemShortName: resolved.item.shortName,
 			}),
-		[resolved],
+		[initialLocale, resolved],
 	);
 	const inPageAnchorIds = useMemo(() => flattenInPageItems(resolved.item.inPage).map(toAnchorId), [resolved.item.inPage]);
 	const activeInPagePathIds = useMemo(() => new Set(findActiveInPagePath(resolved.item.inPage, activeAnchorId)), [activeAnchorId, resolved.item.inPage]);
@@ -224,7 +224,7 @@ const DocsPage = ({ children, initialLocale, initialTheme, pathname, resolved }:
 
 	return (
 		<div className="flex min-h-screen flex-col bg-light-50 font-montserrat transition-colors duration-300 dark:bg-dark-950">
-			<Header initialLocale={initialLocale} initialTheme={initialTheme} pathname={pathname} resolved={resolved} onMenuToggle={() => setIsSidebarOpen(true)} />
+			<Header initialLocale={initialLocale} initialTheme={initialTheme} resolved={resolved} onMenuToggle={() => setIsSidebarOpen(true)} />
 
 			<div className="mx-auto flex w-full max-w-[100%] flex-1 items-start px-4 sm:px-6 md:px-8">
 				<DocsSidebar
@@ -232,7 +232,6 @@ const DocsPage = ({ children, initialLocale, initialTheme, pathname, resolved }:
 					currentGroup={resolved.group}
 					currentItem={resolved.item}
 					locale={initialLocale}
-					currentVersionName={resolved.version.name}
 					sections={resolved.sections}
 					isOpen={isSidebarOpen}
 					onClose={() => setIsSidebarOpen(false)}
@@ -261,6 +260,8 @@ const DocsPage = ({ children, initialLocale, initialTheme, pathname, resolved }:
 					</div>
 				</aside>
 			</div>
+
+			<Footer locale={initialLocale} />
 		</div>
 	);
 };

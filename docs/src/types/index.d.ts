@@ -5,7 +5,6 @@ export type DocsSidebarProps = {
 	currentGroup: DocsGroup;
 	currentItem: DocsItem;
 	locale: DocsLocale;
-	currentVersionName: string;
 	sections: DocsSection[];
 	isOpen: boolean;
 	onClose: () => void;

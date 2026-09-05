@@ -10,7 +10,7 @@ import { FiBox, FiCheck, FiChevronDown, FiDatabase, FiGlobe, FiLayers, FiMenu, F
 import { getIntlMessages } from '../hooks/useIntl';
 import { useThemePreference } from '../hooks/useThemePreference';
 import { persistDocsLocale } from '../lib/docs-preferences';
-import { buildDocsPath, getAvailableLocales, getFirstDocsPath, getGroupsForVersion, getLocalizedGroupName, getVersionNames, parseDocsPath, resolveDocsPath } from '../jsons/versions';
+import { buildDocsPath, getAvailableLocales, getDefaultVersionName, getFirstDocsPath, getGroupsForVersion, getLocalizedGroupName, resolveDocsPath } from '../jsons/versions';
 
 import type { DropdownButtonProps, DropdownItemProps, HeaderProps } from '../types';
 import type { DocsLocale, ResolvedDocsPath } from '../jsons/versions';
@@ -19,7 +19,6 @@ import type { DocsTheme } from '../lib/docs-preferences';
 type HeaderComponentProps = HeaderProps & {
 	initialLocale: DocsLocale;
 	initialTheme: DocsTheme;
-	pathname: string;
 	resolved: ResolvedDocsPath;
 };
 
@@ -54,21 +53,20 @@ function DropdownItem({ isActive, children, onClick }: DropdownItemProps): React
 	);
 }
 
-const Header = ({ initialLocale, initialTheme, pathname, resolved, onMenuToggle }: HeaderComponentProps): React.JSX.Element => {
+const Header = ({ initialLocale, initialTheme, resolved, onMenuToggle }: HeaderComponentProps): React.JSX.Element => {
 	const router = useRouter();
 	const intl = getIntlMessages(initialLocale);
 	const { theme, setTheme } = useThemePreference(initialTheme);
 	const [localeOpen, setLocaleOpen] = useState(false);
-	const [versionOpen, setVersionOpen] = useState(false);
 	const [mobileConsumerOpen, setMobileConsumerOpen] = useState(false);
 	const controlsRef = useRef<HTMLDivElement>(null);
 
-	const versionOptions = useMemo(() => getVersionNames(), []);
-	const routeParams = useMemo(() => parseDocsPath(pathname), [pathname]);
-	const displayedVersion = resolved.version.name;
+	const versionName = resolved.version.name;
 	const displayedConsumer = resolved.group.shortName;
-	const localeOptions = useMemo(() => getAvailableLocales(displayedVersion), [displayedVersion]);
-	const consumerOptions = useMemo(() => getGroupsForVersion(displayedVersion, initialLocale), [displayedVersion, initialLocale]);
+	const localeOptions = useMemo(() => getAvailableLocales(versionName), [versionName]);
+	const consumerOptions = useMemo(() => getGroupsForVersion(getDefaultVersionName(), initialLocale), [initialLocale]);
+	const currentItemShortName = resolved.parentItem?.shortName ?? resolved.item.shortName;
+	const currentSubItemShortName = resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName;
 
 	useEffect(() => {
 		const handlePointerDown = (event: MouseEvent) => {
@@ -77,7 +75,6 @@ const Header = ({ initialLocale, initialTheme, pathname, resolved, onMenuToggle 
 			}
 
 			setLocaleOpen(false);
-			setVersionOpen(false);
 			setMobileConsumerOpen(false);
 		};
 
@@ -86,42 +83,25 @@ const Header = ({ initialLocale, initialTheme, pathname, resolved, onMenuToggle 
 		return () => document.removeEventListener('mousedown', handlePointerDown);
 	}, []);
 
-	const closeOtherMenus = (menu: 'locale' | 'version' | 'mobileConsumer') => {
+	const closeOtherMenus = (menu: 'locale' | 'mobileConsumer') => {
 		setLocaleOpen(menu === 'locale' ? !localeOpen : false);
-		setVersionOpen(menu === 'version' ? !versionOpen : false);
 		setMobileConsumerOpen(menu === 'mobileConsumer' ? !mobileConsumerOpen : false);
 	};
 
-	const navigateToResolvedPath = (nextVersion: string, nextLocale: DocsLocale, nextConsumer: string) => {
+	const navigateToResolvedPath = (nextLocale: DocsLocale, nextConsumer: string) => {
 		const nextResolved = resolveDocsPath({
-			versionName: nextVersion,
 			groupShortName: nextConsumer,
-			itemShortName: routeParams.itemShortName,
-			subItemShortName: routeParams.subItemShortName,
+			itemShortName: currentItemShortName,
+			subItemShortName: currentSubItemShortName,
 			locale: nextLocale,
 		});
-		const nextPath =
-			nextResolved === undefined
-				? getFirstDocsPath(nextVersion, nextLocale)
-				: buildDocsPath(
-						nextResolved.version.name,
-						nextResolved.group.shortName,
-						nextResolved.parentItem?.shortName ?? nextResolved.item.shortName,
-						nextResolved.parentItem?.shortName === undefined ? undefined : nextResolved.item.shortName,
-					);
+		const nextPath = nextResolved?.path ?? getFirstDocsPath(nextLocale);
 
 		startTransition(() => {
 			persistDocsLocale(nextLocale);
 			setLocaleOpen(false);
-			setVersionOpen(false);
 			setMobileConsumerOpen(false);
-
-			if (pathname !== nextPath) {
-				router.replace(nextPath);
-				return;
-			}
-
-			router.refresh();
+			router.push(nextPath);
 		});
 	};
 
@@ -129,75 +109,41 @@ const Header = ({ initialLocale, initialTheme, pathname, resolved, onMenuToggle 
 	const currentConsumerLabel = getLocalizedGroupName(currentConsumerObj, initialLocale);
 	const CurrentConsumerIcon = iconMap[currentConsumerObj.icon as keyof typeof iconMap] ?? FiTerminal;
 
-	function renderVersionAndLocale(md = true) {
+	function renderLocaleSwitcher(md = true) {
 		return (
-			<div className={clsx(md ? 'hidden items-center gap-2 md:flex' : 'mb-3 grid w-full grid-cols-2 gap-3 md:hidden')}>
-				<div className="relative w-full">
-					<DropdownButton
-						isOpen={localeOpen}
-						onClick={() => closeOtherMenus('locale')}
-						className={clsx(md ? 'h-8 shrink-1 px-0 py-1' : 'h-8 w-full justify-between rounded-md border border-light-300 bg-transparent px-3 hover:bg-light-100 dark:border-[#242424] dark:hover:bg-[#161616]')}
+			<div className={clsx('relative', md ? 'hidden md:block' : 'mb-3 block w-full md:hidden')}>
+				<DropdownButton
+					isOpen={localeOpen}
+					onClick={() => closeOtherMenus('locale')}
+					className={clsx(md ? 'h-8 shrink-1 px-0 py-1' : 'h-8 w-full justify-between rounded-md border border-light-300 bg-transparent px-3 hover:bg-light-100 dark:border-[#242424] dark:hover:bg-[#161616]')}
+				>
+					<div className="flex items-center gap-1.5">
+						{!md ? <FiGlobe size={14} className="text-slate-500 dark:text-slate-400" /> : null}
+						<span className={clsx('text-sm', !md && 'font-medium text-slate-700 dark:text-slate-300')}>{intl.locales[initialLocale]}</span>
+					</div>
+				</DropdownButton>
+
+				{localeOpen ? (
+					<div
+						className={clsx(
+							'absolute z-50 flex flex-col overflow-hidden rounded-lg border border-light-200 bg-light-50 shadow-xl dark:border-[#242424] dark:bg-[#161616]',
+							md ? 'right-0 mt-3 w-36' : 'left-0 mt-1 w-full',
+						)}
 					>
-						<div className="flex items-center gap-1.5">
-							{!md ? <FiGlobe size={14} className="text-slate-500 dark:text-slate-400" /> : null}
-							<span className={clsx('text-sm', !md && 'font-medium text-slate-700 dark:text-slate-300')}>{intl.locales[initialLocale]}</span>
-						</div>
-					</DropdownButton>
-
-					{localeOpen ? (
-						<div
-							className={clsx(
-								'absolute z-50 flex flex-col overflow-hidden rounded-lg border border-light-200 bg-light-50 shadow-xl dark:border-[#242424] dark:bg-[#161616]',
-								md ? 'right-0 mt-3 w-36' : 'left-0 mt-1 w-full',
-							)}
-						>
-							{localeOptions.map(option => (
-								<DropdownItem
-									key={option}
-									isActive={initialLocale === option}
-									onClick={() => {
-										navigateToResolvedPath(displayedVersion, option, displayedConsumer);
-									}}
-								>
-									{intl.locales[option]}
-									{initialLocale === option ? <FiCheck size={14} /> : null}
-								</DropdownItem>
-							))}
-						</div>
-					) : null}
-				</div>
-
-				<div className="relative w-full">
-					<DropdownButton
-						isOpen={versionOpen}
-						onClick={() => closeOtherMenus('version')}
-						className={clsx(md ? 'h-8 px-2.5 py-1' : 'h-8 w-full justify-between rounded-md border border-light-300 bg-transparent px-3 hover:bg-light-100 dark:border-[#242424] dark:hover:bg-[#161616]')}
-					>
-						<span className="text-sm font-semibold text-dinoco-deep dark:text-dinoco-cyan">{displayedVersion}</span>
-					</DropdownButton>
-
-					{versionOpen ? (
-						<div
-							className={clsx(
-								'absolute z-50 flex flex-col overflow-hidden rounded-lg border border-light-200 bg-light-50 shadow-xl dark:border-[#242424] dark:bg-[#161616]',
-								md ? 'right-0 mt-2 w-32' : 'left-0 mt-1 w-full',
-							)}
-						>
-							{versionOptions.map(option => (
-								<DropdownItem
-									key={option}
-									isActive={displayedVersion === option}
-									onClick={() => {
-										navigateToResolvedPath(option, initialLocale, displayedConsumer);
-									}}
-								>
-									{option}
-									{displayedVersion === option ? <FiCheck size={14} /> : null}
-								</DropdownItem>
-							))}
-						</div>
-					) : null}
-				</div>
+						{localeOptions.map(option => (
+							<DropdownItem
+								key={option}
+								isActive={initialLocale === option}
+								onClick={() => {
+									navigateToResolvedPath(option, displayedConsumer);
+								}}
+							>
+								{intl.locales[option]}
+								{initialLocale === option ? <FiCheck size={14} /> : null}
+							</DropdownItem>
+						))}
+					</div>
+				) : null}
 			</div>
 		);
 	}
@@ -211,16 +157,18 @@ const Header = ({ initialLocale, initialTheme, pathname, resolved, onMenuToggle 
 							<FiMenu size={20} />
 						</button>
 
-						<Link href="/" className="flex items-center gap-3">
+						<Link href={`/${initialLocale}`} className="flex items-center gap-3">
 							<img src="/logo.png" className="h-8 w-8 object-contain not-dark:invert" alt="Dinoco Logo" />
 							<div className="flex items-center gap-1.5 text-xl">
 								<span className="font-bungee text-slate-900 dark:text-white">Dinoco</span>
 							</div>
 						</Link>
+
+						<span className="hidden text-sm font-semibold text-dinoco-deep sm:block dark:text-dinoco-cyan">{versionName}</span>
 					</div>
 
 					<div className="flex items-center gap-3 sm:gap-4">
-						{renderVersionAndLocale(true)}
+						{renderLocaleSwitcher(true)}
 
 						<a href="https://github.com/dinoco-rs/dinoco" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-slate-400 transition-colors hover:text-dinoco-brand not-dark:text-slate-600" title="GitHub">
 							<FaGithub size={18} />
@@ -270,7 +218,7 @@ const Header = ({ initialLocale, initialTheme, pathname, resolved, onMenuToggle 
 					</div>
 				</div>
 
-				<div className="flex items-center gap-3 sm:gap-4">{renderVersionAndLocale(false)}</div>
+				<div className="flex items-center gap-3 sm:gap-4">{renderLocaleSwitcher(false)}</div>
 
 				<nav className="hidden gap-4 overflow-x-auto no-scrollbar sm:flex">
 					{consumerOptions.map(option => {
@@ -281,7 +229,7 @@ const Header = ({ initialLocale, initialTheme, pathname, resolved, onMenuToggle 
 							<button
 								type="button"
 								key={option.shortName}
-								onClick={() => navigateToResolvedPath(displayedVersion, initialLocale, option.shortName)}
+								onClick={() => navigateToResolvedPath(initialLocale, option.shortName)}
 								className={clsx(
 									'flex cursor-pointer items-center gap-2 whitespace-nowrap border-b-2 py-3 text-sm font-semibold transition-colors',
 									isActive
@@ -320,7 +268,7 @@ const Header = ({ initialLocale, initialTheme, pathname, resolved, onMenuToggle 
 										key={option.shortName}
 										isActive={displayedConsumer === option.shortName}
 										onClick={() => {
-											navigateToResolvedPath(displayedVersion, initialLocale, option.shortName);
+											navigateToResolvedPath(initialLocale, option.shortName);
 										}}
 									>
 										<div className="flex items-center gap-2">

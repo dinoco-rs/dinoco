@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { FiChevronDown, FiDatabase, FiLayers, FiTerminal, FiX, FiBox } from 'react-icons/fi';
 
 import { getIntlMessages } from '../hooks/useIntl';
-import { buildDocsPath, getGroupByShortName, getLocalizedSections } from '../jsons/versions';
+import { buildDocsPath, getDefaultVersionName, getGroupByShortName, getLocalizedSections } from '../jsons/versions';
 
 import type { DocsGroup, DocsItem, DocsLocale } from '../jsons/versions';
 import type { DocsSidebarProps } from '../types';
@@ -22,13 +22,11 @@ const NavItem = ({
 	item,
 	currentGroup,
 	currentItem,
-	currentVersionName,
 	locale,
 	onClose,
 }: {
 	currentGroup: DocsGroup;
 	currentItem: DocsItem;
-	currentVersionName: string;
 	item: DocsItem;
 	locale: DocsLocale;
 	onClose: () => void;
@@ -53,7 +51,7 @@ const NavItem = ({
 				{hasSubItems ? (
 					<div className={clsx('flex items-center border-l -ml-[1px] text-sm transition-colors', isItemActive || isChildActive ? 'border-dinoco-brand dark:border-dinoco-cyan' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600')}>
 						<Link
-							href={buildDocsPath(currentVersionName, currentGroup.shortName, item.shortName, firstSubItem?.shortName)}
+							href={buildDocsPath(locale, currentGroup.shortName, item.shortName, firstSubItem?.shortName)}
 							onClick={onClose}
 							className={clsx(
 								'block min-w-0 flex-1 cursor-pointer py-1.5 pl-4 text-left',
@@ -75,7 +73,7 @@ const NavItem = ({
 					</div>
 				) : (
 					<Link
-						href={buildDocsPath(currentVersionName, currentGroup.shortName, item.shortName)}
+						href={buildDocsPath(locale, currentGroup.shortName, item.shortName)}
 						onClick={onClose}
 						className={clsx(
 							'block w-full cursor-pointer border-l -ml-[1px] py-1.5 pl-4 text-sm transition-colors',
@@ -95,7 +93,7 @@ const NavItem = ({
 						return (
 							<li key={subItem.shortName}>
 								<Link
-									href={buildDocsPath(currentVersionName, currentGroup.shortName, item.shortName, subItem.shortName)}
+									href={buildDocsPath(locale, currentGroup.shortName, item.shortName, subItem.shortName)}
 									onClick={onClose}
 									className={clsx(
 										'block cursor-pointer border-l -ml-[1px] py-1.5 pl-4 text-sm transition-colors',
@@ -113,17 +111,17 @@ const NavItem = ({
 	);
 };
 
-const DocsSidebar = ({ currentGroup, currentItem, currentVersionName, locale, sections, isOpen, onClose }: DocsSidebarProps): React.JSX.Element => {
+const DocsSidebar = ({ currentGroup, currentItem, locale, sections, isOpen, onClose }: DocsSidebarProps): React.JSX.Element => {
 	const intl = getIntlMessages(locale);
 	const localizedSections = useMemo(() => {
-		const localizedGroup = getGroupByShortName(currentVersionName, locale, currentGroup.shortName);
+		const localizedGroup = getGroupByShortName(getDefaultVersionName(), locale, currentGroup.shortName);
 
 		if (localizedGroup === undefined) {
 			return sections;
 		}
 
 		return getLocalizedSections(localizedGroup, locale);
-	}, [currentGroup.shortName, currentVersionName, locale, sections]);
+	}, [currentGroup.shortName, locale, sections]);
 
 	return (
 		<>
@@ -155,7 +153,7 @@ const DocsSidebar = ({ currentGroup, currentItem, currentVersionName, locale, se
 
 							<ul className="space-y-1 border-l border-light-300 dark:border-[#505050]">
 								{section.items.map(item => (
-									<NavItem key={`${currentVersionName}:${currentGroup.shortName}:${currentItem.shortName}:${item.shortName}`} item={item} currentGroup={currentGroup} currentItem={currentItem} currentVersionName={currentVersionName} locale={locale} onClose={onClose} />
+									<NavItem key={`${locale}:${currentGroup.shortName}:${currentItem.shortName}:${item.shortName}`} item={item} currentGroup={currentGroup} currentItem={currentItem} locale={locale} onClose={onClose} />
 								))}
 							</ul>
 						</div>

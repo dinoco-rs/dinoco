@@ -1,4 +1,4 @@
-import v1_3_3 from './versions/v1.3.3';
+import v2_0_0 from './versions/v2.0.0';
 
 export type DocsLocale = 'en-us' | 'pt-br';
 export const SUPPORTED_LOCALES: DocsLocale[] = ['en-us', 'pt-br'];
@@ -95,7 +95,7 @@ function normalizeLocalizedRecord<T>(record: Partial<Record<RawDocsLocale, T>>):
 	) as Partial<Record<DocsLocale, T>>;
 }
 
-const versionsData: DocsVersionData[] = [v1_3_3 as DocsVersionData];
+const versionsData: DocsVersionData[] = [v2_0_0 as DocsVersionData];
 
 export const versions: DocsVersion[] = versionsData.map(version => ({
 	...version,
@@ -151,7 +151,7 @@ function fallbackLocale(locale: DocsLocale, version: DocsVersion): DocsLocale {
 }
 
 export function getLatestVersionName(): string {
-	return versions[0]?.name ?? 'v1.3.3';
+	return versions[0]?.name ?? 'v2.0.0';
 }
 
 export function isLatestVersion(versionName: string): boolean {
@@ -186,6 +186,43 @@ export function getAvailableLocales(versionName: string): DocsLocale[] {
 	);
 }
 
+export function getLocalizedSections(group: DocsGroup, locale: DocsLocale): DocsSection[] {
+	return group.languages[locale] ?? group.languages['en-us'] ?? [];
+}
+
+export function getLocalizedGroupName(group: DocsGroup, locale: DocsLocale): string {
+	return group.localizedNames[locale] ?? group.localizedNames['en-us'] ?? group.name;
+}
+
+/**
+ * Every real (locale, group, item, subItem) combination in the current
+ * version. Shared by the sitemap and by the docs route's
+ * `generateStaticParams` so both stay in sync with the actual nav data.
+ */
+export function getAllDocsSlugs(): { locale: DocsLocale; slug: string[] }[] {
+	const versionName = getDefaultVersionName();
+	const entries: { locale: DocsLocale; slug: string[] }[] = [];
+
+	for (const locale of SUPPORTED_LOCALES) {
+		for (const group of getGroupsForVersion(versionName, locale)) {
+			for (const section of getLocalizedSections(group, locale)) {
+				for (const item of section.items) {
+					if (item.subItems === undefined || item.subItems.length === 0) {
+						entries.push({ locale, slug: [group.shortName, item.shortName] });
+						continue;
+					}
+
+					for (const subItem of item.subItems) {
+						entries.push({ locale, slug: [group.shortName, item.shortName, subItem.shortName] });
+					}
+				}
+			}
+		}
+	}
+
+	return entries;
+}
+
 export function getGroupsForVersion(versionName: string, locale: DocsLocale): DocsGroup[] {
 	const version = getVersionByName(versionName);
 
@@ -200,14 +237,6 @@ export function getGroupsForVersion(versionName: string, locale: DocsLocale): Do
 
 		return localizedSections !== undefined && localizedSections.length > 0;
 	});
-}
-
-export function getLocalizedSections(group: DocsGroup, locale: DocsLocale): DocsSection[] {
-	return group.languages[locale] ?? group.languages['en-us'] ?? [];
-}
-
-export function getLocalizedGroupName(group: DocsGroup, locale: DocsLocale): string {
-	return group.localizedNames[locale] ?? group.localizedNames['en-us'] ?? group.name;
 }
 
 export function getGroupByShortName(versionName: string, locale: DocsLocale, groupShortName?: string): DocsGroup | undefined {
@@ -293,28 +322,38 @@ export function getItemByShortName(
 	};
 }
 
-export function buildDocsPath(versionName: string, groupShortName: string, itemShortName: string, subItemShortName?: string): string {
-	return subItemShortName === undefined ? `/${versionName}/${groupShortName}/${itemShortName}` : `/${versionName}/${groupShortName}/${itemShortName}/${subItemShortName}`;
+/**
+ * Public doc URLs never encode the version (only one version exists today,
+ * and the version dataset above stays purely internal). The URL shape is
+ * `/{locale}/docs/orm/{group}/{item}/{subItem?}`.
+ */
+export function buildDocsPath(locale: DocsLocale, groupShortName: string, itemShortName: string, subItemShortName?: string): string {
+	const base = `/${locale}/docs/orm/${groupShortName}/${itemShortName}`;
+
+	return subItemShortName === undefined ? base : `${base}/${subItemShortName}`;
 }
 
-export function getFirstDocsPath(versionName: string, locale: DocsLocale): string {
+export function getFirstDocsPath(locale: DocsLocale): string {
+	const versionName = getDefaultVersionName();
 	const resolved = getItemByShortName(versionName, locale);
 
 	if (resolved === undefined) {
-		return `/${getDefaultVersionName()}`;
+		return `/${locale}/docs/orm`;
 	}
 
-	return buildDocsPath(versionName, resolved.group.shortName, resolved.item.shortName);
+	const resolvedEntry = resolveEntryItem(resolved.item);
+
+	return buildDocsPath(locale, resolved.group.shortName, resolvedEntry.item.shortName);
 }
 
-function flattenSectionItems(versionName: string, groupShortName: string, sections: DocsSection[]): DocsNavigationItem[] {
+function flattenSectionItems(locale: DocsLocale, groupShortName: string, sections: DocsSection[]): DocsNavigationItem[] {
 	return sections.flatMap(section =>
 		section.items.flatMap(item => {
 			if (item.subItems === undefined || item.subItems.length === 0) {
 				return [
 					{
 						item,
-						path: buildDocsPath(versionName, groupShortName, item.shortName),
+						path: buildDocsPath(locale, groupShortName, item.shortName),
 					},
 				];
 			}
@@ -322,17 +361,17 @@ function flattenSectionItems(versionName: string, groupShortName: string, sectio
 			return item.subItems.map(subItem => ({
 				item: subItem,
 				parentItem: item,
-				path: buildDocsPath(versionName, groupShortName, item.shortName, subItem.shortName),
+				path: buildDocsPath(locale, groupShortName, item.shortName, subItem.shortName),
 			}));
 		}),
 	);
 }
 
-export function getAdjacentDocsItems(params: { currentItemShortName: string; groupShortName: string; sections: DocsSection[]; versionName: string }): {
+export function getAdjacentDocsItems(params: { currentItemShortName: string; groupShortName: string; locale: DocsLocale; sections: DocsSection[] }): {
 	next?: DocsNavigationItem;
 	previous?: DocsNavigationItem;
 } {
-	const flattenedItems = flattenSectionItems(params.versionName, params.groupShortName, params.sections);
+	const flattenedItems = flattenSectionItems(params.locale, params.groupShortName, params.sections);
 	const currentIndex = flattenedItems.findIndex(entry => entry.item.shortName === params.currentItemShortName);
 
 	if (currentIndex === -1) {
@@ -345,21 +384,8 @@ export function getAdjacentDocsItems(params: { currentItemShortName: string; gro
 	};
 }
 
-export function getLatestVersionPath(params: { groupShortName?: string; itemShortName?: string; locale: DocsLocale; subItemShortName?: string }): string {
-	const latestVersionName = getLatestVersionName();
-	const resolved = resolveDocsPath({
-		versionName: latestVersionName,
-		groupShortName: params.groupShortName,
-		itemShortName: params.itemShortName,
-		subItemShortName: params.subItemShortName,
-		locale: params.locale,
-	});
-
-	return resolved?.path ?? getFirstDocsPath(latestVersionName, params.locale);
-}
-
-export function resolveDocsPath(params: { groupShortName?: string; itemShortName?: string; locale: DocsLocale; subItemShortName?: string; versionName?: string }): ResolvedDocsPath | undefined {
-	const version = getVersionByName(params.versionName ?? getDefaultVersionName()) ?? getVersionByName(getDefaultVersionName());
+export function resolveDocsPath(params: { groupShortName?: string; itemShortName?: string; locale: DocsLocale; subItemShortName?: string }): ResolvedDocsPath | undefined {
+	const version = getVersionByName(getDefaultVersionName());
 
 	if (version === undefined) {
 		return undefined;
@@ -377,7 +403,7 @@ export function resolveDocsPath(params: { groupShortName?: string; itemShortName
 		item: resolved.item,
 		parentItem: resolved.parentItem,
 		path: buildDocsPath(
-			version.name,
+			resolvedLocale,
 			resolved.group.shortName,
 			resolved.parentItem?.shortName ?? resolved.item.shortName,
 			resolved.parentItem?.shortName === undefined ? undefined : resolved.item.shortName,
@@ -387,18 +413,16 @@ export function resolveDocsPath(params: { groupShortName?: string; itemShortName
 	};
 }
 
-export function parseDocsPath(pathname: string): {
+export function parseDocsPath(slug?: string[]): {
 	groupShortName?: string;
 	itemShortName?: string;
 	subItemShortName?: string;
-	versionName?: string;
 } {
-	const segments = pathname.split('/').filter(Boolean);
+	const segments = (slug ?? []).filter(Boolean);
 
 	return {
-		versionName: segments[0],
-		groupShortName: segments[1],
-		itemShortName: segments[2],
-		subItemShortName: segments[3],
+		groupShortName: segments[0],
+		itemShortName: segments[1],
+		subItemShortName: segments[2],
 	};
 }
