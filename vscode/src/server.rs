@@ -307,6 +307,50 @@ impl DinocoLanguageServer {
             tracked.insert(root.to_path_buf(), files);
         }
     }
+
+    /// Resolves the effective `FormatterConfig` for a formatting request.
+    ///
+    /// `dinoco.formatter.*` settings aren't part of the standard LSP
+    /// `FormattingOptions`, so they're pulled directly from the client via
+    /// `workspace/configuration` (which `vscode-languageclient` answers using
+    /// `vscode.workspace.getConfiguration`, scoped to the document, with no
+    /// extra client-side code required). Falls back to the editor's
+    /// `tabSize`/`insertSpaces` when a client doesn't answer a given section.
+    async fn resolve_formatter_config(&self, params: &DocumentFormattingParams) -> dinoco_formatter::FormatterConfig {
+        let scope_uri = Some(params.text_document.uri.clone());
+        let sections = [
+            "dinoco.formatter.maxWidth",
+            "dinoco.formatter.useTabs",
+            "dinoco.formatter.useSpaces",
+            "dinoco.formatter.indentSize",
+            "dinoco.formatter.removeComments",
+        ];
+        let items = sections
+            .iter()
+            .map(|section| ConfigurationItem { scope_uri: scope_uri.clone(), section: Some(section.to_string()) })
+            .collect();
+
+        let values = self.client.configuration(items).await.unwrap_or_default();
+        let value_at = |index: usize| values.get(index);
+
+        let max_width = value_at(0).and_then(|value| value.as_u64()).map(|value| value as usize);
+        let use_tabs_setting = value_at(1).and_then(|value| value.as_bool());
+        let use_spaces_setting = value_at(2).and_then(|value| value.as_bool());
+        let indent_size = value_at(3).and_then(|value| value.as_u64()).map(|value| value as usize);
+        let remove_comments = value_at(4).and_then(|value| value.as_bool());
+
+        let use_tabs = use_tabs_setting
+            .or(use_spaces_setting.map(|use_spaces| !use_spaces))
+            .unwrap_or(!params.options.insert_spaces);
+
+        dinoco_formatter::FormatterConfig {
+            indent_width: indent_size.unwrap_or(params.options.tab_size.max(1) as usize).max(1),
+            final_newline: true,
+            use_tabs,
+            max_width: max_width.unwrap_or(100).max(1),
+            strip_comments: remove_comments.unwrap_or(false),
+        }
+    }
 }
 
 fn import_diagnostics(path: &Path, file: &SchemaFile, graph: &ImportGraph) -> Vec<Diagnostic> {
@@ -549,6 +593,13 @@ impl LanguageServer for DinocoLanguageServer {
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+                semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+                    SemanticTokensOptions {
+                        legend: semantic_tokens_legend(),
+                        full: Some(SemanticTokensFullOptions::Bool(true)),
+                        ..SemanticTokensOptions::default()
+                    },
+                )),
                 ..ServerCapabilities::default()
             },
             server_info: Some(ServerInfo {
@@ -851,10 +902,7 @@ impl LanguageServer for DinocoLanguageServer {
         let Some(state) = self.document(&params.text_document.uri) else {
             return Ok(None);
         };
-        let config = dinoco_formatter::FormatterConfig {
-            indent_width: params.options.tab_size.max(1) as usize,
-            final_newline: true,
-        };
+        let config = self.resolve_formatter_config(&params).await;
         let formatted = format_document_source(&params.text_document.uri, state.text(), &config)
             .map_err(|error| LspError::invalid_params(format!("Cannot format an invalid Dinoco schema: {error}")))?;
         if formatted == state.text() {
@@ -874,6 +922,102 @@ impl LanguageServer for DinocoLanguageServer {
         let (index, _) = self.semantic_index(&uri, &state);
         Ok(Some(self.quick_fixes(&uri, &state, &index, &params)))
     }
+
+    async fn semantic_tokens_full(&self, params: SemanticTokensParams) -> LspResult<Option<SemanticTokensResult>> {
+        let Some(state) = self.document(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        let data = encode_semantic_tokens(semantic_token_spans(state.index()));
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens { result_id: None, data })))
+    }
+}
+
+fn semantic_tokens_legend() -> SemanticTokensLegend {
+    SemanticTokensLegend {
+        token_types: vec![
+            SemanticTokenType::TYPE,
+            SemanticTokenType::PROPERTY,
+            SemanticTokenType::ENUM_MEMBER,
+            SemanticTokenType::DECORATOR,
+        ],
+        token_modifiers: vec![SemanticTokenModifier::DECLARATION],
+    }
+}
+
+const SEMANTIC_TOKEN_TYPE: u32 = 0;
+const SEMANTIC_TOKEN_PROPERTY: u32 = 1;
+const SEMANTIC_TOKEN_ENUM_MEMBER: u32 = 2;
+const SEMANTIC_TOKEN_DECORATOR: u32 = 3;
+const SEMANTIC_MODIFIER_DECLARATION: u32 = 1;
+
+/// Builds `(range, token_type, modifiers)` spans straight from the same
+/// `DocumentIndex` used for hover/completion/go-to-definition, so semantic
+/// highlighting reflects each identifier's real role (type declaration vs.
+/// reference, field vs. enum member, etc.) rather than a regex guess.
+fn semantic_token_spans(index: &DocumentIndex) -> Vec<(Range, u32, u32)> {
+    let mut spans = Vec::new();
+    let scalars = scalar_types();
+
+    for block in &index.blocks {
+        if matches!(block.kind, BlockKind::Model | BlockKind::Enum)
+            && let Some(name) = &block.name
+        {
+            spans.push((name.range, SEMANTIC_TOKEN_TYPE, SEMANTIC_MODIFIER_DECLARATION));
+        }
+
+        for field in &block.fields {
+            spans.push((field.name.range, SEMANTIC_TOKEN_PROPERTY, 0));
+            if !scalars.contains(&field.ty.name.as_str()) {
+                spans.push((field.ty.range, SEMANTIC_TOKEN_TYPE, 0));
+            }
+            for attribute in &field.attributes {
+                spans.push((attribute.name.range, SEMANTIC_TOKEN_DECORATOR, 0));
+            }
+        }
+
+        for attribute in &block.attributes {
+            spans.push((attribute.name.range, SEMANTIC_TOKEN_DECORATOR, 0));
+        }
+
+        if block.kind == BlockKind::Enum {
+            for value in &block.values {
+                spans.push((value.range, SEMANTIC_TOKEN_ENUM_MEMBER, 0));
+            }
+        }
+
+        if block.kind == BlockKind::Config {
+            for entry in &block.entries {
+                spans.push((entry.range, SEMANTIC_TOKEN_PROPERTY, 0));
+            }
+        }
+    }
+
+    spans
+}
+
+fn encode_semantic_tokens(mut spans: Vec<(Range, u32, u32)>) -> Vec<SemanticToken> {
+    spans.sort_by_key(|(range, _, _)| (range.start.line, range.start.character));
+
+    let mut tokens = Vec::with_capacity(spans.len());
+    let mut previous_line = 0u32;
+    let mut previous_start = 0u32;
+
+    for (range, token_type, modifiers) in spans {
+        if range.end.line != range.start.line || range.end.character <= range.start.character {
+            continue;
+        }
+        let length = range.end.character - range.start.character;
+        let delta_line = range.start.line - previous_line;
+        let delta_start =
+            if delta_line == 0 { range.start.character - previous_start } else { range.start.character };
+
+        tokens.push(SemanticToken { delta_line, delta_start, length, token_type, token_modifiers_bitset: modifiers });
+
+        previous_line = range.start.line;
+        previous_start = range.start.character;
+    }
+
+    tokens
 }
 
 fn hover_resolved_symbol(index: &DocumentIndex, symbol: &ResolvedSymbol) -> Option<String> {
@@ -1243,5 +1387,41 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].range, Range::new(Position::new(0, 9), Position::new(0, 15)));
         assert!(diagnostics[0].message.contains("Imported symbol `Second`"));
+    }
+
+    #[test]
+    fn semantic_tokens_distinguish_declarations_properties_types_and_enum_members() {
+        let source = "enum Status {\n    active\n}\n\nmodel Account {\n    id     String @id\n    status Status\n}\n";
+        let index = DocumentIndex::new(source);
+        let spans = semantic_token_spans(&index);
+
+        let kind_at = |line: u32, character: u32| {
+            spans
+                .iter()
+                .find(|(range, _, _)| range.start.line == line && range.start.character == character)
+                .map(|(_, token_type, modifiers)| (*token_type, *modifiers))
+        };
+
+        // `Status` the enum declaration.
+        assert_eq!(kind_at(0, 5), Some((SEMANTIC_TOKEN_TYPE, SEMANTIC_MODIFIER_DECLARATION)));
+        // `active` the enum member.
+        assert_eq!(kind_at(1, 4), Some((SEMANTIC_TOKEN_ENUM_MEMBER, 0)));
+        // `Account` the model declaration.
+        assert_eq!(kind_at(4, 6), Some((SEMANTIC_TOKEN_TYPE, SEMANTIC_MODIFIER_DECLARATION)));
+        // `id` the field name (property), not a type.
+        assert_eq!(kind_at(5, 4), Some((SEMANTIC_TOKEN_PROPERTY, 0)));
+        // `status` field referencing the `Status` enum: property name, then a type reference.
+        assert_eq!(kind_at(6, 4), Some((SEMANTIC_TOKEN_PROPERTY, 0)));
+        assert_eq!(kind_at(6, 11), Some((SEMANTIC_TOKEN_TYPE, 0)));
+
+        let tokens = encode_semantic_tokens(spans);
+        assert!(!tokens.is_empty());
+        // Non-decreasing (line, start) order is required by the LSP encoding.
+        let mut cursor_line = 0u32;
+        for token in &tokens {
+            cursor_line += token.delta_line;
+            assert!(token.length > 0);
+        }
+        let _ = cursor_line;
     }
 }

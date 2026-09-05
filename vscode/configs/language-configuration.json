@@ -27,13 +27,13 @@
   "folding": {
     "offSide": false,
     "markers": {
-      "start": "^\\s*(model|enum|config)\\b.*\\{",
+      "start": "^\\s*(model|enum|config|workspace)\\b.*\\{",
       "end": "^\\s*}"
     }
   },
   "onEnterRules": [
     {
-      "beforeText": "^\\s*(model|enum|config)\\b.*\\{\\s*$",
+      "beforeText": "^\\s*(model|enum|config|workspace)\\b.*\\{\\s*$",
       "afterText": "^\\s*}\\s*$",
       "action": { "indentAction": "indentOutdent" }
     },

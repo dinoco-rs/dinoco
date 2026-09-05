@@ -1,4 +1,4 @@
-use dinoco_compiler::{Attribute, EnumDef, FieldType, Model, ModelField};
+use dinoco_compiler::{Attribute, AttributeArgument, EnumDef, FieldType, Model, ModelField};
 
 use crate::FormatterConfig;
 use crate::utils::grouped_field_widths;
@@ -42,13 +42,14 @@ pub(crate) fn format_model_with_layout(
         out.push_str(&format!("{:<width$}", field.name, width = name_width));
         out.push_str("  ");
 
-        let attributes = format_attributes(&field.attributes);
-        if attributes.is_empty() {
+        if field.attributes.is_empty() {
             out.push_str(&type_string);
         } else {
-            out.push_str(&format!("{:<width$}", type_string, width = type_width));
+            let type_column = format!("{:<width$}", type_string, width = type_width);
+            let column = indent.len() + name_width + 2 + type_column.chars().count() + 2;
+            out.push_str(&type_column);
             out.push_str("  ");
-            out.push_str(&attributes);
+            out.push_str(&format_attributes(&field.attributes, config, &indent, column));
         }
 
         out.push('\n');
@@ -60,7 +61,7 @@ pub(crate) fn format_model_with_layout(
         }
         for attribute in &model.attributes {
             out.push_str(&indent);
-            out.push_str(&format_attribute(attribute, "@@"));
+            out.push_str(&format_attribute(attribute, "@@", config, &indent, indent.chars().count()));
             out.push('\n');
         }
     }
@@ -83,18 +84,33 @@ pub fn format_field_type(field_type: &FieldType) -> String {
     value
 }
 
-fn format_attributes(attributes: &[Attribute]) -> String {
-    attributes.iter().map(|attribute| format_attribute(attribute, "@")).collect::<Vec<_>>().join(" ")
+fn format_attributes(attributes: &[Attribute], config: &FormatterConfig, indent: &str, column: usize) -> String {
+    attributes.iter().map(|attribute| format_attribute(attribute, "@", config, indent, column)).collect::<Vec<_>>().join(" ")
 }
 
-fn format_attribute(attribute: &Attribute, prefix: &str) -> String {
+fn format_attribute(attribute: &Attribute, prefix: &str, config: &FormatterConfig, indent: &str, column: usize) -> String {
     if attribute.arguments.is_empty() {
         return format!("{prefix}{}", attribute.name);
     }
 
     let arguments = attribute.arguments.iter().map(format_attribute_argument).collect::<Vec<_>>();
+    let single_line = format!("{prefix}{}({})", attribute.name, arguments.join(", "));
 
-    format!("{prefix}{}({})", attribute.name, arguments.join(", "))
+    let all_named = attribute.arguments.iter().all(|argument| matches!(argument, AttributeArgument::Named { .. }));
+    if !all_named || column + single_line.chars().count() <= config.max_width {
+        return single_line;
+    }
+
+    let inner_indent = format!("{indent}{}", config.indent());
+    let mut out = format!("{prefix}{}(\n", attribute.name);
+    for argument in &attribute.arguments {
+        out.push_str(&inner_indent);
+        out.push_str(&format_attribute_argument(argument));
+        out.push_str(",\n");
+    }
+    out.push_str(indent);
+    out.push(')');
+    out
 }
 
 pub(crate) fn field_type_len(field: &ModelField) -> usize {

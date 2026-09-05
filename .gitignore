@@ -11,3 +11,5 @@ dinoco_*/dinoco
 .DS_Store
 
 *.sqlite
+
+.claude

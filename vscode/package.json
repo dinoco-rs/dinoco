@@ -1,7 +1,7 @@
 {
 	"name": "dinoco-vscode",
 	"displayName": "Dinoco",
-	"version": "1.3.3",
+	"version": "2.0.0",
 	"description": "Intelligent language support and database workflows for Dinoco schemas.",
 	"publisher": "dinoco-rs",
 	"license": "Apache-2.0",
@@ -179,6 +179,40 @@
 					"default": "off",
 					"scope": "window",
 					"description": "Trace communication between VS Code and the Dinoco language server."
+				},
+				"dinoco.formatter.maxWidth": {
+					"type": "number",
+					"default": 100,
+					"minimum": 40,
+					"maximum": 400,
+					"scope": "resource",
+					"description": "Maximum line width before the formatter breaks supported expressions (imports, attributes with named arguments) into multiple lines."
+				},
+				"dinoco.formatter.useTabs": {
+					"type": "boolean",
+					"default": false,
+					"scope": "resource",
+					"description": "Indent formatted Dinoco schemas with tabs instead of spaces. Mutually exclusive with \"dinoco.formatter.useSpaces\" — enabling one disables the other."
+				},
+				"dinoco.formatter.useSpaces": {
+					"type": "boolean",
+					"default": true,
+					"scope": "resource",
+					"description": "Indent formatted Dinoco schemas with spaces instead of tabs. Mutually exclusive with \"dinoco.formatter.useTabs\" — enabling one disables the other."
+				},
+				"dinoco.formatter.indentSize": {
+					"type": "number",
+					"default": 4,
+					"minimum": 1,
+					"maximum": 8,
+					"scope": "resource",
+					"description": "Number of spaces per indentation level when \"dinoco.formatter.useSpaces\" is enabled. Has no effect when using tabs."
+				},
+				"dinoco.formatter.removeComments": {
+					"type": "boolean",
+					"default": false,
+					"scope": "resource",
+					"description": "Remove all \"#\" and \"//\" comments from a Dinoco schema when formatting it, instead of preserving them."
 				}
 			}
 		},

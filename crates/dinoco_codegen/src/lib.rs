@@ -47,8 +47,7 @@ pub fn generate_models_for_workspace(schema: &Schema, workspace: Option<&str>) -
             fs::remove_file(legacy_join_file)?;
         }
     }
-    let migrations = runtime_migrations(workspace)?;
-    fs::write("dinoco/mod.rs", render_dinoco_mod_with_migrations(schema, &migrations))?;
+    fs::write("dinoco/mod.rs", render_dinoco_mod(schema))?;
     fs::write(marker, requested_workspace)?;
     Ok(())
 }
@@ -150,10 +149,6 @@ pub fn render_model_file(model: &Model, schema: &Schema) -> String {
 }
 
 pub fn render_dinoco_mod(schema: &Schema) -> String {
-    render_dinoco_mod_with_migrations(schema, &[])
-}
-
-fn render_dinoco_mod_with_migrations(schema: &Schema, migrations: &[(String, String)]) -> String {
     let config = schema.config();
     let database = config
         .and_then(|config| config.entries.iter().find(|entry| entry.key == "database"))
@@ -227,24 +222,6 @@ fn render_dinoco_mod_with_migrations(schema: &Schema, migrations: &[(String, Str
     out.push_str("    ];\n");
     out.push_str(&format!("    Ok(client.with_read_replicas(read_replicas).with_logger({with_logger}))\n"));
     out.push_str("}\n");
-    out.push_str("\npub const MIGRATIONS: &[::dinoco::runtime::Migration<'static>] = &[\n");
-    for (name, include_path) in migrations {
-        out.push_str(&format!(
-            "    ::dinoco::runtime::Migration::new(\"{}\", include_str!(\"{}\")),\n",
-            escape_rust_string(name),
-            escape_rust_string(include_path)
-        ));
-    }
-    out.push_str(
-        "];
-
-pub async fn migrate(
-    client: &::dinoco::DinocoClient,
-) -> ::dinoco::anyhow::Result<::dinoco::runtime::MigrationReport> {
-    ::dinoco::runtime::run_migrations(client, MIGRATIONS).await
-}
-",
-    );
     out
 }
 
@@ -298,40 +275,6 @@ fn push_custom_imports(out: &mut String, schema: &Schema, target: &str) {
     if !out.is_empty() && !imports.is_empty() {
         out.push('\n');
     }
-}
-
-fn runtime_migrations(workspace: Option<&str>) -> anyhow::Result<Vec<(String, String)>> {
-    let relative_root = workspace
-        .map_or_else(|| Path::new("migrations").to_path_buf(), |workspace| Path::new("migrations").join(workspace));
-    let root = Path::new("dinoco").join(&relative_root);
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut migrations = fs::read_dir(&root)?
-        .map(|entry| -> anyhow::Result<_> {
-            let path = entry?.path();
-            if !path.is_dir() {
-                return Ok(None);
-            }
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or_else(|| anyhow::anyhow!("invalid runtime migration directory name"))?
-                .to_string();
-            let up = path.join("up.sql");
-            if !up.is_file() {
-                anyhow::bail!("runtime migration `{name}` is missing {}", up.display());
-            }
-            let include_path = relative_root.join(&name).join("up.sql").to_string_lossy().replace('\\', "/");
-            Ok(Some((name, include_path)))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    migrations.sort_by(|left, right| left.0.cmp(&right.0));
-    Ok(migrations)
 }
 
 pub fn render_schema_snapshot(schema: &Schema) -> String {

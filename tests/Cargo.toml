@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_tests"
-version = "1.3.3"
+version = "2.0.0"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
@@ -12,13 +12,13 @@ dotenvy = "0.15"
 inquire = "0.7"
 tokio = { version = "1.50", features = ["full"] }
 tempfile = "3"
-dinoco = { path = "../crates/dinoco", version = "1.3.3" }
-dinoco_cli = { path = "../crates/dinoco_cli", version = "1.3.3" }
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "1.3.3" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "1.3.3" }
-dinoco_codegen = { path = "../crates/dinoco_codegen", version = "1.3.3" }
-dinoco_engine = { path = "../crates/dinoco_engine", version = "1.3.3" }
-dinoco_vscode = { path = "../vscode", version = "1.3.3" }
+dinoco = { path = "../crates/dinoco", version = "2.0.0" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "2.0.0" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.0.0" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.0.0" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.0.0" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "2.0.0" }
+dinoco_vscode = { path = "../vscode", version = "2.0.0" }
 
 [[bin]]
 name = "dinoco_cli"
@@ -35,6 +35,14 @@ path = "tests/dinoco/adapters_crud.rs"
 [[test]]
 name = "dinoco_adapters_relations"
 path = "tests/dinoco/adapters_relations.rs"
+
+[[test]]
+name = "dinoco_complex_relations"
+path = "tests/dinoco/complex_relations.rs"
+
+[[test]]
+name = "dinoco_complex_business_tree"
+path = "tests/dinoco/complex_business_tree.rs"
 
 [[test]]
 name = "dinoco_include_limits"
@@ -71,10 +79,6 @@ path = "tests/dinoco_compiler/compile.rs"
 [[test]]
 name = "dinoco_engine_migrations"
 path = "tests/dinoco_engine/migrations.rs"
-
-[[test]]
-name = "runtime_migrations"
-path = "tests/runtime_migrations.rs"
 
 [[test]]
 name = "dinoco_engine_query_builder"

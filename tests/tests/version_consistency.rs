@@ -1,9 +1,12 @@
 use std::{fs, path::Path};
 
-const CRATE_VERSION: &str = "1.3.3";
-const PREVIOUS_CRATE_VERSION: &str = "1.3.2";
-const DOCS_VERSION: &str = "1.3.3";
-const PREVIOUS_DOCS_VERSION: &str = "1.3.2";
+const CRATE_VERSION: &str = "2.0.0";
+const PREVIOUS_CRATE_VERSION: &str = "1.3.3";
+// The docs site's versioned content (docs/src/content/vX.Y.Z) is tracked
+// separately from the crate/extension release train and is updated as part
+// of the docs reformulation, not the crate version bump.
+const DOCS_VERSION: &str = "2.0.0";
+const PREVIOUS_DOCS_VERSION: &str = "1.3.3";
 
 fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("tests crate must be inside the workspace")
@@ -35,6 +38,7 @@ fn release_version_is_consistent_across_the_workspace() {
         "crates/dinoco_derives/Cargo.toml",
         "crates/dinoco_engine/Cargo.toml",
         "crates/dinoco_formatter/Cargo.toml",
+        "vscode/Cargo.toml",
     ];
 
     for manifest_path in cargo_manifests {
@@ -49,6 +53,13 @@ fn release_version_is_consistent_across_the_workspace() {
         );
     }
 
+    let vscode_package_json = read("vscode/package.json");
+    assert!(
+        vscode_package_json.contains(&format!("\"version\": \"{CRATE_VERSION}\"")),
+        "vscode/package.json does not declare version {CRATE_VERSION}"
+    );
+    assert!(!vscode_package_json.contains(PREVIOUS_CRATE_VERSION));
+
     let lockfile = read("Cargo.lock");
     for package_name in [
         "dinoco",
@@ -58,6 +69,7 @@ fn release_version_is_consistent_across_the_workspace() {
         "dinoco_derives",
         "dinoco_engine",
         "dinoco_formatter",
+        "dinoco_vscode",
     ] {
         let block = package_block(&lockfile, package_name);
         assert!(
@@ -89,10 +101,10 @@ fn documentation_uses_the_current_version_directories() {
     assert!(!previous_navigation_dir.exists());
 
     let versions = read("docs/src/jsons/versions.ts");
-    assert!(versions.contains("import v1_3_3 from './versions/v1.3.3';"));
-    assert!(versions.contains("const versionsData: DocsVersionData[] = [v1_3_3"));
-    assert!(!versions.contains("v1_3_2"));
-    assert!(!versions.contains("v1.3.2"));
+    assert!(versions.contains("import v2_0_0 from './versions/v2.0.0';"));
+    assert!(versions.contains("const versionsData: DocsVersionData[] = [v2_0_0"));
+    assert!(!versions.contains("v1_3_3"));
+    assert!(!versions.contains(&format!("v{PREVIOUS_DOCS_VERSION}")));
 
     for locale in ["en-us", "pt-br"] {
         let release_notes = read(&format!("docs/src/content/v{DOCS_VERSION}/{locale}/release-notes.md"));

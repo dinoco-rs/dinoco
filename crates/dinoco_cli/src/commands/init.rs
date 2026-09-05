@@ -21,7 +21,9 @@ pub fn run() -> anyhow::Result<()> {
         None
     };
 
-    fs::create_dir_all("dinoco/migrations")?;
+    let migrations_dir = Path::new("dinoco/migrations");
+    let migrations_dir_created = !migrations_dir.exists();
+    fs::create_dir_all(migrations_dir)?;
 
     let mut schema = String::new();
     schema.push_str("config {\n");
@@ -35,14 +37,28 @@ pub fn run() -> anyhow::Result<()> {
 
     let schema = dinoco_formatter::format_from_raw(&schema)?;
     let schema_path = Path::new("dinoco/schema.dinoco");
-    if !schema_path.exists() {
+    let schema_created = !schema_path.exists();
+    if schema_created {
         fs::write(schema_path, schema)?;
-        ui::success("Dinoco project initialized at dinoco/schema.dinoco");
+        ui::success("Dinoco project initialized");
     } else {
         ui::warning("dinoco/schema.dinoco already exists; keeping the current file");
     }
 
-    ui::info("Set DATABASE_URL in your environment before running migrations.");
+    println!();
+    if schema_created {
+        ui::info("Created dinoco/schema.dinoco");
+    }
+    if migrations_dir_created {
+        ui::info("Created dinoco/migrations/");
+    }
+
+    println!("\nNext steps:");
+    println!("  1. Set DATABASE_URL in your environment");
+    println!("  2. Define your models in dinoco/schema.dinoco");
+    println!("  3. Run `dinoco migrate generate` to create your first migration");
+
+    ui::docs("/getting-started");
 
     Ok(())
 }

@@ -15,17 +15,25 @@ use crate::model::{format_enum, format_model, format_model_with_layout};
 pub struct FormatterConfig {
     pub indent_width: usize,
     pub final_newline: bool,
+    /// Indent using a single tab per level instead of `indent_width` spaces.
+    pub use_tabs: bool,
+    /// Maximum preferred line width before wrappable constructs (imports,
+    /// attributes with named arguments) are broken into multiple lines.
+    pub max_width: usize,
+    /// Drop all `#`/`//` comments instead of reattaching them to the
+    /// formatted output.
+    pub strip_comments: bool,
 }
 
 impl Default for FormatterConfig {
     fn default() -> Self {
-        Self { indent_width: 4, final_newline: true }
+        Self { indent_width: 4, final_newline: true, use_tabs: false, max_width: 100, strip_comments: false }
     }
 }
 
 impl FormatterConfig {
     pub fn indent(&self) -> String {
-        " ".repeat(self.indent_width)
+        if self.use_tabs { "\t".to_string() } else { " ".repeat(self.indent_width) }
     }
 }
 
@@ -41,8 +49,9 @@ pub fn format_from_raw_with_config(source: &str, config: &FormatterConfig) -> Re
         dinoco_compiler::compile(source)?
     };
     let layout = LayoutHints::from_source(source, &schema);
+    let formatted = format_schema_with_layout(&schema, config, &layout);
 
-    Ok(comments::restore(source, &format_schema_with_layout(&schema, config, &layout)))
+    Ok(if config.strip_comments { formatted } else { comments::restore(source, &formatted) })
 }
 
 /// Formats an imported schema document without requiring the main project's
@@ -50,8 +59,9 @@ pub fn format_from_raw_with_config(source: &str, config: &FormatterConfig) -> Re
 pub fn format_fragment_from_raw_with_config(source: &str, config: &FormatterConfig) -> Result<String, CompileError> {
     let schema = dinoco_compiler::parse(source)?;
     let layout = LayoutHints::from_source(source, &schema);
+    let formatted = format_schema_with_layout(&schema, config, &layout);
 
-    Ok(comments::restore(source, &format_schema_with_layout(&schema, config, &layout)))
+    Ok(if config.strip_comments { formatted } else { comments::restore(source, &formatted) })
 }
 
 pub fn format_schema(schema: &Schema, config: &FormatterConfig) -> String {
@@ -102,12 +112,10 @@ fn format_schema_with_layout(schema: &Schema, config: &FormatterConfig, layout: 
     output
 }
 
-const IMPORT_LINE_WIDTH: usize = 100;
-
 fn format_import(import: &dinoco_compiler::Import, config: &FormatterConfig) -> String {
     let path = import.path.replace('\\', "\\\\").replace('"', "\\\"");
     let single_line = format!("import {{ {} }} from \"{path}\"", import.symbols.join(", "));
-    if single_line.len() <= IMPORT_LINE_WIDTH {
+    if single_line.len() <= config.max_width {
         return single_line;
     }
 

@@ -47,10 +47,8 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     assert!(models.contains("pub user: Option<User>"));
     assert!(dinoco_mod.starts_with("#![allow(unused)]\n\n"));
     assert!(dinoco_mod.contains("pub mod models;"));
-    assert!(dinoco_mod.contains("pub const MIGRATIONS:"));
-    assert!(dinoco_mod.contains("pub async fn migrate("));
-    let connect = dinoco_mod.split("pub const MIGRATIONS:").next().expect("connect section");
-    assert!(!connect.contains("run_migrations"), "connect must not apply migrations automatically");
+    assert!(!dinoco_mod.contains("MIGRATIONS"), "generated code must not embed a runtime migration table");
+    assert!(!dinoco_mod.contains("pub async fn migrate("), "generated code must not emit a runtime migrate() function");
     assert!(dinoco_mod.contains("pub async fn connect()"));
     assert!(dinoco_mod.contains("PostgresAdapter::direct_with_pool(database_url, 2, 10)"));
     assert!(dinoco_mod.contains("with_read_replicas(read_replicas)"));

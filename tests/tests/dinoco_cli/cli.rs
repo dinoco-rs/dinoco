@@ -33,13 +33,47 @@ fn init_creates_english_colored_schema() {
     let schema = fs::read_to_string(project.join("dinoco/schema.dinoco")).expect("schema");
 
     assert!(stdout.contains("Dinoco project initialized"));
+    assert!(stdout.contains("Created dinoco/schema.dinoco"));
+    assert!(stdout.contains("Created dinoco/migrations/"));
+    assert!(stdout.contains("Next steps:"));
     assert!(stdout.contains("DATABASE_URL"));
+    assert!(stdout.contains("https://docs.dinoco.io"));
     assert!(schema.contains("database"));
     assert!(schema.contains("\"postgresql\""));
     assert!(schema.contains("connection"));
     assert!(schema.contains("\"pgbouncer\""));
     assert!(schema.contains("database_url"));
     assert!(schema.contains("env(\"DATABASE_URL\")"));
+}
+
+#[test]
+fn init_run_again_warns_instead_of_overwriting_and_does_not_repeat_created_lines() {
+    let project = temp_project("init-twice");
+    let first = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .arg("init")
+        .env("DINOCO_CLI_INIT_DATABASE", "sqlite")
+        .current_dir(&project)
+        .output()
+        .expect("cli should run");
+    assert!(first.status.success(), "stderr: {}", String::from_utf8_lossy(&first.stderr));
+
+    fs::write(project.join("dinoco/schema.dinoco"), "# customized by the user\n").expect("simulate user edits");
+
+    let second = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .arg("init")
+        .env("DINOCO_CLI_INIT_DATABASE", "sqlite")
+        .current_dir(&project)
+        .output()
+        .expect("cli should run");
+    assert!(second.status.success(), "stderr: {}", String::from_utf8_lossy(&second.stderr));
+
+    let stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(stdout.contains("already exists"));
+    assert!(!stdout.contains("Created dinoco/schema.dinoco"));
+    assert!(!stdout.contains("Created dinoco/migrations/"));
+
+    let schema = fs::read_to_string(project.join("dinoco/schema.dinoco")).expect("schema");
+    assert_eq!(schema, "# customized by the user\n", "existing schema must not be overwritten");
 }
 
 #[test]
@@ -190,8 +224,6 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
     assert!(generated.contains("DEV_DATABASE_URL"));
     assert!(generated.contains("DEV_REPLICA_DATABASE_URL"));
     assert!(!generated.contains("PROD_REPLICA_DATABASE_URL"));
-    assert!(generated.contains("migrations/dev/"));
-    assert!(generated.contains("pub async fn migrate("));
 
     fs::write(project.join("dinoco/schema.dinoco"), WORKSPACE_ACCOUNT_SCHEMA).expect("updated workspace schema");
     let prod_replica_db = project.join("prod-replica.sqlite");
@@ -214,8 +246,6 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
     assert!(generated.contains("PROD_DATABASE_URL"));
     assert!(generated.contains("PROD_REPLICA_DATABASE_URL"));
     assert!(!generated.contains("DEV_REPLICA_DATABASE_URL"));
-    assert!(generated.contains("migrations/prod/"));
-    assert!(!generated.contains("migrations/dev/"));
 
     let models = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
         .args(["models", "generate", "-w", "dev"])
@@ -227,8 +257,6 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
     assert!(generated.contains("DEV_DATABASE_URL"));
     assert!(generated.contains("DEV_REPLICA_DATABASE_URL"));
     assert!(!generated.contains("PROD_REPLICA_DATABASE_URL"));
-    assert!(generated.contains("migrations/dev/"));
-    assert!(!generated.contains("migrations/prod/"));
 
     let run = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
         .args(["migrate", "run", "--workspace", "dev"])
@@ -419,6 +447,84 @@ async fn migrate_generate_detects_and_applies_destructive_column_drop_when_confi
     assert!(!columns.iter().any(|column| column == "password"));
 }
 
+/// Dinoco must refuse to guess an ambiguous rename rather than silently
+/// dropping and recreating columns/tables it cannot prove are related.
+#[test]
+fn migrate_generate_refuses_an_ambiguous_column_rename() {
+    let project = temp_project("ambiguous-rename");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
+    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA_WITH_AMBIGUOUS_RENAME_SOURCES)
+        .expect("initial schema");
+
+    let db_path = project.join("dev.sqlite");
+    let initial = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate"])
+        .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
+        .current_dir(&project)
+        .output()
+        .expect("initial migration");
+    assert!(initial.status.success(), "stderr: {}", String::from_utf8_lossy(&initial.stderr));
+    let migrations_before = fs::read_dir(project.join("dinoco/migrations")).expect("migrations dir").count();
+
+    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA_WITH_AMBIGUOUS_RENAME_TARGET)
+        .expect("ambiguous schema change");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate"])
+        .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
+        .env("DINOCO_CLI_CONFIRM_DESTRUCTIVE", "true")
+        .current_dir(&project)
+        .output()
+        .expect("cli should run");
+
+    assert!(!output.status.success(), "ambiguous rename must not exit successfully");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("ambiguous"), "stderr: {stderr}");
+    assert!(stderr.contains("first_old_name"), "stderr: {stderr}");
+    assert!(stderr.contains("second_old_name"), "stderr: {stderr}");
+
+    let migrations_after = fs::read_dir(project.join("dinoco/migrations")).expect("migrations dir").count();
+    assert_eq!(migrations_before, migrations_after, "a rejected plan must not write a migration");
+
+    let conn = Connection::open(&db_path).expect("sqlite");
+    let columns = conn
+        .prepare("PRAGMA table_info(item)")
+        .expect("pragma")
+        .query_map([], |row| row.get::<_, String>(1))
+        .expect("columns")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("column names");
+    assert!(columns.iter().any(|column| column == "first_old_name"), "rejected plan must not touch the live schema");
+    assert!(columns.iter().any(|column| column == "second_old_name"), "rejected plan must not touch the live schema");
+}
+
+/// An unreachable database must fail with a message that explains what
+/// happened, which database was targeted (credentials redacted), and how to
+/// start fixing it - not a bare, unformatted error chain.
+#[test]
+fn migrate_generate_reports_a_friendly_error_when_the_database_is_unreachable() {
+    let project = temp_project("unreachable-db");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
+    fs::write(project.join("dinoco/schema.dinoco"), POSTGRES_SCHEMA).expect("schema");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate"])
+        .env("DATABASE_URL", "postgresql://app_user:s3cret@127.0.0.1:1/nonexistent")
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
+        .current_dir(&project)
+        .output()
+        .expect("cli should run");
+
+    assert!(!output.status.success(), "connecting to an unreachable database must fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Unable to connect to the database"), "stderr: {stderr}");
+    assert!(stderr.contains("127.0.0.1:1/nonexistent"), "stderr: {stderr}");
+    assert!(!stderr.contains("s3cret"), "credentials must never be printed: {stderr}");
+    assert!(stderr.contains("Check that"), "stderr: {stderr}");
+}
+
 const SQLITE_SCHEMA: &str = r#"
 config {
     database = "sqlite"
@@ -505,6 +611,43 @@ model User {
     id       String @id @default(uuid())
     email    String
     password String
+}
+"#;
+
+const SQLITE_SCHEMA_WITH_AMBIGUOUS_RENAME_SOURCES: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Item {
+    id               String  @id @default(uuid())
+    first_old_name   String?
+    second_old_name  String?
+}
+"#;
+
+const POSTGRES_SCHEMA: &str = r#"
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+}
+
+model User {
+    id    String @id @default(uuid())
+    email String
+}
+"#;
+
+const SQLITE_SCHEMA_WITH_AMBIGUOUS_RENAME_TARGET: &str = r#"
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Item {
+    id        String  @id @default(uuid())
+    new_name  String?
 }
 "#;
 

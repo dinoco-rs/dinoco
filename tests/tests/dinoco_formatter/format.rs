@@ -1,3 +1,23 @@
+use dinoco_formatter::FormatterConfig;
+
+fn sample_schema_with_relation() -> &'static str {
+    r#"
+model AdminAccount {
+    id String @id @default(uuid())
+    email String
+    password String
+
+    tokens AdminToken[]
+}
+
+model AdminToken {
+    id         String @id
+    account_id String?
+    account    AdminAccount? @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}
+"#
+}
+
 #[test]
 fn formatter_returns_stable_canonical_schema() {
     let raw = r#"
@@ -234,4 +254,88 @@ model Topic {
         assert_eq!(once.matches(comment).count(), 1, "{once}");
     }
     assert_eq!(once, twice);
+}
+
+#[test]
+fn formatter_is_idempotent_across_width_and_indent_combinations() {
+    let raw = sample_schema_with_relation();
+    let configs = [
+        FormatterConfig { use_tabs: false, max_width: 80, indent_width: 4, ..FormatterConfig::default() },
+        FormatterConfig { use_tabs: false, max_width: 120, indent_width: 4, ..FormatterConfig::default() },
+        FormatterConfig { use_tabs: true, max_width: 80, indent_width: 4, ..FormatterConfig::default() },
+        FormatterConfig { use_tabs: true, max_width: 120, indent_width: 4, ..FormatterConfig::default() },
+        FormatterConfig { use_tabs: false, max_width: 100, indent_width: 2, ..FormatterConfig::default() },
+        FormatterConfig { use_tabs: false, max_width: 100, indent_width: 4, ..FormatterConfig::default() },
+    ];
+
+    for config in configs {
+        let once = dinoco_formatter::format_from_raw_with_config(raw, &config).expect("format once");
+        let twice = dinoco_formatter::format_from_raw_with_config(&once, &config).expect("format twice");
+        assert_eq!(once, twice, "formatter is not idempotent for {config:?}");
+    }
+}
+
+#[test]
+fn formatter_uses_tabs_for_indentation_when_configured() {
+    let raw = "model Simple {\n    id Integer @id\n}\n";
+    let config = FormatterConfig { use_tabs: true, ..FormatterConfig::default() };
+
+    let formatted = dinoco_formatter::format_from_raw_with_config(raw, &config).expect("format with tabs");
+
+    assert!(formatted.contains("\tid"));
+    assert!(!formatted.contains("    id"));
+}
+
+#[test]
+fn formatter_wraps_long_relation_attribute_at_max_width() {
+    let raw = sample_schema_with_relation();
+    let config = FormatterConfig { max_width: 60, ..FormatterConfig::default() };
+
+    let formatted = dinoco_formatter::format_from_raw_with_config(raw, &config).expect("format");
+
+    assert!(formatted.contains("@relation(\n"));
+    assert!(formatted.contains("fields: [account_id],\n"));
+    assert!(formatted.contains("references: [id],\n"));
+    assert!(formatted.contains("onDelete: Cascade,\n"));
+    assert!(formatted.contains("onUpdate: Cascade,\n"));
+    assert_eq!(
+        formatted,
+        dinoco_formatter::format_from_raw_with_config(&formatted, &config).expect("wrapped relation is idempotent")
+    );
+}
+
+#[test]
+fn formatter_keeps_relation_attribute_inline_within_max_width() {
+    let raw = sample_schema_with_relation();
+    let config = FormatterConfig { max_width: 120, ..FormatterConfig::default() };
+
+    let formatted = dinoco_formatter::format_from_raw_with_config(raw, &config).expect("format");
+
+    assert!(formatted.contains(
+        "@relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)"
+    ));
+    assert!(!formatted.contains("@relation(\n"));
+}
+
+#[test]
+fn formatter_strip_comments_removes_all_comments() {
+    let raw = r#"# leading comment
+import { Status } from "../shared/status.dinoco" // keep the relative path
+
+model Topic {
+    # stable identifier
+    id Integer @id // generated externally
+}
+"#;
+    let config = FormatterConfig { strip_comments: true, ..FormatterConfig::default() };
+
+    let formatted = dinoco_formatter::format_fragment_from_raw_with_config(raw, &config).expect("format");
+
+    assert!(!formatted.contains('#'));
+    assert!(!formatted.contains("//"));
+    assert_eq!(
+        formatted,
+        dinoco_formatter::format_fragment_from_raw_with_config(&formatted, &config)
+            .expect("comment stripping is idempotent")
+    );
 }

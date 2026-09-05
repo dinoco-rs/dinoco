@@ -18,6 +18,7 @@ let status: vscode.StatusBarItem | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
 let stateSubscription: vscode.Disposable | undefined;
+let normalizingFormatterSettings = false;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     extensionContext = context;
@@ -34,6 +35,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerCommands(context);
     registerEditorEvents(context);
     updateStatus();
+    await normalizeFormatterIndentationOnStartup();
 
     await startLanguageServer(context);
 }
@@ -197,8 +199,76 @@ function registerEditorEvents(context: vscode.ExtensionContext): void {
             if (event.affectsConfiguration('dinoco.trace.server')) {
                 await applyServerTrace();
             }
+            const useTabsChanged = event.affectsConfiguration('dinoco.formatter.useTabs');
+            const useSpacesChanged = event.affectsConfiguration('dinoco.formatter.useSpaces');
+            if (useTabsChanged && !useSpacesChanged) {
+                await syncFormatterIndentation('useTabs');
+            } else if (useSpacesChanged && !useTabsChanged) {
+                await syncFormatterIndentation('useSpaces');
+            } else if (useTabsChanged && useSpacesChanged) {
+                // Both settings changed in the same edit (e.g. settings.json hand-edited
+                // directly). There's no reliable way to tell which the user "meant", so
+                // fall back to a clear, documented precedence: tabs win.
+                await syncFormatterIndentation('useTabs');
+            }
         }),
     );
+}
+
+/**
+ * "dinoco.formatter.useTabs" and "dinoco.formatter.useSpaces" are mutually
+ * exclusive. Whichever setting just changed is authoritative; its counterpart
+ * is written to match (at the same configuration target) so the Settings UI
+ * never shows both enabled or both disabled at once.
+ */
+async function syncFormatterIndentation(source: 'useTabs' | 'useSpaces'): Promise<void> {
+    if (normalizingFormatterSettings) {
+        return;
+    }
+
+    const config = vscode.workspace.getConfiguration('dinoco.formatter');
+    const counterpart = source === 'useTabs' ? 'useSpaces' : 'useTabs';
+    const sourceValue = config.get<boolean>(source, source === 'useSpaces');
+    const counterpartValue = config.get<boolean>(counterpart, counterpart === 'useSpaces');
+    if (counterpartValue === !sourceValue) {
+        return;
+    }
+
+    const target = configurationTargetOf(config.inspect<boolean>(source)) ?? vscode.ConfigurationTarget.Global;
+    normalizingFormatterSettings = true;
+    try {
+        await config.update(counterpart, !sourceValue, target);
+    } finally {
+        normalizingFormatterSettings = false;
+    }
+}
+
+/** Fixes a pre-existing inconsistent state (both settings true, or both false) on activation. */
+async function normalizeFormatterIndentationOnStartup(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('dinoco.formatter');
+    const useTabs = config.get<boolean>('useTabs', false);
+    const useSpaces = config.get<boolean>('useSpaces', true);
+    if (useTabs === useSpaces) {
+        await syncFormatterIndentation('useTabs');
+    }
+}
+
+function configurationTargetOf(
+    inspected: ReturnType<vscode.WorkspaceConfiguration['inspect']> | undefined,
+): vscode.ConfigurationTarget | undefined {
+    if (!inspected) {
+        return undefined;
+    }
+    if (inspected.workspaceFolderValue !== undefined) {
+        return vscode.ConfigurationTarget.WorkspaceFolder;
+    }
+    if (inspected.workspaceValue !== undefined) {
+        return vscode.ConfigurationTarget.Workspace;
+    }
+    if (inspected.globalValue !== undefined) {
+        return vscode.ConfigurationTarget.Global;
+    }
+    return undefined;
 }
 
 async function applyServerTrace(): Promise<void> {

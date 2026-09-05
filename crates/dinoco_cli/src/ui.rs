@@ -11,3 +11,11 @@ pub fn info(message: impl AsRef<str>) {
 pub fn warning(message: impl AsRef<str>) {
     println!("{} {}", "!".yellow().bold(), message.as_ref().yellow());
 }
+
+pub fn error(message: impl AsRef<str>) {
+    eprintln!("{} {}", "\u{2716}".red().bold(), message.as_ref().red());
+}
+
+pub fn docs(path: &str) {
+    println!("\nDocumentation: {}", format!("https://docs.dinoco.io{path}").cyan().underline());
+}

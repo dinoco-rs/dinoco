@@ -72,8 +72,32 @@ const POSTGRES_SCHEMA_SNAPSHOT_GUARD_SQL: &str =
     "CREATE INDEX IF NOT EXISTS dinoco_migrations_schema_snapshots_required ON dinoco_migrations(name)";
 const MYSQL_SCHEMA_SNAPSHOTS_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS dinoco_migration_schemas (name VARCHAR(255) PRIMARY KEY, schema_json LONGTEXT NOT NULL)";
 
+fn database_connection_error_context(config: &RuntimeConfig) -> String {
+    format!(
+        "Unable to connect to the database.\n\nDatabase:\n{}\n\nCheck that:\n  \u{2022} the database is reachable from this machine\n  \u{2022} the connection URL is correct\n  \u{2022} your credentials are valid",
+        redact_database_url(&config.database_url)
+    )
+}
+
+/// Hides the userinfo (`user:password@`) segment of a connection URL so
+/// credentials never end up in terminal output, logs, or bug reports.
+fn redact_database_url(url: &str) -> String {
+    let Some(scheme_end) = url.find("://") else {
+        return url.to_string();
+    };
+    let (scheme, rest) = url.split_at(scheme_end + 3);
+    match rest.find('@') {
+        Some(at) => format!("{scheme}***@{}", &rest[at + 1..]),
+        None => url.to_string(),
+    }
+}
+
 impl CliDatabase {
     pub async fn connect(config: &RuntimeConfig) -> anyhow::Result<Self> {
+        Self::connect_inner(config).await.with_context(|| database_connection_error_context(config))
+    }
+
+    async fn connect_inner(config: &RuntimeConfig) -> anyhow::Result<Self> {
         match (config.database, config.postgres_connection) {
             (Database::Postgresql, PostgresConnection::Direct) => Ok(Self::Postgres(
                 PostgresAdapter::direct_with_pool(&config.database_url, config.min_connection, config.max_connection)
@@ -1998,4 +2022,19 @@ where
         }
     }
     Ok(enums)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redact_database_url_hides_credentials_but_keeps_host_and_database() {
+        assert_eq!(
+            redact_database_url("postgresql://app_user:s3cret@db.internal:5432/app"),
+            "postgresql://***@db.internal:5432/app"
+        );
+        assert_eq!(redact_database_url("file:./dinoco/dev.sqlite"), "file:./dinoco/dev.sqlite");
+        assert_eq!(redact_database_url("not a url"), "not a url");
+    }
 }

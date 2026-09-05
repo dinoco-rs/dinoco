@@ -102,6 +102,8 @@ pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchem
     let mut plan = MigrationPlan::default();
     let (current, table_renames) = normalize_legacy_table_names(desired, current);
     plan.steps.extend(table_renames.into_iter().map(MigrationStep::RenameTable));
+    let (current, detected_renames) = detect_table_renames(&mut plan, desired, &current);
+    plan.steps.extend(detected_renames.into_iter().map(MigrationStep::RenameTable));
     let current_tables = current.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
     let desired_tables = desired.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
     let current_enums = current.enums.iter().map(|item| (item.name.as_str(), item)).collect::<BTreeMap<_, _>>();
@@ -379,6 +381,92 @@ fn normalize_legacy_table_names(
     }
 
     (normalized, renames)
+}
+
+/// Detects a table rename authored directly in the schema: a table dropped
+/// from `current` and a table created in `desired` whose column names match
+/// exactly. Only fires when the match is unambiguous; multiple equally
+/// plausible candidates are reported as an error instead of guessed, mirroring
+/// the column-rename heuristic in [`diff_columns`].
+fn detect_table_renames(
+    plan: &mut MigrationPlan,
+    desired: &DatabaseSchema,
+    current: &DatabaseSchema,
+) -> (DatabaseSchema, Vec<RenameTableMigration>) {
+    let desired_names = desired.tables.iter().map(|table| table.name.as_str()).collect::<BTreeSet<_>>();
+    let current_names = current.tables.iter().map(|table| table.name.as_str()).collect::<BTreeSet<_>>();
+    let mut claimed_current = BTreeSet::new();
+    let mut rename_map = BTreeMap::new();
+
+    for desired_table in &desired.tables {
+        if current_names.contains(desired_table.name.as_str()) {
+            continue;
+        }
+
+        let candidates = current
+            .tables
+            .iter()
+            .filter(|current_table| {
+                !desired_names.contains(current_table.name.as_str())
+                    && !claimed_current.contains(current_table.name.as_str())
+                    && current_table.name != desired_table.name
+                    && table_rename_compatible(current_table, desired_table)
+            })
+            .collect::<Vec<_>>();
+
+        match candidates.as_slice() {
+            [candidate] => {
+                plan.warnings.push(MigrationWarning {
+                    message: format!(
+                        "Table `{}` looks like it was renamed to `{}`. Dinoco cannot prove that both tables have the same meaning; review the mapping before applying it.",
+                        candidate.name, desired_table.name,
+                    ),
+                    destructive: true,
+                });
+                claimed_current.insert(candidate.name.clone());
+                rename_map.insert(candidate.name.clone(), desired_table.name.clone());
+            }
+            [] => {}
+            _ => {
+                plan.errors.push(format!(
+                    "Table `{}` could be a rename of more than one removed table: {}. Add an intermediate migration with an unambiguous name or provide a reviewed custom mapping.",
+                    desired_table.name,
+                    candidates.iter().map(|table| format!("`{}`", table.name)).collect::<Vec<_>>().join(", ")
+                ));
+            }
+        }
+    }
+
+    let renames = rename_map
+        .iter()
+        .map(|(from, to)| RenameTableMigration { from: from.clone(), to: to.clone() })
+        .collect::<Vec<_>>();
+    if renames.is_empty() {
+        return (current.clone(), renames);
+    }
+
+    let mut normalized = current.clone();
+    for table in &mut normalized.tables {
+        if let Some(name) = rename_map.get(&table.name) {
+            table.name.clone_from(name);
+        }
+        for foreign_key in &mut table.foreign_keys {
+            if let Some(name) = rename_map.get(&foreign_key.references_table) {
+                foreign_key.references_table.clone_from(name);
+            }
+        }
+    }
+
+    (normalized, renames)
+}
+
+/// A table is a plausible rename candidate only when its column *names*
+/// match exactly; anything looser risks silently pairing two unrelated
+/// tables and rewriting live data under the wrong identity.
+fn table_rename_compatible(current: &DatabaseTable, desired: &DatabaseTable) -> bool {
+    let current_columns = current.columns.iter().map(|column| column.name.as_str()).collect::<BTreeSet<_>>();
+    let desired_columns = desired.columns.iter().map(|column| column.name.as_str()).collect::<BTreeSet<_>>();
+    !current_columns.is_empty() && current_columns == desired_columns
 }
 
 fn dropped_table_order(
@@ -1303,6 +1391,78 @@ mod tests {
     }
 
     #[test]
+    fn plan_detects_table_rename_by_matching_column_names_without_dropping_data() {
+        let desired = DatabaseSchema {
+            tables: vec![table(
+                "orders",
+                vec![integer_column("id", true), nullable_integer_column("total")],
+                vec![],
+                0,
+            )],
+            enums: Vec::new(),
+        };
+        let current = DatabaseSchema {
+            tables: vec![table(
+                "legacy_orders",
+                vec![integer_column("id", true), nullable_integer_column("total")],
+                vec![],
+                12,
+            )],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_database_migration(&desired, &current);
+
+        assert_eq!(plan.steps.len(), 1, "{:#?}", plan.steps);
+        assert!(plan.steps.iter().any(
+            |step| matches!(step, MigrationStep::RenameTable(item) if item.from == "legacy_orders" && item.to == "orders")
+        ));
+        assert!(
+            !plan.steps.iter().any(|step| matches!(step, MigrationStep::CreateTable(_) | MigrationStep::DropTable(_)))
+        );
+        assert!(plan.errors.is_empty());
+        assert!(plan.warnings.iter().any(|warning| warning.message.contains("looks like it was renamed")));
+    }
+
+    #[test]
+    fn plan_rejects_ambiguous_table_rename_and_falls_back_to_drop_and_create() {
+        let desired = DatabaseSchema {
+            tables: vec![table(
+                "orders",
+                vec![integer_column("id", true), nullable_integer_column("total")],
+                vec![],
+                0,
+            )],
+            enums: Vec::new(),
+        };
+        let current = DatabaseSchema {
+            tables: vec![
+                table("legacy_orders_a", vec![integer_column("id", true), nullable_integer_column("total")], vec![], 5),
+                table("legacy_orders_b", vec![integer_column("id", true), nullable_integer_column("total")], vec![], 7),
+            ],
+            enums: Vec::new(),
+        };
+
+        let plan = plan_database_migration(&desired, &current);
+
+        assert!(!plan.errors.is_empty(), "ambiguous table rename must be reported as an error");
+        assert!(!plan.steps.iter().any(|step| matches!(step, MigrationStep::RenameTable(_))));
+        assert!(
+            plan.steps.iter().any(|step| matches!(step, MigrationStep::CreateTable(item) if item.table == "orders"))
+        );
+        assert!(
+            plan.steps
+                .iter()
+                .any(|step| matches!(step, MigrationStep::DropTable(item) if item.table == "legacy_orders_a"))
+        );
+        assert!(
+            plan.steps
+                .iter()
+                .any(|step| matches!(step, MigrationStep::DropTable(item) if item.table == "legacy_orders_b"))
+        );
+    }
+
+    #[test]
     fn plan_detects_dropped_column_with_existing_rows_as_destructive() {
         let schema = dinoco_compiler::compile(
             r#"
@@ -1529,6 +1689,42 @@ mod tests {
             plan.steps.iter().any(|step| matches!(step, MigrationStep::AlterEnum(item) if item.name == "OfficeType"))
         );
         assert!(plan.warnings.iter().any(|warning| warning.destructive && warning.message.contains("removes values")));
+    }
+
+    /// Dinoco has no reliable signal to tell an enum rename apart from an
+    /// unrelated enum being dropped and a new one created with the same
+    /// values by coincidence, so it must never guess: a same-name-only match
+    /// falls back to a plain drop + create, each with its own warning.
+    #[test]
+    fn plan_treats_enum_rename_as_drop_and_create_when_only_values_match() {
+        let schema = dinoco_compiler::compile(
+            r#"
+            config {
+                database = "postgresql"
+                database_url = env("DATABASE_URL")
+            }
+
+            enum Role {
+                admin
+                member
+            }
+            "#,
+        )
+        .expect("schema");
+        let current = DatabaseSchema {
+            tables: Vec::new(),
+            enums: vec![DatabaseEnum {
+                name: "OldRole".to_string(),
+                values: vec!["admin".to_string(), "member".to_string()],
+            }],
+        };
+
+        let plan = plan_schema_migration(&schema, &current);
+
+        assert!(plan.steps.iter().any(|step| matches!(step, MigrationStep::CreateEnum(item) if item.name == "Role")));
+        assert!(plan.steps.iter().any(|step| matches!(step, MigrationStep::DropEnum(item) if item.name == "OldRole")));
+        assert!(!plan.steps.iter().any(|step| matches!(step, MigrationStep::AlterEnum(_))));
+        assert!(plan.warnings.iter().any(|warning| warning.destructive && warning.message.contains("`OldRole` will be dropped")));
     }
 
     #[test]
