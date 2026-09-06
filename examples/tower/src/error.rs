@@ -1,19 +1,14 @@
-use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use dinoco::{AtomicUpdateError, TransactionError};
-use serde::Serialize;
+use hyper::StatusCode;
 
-#[derive(Debug)]
-pub struct ApiError {
-    status: StatusCode,
-    message: String,
+/// A handler error carrying the HTTP status it should map to. `app::handle`
+/// turns it into a JSON body.
+pub struct AppError {
+    pub status: StatusCode,
+    pub message: String,
 }
 
-#[derive(Serialize)]
-struct ErrorResponse {
-    error: String,
-}
-
-impl ApiError {
+impl AppError {
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self { status: StatusCode::BAD_REQUEST, message: message.into() }
     }
@@ -26,8 +21,7 @@ impl ApiError {
         Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: error.to_string() }
     }
 
-    /// `find_and_update` returns a typed error: a missing row is a 404, the
-    /// rest are 500s.
+    /// `find_and_update` returns a typed error: a missing row is a 404.
     pub fn atomic(error: AtomicUpdateError) -> Self {
         match error {
             AtomicUpdateError::RowNotAffected => Self::not_found("Row not found"),
@@ -37,21 +31,5 @@ impl ApiError {
 
     pub fn transaction(error: TransactionError) -> Self {
         Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: error.to_string() }
-    }
-}
-
-impl std::fmt::Display for ApiError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}", self.message)
-    }
-}
-
-impl ResponseError for ApiError {
-    fn status_code(&self) -> StatusCode {
-        self.status
-    }
-
-    fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status).json(ErrorResponse { error: self.message.clone() })
     }
 }

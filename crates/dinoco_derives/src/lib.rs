@@ -339,6 +339,30 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         quote! { #ident: ::dinoco::UpdateField::new(#name) }
     });
 
+    let many_to_many_where_fields = many_to_many_keys.iter().map(|field| {
+        let ident = &field.ident;
+        let ty = option_inner(&field.ty).unwrap_or(&field.ty);
+        quote! { pub #ident: ::dinoco::ManyToManyKeyField<#ty> }
+    });
+
+    let many_to_many_where_defaults = many_to_many_keys.iter().map(|field| {
+        let ident = &field.ident;
+        let name = &field.name;
+        let join_table = field.join_table.as_deref().expect("many-to-many join table");
+        let parent_field = field.parent_field.as_deref().expect("many-to-many parent field");
+        let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
+        let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
+        quote! {
+            #ident: ::dinoco::ManyToManyKeyField::new(
+                #name,
+                #join_table,
+                #parent_field,
+                #join_parent_field,
+                #join_child_field,
+            )
+        }
+    });
+
     let many_to_many_update_fields = many_to_many_keys.iter().map(|field| {
         let ident = &field.ident;
         let ty = option_inner(&field.ty).unwrap_or(&field.ty);
@@ -816,12 +840,14 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     Ok(quote! {
         pub struct #where_name {
             #(#where_fields,)*
+            #(#many_to_many_where_fields,)*
         }
 
         impl ::core::default::Default for #where_name {
             fn default() -> Self {
                 Self {
                     #(#where_defaults,)*
+                    #(#many_to_many_where_defaults,)*
                 }
             }
         }

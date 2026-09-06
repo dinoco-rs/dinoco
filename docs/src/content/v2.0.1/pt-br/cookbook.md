@@ -175,7 +175,7 @@ let accounts = dinoco::find_many::<Account>()
 let account = Account::new("ana@example.com".to_string(), "Ana".to_string());
 dinoco::insert_into::<Account>().values(&account).execute(&client).await?;
 
-let project = Project::new(account.id, "Dinoco 2.0.0".to_string());
+let project = Project::new(account.id, "Dinoco 2.0.1".to_string());
 dinoco::insert_into::<Project>().values(&project).execute(&client).await?;
 
 let task = Task::new(project.id.clone(), "Documentar relações".to_string());

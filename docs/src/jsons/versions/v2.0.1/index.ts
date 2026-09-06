@@ -7,7 +7,7 @@ const localizedContent = {
 } as const;
 
 const version = {
-	name: 'v2.0.0',
+	name: 'v2.0.1',
 	description: {
 		'en-us': 'Type-safe database access for Rust, from schema to production.',
 		'pt-br': 'Acesso type-safe a bancos de dados em Rust, do schema a producao.',

@@ -182,10 +182,11 @@ pub struct System {
 }
 ```
 
-There's no public `BusinessSystem` Rust entity for an implicit pivot — instead, `system_id` and `business_id` are virtual `Option<Id>` fields governed by two strict rules:
+There's no public `BusinessSystem` Rust entity for an implicit pivot — instead, `system_id` and `business_id` are virtual `Option<Id>` fields governed by these rules:
 
 - They're accepted as **write** inputs, to create or target a pivot row.
-- A database **read** always leaves them as `None` — they never compile into a `SELECT` against the endpoint tables.
+- They're accepted as **filter** inputs in `where_(...)` — a virtual ID compiles into a membership subquery over the pivot, so `find`/`find_first`/`count` on one side can be narrowed by the id of a row on the other side.
+- A direct column **read** always leaves them as `None` — a `SELECT` never projects them from the endpoint tables.
 
 The navigation fields (`systems` and `business`) are the read side of this relation, named exactly as the schema declares — note that `business` on `System` is a `Vec`, singular name notwithstanding, because that's what the field was called in the schema. Load them with `.includes(...)`; never read a virtual ID expecting it to tell you whether a link exists.
 
@@ -214,6 +215,33 @@ The reverse direction just uses the other side's navigation field:
 ```rust
 let systems = dinoco::find_many::<System>()
     .includes(|system| system.business())
+    .execute(&client)
+    .await?;
+```
+
+### Filter by the other side
+
+The same virtual ID field doubles as a `where_(...)` filter. `system.business_id.eq(&business_id)` keeps only the systems linked to that business through the pivot — Dinoco compiles it to `system.id IN (SELECT system_id FROM _business_to_system WHERE business_id = ?)`, so no join table is exposed and the endpoint rows still come back with the virtual key `None`:
+
+```rust
+// Only the systems connected to `business_id`.
+let systems = dinoco::find_many::<System>()
+    .where_(|system| system.business_id.eq(&business_id))
+    .execute(&client)
+    .await?;
+
+// Mirror direction: the businesses connected to `system_id`.
+let businesses = dinoco::find_many::<Business>()
+    .where_(|business| business.system_id.eq(&system_id))
+    .execute(&client)
+    .await?;
+```
+
+The virtual key carries the **full [filter](/en-us/docs/orm/orm/filters) surface**, evaluated against the pivot's target column: `.eq(...)` / `.neq(...)`, `.gt(...)` / `.gte(...)` / `.lt(...)` / `.lte(...)`, `.batch([...])` / `.not_in([...])`, `.null()` / `.not_null()`, `.like(...)` / `.starts_with(...)` / `.ends_with(...)` for string keys, and `.between(a, b)` for numeric or date keys. `.neq(...)` and `.not_in([...])` negate membership (`NOT IN`), so they also keep rows with no pivot entry at all; every other method keeps rows linked to *some* pivot row matching the predicate. `.not_null()` is the "has any link" test. These filters compose with plain scalar filters and with `where_complex` (`w.not(system.business_id.eq(&id))` inverts any of them), and `count::<T>()` honours them too:
+
+```rust
+let linked = dinoco::count::<System>()
+    .where_(|system| system.business_id.eq(&business_id))
     .execute(&client)
     .await?;
 ```
@@ -433,6 +461,7 @@ model Employee {
 5. Map **both** sides of a one-to-many relation with matching `fields`/`references`.
 6. Leave both list fields unmapped only when you actually want an implicit many-to-many.
 7. Populate the generated virtual ID during `insert_into`/`insert_many` for new endpoints, or use `.connect(...)`/`.disconnect(...)` for existing ones — never assign directly to the navigation list.
-8. Reach for an explicit pivot model the moment the link needs to store its own data.
-9. Name every relation that's either repeated between two models, or a self relation.
-10. Read the generated migration's constraints before applying it — a referential action decision is a data-integrity decision, not just a compiler-satisfying one.
+8. Filter one side of an implicit many-to-many by the other with the same virtual ID in `where_(...)` (`system.business_id.eq(&business_id)`); it never reads back as anything but `None`.
+9. Reach for an explicit pivot model the moment the link needs to store its own data.
+10. Name every relation that's either repeated between two models, or a self relation.
+11. Read the generated migration's constraints before applying it — a referential action decision is a data-integrity decision, not just a compiler-satisfying one.

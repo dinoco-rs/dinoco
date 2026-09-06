@@ -7,5 +7,5 @@ publish = false
 [dependencies]
 actix-web = "4"
 anyhow = "1"
-dinoco = { path = "../../crates/dinoco", version = "2.0.0" }
+dinoco = { path = "../../crates/dinoco", version = "2.0.1" }
 serde = { version = "1", features = ["derive"] }

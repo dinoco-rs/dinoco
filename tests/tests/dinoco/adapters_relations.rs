@@ -548,6 +548,155 @@ async fn named_relation_loads_filtered_nested_includes_from_the_correct_foreign_
     Ok(())
 }
 
+#[tokio::test]
+async fn many_to_many_virtual_keys_filter_finds_by_the_opposite_side() -> anyhow::Result<()> {
+    let (client, path) = client("many-to-many-virtual-filters").await?;
+    let Backend::Sqlite(adapter) = &client.backend else { unreachable!("sqlite test") };
+
+    create_table(
+        adapter,
+        "relation_business",
+        vec![primary(column("id", MigrationColumnType::String)), column("name", MigrationColumnType::String)],
+    )
+    .await?;
+    create_table(
+        adapter,
+        "relation_system",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            column("name", MigrationColumnType::String),
+            nullable(column("category_id", MigrationColumnType::String)),
+        ],
+    )
+    .await?;
+    create_table(
+        adapter,
+        "_relation_business_to_relation_system",
+        vec![column("business_id", MigrationColumnType::String), column("system_id", MigrationColumnType::String)],
+    )
+    .await?;
+
+    for (id, name) in [("business-a", "Dinoco"), ("business-b", "Dinoco Docs"), ("business-c", "Solo")] {
+        insert_into::<Business>().values(&Business::new(id.to_string(), name.to_string())).execute(&client).await?;
+    }
+    for (id, name) in [("system-x", "Backoffice"), ("system-y", "ERP"), ("system-z", "CRM")] {
+        insert_into::<System>().values(&System::new(id.to_string(), name.to_string())).execute(&client).await?;
+    }
+
+    // Connections: A<->X, A<->Y, B<->Y. business-c and system-z stay unlinked.
+    for (business_id, system_id) in [("business-a", "system-x"), ("business-a", "system-y"), ("business-b", "system-y")] {
+        dinoco::update::<Business>()
+            .where_(|item| item.id.eq(business_id))
+            .update(|item| item.system_id.connect(system_id))
+            .execute(&client)
+            .await?;
+    }
+
+    // Systems linked to business-a, filtered through the `System.business_id` virtual key.
+    let systems_for_a = find_many::<System>()
+        .where_(|system| system.business_id.eq("business-a"))
+        .order_by(|system| system.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(systems_for_a.iter().map(|system| system.id.as_str()).collect::<Vec<_>>(), ["system-x", "system-y"]);
+    assert!(systems_for_a.iter().all(|system| system.business_id.is_none()));
+
+    let systems_for_b =
+        find_many::<System>().where_(|system| system.business_id.eq("business-b")).execute(&client).await?;
+    assert_eq!(systems_for_b.iter().map(|system| system.id.as_str()).collect::<Vec<_>>(), ["system-y"]);
+
+    // The mirrored `Business.system_id` virtual key filters the other side.
+    let businesses_for_y = find_many::<Business>()
+        .where_(|business| business.system_id.eq("system-y"))
+        .order_by(|business| business.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        businesses_for_y.iter().map(|business| business.id.as_str()).collect::<Vec<_>>(),
+        ["business-a", "business-b"]
+    );
+
+    let businesses_for_x =
+        find_many::<Business>().where_(|business| business.system_id.eq("system-x")).execute(&client).await?;
+    assert_eq!(businesses_for_x.iter().map(|business| business.id.as_str()).collect::<Vec<_>>(), ["business-a"]);
+
+    // `neq` keeps only the rows that are not connected to the given id.
+    let systems_not_for_a =
+        find_many::<System>().where_(|system| system.business_id.neq("business-a")).execute(&client).await?;
+    assert_eq!(systems_not_for_a.iter().map(|system| system.id.as_str()).collect::<Vec<_>>(), ["system-z"]);
+
+    // `batch` unions the connections of every listed id.
+    let systems_for_a_or_b = find_many::<System>()
+        .where_(|system| system.business_id.batch(["business-a", "business-b"]))
+        .order_by(|system| system.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        systems_for_a_or_b.iter().map(|system| system.id.as_str()).collect::<Vec<_>>(),
+        ["system-x", "system-y"]
+    );
+
+    // The full `Field` filter surface is available on the virtual key: the
+    // predicate runs against the pivot's target column.
+    let systems_gt_a = find_many::<System>()
+        .where_(|system| system.business_id.gt("business-a"))
+        .order_by(|system| system.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(systems_gt_a.iter().map(|system| system.id.as_str()).collect::<Vec<_>>(), ["system-y"]);
+
+    let systems_prefixed = find_many::<System>()
+        .where_(|system| system.business_id.starts_with("business-a"))
+        .order_by(|system| system.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(systems_prefixed.iter().map(|system| system.id.as_str()).collect::<Vec<_>>(), ["system-x", "system-y"]);
+
+    // `not_null` keeps every row that has at least one link.
+    let linked_systems = find_many::<System>()
+        .where_(|system| system.business_id.not_null())
+        .order_by(|system| system.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(linked_systems.iter().map(|system| system.id.as_str()).collect::<Vec<_>>(), ["system-x", "system-y"]);
+
+    // `not_in` is negated membership, so it also keeps the fully unlinked rows.
+    let systems_outside = find_many::<System>()
+        .where_(|system| system.business_id.not_in(["business-b", "business-c"]))
+        .order_by(|system| system.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(systems_outside.iter().map(|system| system.id.as_str()).collect::<Vec<_>>(), ["system-x", "system-z"]);
+
+    // Virtual-key filters compose with plain scalar filters.
+    let named_system_for_a = find_first::<System>()
+        .where_(|system| system.business_id.eq("business-a"))
+        .where_(|system| system.name.eq("ERP"))
+        .execute(&client)
+        .await?
+        .expect("system");
+    assert_eq!(named_system_for_a.id, "system-y");
+
+    // `count` honours the same virtual key.
+    let linked_to_a = count::<System>().where_(|system| system.business_id.eq("business-a")).execute(&client).await?;
+    assert_eq!(linked_to_a.total, 2);
+
+    // Filtering still works alongside an include of the relation itself.
+    let hydrated = find_many::<Business>()
+        .where_(|business| business.system_id.eq("system-y"))
+        .includes(|business| business.systems())
+        .order_by(|business| business.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(hydrated.len(), 2);
+    assert_eq!(hydrated[0].id, "business-a");
+    assert_eq!(hydrated[0].systems.len(), 2);
+    assert_eq!(hydrated[1].systems.len(), 1);
+
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
 async fn client(name: &str) -> anyhow::Result<(DinocoClient, String)> {
     let path = format!("/private/tmp/dinoco-{name}-{}-{}.sqlite", std::process::id(), monotonic());
     let adapter = SqliteAdapter::new(path.clone()).await.map_err(anyhow::Error::msg)?;

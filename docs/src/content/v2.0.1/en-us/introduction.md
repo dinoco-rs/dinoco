@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-## The v2.0.0 surface
+## The v2.0.1 surface
 
 Dinoco keeps its public workflow deliberately compact. The CLI exposes `init`, migration generation and execution, and model generation — nothing more. The runtime exposes the builders listed above; there is no separate "create struct" type distinct from the entity itself, and relation fields are populated the same way scalar fields are, through the entity you already have.
 

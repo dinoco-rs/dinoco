@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -930,8 +930,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dinoco-example-tower"
+version = "1.2.7"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "dinoco",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower 0.5.3",
+]
+
+[[package]]
 name = "dinoco_cli"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -951,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_codegen"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "dinoco_compiler",
@@ -959,7 +975,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_compiler"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "pest",
  "pest_derive",
@@ -967,7 +983,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_derives"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -977,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_engine"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -998,14 +1014,14 @@ dependencies = [
 
 [[package]]
 name = "dinoco_formatter"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "dinoco_compiler",
 ]
 
 [[package]]
 name = "dinoco_tests"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1025,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_vscode"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "dinoco_compiler",
  "dinoco_formatter",
@@ -2947,6 +2963,7 @@ dependencies = [
  "pin-project-lite",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",

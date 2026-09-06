@@ -1,12 +1,13 @@
-# Dinoco v2.0.0
+# Dinoco v2.0.1
 
 This page tracks what changed release over release. Each entry links to the page that documents the feature in depth — treat this as a changelog, not the primary reference.
 
-## v2.0.0
+## v2.0.1
 
 > [!NOTE]
-> This is a tooling-focused release. The schema language, the generated client API, and the CLI are unchanged from v1.3.3 — everything below is about the editing experience.
+> A point release: one additive query-builder capability plus the tooling work below. The schema language and the CLI are unchanged, and no generated code changes shape — existing projects keep compiling.
 
+- **Filter implicit many-to-many by the other side.** The generated virtual `Option<Id>` keys (`system.business_id`) now work as `where_(...)` inputs, not just as `connect`/`disconnect`/insert targets. `find_many::<System>().where_(|system| system.business_id.eq(&business_id))` returns only the systems linked to that business, compiled as a membership subquery over the pivot. The whole `Field` filter surface applies to the pivot's target column — `eq`/`neq`, `gt`/`gte`/`lt`/`lte`, `batch`/`not_in`, `null`/`not_null`, `like`/`starts_with`/`ends_with`, `between` — it composes with scalar filters and `where_complex`, and `count::<T>()` honours it. See [relations](/en-us/docs/orm/guide/relations#filter-by-the-other-side).
 - **Configurable formatter.** The VS Code extension's formatter now accepts `dinoco.formatter.maxWidth`, `dinoco.formatter.useTabs`, `dinoco.formatter.useSpaces`, `dinoco.formatter.indentSize`, and `dinoco.formatter.removeComments`. `useTabs`/`useSpaces` are mutually exclusive and kept in sync automatically. See [VS Code extension](/en-us/docs/orm/tooling/vscode#formatting).
 - **Real semantic highlighting.** The language server now emits semantic tokens derived from the same index used for hover and completion, so a model name is colored differently depending on whether it's a declaration or a reference — something a regex-based grammar can't do reliably.
 - **Sharper syntax highlighting.** `//` comments, the `Restrict`/`NoAction` referential actions, and the core field attributes (`@id`, `@unique`, `@relation`, `@default`, `@index`, `@fulltext`) all get their own scopes now, instead of falling back to generic ones.

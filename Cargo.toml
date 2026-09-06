@@ -11,6 +11,7 @@ members = [
 	"tests",
 	"examples/axum",
 	"examples/actix-web",
+	"examples/tower",
 ]
 
 resolver = "3"

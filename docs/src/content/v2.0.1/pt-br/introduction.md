@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-## A superfície da v2.0.0
+## A superfície da v2.0.1
 
 O Dinoco mantém seu workflow público deliberadamente compacto. A CLI expõe `init`, geração e execução de migrations, e geração de models — nada além disso. O runtime expõe os builders listados acima; não existe um tipo separado de "struct de criação" distinto da própria entidade, e campos de relação são preenchidos da mesma forma que campos escalares, através da entidade que você já tem.
 

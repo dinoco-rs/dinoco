@@ -3,8 +3,17 @@ config {
     database_url = env("DATABASE_URL")
 }
 
-model Todo {
-    id        String  @id @default(uuid())
-    title     String
-    completed Boolean @default(false)
+model Project {
+    id       String  @id @default(uuid())
+    name     String
+    archived Boolean @default(false)
+    tasks    Task[]  @relation(fields: [id], references: [project_id])
+}
+
+model Task {
+    id         String   @id @default(uuid())
+    project_id String?
+    title      String
+    done       Boolean  @default(false)
+    project    Project? @relation(fields: [project_id], references: [id])
 }

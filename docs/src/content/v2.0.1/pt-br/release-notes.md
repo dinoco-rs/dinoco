@@ -1,12 +1,13 @@
-# Dinoco v2.0.0
+# Dinoco v2.0.1
 
 Esta página acompanha o que mudou release a release. Cada item linka para a página que documenta a funcionalidade em profundidade — trate isto como um changelog, não como a referência principal.
 
-## v2.0.0
+## v2.0.1
 
 > [!NOTE]
-> Este é um release focado em tooling. A linguagem de schema, a API do client gerado e a CLI continuam iguais à v1.3.3 — tudo abaixo é sobre a experiência de edição.
+> Um point release: uma capacidade aditiva do query builder mais o trabalho de tooling abaixo. A linguagem de schema e a CLI continuam iguais, e nenhum código gerado muda de forma — projetos existentes continuam compilando.
 
+- **Filtrar many-to-many implícito pelo outro lado.** As chaves virtuais `Option<Id>` geradas (`system.business_id`) agora funcionam como entrada de `where_(...)`, não só como alvo de `connect`/`disconnect`/insert. `find_many::<System>().where_(|system| system.business_id.eq(&business_id))` retorna apenas os systems vinculados àquele business, compilado como uma subquery de pertinência sobre a pivô. Toda a superfície de filtros do `Field` se aplica à coluna de destino da pivô — `eq`/`neq`, `gt`/`gte`/`lt`/`lte`, `batch`/`not_in`, `null`/`not_null`, `like`/`starts_with`/`ends_with`, `between` — compõe com filtros escalares e `where_complex`, e `count::<T>()` respeita. Veja [relações](/pt-br/docs/orm/guide/relations#filtrar-por-um-dos-lados).
 - **Formatter configurável.** O formatter da extensão do VS Code agora aceita `dinoco.formatter.maxWidth`, `dinoco.formatter.useTabs`, `dinoco.formatter.useSpaces`, `dinoco.formatter.indentSize` e `dinoco.formatter.removeComments`. `useTabs`/`useSpaces` são mutuamente exclusivos e mantidos sincronizados automaticamente. Veja a [extensão do VS Code](/pt-br/docs/orm/tooling/vscode#formatacao).
 - **Semantic highlighting de verdade.** O language server agora emite semantic tokens derivados do mesmo índice usado por hover e completion, então o nome de um model é colorido de forma diferente dependendo se é uma declaração ou uma referência — algo que uma gramática baseada em regex não consegue fazer de forma confiável.
 - **Syntax highlighting mais preciso.** Comentários `//`, as ações referenciais `Restrict`/`NoAction` e os atributos de campo principais (`@id`, `@unique`, `@relation`, `@default`, `@index`, `@fulltext`) agora têm seus próprios scopes, em vez de caírem em scopes genéricos.

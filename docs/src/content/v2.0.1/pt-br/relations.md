@@ -182,10 +182,11 @@ pub struct System {
 }
 ```
 
-Não existe uma entity Rust pública `BusinessSystem` para uma pivô implícita — em vez disso, `system_id` e `business_id` são fields virtuais `Option<Id>` regidos por duas regras rígidas:
+Não existe uma entity Rust pública `BusinessSystem` para uma pivô implícita — em vez disso, `system_id` e `business_id` são fields virtuais `Option<Id>` regidos por estas regras:
 
 - Eles são aceitos como entrada de **escrita**, para criar ou apontar uma linha de pivô.
-- Uma **leitura** do banco sempre os deixa como `None` — eles nunca compilam para um `SELECT` contra as tabelas dos endpoints.
+- Eles são aceitos como entrada de **filtro** em `where_(...)` — um ID virtual compila para uma subquery de pertinência sobre a pivô, então `find`/`find_first`/`count` de um lado podem ser restringidos pelo id de uma linha do outro lado.
+- Uma **leitura** direta de coluna sempre os deixa como `None` — um `SELECT` nunca os projeta a partir das tabelas dos endpoints.
 
 Os fields de navegação (`systems` e `business`) são o lado de leitura dessa relação, nomeados exatamente como o schema declara — repare que `business` em `System` é um `Vec`, apesar do nome no singular, porque foi assim que o field foi chamado no schema. Carregue-os com `.includes(...)`; nunca leia um ID virtual esperando que ele diga se um vínculo existe.
 
@@ -214,6 +215,33 @@ O sentido inverso só usa o field de navegação do outro lado:
 ```rust
 let systems = dinoco::find_many::<System>()
     .includes(|system| system.business())
+    .execute(&client)
+    .await?;
+```
+
+### Filtrar por um dos lados
+
+O mesmo field de ID virtual também serve como filtro de `where_(...)`. `system.business_id.eq(&business_id)` mantém apenas os systems vinculados àquele business pela pivô — o Dinoco compila isso para `system.id IN (SELECT system_id FROM _business_to_system WHERE business_id = ?)`, então nenhuma join table é exposta e as linhas dos endpoints ainda voltam com a chave virtual `None`:
+
+```rust
+// Apenas os systems conectados a `business_id`.
+let systems = dinoco::find_many::<System>()
+    .where_(|system| system.business_id.eq(&business_id))
+    .execute(&client)
+    .await?;
+
+// Sentido espelhado: os businesses conectados a `system_id`.
+let businesses = dinoco::find_many::<Business>()
+    .where_(|business| business.system_id.eq(&system_id))
+    .execute(&client)
+    .await?;
+```
+
+O ID virtual carrega a **superfície completa de [filtros](/pt-br/docs/orm/orm/filters)**, avaliada contra a coluna de destino da pivô: `.eq(...)` / `.neq(...)`, `.gt(...)` / `.gte(...)` / `.lt(...)` / `.lte(...)`, `.batch([...])` / `.not_in([...])`, `.null()` / `.not_null()`, `.like(...)` / `.starts_with(...)` / `.ends_with(...)` para chaves string, e `.between(a, b)` para chaves numéricas ou de data. `.neq(...)` e `.not_in([...])` negam a pertinência (`NOT IN`), então também mantêm linhas sem nenhuma entrada na pivô; todo o resto mantém linhas vinculadas a *alguma* linha da pivô que satisfaça o predicado. `.not_null()` é o teste "tem algum vínculo". Esses filtros compõem com filtros escalares comuns e com `where_complex` (`w.not(system.business_id.eq(&id))` inverte qualquer um deles), e `count::<T>()` também os respeita:
+
+```rust
+let linked = dinoco::count::<System>()
+    .where_(|system| system.business_id.eq(&business_id))
     .execute(&client)
     .await?;
 ```
@@ -433,6 +461,7 @@ model Employee {
 5. Mapeie **os dois** lados de uma relação one-to-many com `fields`/`references` correspondentes.
 6. Deixe os dois fields de lista sem mapear só quando você realmente quer um many-to-many implícito.
 7. Preencha o ID virtual gerado em `insert_into`/`insert_many` para endpoints novos, ou use `.connect(...)`/`.disconnect(...)` para os que já existem — nunca atribua diretamente na lista de navegação.
-8. Use um model de pivô explícito no momento em que o vínculo precisa guardar seus próprios dados.
-9. Nomeie toda relação que seja repetida entre dois models, ou uma self relation.
-10. Leia as constraints da migration gerada antes de aplicá-la — uma decisão de ação referencial é uma decisão de integridade de dados, não só uma forma de agradar o compiler.
+8. Filtre um lado de um many-to-many implícito pelo outro usando o mesmo ID virtual em `where_(...)` (`system.business_id.eq(&business_id)`); ele nunca volta na leitura como algo diferente de `None`.
+9. Use um model de pivô explícito no momento em que o vínculo precisa guardar seus próprios dados.
+10. Nomeie toda relação que seja repetida entre dois models, ou uma self relation.
+11. Leia as constraints da migration gerada antes de aplicá-la — uma decisão de ação referencial é uma decisão de integridade de dados, não só uma forma de agradar o compiler.

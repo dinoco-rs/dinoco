@@ -12,29 +12,29 @@
 							"name": "Introduction",
 							"shortName": "introduction",
 							"description": "What Dinoco is and how its pieces fit together.",
-							"contentPath": "v2.0.0/en-us/introduction.md",
-							"inPage": ["Why Dinoco", "What you get out of the box", "How the workflow fits together", "A minimal example", "The v2.0.0 surface", "Next steps"]
+							"contentPath": "v2.0.1/en-us/introduction.md",
+							"inPage": ["Why Dinoco", "What you get out of the box", "How the workflow fits together", "A minimal example", "The v2.0.1 surface", "Next steps"]
 						},
 						{
 							"name": "Quickstart",
 							"shortName": "quickstart",
 							"description": "Create a project, run a migration, and execute the first query.",
-							"contentPath": "v2.0.0/en-us/quickstart.md",
+							"contentPath": "v2.0.1/en-us/quickstart.md",
 							"inPage": ["Prerequisites", "1. Install Dinoco", "2. Initialize the project", "3. Define the schema", "4. Generate and run the migration", "5. Use the generated client", "Next steps"]
 						},
 						{
 							"name": "Complete example",
 							"shortName": "cookbook",
 							"description": "A copyable schema, query, write, and many-to-many insert workflow.",
-							"contentPath": "v2.0.0/en-us/cookbook.md",
+							"contentPath": "v2.0.1/en-us/cookbook.md",
 							"inPage": ["Complete schema", "Generate the database and models", "Simple query", "Query with multiple filters", "Complex query with includes", "Custom projection", "Insert related records", "Update and count", "Complete many-to-many flow", "Production checklist"]
 						},
 						{
 							"name": "Release notes",
 							"shortName": "release-notes",
 							"description": "What changed in each release, with links to the pages that document each feature.",
-							"contentPath": "v2.0.0/en-us/release-notes.md",
-							"inPage": ["v2.0.0", "v1.3.3", "v1.2.0", "Earlier releases"]
+							"contentPath": "v2.0.1/en-us/release-notes.md",
+							"inPage": ["v2.0.1", "v1.3.3", "v1.2.0", "Earlier releases"]
 						}
 					]
 				},
@@ -45,42 +45,42 @@
 							"name": "Configuration",
 							"shortName": "configuration",
 							"description": "Configure the database, connection, replicas, and Snowflake.",
-							"contentPath": "v2.0.0/en-us/configuration.md",
+							"contentPath": "v2.0.1/en-us/configuration.md",
 							"inPage": ["Configuration block", "Schema file imports", "Custom derives", "Workspaces", "Environment variables", "PostgreSQL", "Query logging and Direct pool", "MySQL", "SQLite", "Read replicas", "Snowflake IDs"]
 						},
 						{
 							"name": "Schema organization",
 							"shortName": "schema-organization",
 							"description": "Split schemas into files, control import scope, and extend generated Rust derives.",
-							"contentPath": "v2.0.0/en-us/schema-organization.md",
+							"contentPath": "v2.0.1/en-us/schema-organization.md",
 							"inPage": ["Recommended project layout", "Root file imports", "Named imports", "File scope", "Import validation", "Custom derives", "Custom derive fields", "Generated Rust output", "Complete example"]
 						},
 						{
 							"name": "Models and fields",
 							"shortName": "models",
 							"description": "Define types, IDs, attributes, and generated many-to-many virtual fields.",
-							"contentPath": "v2.0.0/en-us/models.md",
+							"contentPath": "v2.0.1/en-us/models.md",
 							"inPage": ["Declare a model", "Primary-key requirement", "Scalar types", "Optional and list fields", "Field attributes", "Model attributes", "The generated new function", "Implicit many-to-many generated fields", "Generated files"]
 						},
 						{
 							"name": "Defaults and enums",
 							"shortName": "defaults-enums",
 							"description": "Use literals, UUIDs, Snowflakes, auto-increment, and enums.",
-							"contentPath": "v2.0.0/en-us/defaults-enums.md",
+							"contentPath": "v2.0.1/en-us/defaults-enums.md",
 							"inPage": ["Literal defaults", "Generated values", "UUID", "Snowflake", "Auto-increment", "Enums"]
 						},
 						{
 							"name": "Indexes and constraints",
 							"shortName": "indexes",
 							"description": "Configure explicit, automatic, and full-text indexes.",
-							"contentPath": "v2.0.0/en-us/indexes.md",
+							"contentPath": "v2.0.1/en-us/indexes.md",
 							"inPage": ["Choose the index type", "Declare an explicit index", "Declare composite indexes and uniqueness", "Primary keys are indexed", "Foreign keys are indexed", "Full-text indexes", "Migration workflow", "Validation rules"]
 						},
 						{
 							"name": "Relations",
 							"shortName": "relations",
 							"description": "Model relations and use pivot-aware implicit many-to-many reads and writes.",
-							"contentPath": "v2.0.0/en-us/relations.md",
+							"contentPath": "v2.0.1/en-us/relations.md",
 							"inPage": ["UUID and Snowflake key types", "Relation anatomy", "One-to-many and many-to-one", "One-to-one", "Implicit many-to-many", "What Dinoco generates", "Load either direction", "Count related records", "Connect existing endpoints", "Disconnect endpoints", "Supported update builders", "Connect during insert", "Upgrading generated models from v1.1.1", "Many-to-many with extra fields", "Repeated relations", "Self relations", "Referential actions", "Relation checklist"]
 						}
 					]
@@ -99,14 +99,14 @@
 							"name": "Clients and adapters",
 							"shortName": "clients-adapters",
 							"description": "Connect through PostgreSQL, PgBouncer, MySQL, or SQLite.",
-							"contentPath": "v2.0.0/en-us/clients-adapters.md",
+							"contentPath": "v2.0.1/en-us/clients-adapters.md",
 							"inPage": ["Generated connection", "PostgreSQL Direct", "PostgreSQL with PgBouncer", "MySQL", "SQLite", "Read replicas"]
 						},
 						{
 							"name": "Transactions",
 							"shortName": "transactions",
 							"description": "Run scalar and many-to-many builders with atomic commit and rollback.",
-							"contentPath": "v2.0.0/en-us/transactions.md",
+							"contentPath": "v2.0.1/en-us/transactions.md",
 							"inPage": ["Create a transaction", "Typed errors", "Automatic rollback", "Commit and rollback failures", "Atomicity and connection", "Supported builders"]
 						}
 					]
@@ -118,42 +118,42 @@
 							"name": "Query overview",
 							"shortName": "find",
 							"description": "Choose a builder and understand query stages.",
-							"contentPath": "v2.0.0/en-us/find.md",
+							"contentPath": "v2.0.1/en-us/find.md",
 							"inPage": ["Choose the builder", "Query stages", "Shared features", "Next steps"]
 						},
 						{
 							"name": "Find first",
 							"shortName": "find-first",
 							"description": "Fetch zero or one row.",
-							"contentPath": "v2.0.0/en-us/find-first.md",
+							"contentPath": "v2.0.1/en-us/find-first.md",
 							"inPage": ["Basic query", "Filter the result", "Order before choosing", "Select and include", "Read from primary"]
 						},
 						{
 							"name": "Find many",
 							"shortName": "find-many",
 							"description": "Fetch, order, and paginate several rows.",
-							"contentPath": "v2.0.0/en-us/find-many.md",
+							"contentPath": "v2.0.1/en-us/find-many.md",
 							"inPage": ["Basic query", "Order results", "Pagination", "Full-text search", "Select and include", "Read from primary"]
 						},
 						{
 							"name": "Select",
 							"shortName": "select",
 							"description": "Return typed projections with fewer columns.",
-							"contentPath": "v2.0.0/en-us/select.md",
+							"contentPath": "v2.0.1/en-us/select.md",
 							"inPage": ["1. Declare a projection", "2. Select in a find", "3. Combine with filters", "Select relations"]
 						},
 						{
 							"name": "Includes",
 							"shortName": "includes",
 							"description": "Load, filter, and limit relations without N+1.",
-							"contentPath": "v2.0.0/en-us/includes.md",
+							"contentPath": "v2.0.1/en-us/includes.md",
 							"inPage": ["Include a many relation", "Include a one relation", "Filter the relation", "Use where complex and full-text", "Build nested includes", "Primary and transactions"]
 						},
 						{
 							"name": "Count",
 							"shortName": "count",
 							"description": "Count models and relations with generated types.",
-							"contentPath": "v2.0.0/en-us/count.md",
+							"contentPath": "v2.0.1/en-us/count.md",
 							"inPage": ["Count a model", "Filter the count", "Count relations", "Generated count types"]
 						}
 					]
@@ -165,21 +165,21 @@
 							"name": "Filter operators",
 							"shortName": "filters",
 							"description": "Use equality, comparison, text, range, null, and batch.",
-							"contentPath": "v2.0.0/en-us/filters.md",
+							"contentPath": "v2.0.1/en-us/filters.md",
 							"inPage": ["Build a where clause", "Common operators", "String operators", "Numeric and temporal ranges", "Null checks", "Batch values", "Combine conditions"]
 						},
 						{
 							"name": "Where complex",
 							"shortName": "where-complex",
 							"description": "Group AND, OR, and NOT with explicit precedence.",
-							"contentPath": "v2.0.0/en-us/where-complex.md",
+							"contentPath": "v2.0.1/en-us/where-complex.md",
 							"inPage": ["Understand x and m", "Build nested groups", "Where complex replaces where", "Supported builders", "Combine with full-text"]
 						},
 						{
 							"name": "Full-text search",
 							"shortName": "full-text-search",
 							"description": "Configure @fulltext and use it in every find.",
-							"contentPath": "v2.0.0/en-us/full-text-search.md",
+							"contentPath": "v2.0.1/en-us/full-text-search.md",
 							"inPage": ["1. Mark searchable fields", "Build one document from several fields", "2. Generate migrations and models", "Use in find first", "Use in find many", "Use in find and update", "Use in relation includes", "Combine with where complex", "Use in transactions", "Database behavior"]
 						}
 					]
@@ -191,28 +191,28 @@
 							"name": "Insert",
 							"shortName": "insert",
 							"description": "Insert entities and create implicit many-to-many pivot links.",
-							"contentPath": "v2.0.0/en-us/insert.md",
+							"contentPath": "v2.0.1/en-us/insert.md",
 							"inPage": ["Create an entity", "Insert one entity", "Insert many entities", "Insert relations", "Connect an implicit many-to-many during insert", "Generated identifiers", "Returning a projection"]
 						},
 						{
 							"name": "Update",
 							"shortName": "update",
 							"description": "Update rows and many-to-many relations.",
-							"contentPath": "v2.0.0/en-us/update.md",
+							"contentPath": "v2.0.1/en-us/update.md",
 							"inPage": ["Update one record", "Update many records", "Set optional fields", "Return a projection", "Connect and disconnect many-to-many records"]
 						},
 						{
 							"name": "Find and update",
 							"shortName": "find-and-update",
 							"description": "Update and return an entity in one operation.",
-							"contentPath": "v2.0.0/en-us/find-and-update.md",
+							"contentPath": "v2.0.1/en-us/find-and-update.md",
 							"inPage": ["1. Define the filter", "2. Define the changes", "Numeric operations", "3. Read the result", "Adapter behavior", "Use where complex", "Use in a transaction", "Limitations"]
 						},
 						{
 							"name": "Delete",
 							"shortName": "delete",
 							"description": "Delete one or several rows.",
-							"contentPath": "v2.0.0/en-us/delete.md",
+							"contentPath": "v2.0.1/en-us/delete.md",
 							"inPage": ["Delete one record", "The mandatory filter", "Delete many records", "Return deleted data", "Relations and referential actions"]
 						}
 					]
@@ -231,14 +231,14 @@
 							"name": "Migrations",
 							"shortName": "migrations",
 							"description": "Generate, review, and run adapter-specific migrations.",
-							"contentPath": "v2.0.0/en-us/migrations.md",
+							"contentPath": "v2.0.1/en-us/migrations.md",
 							"inPage": ["Migration lifecycle", "Generate a migration", "How changes are detected", "Index migrations", "Dangerous changes", "Review the generated SQL", "Run pending migrations", "Run migrations when a local SQLite database starts", "Generated models"]
 						},
 						{
 							"name": "CLI reference",
 							"shortName": "cli",
 							"description": "Use every command in the Dinoco CLI.",
-							"contentPath": "v2.0.0/en-us/cli.md",
+							"contentPath": "v2.0.1/en-us/cli.md",
 							"inPage": ["dinoco init", "dinoco migrate generate", "dinoco migrate run", "dinoco models generate", "Recommended workflow"]
 						}
 					]
@@ -250,7 +250,7 @@
 							"name": "VS Code extension",
 							"shortName": "vscode",
 							"description": "Use highlighting, diagnostics, completion, and formatting.",
-							"contentPath": "v2.0.0/en-us/vscode.md",
+							"contentPath": "v2.0.1/en-us/vscode.md",
 							"inPage": ["Open a Dinoco project", "Language features", "Formatting", "Troubleshooting"]
 						}
 					]
@@ -269,7 +269,7 @@
 							"name": "API reference",
 							"shortName": "api-reference",
 							"description": "Schema syntax, builders, many-to-many writes, filters, and return types.",
-							"contentPath": "v2.0.0/en-us/api-reference.md",
+							"contentPath": "v2.0.1/en-us/api-reference.md",
 							"inPage": ["Schema reference", "Generated entity API", "Read methods", "Write methods", "Implicit many-to-many writes", "Transactions", "Filter methods", "Adapter constructors", "Value types"]
 						}
 					]

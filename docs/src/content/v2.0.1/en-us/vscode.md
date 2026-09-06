@@ -10,7 +10,7 @@ If the project hasn't been initialized yet, run **Dinoco: Initialize Project** i
 
 ## Language features
 
-The v2.0.0 language server provides:
+The v2.0.1 language server provides:
 
 - Syntax highlighting, plus real semantic highlighting derived from the same symbol index used for hover and completion — so a model name is colored differently depending on whether it's being declared or referenced, something a regex-based grammar alone can't do reliably.
 - Local diagnostics while you type, and a complete project compilation on every save.

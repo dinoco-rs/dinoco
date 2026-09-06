@@ -89,6 +89,7 @@ fn condition_references_updated_field(condition: &FindWhere, sets: &[UpdateSet])
         | FindWhere::Null(field)
         | FindWhere::NotNull(field) => updated(field),
         FindWhere::FullText(fields, _) => fields.iter().any(|field| updated(field)),
+        FindWhere::ManyToMany(match_) => updated(match_.local_key),
         FindWhere::And(conditions) | FindWhere::Or(conditions) => {
             conditions.iter().any(|condition| condition_references_updated_field(condition, sets))
         }
@@ -392,9 +393,37 @@ pub enum FindWhere {
     Null(&'static str),
     NotNull(&'static str),
 
+    /// Membership test against a many-to-many join table. Produced by the
+    /// generated virtual `Option<PrimaryKey>` fields so a caller can filter a
+    /// side of a many-to-many relation by the id of a row on the other side.
+    ManyToMany(ManyToManyMatch),
+
     And(Vec<FindWhere>),
     Or(Vec<FindWhere>),
     Not(Box<FindWhere>),
+}
+
+/// Payload for [`FindWhere::ManyToMany`].
+///
+/// Compiles to `<local_key> IN (SELECT <join_local_field> FROM <join_table>
+/// WHERE <predicate>)`, where `predicate` is any [`FindWhere`] built against
+/// `join_target_field`. Rendered as `NOT IN` when `negated` is set.
+#[derive(Debug, Clone)]
+pub struct ManyToManyMatch {
+    /// Column on the queried entity's own table (its primary/reference key).
+    pub local_key: &'static str,
+    /// Join table that connects the two sides of the relation.
+    pub join_table: &'static str,
+    /// Join-table column that references the queried entity.
+    pub join_local_field: &'static str,
+    /// Join-table column that references the related entity; the field every
+    /// `predicate` condition is expressed against.
+    pub join_target_field: &'static str,
+    /// `true` renders `NOT IN`, keeping rows that do *not* match the predicate
+    /// (including rows with no link at all).
+    pub negated: bool,
+    /// Condition applied to `join_target_field` inside the subquery.
+    pub predicate: Box<FindWhere>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]

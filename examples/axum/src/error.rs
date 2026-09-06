@@ -1,4 +1,5 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
+use dinoco::{AtomicUpdateError, TransactionError};
 use serde::Serialize;
 
 pub struct ApiError {
@@ -16,11 +17,24 @@ impl ApiError {
         Self { status: StatusCode::BAD_REQUEST, message: message.into() }
     }
 
-    pub fn not_found() -> Self {
-        Self { status: StatusCode::NOT_FOUND, message: "Todo not found".to_string() }
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self { status: StatusCode::NOT_FOUND, message: message.into() }
     }
 
     pub fn internal(error: anyhow::Error) -> Self {
+        Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: error.to_string() }
+    }
+
+    /// `find_and_update` returns a typed error: a missing row is a 404, the
+    /// rest are 500s.
+    pub fn atomic(error: AtomicUpdateError) -> Self {
+        match error {
+            AtomicUpdateError::RowNotAffected => Self::not_found("Row not found"),
+            other => Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: other.to_string() },
+        }
+    }
+
+    pub fn transaction(error: TransactionError) -> Self {
         Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: error.to_string() }
     }
 }

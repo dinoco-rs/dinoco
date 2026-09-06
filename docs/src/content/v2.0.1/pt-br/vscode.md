@@ -10,7 +10,7 @@ Se o projeto ainda não foi inicializado, rode **Dinoco: Initialize Project** em
 
 ## Recursos da linguagem
 
-O language server da v2.0.0 oferece:
+O language server da v2.0.1 oferece:
 
 - Syntax highlighting, mais semantic highlighting de verdade derivado do mesmo índice de símbolos usado por hover e completion — então o nome de um model é colorido de forma diferente dependendo se está sendo declarado ou referenciado, algo que uma gramática baseada em regex sozinha não consegue fazer de forma confiável.
 - Diagnostics locais enquanto você digita, e uma compilação completa do projeto a cada save.

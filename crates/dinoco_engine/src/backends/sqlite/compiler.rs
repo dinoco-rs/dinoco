@@ -752,6 +752,18 @@ fn collect_conditions(
             FindWhere::NotNull(field) => {
                 sql_conditions.push(format!("{} IS NOT NULL", qualify_field(field, qualifier)));
             }
+            FindWhere::ManyToMany(match_) => {
+                let mut inner = Vec::new();
+                collect_conditions(&mut inner, params, vec![*match_.predicate], None);
+                let inner_sql = if inner.is_empty() { "1 = 1".to_string() } else { inner.join(" AND ") };
+                let operator = if match_.negated { "NOT IN" } else { "IN" };
+                sql_conditions.push(format!(
+                    "{} {operator} (SELECT {} FROM {} WHERE {inner_sql})",
+                    qualify_field(match_.local_key, qualifier),
+                    sql_identifier(match_.join_local_field),
+                    sql_identifier(match_.join_table),
+                ));
+            }
             FindWhere::And(conditions) => {
                 push_condition_group(sql_conditions, params, conditions, qualifier, "AND", "1 = 1");
             }

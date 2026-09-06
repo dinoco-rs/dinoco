@@ -1,6 +1,7 @@
 use dinoco_engine::{
     DeleteQuery, DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    MySqlAdapter, PostgresAdapter, RelationJoinQuery, SqliteAdapter, UpdateOperation, UpdateQuery, UpdateSet,
+    ManyToManyMatch, MySqlAdapter, PostgresAdapter, RelationJoinQuery, SqliteAdapter, UpdateOperation, UpdateQuery,
+    UpdateSet,
 };
 
 #[tokio::test]
@@ -208,6 +209,106 @@ async fn compilers_use_native_fulltext_and_sqlite_like_fallback() -> anyhow::Res
 
     let (mysql_sql, _) = mysql.compile_find_query(composite_query());
     assert_eq!(mysql_sql, "SELECT id FROM article WHERE MATCH (title, body) AGAINST (? IN NATURAL LANGUAGE MODE)");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn compilers_translate_many_to_many_virtual_key_filters_into_join_table_subqueries() -> anyhow::Result<()> {
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+
+    let query = |negated: bool, predicate: FindWhere| FindQuery {
+        fields: &["id", "name"],
+        from: "relation_system",
+        conditions: vec![FindWhere::ManyToMany(ManyToManyMatch {
+            local_key: "id",
+            join_table: "_relation_business_to_relation_system",
+            join_local_field: "system_id",
+            join_target_field: "business_id",
+            negated,
+            predicate: Box::new(predicate),
+        })],
+        limit: -1,
+        skip: -1,
+        order_by: None,
+    };
+    let string = |value: &str| DinocoValue::String(value.to_string());
+
+    // `eq` keeps the predicate inside a membership subquery over the pivot.
+    let (sqlite_sql, sqlite_params) =
+        sqlite.compile_find_query(query(false, FindWhere::Eq("business_id", string("business-a"))));
+    assert_eq!(
+        sqlite_sql,
+        "SELECT id, name FROM relation_system WHERE id IN (SELECT system_id FROM _relation_business_to_relation_system WHERE business_id = ?)"
+    );
+    assert_eq!(sqlite_params, [string("business-a")]);
+
+    let (mysql_sql, _) = mysql.compile_find_query(query(false, FindWhere::Eq("business_id", string("business-a"))));
+    assert_eq!(mysql_sql, sqlite_sql);
+
+    let (postgres_sql, postgres_params) =
+        postgres.compile_find_query(query(false, FindWhere::Eq("business_id", string("business-a"))));
+    assert_eq!(
+        postgres_sql,
+        "SELECT id, name FROM relation_system WHERE id IN (SELECT system_id FROM _relation_business_to_relation_system WHERE business_id = $1)"
+    );
+    assert_eq!(postgres_params, [string("business-a")]);
+
+    // Any predicate shape works — here a range comparison on the pivot's target column.
+    let (sqlite_range_sql, sqlite_range_params) =
+        sqlite.compile_find_query(query(false, FindWhere::Gt("business_id", string("business-m"))));
+    assert_eq!(
+        sqlite_range_sql,
+        "SELECT id, name FROM relation_system WHERE id IN (SELECT system_id FROM _relation_business_to_relation_system WHERE business_id > ?)"
+    );
+    assert_eq!(sqlite_range_params, [string("business-m")]);
+
+    // Negated membership (`neq`/`not_in`) renders `NOT IN` and keeps sequential placeholders.
+    let (postgres_negated_sql, postgres_negated_params) = postgres.compile_find_query(query(
+        true,
+        FindWhere::Batch("business_id", vec![string("business-a"), string("business-b")]),
+    ));
+    assert_eq!(
+        postgres_negated_sql,
+        "SELECT id, name FROM relation_system WHERE id NOT IN (SELECT system_id FROM _relation_business_to_relation_system WHERE business_id IN ($1, $2))"
+    );
+    assert_eq!(postgres_negated_params, [string("business-a"), string("business-b")]);
+
+    // An empty `batch([])` predicate degrades to `1 = 0` inside the subquery.
+    let (sqlite_empty_sql, sqlite_empty_params) =
+        sqlite.compile_find_query(query(false, FindWhere::Batch("business_id", vec![])));
+    assert_eq!(
+        sqlite_empty_sql,
+        "SELECT id, name FROM relation_system WHERE id IN (SELECT system_id FROM _relation_business_to_relation_system WHERE 1 = 0)"
+    );
+    assert!(sqlite_empty_params.is_empty());
+
+    // The membership subquery composes with sibling conditions and keeps binding order.
+    let (postgres_combined_sql, postgres_combined_params) = postgres.compile_find_query(FindQuery {
+        fields: &["id"],
+        from: "relation_system",
+        conditions: vec![
+            FindWhere::Eq("name", string("ERP")),
+            FindWhere::ManyToMany(ManyToManyMatch {
+                local_key: "id",
+                join_table: "_relation_business_to_relation_system",
+                join_local_field: "system_id",
+                join_target_field: "business_id",
+                negated: false,
+                predicate: Box::new(FindWhere::Eq("business_id", string("business-a"))),
+            }),
+        ],
+        limit: -1,
+        skip: -1,
+        order_by: None,
+    });
+    assert_eq!(
+        postgres_combined_sql,
+        "SELECT id FROM relation_system WHERE name = $1 AND id IN (SELECT system_id FROM _relation_business_to_relation_system WHERE business_id = $2)"
+    );
+    assert_eq!(postgres_combined_params, [string("ERP"), string("business-a")]);
 
     Ok(())
 }

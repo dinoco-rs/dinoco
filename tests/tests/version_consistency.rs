@@ -1,12 +1,11 @@
 use std::{fs, path::Path};
 
-const CRATE_VERSION: &str = "2.0.0";
-const PREVIOUS_CRATE_VERSION: &str = "1.3.3";
-// The docs site's versioned content (docs/src/content/vX.Y.Z) is tracked
-// separately from the crate/extension release train and is updated as part
-// of the docs reformulation, not the crate version bump.
-const DOCS_VERSION: &str = "2.0.0";
-const PREVIOUS_DOCS_VERSION: &str = "1.3.3";
+const CRATE_VERSION: &str = "2.0.1";
+const PREVIOUS_CRATE_VERSION: &str = "2.0.0";
+// Only one docs version is kept on the site at a time; a release bump renames
+// the versioned directories in place rather than keeping the previous tree.
+const DOCS_VERSION: &str = "2.0.1";
+const PREVIOUS_DOCS_VERSION: &str = "2.0.0";
 
 fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("tests crate must be inside the workspace")
@@ -101,9 +100,10 @@ fn documentation_uses_the_current_version_directories() {
     assert!(!previous_navigation_dir.exists());
 
     let versions = read("docs/src/jsons/versions.ts");
-    assert!(versions.contains("import v2_0_0 from './versions/v2.0.0';"));
-    assert!(versions.contains("const versionsData: DocsVersionData[] = [v2_0_0"));
+    assert!(versions.contains("import v2_0_1 from './versions/v2.0.1';"));
+    assert!(versions.contains("const versionsData: DocsVersionData[] = [v2_0_1"));
     assert!(!versions.contains("v1_3_3"));
+    assert!(!versions.contains("v2_0_0"));
     assert!(!versions.contains(&format!("v{PREVIOUS_DOCS_VERSION}")));
 
     for locale in ["en-us", "pt-br"] {

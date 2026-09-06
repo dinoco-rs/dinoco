@@ -1,8 +1,9 @@
 mod dto;
 mod error;
+mod projects;
 mod routes;
 mod state;
-mod todos;
+mod tasks;
 
 #[path = "../dinoco/mod.rs"]
 mod database;
