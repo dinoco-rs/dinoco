@@ -4,7 +4,9 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery};
+use dinoco_engine::{
+    DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery, PluckValue,
+};
 
 pub type Uuid = String;
 pub type Snowflake = i64;
@@ -167,6 +169,60 @@ where
 
         if let Some(row) = rows.pop() {
             result.push(row);
+        }
+    }
+
+    Ok(result)
+}
+
+/// Single-column counterpart of [`execute_insert_models_returning`], backing
+/// `insert_into::<M>().pluck(...)`.
+pub(crate) async fn execute_insert_models_returning_field<M, T, C>(
+    models: &[M],
+    field: &'static str,
+    client: &C,
+) -> anyhow::Result<Vec<T>>
+where
+    M: DinocoInsertable,
+    PluckValue<T>: DinocoRowModel,
+    C: crate::MutationExecutor,
+{
+    if models.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rows = models.iter().map(DinocoInsertable::dinoco_insert_values).collect::<Vec<_>>();
+    let fields: &'static [&'static str] = Box::leak(vec![field].into_boxed_slice());
+    let query = InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning: Some(fields) };
+
+    let rows = client.insert_returning::<PluckValue<T>>(query).await?;
+
+    Ok(rows.into_iter().map(|value| value.0).collect())
+}
+
+/// Single-column counterpart of [`reload_inserted`], backing nested-insert
+/// payloads passed through `insert_into::<M>().pluck(...)`.
+pub(crate) async fn reload_inserted_field<M, T, C>(
+    models: &[M],
+    field: &'static str,
+    client: &C,
+) -> anyhow::Result<Vec<T>>
+where
+    M: DinocoInsertable,
+    PluckValue<T>: DinocoRowModel,
+    C: crate::MutationExecutor,
+{
+    let fields: &'static [&'static str] = Box::leak(vec![field].into_boxed_slice());
+    let mut result = Vec::with_capacity(models.len());
+
+    for model in models {
+        let mut query = FindQuery::new(fields, M::TABLE_NAME, 1, -1);
+        query.conditions = model.dinoco_insert_identity();
+
+        let mut rows = client.query::<PluckValue<T>>(query).await?;
+
+        if let Some(row) = rows.pop() {
+            result.push(row.0);
         }
     }
 

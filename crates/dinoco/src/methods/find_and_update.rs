@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, UpdateQuery, UpdateSet, WhereComplex};
 
 use crate::{
-    AtomicUpdateError, DinocoRelationValue, MutationExecutor, duplicate_update_field, execute_relation_update_sets,
-    has_many_to_many_update_sets, load_update_matches, split_update_sets,
+    AtomicUpdateError, DinocoRelationValue, IntoUpdateSets, MutationExecutor, duplicate_update_field,
+    execute_relation_update_sets, has_many_to_many_update_sets, load_update_matches, split_update_sets,
 };
 
 pub struct FindAndUpdate<M> {
@@ -46,11 +46,12 @@ where
         self
     }
 
-    pub fn update<F>(mut self, callback: F) -> Self
+    pub fn update<F, R>(mut self, callback: F) -> Self
     where
-        F: FnOnce(M::Update) -> UpdateSet,
+        F: FnOnce(M::Update) -> R,
+        R: IntoUpdateSets,
     {
-        self.sets.push(callback(M::Update::default()));
+        self.sets.extend(callback(M::Update::default()).into_update_sets());
 
         self
     }

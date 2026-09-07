@@ -1,5 +1,7 @@
 mod backends;
 mod error;
+mod json_row;
+mod pluck;
 mod query;
 mod traits;
 mod transaction;
@@ -9,6 +11,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub use backends::*;
 pub use error::*;
+pub use json_row::*;
+pub use pluck::*;
 pub use query::*;
 pub use traits::*;
 pub use transaction::*;
@@ -62,15 +66,35 @@ impl DinocoMysql for SingleIdRow {
     }
 }
 
+/// Execution strategy for `find_batch(...)`.
+///
+/// Configurable per [`DinocoClient`] via `.with_query_mode(...)`, or from
+/// `schema.dinoco` via `config { query_mode = "single_query" | "batch_query"
+/// }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum QueryMode {
+    /// Runs every `find_many`/`find_first` passed to `find_batch(...)` as its
+    /// own query, one per item. This is the default: it matches dinoco's
+    /// pre-existing behavior and has no extra requirements on the database.
+    #[default]
+    BatchQuery,
+    /// Combines every item into a single round trip: each becomes a
+    /// JSON-aggregated subquery (`json_build_object`/`json_agg` on Postgres,
+    /// `JSON_OBJECT`/`JSON_ARRAYAGG` on MySQL, `json_object`/
+    /// `json_group_array` on SQLite) selected together in one statement.
+    SingleQuery,
+}
+
 pub struct DinocoClient {
     pub backend: Backend,
     pub read_replicas: Vec<Backend>,
     read_replica_index: AtomicUsize,
+    query_mode: QueryMode,
 }
 
 impl DinocoClient {
     pub fn new(backend: Backend) -> Self {
-        Self { backend, read_replicas: Vec::new(), read_replica_index: AtomicUsize::new(0) }
+        Self { backend, read_replicas: Vec::new(), read_replica_index: AtomicUsize::new(0), query_mode: QueryMode::default() }
     }
 
     pub fn with_read_replicas(mut self, read_replicas: Vec<Backend>) -> Self {
@@ -84,6 +108,15 @@ impl DinocoClient {
             replica.set_logger(enabled);
         }
         self
+    }
+
+    pub fn with_query_mode(mut self, mode: QueryMode) -> Self {
+        self.query_mode = mode;
+        self
+    }
+
+    pub fn query_mode(&self) -> QueryMode {
+        self.query_mode
     }
 
     pub fn read_backend(&self, primary: bool) -> &Backend {

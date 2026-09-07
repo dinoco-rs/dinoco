@@ -220,6 +220,50 @@ impl SqliteAdapter {
         .await
         .map_err(|err| anyhow!(err.to_string()))?
     }
+
+    pub async fn query_find_batch(
+        &self,
+        query: &str,
+        params: &[DinocoValue],
+        column_count: usize,
+    ) -> anyhow::Result<Vec<Vec<crate::serde_json::Value>>> {
+        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
+        let query_owned = query.to_string();
+        let params_owned = params.to_vec();
+
+        conn.interact(move |conn| -> anyhow::Result<Vec<Vec<crate::serde_json::Value>>> {
+            let mut stmt = conn.prepare_cached(&query_owned)?;
+            let params_refs: Vec<&dyn rusqlite::ToSql> =
+                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+
+            let columns = stmt.query_row(params_refs.as_slice(), |row| {
+                (0..column_count).map(|index| row.get::<_, String>(index)).collect::<rusqlite::Result<Vec<String>>>()
+            })?;
+
+            columns
+                .into_iter()
+                .map(|text| crate::serde_json::from_str::<Vec<crate::serde_json::Value>>(&text).map_err(anyhow::Error::from))
+                .collect()
+        })
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?
+    }
+
+    pub async fn query_exists(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<bool> {
+        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
+        let query_owned = query.to_string();
+        let params_owned = params.to_vec();
+
+        conn.interact(move |conn| -> anyhow::Result<bool> {
+            let mut stmt = conn.prepare_cached(&query_owned)?;
+            let params_refs: Vec<&dyn rusqlite::ToSql> =
+                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+
+            Ok(stmt.query_row(params_refs.as_slice(), |row| row.get(0))?)
+        })
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?
+    }
 }
 
 fn execute_transaction_command(

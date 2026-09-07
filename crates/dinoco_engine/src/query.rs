@@ -159,6 +159,29 @@ pub struct CountQuery {
 }
 
 #[derive(Debug, Clone)]
+pub struct ExistsQuery {
+    pub table: &'static str,
+    pub conditions: Vec<FindWhere>,
+}
+
+/// One `find_many`/`find_first` compiled to run alongside others in a single
+/// [`FindBatchQuery`].
+#[derive(Debug, Clone)]
+pub struct FindBatchItem {
+    pub query: FindQuery,
+}
+
+/// Backs `find_batch(...)` in "single query" mode: every item is compiled
+/// into its own JSON-aggregated subquery (`json_build_object`/`json_agg` on
+/// Postgres, `JSON_OBJECT`/`JSON_ARRAYAGG` on MySQL, `json_object`/
+/// `json_group_array` on SQLite) and all of them are selected together in one
+/// round trip, each producing a JSON array of rows.
+#[derive(Debug, Clone)]
+pub struct FindBatchQuery {
+    pub items: Vec<FindBatchItem>,
+}
+
+#[derive(Debug, Clone)]
 pub struct RelationCountQuery {
     pub parent_table: &'static str,
     pub child_table: &'static str,

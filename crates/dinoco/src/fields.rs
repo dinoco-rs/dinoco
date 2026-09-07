@@ -31,6 +31,12 @@ impl<T, Capability> Field<T, Capability> {
         Self { name, fulltext_fields, marker: PhantomData }
     }
 
+    /// The underlying column name, used by `.pluck(...)` to project a single
+    /// field instead of building a [`FindWhere`] predicate.
+    pub const fn field_name(&self) -> &'static str {
+        self.name
+    }
+
     pub fn eq<V>(self, value: V) -> FindWhere
     where
         V: Into<DinocoValue>,

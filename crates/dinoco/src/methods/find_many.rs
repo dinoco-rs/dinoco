@@ -1,10 +1,11 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, WhereComplex,
+    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue,
+    WhereComplex,
 };
 
-use crate::{IncludeLoader, IntoIncludeLoader, load_includes};
+use crate::{Field, IncludeLoader, IntoIncludeLoader, load_includes};
 
 pub struct FindMany<M, S = M> {
     query: FindQuery,
@@ -95,12 +96,97 @@ where
         self
     }
 
+    /// Projects onto a single column instead of a full row.
+    ///
+    /// Unlike `.select(...)`, which still builds a row-model struct, this
+    /// returns the raw column values directly (e.g. `Vec<i64>` for an `id`
+    /// field).
+    pub fn pluck<F, T, C>(self, callback: F) -> Pluck<M, T>
+    where
+        F: FnOnce(M::Where) -> Field<T, C>,
+        PluckValue<T>: DinocoRowModel,
+    {
+        let name = callback(M::Where::default()).field_name();
+        let mut query = self.query;
+        query.fields = Box::leak(vec![name].into_boxed_slice());
+
+        Pluck { query, read_primary: self.read_primary, marker: PhantomData }
+    }
+
+    /// Applies a post-query mapping to every row.
+    ///
+    /// Runs after includes are loaded, on the Rust side — it is not a SQL
+    /// projection, so the full row (and any loaded relations) is available to
+    /// the callback.
+    pub fn transform<F, R>(self, callback: F) -> FindManyTransform<M, S, F>
+    where
+        F: FnMut(S) -> R,
+    {
+        FindManyTransform { inner: self, transform: callback }
+    }
+
     pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<S>> {
         let mut rows = client.read_backend(self.read_primary).query::<S>(self.query).await?;
 
         load_includes(self.includes, client, &mut rows, self.read_primary).await?;
 
         Ok(rows)
+    }
+
+    /// Splits this builder into the parts `find_batch(...)` needs.
+    ///
+    /// `.includes(...)` isn't supported inside `find_batch(...)` yet (it
+    /// requires follow-up queries of its own), so this fails loudly instead
+    /// of silently dropping the relation.
+    pub(crate) fn into_batch_parts(self) -> anyhow::Result<(FindQuery, bool)> {
+        if !self.includes.is_empty() {
+            anyhow::bail!("find_batch(...) does not support .includes(...) yet");
+        }
+
+        Ok((self.query, self.read_primary))
+    }
+}
+
+pub struct Pluck<M, T> {
+    query: FindQuery,
+    read_primary: bool,
+    marker: PhantomData<fn() -> (M, T)>,
+}
+
+impl<M, T> Pluck<M, T>
+where
+    M: DinocoEntity,
+    PluckValue<T>: DinocoRowModel,
+{
+    pub fn read_in_primary(mut self) -> Self {
+        self.read_primary = true;
+
+        self
+    }
+
+    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<T>> {
+        let rows = client.read_backend(self.read_primary).query::<PluckValue<T>>(self.query).await?;
+
+        Ok(rows.into_iter().map(|value| value.0).collect())
+    }
+}
+
+pub struct FindManyTransform<M, S, F> {
+    inner: FindMany<M, S>,
+    transform: F,
+}
+
+impl<M, S, F, R> FindManyTransform<M, S, F>
+where
+    M: DinocoEntity + DinocoRowModel,
+    S: DinocoRowModel,
+    F: FnMut(S) -> R,
+{
+    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<R>> {
+        let rows = self.inner.execute(client).await?;
+        let mut transform = self.transform;
+
+        Ok(rows.into_iter().map(|row| transform(row)).collect())
     }
 }
 

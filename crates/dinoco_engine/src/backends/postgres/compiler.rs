@@ -2,7 +2,8 @@ use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
-    FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
+    ExistsQuery, FindBatchQuery, FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery,
+    ManyToManyRelationQuery,
     MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndexKind, ReferentialAction,
     RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration,
     RenameTableMigration, UpdateQuery,
@@ -29,6 +30,14 @@ impl DinocoSqlCompiler for PostgresAdapter {
 
     fn compile_count_query(&self, query: CountQuery) -> (String, Vec<DinocoValue>) {
         compile_count_query(query)
+    }
+
+    fn compile_exists_query(&self, query: ExistsQuery) -> (String, Vec<DinocoValue>) {
+        compile_exists_query(query)
+    }
+
+    fn compile_find_batch_query(&self, query: FindBatchQuery) -> (String, Vec<DinocoValue>) {
+        compile_find_batch_query(query)
     }
 
     fn compile_relation_count_query(&self, query: RelationCountQuery) -> (String, Vec<DinocoValue>) {
@@ -146,6 +155,14 @@ impl DinocoSqlCompiler for PgBouncerAdapter {
 
     fn compile_count_query(&self, query: CountQuery) -> (String, Vec<DinocoValue>) {
         compile_count_query(query)
+    }
+
+    fn compile_exists_query(&self, query: ExistsQuery) -> (String, Vec<DinocoValue>) {
+        compile_exists_query(query)
+    }
+
+    fn compile_find_batch_query(&self, query: FindBatchQuery) -> (String, Vec<DinocoValue>) {
+        compile_find_batch_query(query)
     }
 
     fn compile_relation_count_query(&self, query: RelationCountQuery) -> (String, Vec<DinocoValue>) {
@@ -565,6 +582,49 @@ fn compile_count_query(query: CountQuery) -> (String, Vec<DinocoValue>) {
     let params = append_conditions(&mut sql, query.conditions, None, &mut placeholders);
 
     (sql, params)
+}
+
+fn compile_exists_query(query: ExistsQuery) -> (String, Vec<DinocoValue>) {
+    let mut inner = format!("SELECT 1 FROM {}", sql_identifier(query.table));
+    let mut placeholders = Placeholder::default();
+    let params = append_conditions(&mut inner, query.conditions, None, &mut placeholders);
+
+    (format!("SELECT EXISTS({inner})"), params)
+}
+
+fn compile_find_batch_query(query: FindBatchQuery) -> (String, Vec<DinocoValue>) {
+    let mut placeholders = Placeholder::default();
+    let mut params = Vec::new();
+    let mut expressions = Vec::with_capacity(query.items.len());
+
+    for (index, item) in query.items.into_iter().enumerate() {
+        let fields = item.query.fields.iter().map(|field| sql_identifier(field)).collect::<Vec<_>>().join(", ");
+        let mut inner = format!("SELECT {fields} FROM {}", sql_identifier(item.query.from));
+        let item_params = append_find_tail(
+            &mut inner,
+            item.query.conditions,
+            item.query.order_by,
+            item.query.limit,
+            item.query.skip,
+            None,
+            &mut placeholders,
+        );
+        params.extend(item_params);
+
+        let object_fields = item
+            .query
+            .fields
+            .iter()
+            .map(|field| format!("'{field}', {}", sql_identifier(field)))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        expressions.push(format!(
+            "(SELECT COALESCE(json_agg(json_build_object({object_fields}))::text, '[]') FROM ({inner}) AS __dinoco_batch_{index}) AS c{index}"
+        ));
+    }
+
+    (format!("SELECT {}", expressions.join(", ")), params)
 }
 
 fn compile_relation_count_query(query: RelationCountQuery) -> (String, Vec<DinocoValue>) {

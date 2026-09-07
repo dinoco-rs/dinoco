@@ -166,6 +166,66 @@ impl<T> ManyToManyUpdateField<T> {
             operation: UpdateOperation::DisconnectManyToMany(self.relation),
         }
     }
+
+    /// Connects every value in `values` in one round trip.
+    ///
+    /// Equivalent to calling `.connect(...)` once per value, except every
+    /// connected pair lands in a single multi-row `INSERT` instead of one
+    /// query per value.
+    pub fn connect_batch<I, V>(self, values: I) -> Vec<UpdateSet>
+    where
+        I: IntoIterator<Item = V>,
+        V: IntoUpdateValue<T>,
+    {
+        values
+            .into_iter()
+            .map(|value| UpdateSet {
+                field: self.name,
+                value: value.into_update_value(),
+                operation: UpdateOperation::ConnectManyToMany(self.relation),
+            })
+            .collect()
+    }
+
+    /// Disconnects every value in `values` in one round trip.
+    ///
+    /// Equivalent to calling `.disconnect(...)` once per value, except every
+    /// disconnected side collapses into a single `DELETE ... WHERE child IN
+    /// (...)` instead of one query per value.
+    pub fn disconnect_batch<I, V>(self, values: I) -> Vec<UpdateSet>
+    where
+        I: IntoIterator<Item = V>,
+        V: IntoUpdateValue<T>,
+    {
+        values
+            .into_iter()
+            .map(|value| UpdateSet {
+                field: self.name,
+                value: value.into_update_value(),
+                operation: UpdateOperation::DisconnectManyToMany(self.relation),
+            })
+            .collect()
+    }
+}
+
+/// Lets `.update(...)` accept either a single [`UpdateSet`] (from `.set(...)`,
+/// `.connect(...)`, ...) or a `Vec<UpdateSet>` (from `.connect_batch(...)`,
+/// `.disconnect_batch(...)`), so both shapes can be pushed onto the same
+/// builder without a separate method.
+pub trait IntoUpdateSets {
+    fn into_update_sets(self) -> Vec<UpdateSet>;
+}
+
+impl IntoUpdateSets for UpdateSet {
+    fn into_update_sets(self) -> Vec<UpdateSet> {
+        vec![self]
+    }
+}
+
+impl IntoUpdateSets for Vec<UpdateSet> {
+    fn into_update_sets(self) -> Vec<UpdateSet> {
+        self
+    }
 }
 
 pub trait IntoUpdateValue<T> {
@@ -328,7 +388,15 @@ pub(crate) fn split_update_sets(sets: Vec<UpdateSet>) -> (Vec<UpdateSet>, Vec<Up
 
 pub(crate) fn duplicate_update_field(sets: &[UpdateSet]) -> Option<&'static str> {
     let mut fields = HashSet::with_capacity(sets.len());
-    sets.iter().find_map(|set| (!fields.insert(set.field)).then_some(set.field))
+
+    // Many-to-many connect/disconnect operations are expected to repeat the
+    // same field: that's how multiple values get connected, whether through
+    // several `.connect(...)` calls or one `.connect_batch(...)`.
+    sets.iter()
+        .filter(|set| {
+            !matches!(set.operation, UpdateOperation::ConnectManyToMany(_) | UpdateOperation::DisconnectManyToMany(_))
+        })
+        .find_map(|set| (!fields.insert(set.field)).then_some(set.field))
 }
 
 pub(crate) fn has_many_to_many_update_sets(sets: &[UpdateSet]) -> bool {
@@ -360,48 +428,72 @@ where
     M: DinocoRelationValue,
     C: MutationExecutor,
 {
+    // `.connect_batch(...)`/`.disconnect_batch(...)` expand to one `UpdateSet`
+    // per value up front (see `IntoUpdateSets`), so many-to-many connects and
+    // disconnects targeting the same relation are grouped here and collapsed
+    // into a single multi-row `INSERT`/IN-list `DELETE` instead of one query
+    // per value.
+    let mut many_to_many_connects: Vec<(ManyToManyUpdate, Vec<DinocoValue>)> = Vec::new();
+
     for connect in connects {
-        if let UpdateOperation::ConnectManyToMany(relation) = connect.operation {
-            let rows = many_to_many_connect_rows(parents, relation, connect.value);
+        let UpdateOperation::ConnectManyToMany(relation) = connect.operation else {
+            let rows = connect_rows(conditions, connect.field, connect.value)?;
+
             if !rows.is_empty() {
-                let query = InsertQuery {
-                    table: relation.join_table,
-                    fields: vec![relation.join_parent_field, relation.join_child_field],
-                    rows,
-                    returning: None,
-                };
+                let fields = connect_fields(conditions, connect.field)?;
+                let query = InsertQuery { table, fields, rows, returning: None };
                 client.insert(query).await?;
             }
             continue;
-        }
+        };
 
-        let rows = connect_rows(conditions, connect.field, connect.value)?;
+        match many_to_many_connects.iter_mut().find(|(existing, _)| *existing == relation) {
+            Some((_, values)) => values.push(connect.value),
+            None => many_to_many_connects.push((relation, vec![connect.value])),
+        }
+    }
+
+    for (relation, children) in many_to_many_connects {
+        let rows = many_to_many_connect_rows(parents, relation, children);
 
         if !rows.is_empty() {
-            let fields = connect_fields(conditions, connect.field)?;
-            let query = InsertQuery { table, fields, rows, returning: None };
+            let query = InsertQuery {
+                table: relation.join_table,
+                fields: vec![relation.join_parent_field, relation.join_child_field],
+                rows,
+                returning: None,
+            };
             client.insert(query).await?;
         }
     }
 
+    let mut many_to_many_disconnects: Vec<(ManyToManyUpdate, Vec<DinocoValue>)> = Vec::new();
+
     for disconnect in disconnects {
-        if let UpdateOperation::DisconnectManyToMany(relation) = disconnect.operation {
-            for source in many_to_many_source_values(parents, relation.parent_field) {
-                let query = DeleteQuery {
-                    table: relation.join_table,
-                    conditions: vec![
-                        FindWhere::Eq(relation.join_parent_field, source),
-                        FindWhere::Eq(relation.join_child_field, disconnect.value.clone()),
-                    ],
-                    returning: None,
-                };
+        let UpdateOperation::DisconnectManyToMany(relation) = disconnect.operation else {
+            for condition_group in disconnect_conditions(conditions, disconnect.field, disconnect.value)? {
+                let query = DeleteQuery { table, conditions: condition_group, returning: None };
                 client.delete(query).await?;
             }
             continue;
-        }
+        };
 
-        for condition_group in disconnect_conditions(conditions, disconnect.field, disconnect.value)? {
-            let query = DeleteQuery { table, conditions: condition_group, returning: None };
+        match many_to_many_disconnects.iter_mut().find(|(existing, _)| *existing == relation) {
+            Some((_, values)) => values.push(disconnect.value),
+            None => many_to_many_disconnects.push((relation, vec![disconnect.value])),
+        }
+    }
+
+    for (relation, children) in many_to_many_disconnects {
+        for source in many_to_many_source_values(parents, relation.parent_field) {
+            let query = DeleteQuery {
+                table: relation.join_table,
+                conditions: vec![
+                    FindWhere::Eq(relation.join_parent_field, source),
+                    FindWhere::Batch(relation.join_child_field, children.clone()),
+                ],
+                returning: None,
+            };
             client.delete(query).await?;
         }
     }
@@ -409,14 +501,24 @@ where
     Ok(())
 }
 
-fn many_to_many_connect_rows<M>(parents: &[M], relation: ManyToManyUpdate, child: DinocoValue) -> Vec<Vec<DinocoValue>>
+fn many_to_many_connect_rows<M>(
+    parents: &[M],
+    relation: ManyToManyUpdate,
+    children: Vec<DinocoValue>,
+) -> Vec<Vec<DinocoValue>>
 where
     M: DinocoRelationValue,
 {
-    many_to_many_source_values(parents, relation.parent_field)
-        .into_iter()
-        .map(|parent| vec![parent, child.clone()])
-        .collect()
+    let sources = many_to_many_source_values(parents, relation.parent_field);
+    let mut rows = Vec::with_capacity(sources.len() * children.len());
+
+    for parent in &sources {
+        for child in &children {
+            rows.push(vec![parent.clone(), child.clone()]);
+        }
+    }
+
+    rows
 }
 
 fn many_to_many_source_values<M>(parents: &[M], parent_field: &'static str) -> Vec<DinocoValue>

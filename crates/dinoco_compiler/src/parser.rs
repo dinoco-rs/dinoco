@@ -847,6 +847,11 @@ fn validate_config_scope(scope: &str, entries: &[ConfigEntry]) -> CompileResult<
             ("with_logger", _) => {
                 return schema_error(format!("`{scope}.with_logger` must be `true` or `false`"));
             }
+            ("query_mode", ConfigValue::String(value) | ConfigValue::Ident(value))
+                if matches!(value.as_str(), "single_query" | "batch_query") => {}
+            ("query_mode", _) => {
+                return schema_error(format!("`{scope}.query_mode` must be `single_query` or `batch_query`"));
+            }
             ("min_connection" | "max_connection", ConfigValue::Integer(value)) if *value > 0 => {}
             ("min_connection" | "max_connection", _) => {
                 return schema_error(format!("`{scope}.{}` must be a positive integer", entry.key));

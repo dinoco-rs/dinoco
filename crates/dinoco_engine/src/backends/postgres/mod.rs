@@ -227,6 +227,46 @@ impl PostgresAdapter {
 
         Ok(row.try_get(0)?)
     }
+
+    pub async fn query_exists(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<bool> {
+        let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
+        let params = postgres_params(params);
+        let params = postgres_param_refs(&params);
+        let row = match self.mode {
+            PostgresMode::Direct => {
+                let stmt = conn.prepare_cached(query).await?;
+                conn.query_one(&stmt, &params).await?
+            }
+            PostgresMode::PgBouncer => conn.query_one(query, &params).await?,
+        };
+
+        Ok(row.try_get(0)?)
+    }
+
+    pub async fn query_find_batch(
+        &self,
+        query: &str,
+        params: &[DinocoValue],
+        column_count: usize,
+    ) -> anyhow::Result<Vec<Vec<crate::serde_json::Value>>> {
+        let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
+        let params = postgres_params(params);
+        let params = postgres_param_refs(&params);
+        let row = match self.mode {
+            PostgresMode::Direct => {
+                let stmt = conn.prepare_cached(query).await?;
+                conn.query_one(&stmt, &params).await?
+            }
+            PostgresMode::PgBouncer => conn.query_one(query, &params).await?,
+        };
+
+        (0..column_count)
+            .map(|index| {
+                let text: String = row.try_get(index)?;
+                crate::serde_json::from_str::<Vec<crate::serde_json::Value>>(&text).map_err(anyhow::Error::from)
+            })
+            .collect()
+    }
 }
 
 async fn execute_transaction_command(
@@ -321,6 +361,19 @@ impl PgBouncerAdapter {
 
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         self.inner.query_count(query, params).await
+    }
+
+    pub async fn query_exists(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<bool> {
+        self.inner.query_exists(query, params).await
+    }
+
+    pub async fn query_find_batch(
+        &self,
+        query: &str,
+        params: &[DinocoValue],
+        column_count: usize,
+    ) -> anyhow::Result<Vec<Vec<crate::serde_json::Value>>> {
+        self.inner.query_find_batch(query, params, column_count).await
     }
 }
 

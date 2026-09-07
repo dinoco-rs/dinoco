@@ -611,6 +611,74 @@ impl Backend {
         }
     }
 
+    pub async fn exists(&self, query: crate::ExistsQuery) -> anyhow::Result<bool> {
+        match &self {
+            Backend::Sqlite(adapter) => {
+                let (sql, params) = adapter.compile_exists_query(query);
+
+                self.log_query(&sql, &params);
+
+                adapter.query_exists(&sql, &params).await
+            }
+            Backend::Postgres(adapter) => {
+                let (sql, params) = adapter.compile_exists_query(query);
+
+                self.log_query(&sql, &params);
+
+                adapter.query_exists(&sql, &params).await
+            }
+            Backend::PgBouncer(adapter) => {
+                let (sql, params) = adapter.compile_exists_query(query);
+
+                self.log_query(&sql, &params);
+
+                adapter.query_exists(&sql, &params).await
+            }
+            Backend::Mysql(adapter) => {
+                let (sql, params) = adapter.compile_exists_query(query);
+
+                self.log_query(&sql, &params);
+
+                adapter.query_exists(&sql, &params).await
+            }
+        }
+    }
+
+    pub async fn find_batch(&self, query: crate::FindBatchQuery) -> anyhow::Result<Vec<Vec<crate::serde_json::Value>>> {
+        let column_count = query.items.len();
+
+        match &self {
+            Backend::Sqlite(adapter) => {
+                let (sql, params) = adapter.compile_find_batch_query(query);
+
+                self.log_query(&sql, &params);
+
+                adapter.query_find_batch(&sql, &params, column_count).await
+            }
+            Backend::Postgres(adapter) => {
+                let (sql, params) = adapter.compile_find_batch_query(query);
+
+                self.log_query(&sql, &params);
+
+                adapter.query_find_batch(&sql, &params, column_count).await
+            }
+            Backend::PgBouncer(adapter) => {
+                let (sql, params) = adapter.compile_find_batch_query(query);
+
+                self.log_query(&sql, &params);
+
+                adapter.query_find_batch(&sql, &params, column_count).await
+            }
+            Backend::Mysql(adapter) => {
+                let (sql, params) = adapter.compile_find_batch_query(query);
+
+                self.log_query(&sql, &params);
+
+                adapter.query_find_batch(&sql, &params, column_count).await
+            }
+        }
+    }
+
     pub async fn count_relation(&self, query: RelationCountQuery) -> anyhow::Result<i64> {
         match &self {
             Backend::Sqlite(adapter) => {

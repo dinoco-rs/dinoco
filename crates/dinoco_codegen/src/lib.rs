@@ -181,6 +181,14 @@ pub fn render_dinoco_mod(schema: &Schema) -> String {
     let min_connection = config_integer(config, "min_connection").unwrap_or(2);
     let max_connection = config_integer(config, "max_connection").unwrap_or(10);
     let read_replica_envs = config_env_array(config, "read_replicas");
+    let query_mode = config
+        .and_then(|config| config.entries.iter().find(|entry| entry.key == "query_mode"))
+        .and_then(|entry| match &entry.value {
+            ConfigValue::String(value) | ConfigValue::Ident(value) => Some(value.as_str()),
+            _ => None,
+        })
+        .unwrap_or("batch_query");
+    let query_mode_variant = if query_mode == "single_query" { "SingleQuery" } else { "BatchQuery" };
 
     let mut out = String::from("#![allow(unused)]\n\n");
     out.push_str("pub mod models;\n\n");
@@ -220,7 +228,9 @@ pub fn render_dinoco_mod(schema: &Schema) -> String {
         }
     }
     out.push_str("    ];\n");
-    out.push_str(&format!("    Ok(client.with_read_replicas(read_replicas).with_logger({with_logger}))\n"));
+    out.push_str(&format!(
+        "    Ok(client.with_read_replicas(read_replicas).with_logger({with_logger}).with_query_mode(::dinoco::QueryMode::{query_mode_variant}))\n"
+    ));
     out.push_str("}\n");
     out
 }
