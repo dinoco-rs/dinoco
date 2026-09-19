@@ -84,10 +84,6 @@ fn models_generate_runs_the_complete_recursive_multi_file_pipeline() {
         project.join("dinoco/schema.dinoco"),
         r#"config {
     imports = ["domain/business.dinoco"]
-    custom_derives = [
-        { into = "enum" derive = "EnumSchema" import = "use schema_macros::EnumSchema;" },
-        { into = "struct" derive = "StructSchema" import = "use schema_macros::StructSchema;" }
-    ]
 }
 "#,
     )
@@ -118,10 +114,6 @@ model Business {
         fs::read_to_string(project.join("dinoco/models/business.rs")).expect("generated business model");
     assert!(generated_mod.starts_with("#![allow(unused)]"));
     assert!(generated_models.contains("pub enum BusinessStatus"));
-    assert!(generated_models.contains("use schema_macros::EnumSchema;"));
-    assert!(generated_models.contains("::dinoco::DinocoEnum, EnumSchema)]"));
-    assert!(generated_business.contains("use schema_macros::StructSchema;"));
-    assert!(generated_business.contains("::dinoco::serde::Deserialize, StructSchema)]"));
     assert!(generated_business.contains("pub status: BusinessStatus"));
 }
 

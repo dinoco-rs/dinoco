@@ -51,10 +51,6 @@ impl Schema {
         })
     }
 
-    pub fn custom_derives(&self) -> impl Iterator<Item = &CustomDerive> {
-        self.config().into_iter().flat_map(|config| config.custom_derives.iter())
-    }
-
     pub fn config_imports(&self) -> impl Iterator<Item = &ConfigImport> {
         self.config().into_iter().flat_map(|config| config.imports.iter())
     }
@@ -65,6 +61,19 @@ impl Schema {
 
     pub fn workspace(&self, name: &str) -> Option<&WorkspaceConfig> {
         self.workspaces().find(|workspace| workspace.name == name)
+    }
+
+    /// How migrations are produced for this schema's effective config
+    /// (`config.migration_engine`, `automatic` unless set to `manual`).
+    pub fn migration_engine(&self) -> MigrationEngine {
+        let manual = self.config().is_some_and(|config| {
+            config.entries.iter().any(|entry| {
+                entry.key == "migration_engine"
+                    && matches!(&entry.value, ConfigValue::String(value) | ConfigValue::Ident(value) if value == "manual")
+            })
+        });
+
+        if manual { MigrationEngine::Manual } else { MigrationEngine::Automatic }
     }
 
     /// Returns a schema whose effective config is the selected workspace.
@@ -83,6 +92,16 @@ impl Schema {
         config.workspaces.clear();
         Some(schema)
     }
+}
+
+/// Value of `config.migration_engine`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MigrationEngine {
+    /// Dinoco diffs `schema.dinoco` and writes SQL migrations itself.
+    #[default]
+    Automatic,
+    /// Migrations are hand-written Rust in `dinoco/migrations/`.
+    Manual,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -104,7 +123,6 @@ pub struct Import {
 pub struct ConfigBlock {
     pub entries: Vec<ConfigEntry>,
     pub workspaces: Vec<WorkspaceConfig>,
-    pub custom_derives: Vec<CustomDerive>,
     pub imports: Vec<ConfigImport>,
     pub origin: SourceOrigin,
 }
@@ -138,14 +156,6 @@ pub enum ConfigValue {
     Boolean(bool),
     Integer(i64),
     Ident(String),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CustomDerive {
-    pub into: String,
-    pub derive: String,
-    pub import: String,
-    pub origin: SourceOrigin,
 }
 
 #[derive(Debug, Clone, PartialEq)]

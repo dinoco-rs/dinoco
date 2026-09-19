@@ -116,7 +116,7 @@ fn validate_config(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
     let database_entries = config
         .entries
         .iter()
-        .filter(|entry| !matches!(entry.key.as_str(), "custom_derives" | "imports"))
+        .filter(|entry| !matches!(entry.key.as_str(), "imports"))
         .collect::<Vec<_>>();
     if !database_entries.is_empty() && !config.workspaces.is_empty() {
         for entry in database_entries {
@@ -162,7 +162,7 @@ fn validate_config_entries(
         "with_logger",
         "min_connection",
         "max_connection",
-        "custom_derives",
+        "migration_engine",
         "imports",
     ];
     let mut seen = HashSet::new();
@@ -222,6 +222,14 @@ fn validate_config_entries(
                 DiagnosticSeverity::ERROR,
                 "dinoco.invalidLogger",
                 "`with_logger` must be `true` or `false`.",
+            )),
+            ("migration_engine", ConfigValue::String(value) | ConfigValue::Ident(value))
+                if matches!(value.as_str(), "automatic" | "manual") => {}
+            ("migration_engine", _) => diagnostics.push(diagnostic(
+                range,
+                DiagnosticSeverity::ERROR,
+                "dinoco.invalidMigrationEngine",
+                "`migration_engine` must be `automatic` or `manual`.",
             )),
             ("min_connection" | "max_connection", ConfigValue::Integer(value)) if *value > 0 => {}
             ("min_connection" | "max_connection", _) => diagnostics.push(diagnostic(

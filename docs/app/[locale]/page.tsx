@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import HomePage from '../../src/components/HomePage';
 import { DOCS_THEME_COOKIE, resolveDocsTheme } from '../../src/lib/docs-preferences';
+import { websiteJsonLd } from '../../src/lib/seo';
 import { SITE_URL } from '../../src/lib/site';
 import { SUPPORTED_LOCALES } from '../../src/jsons/versions';
 
@@ -25,7 +26,7 @@ export async function generateMetadata({ params }: HomeRouteProps): Promise<Meta
 	return {
 		alternates: {
 			canonical: `${SITE_URL}/${resolvedLocale}`,
-			languages: Object.fromEntries(SUPPORTED_LOCALES.map(supported => [supported, `${SITE_URL}/${supported}`])),
+			languages: { ...Object.fromEntries(SUPPORTED_LOCALES.map(supported => [supported, `${SITE_URL}/${supported}`])), 'x-default': `${SITE_URL}/en-us` },
 		},
 		description: heroCopy[resolvedLocale],
 		openGraph: {
@@ -35,7 +36,9 @@ export async function generateMetadata({ params }: HomeRouteProps): Promise<Meta
 			type: 'website',
 			url: `${SITE_URL}/${resolvedLocale}`,
 		},
+		robots: { follow: true, index: true },
 		title: 'Dinoco',
+		twitter: { card: 'summary_large_image', description: heroCopy[resolvedLocale], title: 'Dinoco' },
 	};
 }
 
@@ -49,7 +52,12 @@ const HomeRoute = async ({ params }: HomeRouteProps): Promise<React.JSX.Element>
 	const cookieStore = await cookies();
 	const theme = resolveDocsTheme(cookieStore.get(DOCS_THEME_COOKIE)?.value);
 
-	return <HomePage locale={locale as DocsLocale} theme={theme} />;
+	return (
+		<>
+			<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd(locale as DocsLocale, heroCopy[locale as DocsLocale])).replace(/</g, '\\u003c') }} />
+			<HomePage locale={locale as DocsLocale} theme={theme} />
+		</>
+	);
 };
 
 export default HomeRoute;

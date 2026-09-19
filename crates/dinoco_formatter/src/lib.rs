@@ -161,15 +161,15 @@ mod tests {
     }
 
     #[test]
-    fn formats_imports_and_custom_derive_objects_without_resolving_files() {
-        let raw = r#"import{BusinessStatus,AccountType}from"./shared/enums.dinoco"config{imports=["models.dinoco","enums.dinoco"] custom_derives=[{into="enum" derive="ZodSchema" import="use zod_rs::prelude::*"}]}"#;
+    fn formats_imports_and_object_values_without_resolving_files() {
+        let raw = r#"import{BusinessStatus,AccountType}from"./shared/enums.dinoco"config{imports=["models.dinoco","enums.dinoco"] extras=[{into="enum" derive="ZodSchema" import="use zod_rs::prelude::*"}]}"#;
 
         let formatted = format_from_raw(raw).expect("format");
 
         assert!(formatted.contains("import { BusinessStatus, AccountType } from \"./shared/enums.dinoco\""));
-        assert!(formatted.contains("imports        = ["));
+        assert!(formatted.contains("imports = ["));
         assert!(formatted.contains("\"models.dinoco\","));
-        assert!(formatted.contains("custom_derives = ["));
+        assert!(formatted.contains("extras  = ["));
         assert!(formatted.contains("into = \"enum\""));
         assert!(formatted.contains("derive = \"ZodSchema\""));
         assert!(formatted.contains("import = \"use zod_rs::prelude::*\""));

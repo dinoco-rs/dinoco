@@ -879,11 +879,11 @@ fn compile_file_only_accepts_schema_dinoco_as_the_entrypoint() {
 }
 
 #[test]
-fn parser_preserves_origins_for_imports_enums_models_fields_relations_and_custom_derives() {
+fn parser_preserves_origins_for_imports_enums_models_fields_and_relations() {
     let schema = parse(
         r#"import { Account } from "account.dinoco"
 config {
-    custom_derives = [{ into = "struct" derive = "Validate" import = "use validator::Validate;" }]
+    with_logger = true
 }
 enum Status { active }
 model Business {
@@ -892,12 +892,12 @@ model Business {
 }
 "#,
     )
-    .expect("syntax and custom derive config should parse");
+    .expect("syntax and config should parse");
 
     let import = schema.imports().next().expect("import");
     assert_eq!((import.origin.file.as_str(), import.origin.line, import.origin.column), ("schema.dinoco", 1, 1));
-    let custom = schema.custom_derives().next().expect("custom derive");
-    assert_eq!((custom.origin.file.as_str(), custom.origin.line), ("schema.dinoco", 3));
+    let config = schema.config().expect("config");
+    assert_eq!((config.entries[0].origin.file.as_str(), config.entries[0].origin.line), ("schema.dinoco", 3));
     let status = schema.enums().next().expect("enum");
     assert_eq!((status.origin.file.as_str(), status.origin.line), ("schema.dinoco", 5));
     let business = schema.models().next().expect("model");
@@ -909,50 +909,41 @@ model Business {
 }
 
 #[test]
-fn compile_validates_custom_derive_objects_with_source_locations() {
-    let invalid_into = compile(
+fn compile_rejects_the_removed_custom_derives_key_with_a_pointer_to_transform_rs() {
+    let error = compile(
         r#"config {
-    custom_derives = [
-        { into = "table" derive = "Validate" import = "use validator::Validate;" }
-    ]
+    custom_derives = [{ into = "enum" derive = "X" import = "use x::X;" }]
 }
 "#,
     )
-    .expect_err("custom derive targets are restricted");
-    assert!(invalid_into.message.contains("must be `enum` or `struct`"), "{invalid_into}");
-    assert_eq!(invalid_into.file.as_deref(), Some("schema.dinoco"));
-    assert_eq!(invalid_into.line, 3);
+    .expect_err("custom_derives was removed");
 
-    for (source, expected) in [
-        (r#"config { custom_derives = [{}] }"#, "missing `into`, `derive`, `import`"),
-        (r#"config { custom_derives = [{ derive = "X" import = "use x::X;" }] }"#, "missing `into`"),
-        (r#"config { custom_derives = [{ into = "enum" import = "use x::X;" }] }"#, "missing `derive`"),
-        (r#"config { custom_derives = [{ into = "enum" derive = "X" }] }"#, "missing `import`"),
-        (r#"config { custom_derives = [{ into = "enum" }] }"#, "missing `derive`, `import`"),
-        (
-            r#"config { custom_derives = [{ into = "enum" derive = "X" derive = "Y" import = "use x::X;" }] }"#,
-            "declared more than once",
-        ),
-        (r#"config { custom_derives = ["X"] }"#, "must be an object"),
-        (
-            r#"config { custom_derives = [{ into = "" derive = "X" import = "use x::X;" }] }"#,
-            "`into` must be a non-empty string",
-        ),
-        (
-            r#"config { custom_derives = [{ into = "enum" derive = "" import = "use x::X;" }] }"#,
-            "`derive` must be a non-empty string",
-        ),
-        (
-            r#"config { custom_derives = [{ into = "enum" derive = "X" import = "" }] }"#,
-            "`import` must be a non-empty string",
-        ),
-        (
-            r#"config { custom_derives = [{ into = "enum" derive = "not a path" import = "use x::X;" }] }"#,
-            "valid Rust derive path",
-        ),
-        (r#"config { custom_derives = [{ into = "enum" derive = "X" import = "x::X" }] }"#, "Rust `use ...` statement"),
+    assert!(error.message.contains("custom_derives"), "{error}");
+    assert!(error.message.contains("dinoco/transform.rs"), "{error}");
+    assert_eq!(error.file.as_deref(), Some("schema.dinoco"));
+    assert_eq!(error.line, 2);
+}
+
+#[test]
+fn compile_accepts_and_validates_the_migration_engine() {
+    let automatic = compile("config { database = \"sqlite\" database_url = env(\"DATABASE_URL\") }\n").expect("default");
+    assert_eq!(automatic.migration_engine(), dinoco_compiler::MigrationEngine::Automatic);
+
+    for (value, expected) in [
+        ("automatic", dinoco_compiler::MigrationEngine::Automatic),
+        ("manual", dinoco_compiler::MigrationEngine::Manual),
     ] {
-        let error = compile(source).expect_err(expected);
-        assert!(error.message.contains(expected), "{error}");
+        let schema = compile(&format!(
+            "config {{ database = \"sqlite\" database_url = env(\"DATABASE_URL\") migration_engine = \"{value}\" }}\n"
+        ))
+        .expect("valid migration engine");
+        assert_eq!(schema.migration_engine(), expected);
     }
+
+    let error = compile(
+        "config { database = \"sqlite\" database_url = env(\"DATABASE_URL\") migration_engine = \"sometimes\" }\n",
+    )
+    .expect_err("invalid migration engine");
+    assert!(error.message.contains("migration_engine"), "{error}");
+    assert!(error.message.contains("`automatic` or `manual`"), "{error}");
 }

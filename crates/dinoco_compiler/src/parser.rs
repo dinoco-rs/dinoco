@@ -5,7 +5,7 @@ use pest::iterators::Pair;
 use pest_derive::Parser;
 
 use crate::ast::{
-    Attribute, AttributeArgument, AttributeValue, ConfigBlock, ConfigEntry, ConfigImport, ConfigValue, CustomDerive,
+    Attribute, AttributeArgument, AttributeValue, ConfigBlock, ConfigEntry, ConfigImport, ConfigValue,
     EnumDef, FieldType, Import, Model, ModelField, Schema, SchemaItem, SourceOrigin, WorkspaceConfig,
 };
 use crate::error::CompileError;
@@ -73,9 +73,14 @@ fn parse_config(pair: Pair<'_, Rule>, file: &str) -> CompileResult<ConfigBlock> 
         }
     }
 
-    let custom_derives = parse_custom_derives(&entries)?;
+    if let Some(entry) = entries.iter().find(|entry| entry.key == "custom_derives") {
+        return Err(CompileError::at(
+            "`config.custom_derives` was removed; customize generated code from `dinoco/transform.rs` instead (see the Code transforms docs)",
+            &entry.origin,
+        ));
+    }
     let imports = parse_config_imports(&entries)?;
-    Ok(ConfigBlock { entries, workspaces, custom_derives, imports, origin })
+    Ok(ConfigBlock { entries, workspaces, imports, origin })
 }
 
 fn parse_workspace(pair: Pair<'_, Rule>, file: &str) -> CompileResult<WorkspaceConfig> {
@@ -96,99 +101,6 @@ fn parse_config_entry(pair: Pair<'_, Rule>, file: &str) -> CompileResult<ConfigE
     let value = parse_config_value(expect_rule(&mut inner, Rule::config_value, "expected config value")?, file)?;
 
     Ok(ConfigEntry { key, value, origin })
-}
-
-fn parse_custom_derives(entries: &[ConfigEntry]) -> CompileResult<Vec<CustomDerive>> {
-    let Some(entry) = entries.iter().find(|entry| entry.key == "custom_derives") else {
-        return Ok(Vec::new());
-    };
-    let ConfigValue::Array(values) = &entry.value else {
-        return Err(CompileError::at("`config.custom_derives` must be an array of objects", &entry.origin));
-    };
-
-    values
-        .iter()
-        .map(|value| {
-            let ConfigValue::Object(properties) = value else {
-                return Err(CompileError::at("Every `config.custom_derives` item must be an object", &entry.origin));
-            };
-            let mut keys = HashSet::new();
-            for property in properties {
-                if !keys.insert(property.key.as_str()) {
-                    return Err(CompileError::at(
-                        format!("Custom derive key `{}` is declared more than once", property.key),
-                        &property.origin,
-                    ));
-                }
-                if !matches!(property.key.as_str(), "into" | "derive" | "import") {
-                    return Err(CompileError::at(
-                        format!("Unknown custom derive key `{}`", property.key),
-                        &property.origin,
-                    ));
-                }
-            }
-            let missing = ["into", "derive", "import"]
-                .into_iter()
-                .filter(|key| !keys.contains(key))
-                .map(|key| format!("`{key}`"))
-                .collect::<Vec<_>>();
-            if !missing.is_empty() {
-                return Err(CompileError::at(
-                    format!(
-                        "Custom derive requires all three keys: `into`, `derive`, and `import`; missing {}",
-                        missing.join(", ")
-                    ),
-                    properties.first().map_or(&entry.origin, |property| &property.origin),
-                ));
-            }
-            let string_property = |key: &str| -> CompileResult<&str> {
-                let property = properties.iter().find(|property| property.key == key).ok_or_else(|| {
-                    CompileError::at(format!("Custom derive requires `{key} = \"...\"`"), &entry.origin)
-                })?;
-                match &property.value {
-                    ConfigValue::String(value) if !value.trim().is_empty() => Ok(value),
-                    _ => Err(CompileError::at(
-                        format!("Custom derive `{key}` must be a non-empty string"),
-                        &property.origin,
-                    )),
-                }
-            };
-            let into = string_property("into")?;
-            if !matches!(into, "enum" | "struct") {
-                let origin = &properties.iter().find(|property| property.key == "into").unwrap().origin;
-                return Err(CompileError::at("Custom derive `into` must be `enum` or `struct`", origin));
-            }
-            let derive = string_property("derive")?;
-            let derive_origin = &properties.iter().find(|property| property.key == "derive").unwrap().origin;
-            if !valid_derive_path(derive) {
-                return Err(CompileError::at(
-                    "Custom derive `derive` must be a valid Rust derive path such as `ZodSchema` or `crate::ZodSchema`",
-                    derive_origin,
-                ));
-            }
-            let import = string_property("import")?;
-            let import_origin = &properties.iter().find(|property| property.key == "import").unwrap().origin;
-            let import_statement = import.trim().trim_end_matches(';').trim();
-            if import.contains('\n')
-                || import.contains('\r')
-                || !import_statement.strip_prefix("use ").is_some_and(|path| !path.trim().is_empty())
-            {
-                return Err(CompileError::at(
-                    "Custom derive `import` must be a single Rust `use ...` statement",
-                    import_origin,
-                ));
-            }
-            Ok(CustomDerive {
-                into: into.to_string(),
-                derive: derive.to_string(),
-                import: import.to_string(),
-                origin: properties
-                    .first()
-                    .map(|property| property.origin.clone())
-                    .unwrap_or_else(|| entry.origin.clone()),
-            })
-        })
-        .collect()
 }
 
 fn parse_config_imports(entries: &[ConfigEntry]) -> CompileResult<Vec<ConfigImport>> {
@@ -221,16 +133,6 @@ fn parse_config_imports(entries: &[ConfigEntry]) -> CompileResult<Vec<ConfigImpo
             Ok(ConfigImport { path: path.clone(), origin: entry.origin.clone() })
         })
         .collect()
-}
-
-fn valid_derive_path(value: &str) -> bool {
-    let value = value.trim().strip_prefix("::").unwrap_or(value.trim());
-    !value.is_empty()
-        && value.split("::").all(|segment| {
-            let mut characters = segment.chars();
-            characters.next().is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
-                && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
-        })
 }
 
 pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
@@ -341,7 +243,7 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
             }
         }
 
-        if config.entries.iter().any(|entry| !matches!(entry.key.as_str(), "custom_derives" | "imports"))
+        if config.entries.iter().any(|entry| !matches!(entry.key.as_str(), "imports"))
             && !config.workspaces.is_empty()
         {
             return source_error(
@@ -796,7 +698,7 @@ fn validate_config_values(schema: &Schema) -> CompileResult<()> {
         let database_entries = config
             .entries
             .iter()
-            .filter(|entry| !matches!(entry.key.as_str(), "custom_derives" | "imports"))
+            .filter(|entry| !matches!(entry.key.as_str(), "imports"))
             .cloned()
             .collect::<Vec<_>>();
         if !database_entries.is_empty() {
@@ -804,7 +706,7 @@ fn validate_config_values(schema: &Schema) -> CompileResult<()> {
         }
         for workspace in &config.workspaces {
             if let Some(entry) =
-                workspace.entries.iter().find(|entry| matches!(entry.key.as_str(), "custom_derives" | "imports"))
+                workspace.entries.iter().find(|entry| matches!(entry.key.as_str(), "imports"))
             {
                 return Err(CompileError::at(
                     format!("`{}` must be declared at the top level of `config`", entry.key),
@@ -851,6 +753,11 @@ fn validate_config_scope(scope: &str, entries: &[ConfigEntry]) -> CompileResult<
                 if matches!(value.as_str(), "single_query" | "batch_query") => {}
             ("query_mode", _) => {
                 return schema_error(format!("`{scope}.query_mode` must be `single_query` or `batch_query`"));
+            }
+            ("migration_engine", ConfigValue::String(value) | ConfigValue::Ident(value))
+                if matches!(value.as_str(), "automatic" | "manual") => {}
+            ("migration_engine", _) => {
+                return schema_error(format!("`{scope}.migration_engine` must be `automatic` or `manual`"));
             }
             ("min_connection" | "max_connection", ConfigValue::Integer(value)) if *value > 0 => {}
             ("min_connection" | "max_connection", _) => {

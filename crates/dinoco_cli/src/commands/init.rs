@@ -5,7 +5,8 @@ use inquire::Select;
 
 use crate::ui;
 
-pub fn run() -> anyhow::Result<()> {
+pub fn run(migration_engine: Option<&str>) -> anyhow::Result<()> {
+    let manual = migration_engine == Some("manual");
     let database = env_or_select(
         "DINOCO_CLI_INIT_DATABASE",
         "Which database do you want to use?",
@@ -32,6 +33,9 @@ pub fn run() -> anyhow::Result<()> {
         schema.push_str(&format!("    connection = \"{connection}\"\n"));
     }
     schema.push_str("    database_url = env(\"DATABASE_URL\")\n");
+    if manual {
+        schema.push_str("    migration_engine = \"manual\"\n");
+    }
     schema.push_str("    read_replicas = []\n");
     schema.push_str("}\n");
 
@@ -53,10 +57,23 @@ pub fn run() -> anyhow::Result<()> {
         ui::info("Created dinoco/migrations/");
     }
 
+    if manual {
+        let migrations_mod = migrations_dir.join("mod.rs");
+        if !migrations_mod.exists() {
+            fs::write(&migrations_mod, dinoco_codegen::migrations_mod_template())?;
+            ui::info("Created dinoco/migrations/mod.rs");
+        }
+    }
+
     println!("\nNext steps:");
     println!("  1. Set DATABASE_URL in your environment");
     println!("  2. Define your models in dinoco/schema.dinoco");
-    println!("  3. Run `dinoco migrate generate` to create your first migration");
+    if manual {
+        println!("  3. Run `dinoco migrate generate <name>` to scaffold your first manual migration");
+        println!("  4. Write its `up`/`down`, then run `dinoco migrate run`");
+    } else {
+        println!("  3. Run `dinoco migrate generate` to create your first migration");
+    }
 
     ui::docs("/getting-started");
 

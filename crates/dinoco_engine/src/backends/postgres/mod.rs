@@ -30,6 +30,7 @@ pub struct PostgresAdapter {
     with_logger: bool,
 }
 
+#[derive(Clone)]
 pub struct PgBouncerAdapter {
     inner: PostgresAdapter,
 }

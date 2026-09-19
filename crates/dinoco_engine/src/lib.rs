@@ -1,6 +1,7 @@
 mod backends;
 mod error;
 mod json_row;
+mod manual_migration;
 mod pluck;
 mod query;
 mod traits;
@@ -12,6 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub use backends::*;
 pub use error::*;
 pub use json_row::*;
+pub use manual_migration::*;
 pub use pluck::*;
 pub use query::*;
 pub use traits::*;

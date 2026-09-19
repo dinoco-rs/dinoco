@@ -2,6 +2,46 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Field, Fields, GenericArgument, LitStr, PathArguments, Type, parse_macro_input};
 
+/// Marks a type as a manual migration: `#[dinoco(migration)]`.
+///
+/// The type is left untouched; the macro only asserts at compile time that it
+/// implements `DinocoMigration`, so a forgotten impl is reported on the type.
+#[proc_macro_attribute]
+pub fn dinoco(args: TokenStream, input: TokenStream) -> TokenStream {
+    let args = proc_macro2::TokenStream::from(args);
+    let item = proc_macro2::TokenStream::from(input);
+    let kind = args.to_string();
+
+    if kind.trim() != "migration" {
+        return syn::Error::new_spanned(args, "unknown `#[dinoco(..)]` item attribute; expected `#[dinoco(migration)]`")
+            .to_compile_error()
+            .into();
+    }
+
+    let parsed = match syn::parse2::<DeriveInput>(item.clone()) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return syn::Error::new_spanned(item, "`#[dinoco(migration)]` can only be applied to a struct or enum")
+                .to_compile_error()
+                .into();
+        }
+    };
+    let name = &parsed.ident;
+    let (impl_generics, type_generics, where_clause) = parsed.generics.split_for_impl();
+
+    quote! {
+        #item
+
+        const _: () = {
+            fn assert_dinoco_migration #impl_generics () #where_clause {
+                fn implements<T: ::dinoco::DinocoMigration>() {}
+                implements::<#name #type_generics>();
+            }
+        };
+    }
+    .into()
+}
+
 #[proc_macro_derive(Entity, attributes(dinoco))]
 pub fn derive_entity(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

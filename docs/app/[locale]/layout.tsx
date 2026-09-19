@@ -7,7 +7,7 @@ import { DOCS_THEME_COOKIE, resolveDocsTheme } from '../../src/lib/docs-preferen
 import { SITE_URL } from '../../src/lib/site';
 import { SUPPORTED_LOCALES } from '../../src/jsons/versions';
 
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import type { DocsLocale } from '../../src/jsons/versions';
 
 type LocaleLayoutProps = {
@@ -36,14 +36,28 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
 	const meta = localeMetadata[resolvedLocale];
 
 	return {
+		applicationName: 'Dinoco',
+		authors: [{ name: 'Dinoco', url: 'https://github.com/dinoco-rs' }],
+		category: 'technology',
 		description: meta.description,
+		icons: { icon: '/favicon.png' },
+		keywords: resolvedLocale === 'pt-br' ? ['Dinoco', 'ORM Rust', 'banco de dados', 'migrations', 'queries type-safe'] : ['Dinoco', 'Rust ORM', 'database', 'migrations', 'type-safe queries'],
 		metadataBase: new URL(SITE_URL),
+		openGraph: { siteName: 'Dinoco', type: 'website' },
+		other: { 'mcp-server': `${SITE_URL}/mcp`, 'llms-txt': `${SITE_URL}/llms.txt` },
 		title: {
 			default: meta.title,
 			template: '%s | Dinoco',
 		},
 	};
 }
+
+export const viewport: Viewport = {
+	themeColor: [
+		{ color: '#ffffff', media: '(prefers-color-scheme: light)' },
+		{ color: '#050505', media: '(prefers-color-scheme: dark)' },
+	],
+};
 
 const themeScript = `
 (() => {
@@ -71,7 +85,7 @@ const LocaleLayout = async ({ children, params }: LocaleLayoutProps): Promise<Re
 			<head>
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
 				<link rel="icon" href="/favicon.png" type="image/png" />
-				<link rel="shortcut icon" href="/favicon.png" type="image/png" />
+				<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
 				<link rel="preconnect" href="https://fonts.googleapis.com" />
 				<link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 				<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />

@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_tests"
-version = "2.0.2"
+version = "2.0.3"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
@@ -12,13 +12,13 @@ dotenvy = "0.15"
 inquire = "0.7"
 tokio = { version = "1.50", features = ["full"] }
 tempfile = "3"
-dinoco = { path = "../crates/dinoco", version = "2.0.2" }
-dinoco_cli = { path = "../crates/dinoco_cli", version = "2.0.2" }
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.0.2" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.0.2" }
-dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.0.2" }
-dinoco_engine = { path = "../crates/dinoco_engine", version = "2.0.2" }
-dinoco_vscode = { path = "../vscode", version = "2.0.2" }
+dinoco = { path = "../crates/dinoco", version = "2.0.3" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "2.0.3" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.0.3" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.0.3" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.0.3" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "2.0.3" }
+dinoco_vscode = { path = "../vscode", version = "2.0.3" }
 
 [[bin]]
 name = "dinoco_cli"
@@ -73,8 +73,16 @@ name = "dinoco_cli_commands"
 path = "tests/dinoco_cli/cli.rs"
 
 [[test]]
+name = "dinoco_cli_manual_migrations"
+path = "tests/dinoco_cli/manual.rs"
+
+[[test]]
 name = "dinoco_codegen_generate_models"
 path = "tests/dinoco_codegen/generate_models.rs"
+
+[[test]]
+name = "dinoco_codegen_transform"
+path = "tests/dinoco_codegen/transform.rs"
 
 [[test]]
 name = "dinoco_compiler_compile"
@@ -83,6 +91,10 @@ path = "tests/dinoco_compiler/compile.rs"
 [[test]]
 name = "dinoco_engine_migrations"
 path = "tests/dinoco_engine/migrations.rs"
+
+[[test]]
+name = "dinoco_engine_manual_migrations"
+path = "tests/dinoco_engine/manual_migrations.rs"
 
 [[test]]
 name = "dinoco_engine_query_builder"

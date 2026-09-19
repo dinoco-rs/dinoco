@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoClient, DinocoEntity, FindWhere};
+use dinoco_engine::{DinocoClient, DinocoEntity, FindWhere, WhereComplex};
 
 use crate::{CountLoader, IntoCountLoader, execute_count};
 
@@ -9,6 +9,7 @@ where
     M: DinocoEntity,
 {
     conditions: Vec<FindWhere>,
+    complex_where: bool,
     counts: Vec<Box<dyn CountLoader<M::Count>>>,
     marker: PhantomData<M>,
 }
@@ -17,7 +18,7 @@ pub fn count<M>() -> Count<M>
 where
     M: DinocoEntity,
 {
-    Count { conditions: Vec::new(), counts: Vec::new(), marker: PhantomData }
+    Count { conditions: Vec::new(), complex_where: false, counts: Vec::new(), marker: PhantomData }
 }
 
 impl<M> Count<M>
@@ -29,7 +30,19 @@ where
     where
         F: FnOnce(M::Where) -> FindWhere,
     {
-        self.conditions.push(callback(M::Where::default()));
+        if !self.complex_where {
+            self.conditions.push(callback(M::Where::default()));
+        }
+
+        self
+    }
+
+    pub fn where_complex<F>(mut self, callback: F) -> Self
+    where
+        F: FnOnce(M::Where, WhereComplex) -> FindWhere,
+    {
+        self.conditions = vec![callback(M::Where::default(), WhereComplex)];
+        self.complex_where = true;
 
         self
     }

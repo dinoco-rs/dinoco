@@ -1247,6 +1247,9 @@ fn config_description(name: &str) -> Option<&'static str> {
         "imports" => Some("Imports every declaration from schema files listed by the main `schema.dinoco`."),
         "snowflake_node_id" => Some("Environment-backed node ID required by `snowflake()`."),
         "with_logger" => Some("Enables SQL query logging when set to `true`. Defaults to `false`."),
+        "migration_engine" => {
+            Some("`automatic` (default) lets Dinoco generate migrations; `manual` uses Rust migrations in `dinoco/migrations/`.")
+        }
         "min_connection" => Some("Minimum PostgreSQL Direct pool size. Defaults to `2`."),
         "max_connection" => Some("Maximum PostgreSQL Direct pool size. Defaults to `10`."),
         "env" => Some("Reads a configuration value from an environment variable."),

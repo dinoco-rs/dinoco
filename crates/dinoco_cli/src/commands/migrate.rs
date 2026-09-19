@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
+use dinoco_compiler::MigrationEngine;
 use inquire::Confirm;
 use sha2::{Digest, Sha256};
 
@@ -21,8 +22,34 @@ const MIGRATION_CHECKSUM_MARKER: &str = "-- dinoco-checksum: ";
 const MIGRATION_CHECKSUM_PLACEHOLDER: &str = "__DINOCO_INTERNAL_SHA256_PLACEHOLDER_7F43A9C2__";
 const SQLITE_REBUILD_MARKER: &str = "dinoco-sqlite-table-rebuild";
 
-pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
+pub async fn rollback(workspace: Option<String>, steps: usize) -> anyhow::Result<()> {
+    require_manual_engine(workspace.as_deref(), "migrate rollback")?;
+    super::manual::rollback(workspace, steps).await
+}
+
+pub async fn status(workspace: Option<String>) -> anyhow::Result<()> {
+    require_manual_engine(workspace.as_deref(), "migrate status")?;
+    super::manual::status(workspace).await
+}
+
+fn require_manual_engine(workspace: Option<&str>, command: &str) -> anyhow::Result<()> {
+    let (_, schema, _) = read_schema_for_workspace(workspace)?;
+    if schema.migration_engine() != MigrationEngine::Manual {
+        anyhow::bail!(
+            "`dinoco {command}` needs `migration_engine = \"manual\"` in schema.dinoco; the automatic engine only moves forward"
+        );
+    }
+    Ok(())
+}
+
+pub async fn generate(workspace: Option<String>, name: Option<String>) -> anyhow::Result<()> {
     let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
+    if schema.migration_engine() == MigrationEngine::Manual {
+        return super::manual::generate(&schema, workspace.as_deref(), name).await;
+    }
+    if name.is_some() {
+        ui::warning("The migration name is only used by `migration_engine = \"manual\"`; ignoring it.");
+    }
     let config = runtime_config(&schema)?;
     let db = CliDatabase::connect(&config).await?;
     db.adopt_legacy_migration_history().await?;
@@ -87,7 +114,7 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
             let latest = server_history.applied.last().expect("legacy history is not empty");
             db.record_server_schema_snapshot(latest, &current).await?;
             persist_legacy_checksums(&db, history.as_ref(), Some(server_history)).await?;
-            dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
+            crate::runner::generate_models(&schema, workspace.as_deref())?;
             ui::success("Legacy migration history adopted with a canonical schema snapshot.");
             ui::success("Rust models generated at dinoco/models/");
             return Ok(());
@@ -171,7 +198,7 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
     if migration_plan.steps.is_empty() && !repairing_drift {
         persist_legacy_checksums(&db, history.as_ref(), server_history.as_ref()).await?;
         ui::info("No schema changes were found.");
-        dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
+        crate::runner::generate_models(&schema, workspace.as_deref())?;
         ui::success("Rust models generated at dinoco/models/");
         return Ok(());
     }
@@ -188,7 +215,7 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
             .await
             .context("failed to repair SQLite schema drift; all changes were rolled back")?;
         ensure_live_schema_matches(&db, &desired).await?;
-        dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
+        crate::runner::generate_models(&schema, workspace.as_deref())?;
         ui::success(
             "SQLite schema drift repaired; no new migration was needed because the Dinoco schema did not change.",
         );
@@ -245,7 +272,7 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
     if !db.is_sqlite() {
         db.record_server_schema_snapshot(&migration_name, &desired).await?;
     }
-    dinoco_codegen::generate_models_for_workspace(&schema, workspace.as_deref())?;
+    crate::runner::generate_models(&schema, workspace.as_deref())?;
 
     ui::success(format!("Migration generated and applied: {}", migration_dir.display()));
     ui::success("Rust models generated at dinoco/models/");
@@ -812,6 +839,9 @@ async fn repair_pending_history_drift(
 
 pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
     let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
+    if schema.migration_engine() == MigrationEngine::Manual {
+        return super::manual::run(workspace).await;
+    }
     let config = runtime_config(&schema)?;
     let db = CliDatabase::connect(&config).await?;
     db.adopt_legacy_migration_history().await?;

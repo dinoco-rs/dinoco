@@ -12,6 +12,8 @@ use crate::{
     RelationOccurrenceQuery, UpdateQuery,
 };
 
+/// Cloning a backend is cheap: adapters share their connection pool.
+#[derive(Clone)]
 pub enum Backend {
     Sqlite(SqliteAdapter),
     Postgres(PostgresAdapter),

@@ -281,6 +281,10 @@ fn config_completions(prefix: &str) -> Vec<CompletionItem> {
                 value("true", CompletionItemKind::VALUE, "Enable SQL query logging", "true"),
                 value("false", CompletionItemKind::VALUE, "Disable SQL query logging", "false"),
             ],
+            "migration_engine" => vec![
+                value("automatic", CompletionItemKind::VALUE, "Dinoco generates the migrations (default)", "\"automatic\""),
+                value("manual", CompletionItemKind::VALUE, "Hand-written Rust migrations", "\"manual\""),
+            ],
             "min_connection" => {
                 vec![value("2", CompletionItemKind::VALUE, "Default minimum PostgreSQL Direct connections", "2")]
             }
@@ -330,6 +334,12 @@ fn config_completions(prefix: &str) -> Vec<CompletionItem> {
             "snowflake_node_id = env(\"${1:SNOWFLAKE_NODE_ID}\")",
         ),
         snippet("with_logger", CompletionItemKind::PROPERTY, "SQL query logging", "with_logger = ${1|true,false|}"),
+        snippet(
+            "migration_engine",
+            CompletionItemKind::PROPERTY,
+            "Automatic or manual migrations",
+            "migration_engine = \"${1|automatic,manual|}\"",
+        ),
         snippet(
             "min_connection",
             CompletionItemKind::PROPERTY,

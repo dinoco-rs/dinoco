@@ -2,13 +2,51 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use dinoco_compiler::{AttributeValue, ConfigValue, Model, ModelField, Schema};
+use dinoco_compiler::{AttributeValue, ConfigValue, MigrationEngine, Model, ModelField, Schema};
+
+pub mod transform;
+
+pub use quote::quote;
+pub use transform::{DinocoTransformer, NoTransform, apply_transformer, transform_enums, transform_models};
+
+use transform as tf;
+
+/// Everything a `dinoco/transform.rs` needs, in one import.
+pub mod prelude {
+    pub use crate::quote;
+    pub use crate::transform::*;
+}
+
+const MIGRATIONS_MOD_TEMPLATE: &str = include_str!("migrations_mod.rs.txt");
+
+/// The skeleton written to `dinoco/migrations/mod.rs` for manual migrations.
+pub fn migrations_mod_template() -> &'static str {
+    MIGRATIONS_MOD_TEMPLATE
+}
 
 pub fn generate_models(schema: &Schema) -> anyhow::Result<()> {
     generate_models_for_workspace(schema, None)
 }
 
 pub fn generate_models_for_workspace(schema: &Schema, workspace: Option<&str>) -> anyhow::Result<()> {
+    generate_models_with(schema, workspace, &NoTransform)
+}
+
+/// Builds the structured view of the generated code, before any transformer
+/// has touched it.
+pub fn build_schema(schema: &Schema) -> tf::Schema {
+    tf::Schema {
+        enums: schema.enums().map(build_enum).collect(),
+        models: schema.models().map(|model| build_model(model, schema)).collect(),
+        imports: Vec::new(),
+    }
+}
+
+pub fn generate_models_with(
+    schema: &Schema,
+    workspace: Option<&str>,
+    transformer: &dyn DinocoTransformer,
+) -> anyhow::Result<()> {
     let marker = Path::new("dinoco/.models-workspace");
     let generated_workspace = fs::read_to_string(marker).ok();
     let requested_workspace = workspace.unwrap_or("");
@@ -37,9 +75,15 @@ pub fn generate_models_for_workspace(schema: &Schema, workspace: Option<&str>) -
         fs::remove_file(stale_flat_file)?;
     }
 
-    fs::write("dinoco/models/mod.rs", render_models_mod(schema))?;
-    for model in schema.models() {
-        fs::write(format!("dinoco/models/{}.rs", to_snake_case(&model.name)), render_model_file(model, schema))?;
+    let mut generated = build_schema(schema);
+    apply_transformer(&mut generated, transformer);
+
+    fs::write("dinoco/models/mod.rs", render_models_mod_from(&generated))?;
+    for model in &generated.models {
+        fs::write(
+            format!("dinoco/models/{}.rs", to_snake_case(&model.name)),
+            render_model_source(model, &generated.imports_for(&model.imports)),
+        )?;
     }
     for join in implicit_many_to_many_joins(schema) {
         let legacy_join_file = format!("dinoco/models/{}.rs", to_snake_case(&join.rust_name));
@@ -47,7 +91,14 @@ pub fn generate_models_for_workspace(schema: &Schema, workspace: Option<&str>) -
             fs::remove_file(legacy_join_file)?;
         }
     }
-    fs::write("dinoco/mod.rs", render_dinoco_mod(schema))?;
+    fs::write("dinoco/mod.rs", render_dinoco_mod_for_workspace(schema, workspace))?;
+    if schema.migration_engine() == MigrationEngine::Manual {
+        let migrations_mod = manual_migrations_dir(workspace).join("mod.rs");
+        if !migrations_mod.exists() {
+            ensure_parent(&migrations_mod)?;
+            fs::write(&migrations_mod, MIGRATIONS_MOD_TEMPLATE)?;
+        }
+    }
     fs::write(marker, requested_workspace)?;
     Ok(())
 }
@@ -63,41 +114,32 @@ pub fn render_models(schema: &Schema) -> String {
 }
 
 pub fn render_models_mod(schema: &Schema) -> String {
-    let mut out = String::new();
-    push_custom_imports(&mut out, schema, "enum");
-    for item in schema.enums() {
-        let derives = merged_derives(
-            &[
-                "Debug",
-                "Clone",
-                "Copy",
-                "PartialEq",
-                "Eq",
-                "Default",
-                "::dinoco::serde::Serialize",
-                "::dinoco::serde::Deserialize",
-                "::dinoco::DinocoEnum",
-            ],
-            schema,
-            "enum",
-        );
-        out.push_str(&format!("#[derive({})]\n", derives.join(", ")));
-        out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
-        out.push_str(&format!("pub enum {} {{\n", item.name));
-        for (index, value) in item.values.iter().enumerate() {
-            if index == 0 {
-                out.push_str("    #[default]\n");
-            }
-            out.push_str(&format!("    #[dinoco(value = \"{}\")]\n", escape_rust_string(value)));
-            out.push_str(&format!("    #[serde(rename = \"{}\")]\n", escape_rust_string(value)));
-            out.push_str("    ");
-            out.push_str(&to_pascal_case(value));
-            out.push_str(",\n");
-        }
-        out.push_str("}\n\n");
+    render_models_mod_from(&build_schema(schema))
+}
+
+/// Renders `dinoco/models/mod.rs` (the enums and the module list) from an
+/// already transformed [`tf::Schema`].
+pub fn render_models_mod_from(schema: &tf::Schema) -> String {
+    let mut imports = schema.imports.iter().cloned().collect::<BTreeSet<_>>();
+    for item in &schema.enums {
+        imports.extend(item.imports.iter().cloned());
     }
 
-    for model in schema.models() {
+    let mut out = String::new();
+    for import in &imports {
+        out.push_str(import);
+        out.push('\n');
+    }
+    if !imports.is_empty() {
+        out.push('\n');
+    }
+
+    for item in &schema.enums {
+        item.render(&mut out);
+        out.push('\n');
+    }
+
+    for model in &schema.models {
         let module = to_snake_case(&model.name);
         out.push_str(&format!("mod {module};\n"));
         out.push_str(&format!("pub use {module}::*;\n"));
@@ -106,49 +148,130 @@ pub fn render_models_mod(schema: &Schema) -> String {
 }
 
 pub fn render_model_file(model: &Model, schema: &Schema) -> String {
+    render_model_source(&build_model(model, schema), &BTreeSet::new())
+}
+
+/// Renders one `dinoco/models/<name>.rs` file from a transformed model.
+pub fn render_model_source(model: &tf::Model, imports: &BTreeSet<String>) -> String {
     let mut out = String::new();
     out.push_str("#[allow(unused_imports)]\n");
     out.push_str("use super::*;\n");
     out.push_str("use dinoco::Entity;\n");
-    push_custom_imports(&mut out, schema, "struct");
+    for import in imports {
+        out.push_str(import);
+        out.push('\n');
+    }
     out.push('\n');
-    let mut base = vec!["Debug", "Clone"];
-    if model_supports_copy(model, schema) {
-        base.push("Copy");
-    }
-    base.extend(["Entity", "::dinoco::serde::Serialize", "::dinoco::serde::Deserialize"]);
-    let derives = merged_derives(&base, schema, "struct");
-    out.push_str(&format!("#[derive({})]\n", derives.join(", ")));
-    out.push_str("#[serde(crate = \"::dinoco::serde\")]\n");
-    out.push_str(&format!("#[dinoco(table_name = \"{}\")]\n", escape_rust_string(&model_table_name(model))));
-    out.push_str(&format!("pub struct {} {{\n", model.name));
-    for field in &model.fields {
-        for attr in field_attributes(model, field, schema) {
-            out.push_str("    ");
-            out.push_str(&attr);
-            out.push('\n');
-        }
-        out.push_str("    pub ");
-        out.push_str(&field.name);
-        out.push_str(": ");
-        out.push_str(&rust_type(model, field, schema));
-        out.push_str(",\n\n");
-    }
-    for field in many_to_many_virtual_fields(model, schema) {
-        out.push_str(&format!(
-            "    #[dinoco(many_to_many_key, join_table = \"{}\", parent_field = \"{}\", join_parent_field = \"{}\", join_child_field = \"{}\")]\n",
-            escape_rust_string(&field.join_table),
-            escape_rust_string(&field.parent_field),
-            escape_rust_string(&field.join_parent_field),
-            escape_rust_string(&field.join_child_field),
-        ));
-        out.push_str(&format!("    pub {}: Option<{}>,\n\n", field.name, field.ty));
-    }
-    out.push_str("}\n");
+    model.render(&mut out);
     out
 }
 
+fn build_enum(item: &dinoco_compiler::EnumDef) -> tf::Enum {
+    let variants = item
+        .values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let mut attributes = Vec::new();
+            if index == 0 {
+                attributes.push("#[default]".to_string());
+            }
+            attributes.push(format!("#[dinoco(value = \"{}\")]", escape_rust_string(value)));
+            attributes.push(format!("#[serde(rename = \"{}\")]", escape_rust_string(value)));
+            tf::Variant { name: to_pascal_case(value), value: value.clone(), attributes }
+        })
+        .collect();
+
+    tf::Enum {
+        name: item.name.clone(),
+        derives: [
+            "Debug",
+            "Clone",
+            "Copy",
+            "PartialEq",
+            "Eq",
+            "Default",
+            "::dinoco::serde::Serialize",
+            "::dinoco::serde::Deserialize",
+            "::dinoco::DinocoEnum",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect(),
+        attributes: vec!["#[serde(crate = \"::dinoco::serde\")]".to_string()],
+        imports: Vec::new(),
+        variants,
+        impls: Vec::new(),
+    }
+}
+
+fn build_model(model: &Model, schema: &Schema) -> tf::Model {
+    let mut derives = vec!["Debug", "Clone"];
+    if model_supports_copy(model, schema) {
+        derives.push("Copy");
+    }
+    derives.extend(["Entity", "::dinoco::serde::Serialize", "::dinoco::serde::Deserialize"]);
+
+    let mut fields = Vec::new();
+    let mut relations = Vec::new();
+    for field in &model.fields {
+        let attributes = field_attributes(model, field, schema);
+        let (ty, nullable) = rust_type_parts(model, field, schema);
+        if field.is_relation(schema) {
+            relations.push(tf::Relation {
+                name: field.name.clone(),
+                target: field.ty.name.clone(),
+                list: field.ty.list,
+                nullable,
+                ty: ty.into(),
+                attributes,
+            });
+        } else {
+            fields.push(tf::Field { name: field.name.clone(), ty: ty.into(), nullable, attributes });
+        }
+    }
+    for field in many_to_many_virtual_fields(model, schema) {
+        fields.push(tf::Field {
+            name: field.name,
+            ty: field.ty.into(),
+            nullable: true,
+            attributes: vec![format!(
+                "#[dinoco(many_to_many_key, join_table = \"{}\", parent_field = \"{}\", join_parent_field = \"{}\", join_child_field = \"{}\")]",
+                escape_rust_string(&field.join_table),
+                escape_rust_string(&field.parent_field),
+                escape_rust_string(&field.join_parent_field),
+                escape_rust_string(&field.join_child_field),
+            )],
+        });
+    }
+
+    let table_name = model_table_name(model);
+    tf::Model {
+        name: model.name.clone(),
+        derives: derives.into_iter().map(str::to_string).collect(),
+        attributes: vec![
+            "#[serde(crate = \"::dinoco::serde\")]".to_string(),
+            format!("#[dinoco(table_name = \"{}\")]", escape_rust_string(&table_name)),
+        ],
+        table_name,
+        imports: Vec::new(),
+        fields,
+        relations,
+        impls: Vec::new(),
+    }
+}
+
+/// Directory holding the manual migrations of `workspace`.
+pub fn manual_migrations_dir(workspace: Option<&str>) -> std::path::PathBuf {
+    let root = Path::new("dinoco/migrations");
+    workspace.map_or_else(|| root.to_path_buf(), |workspace| root.join(workspace))
+}
+
 pub fn render_dinoco_mod(schema: &Schema) -> String {
+    render_dinoco_mod_for_workspace(schema, None)
+}
+
+pub fn render_dinoco_mod_for_workspace(schema: &Schema, workspace: Option<&str>) -> String {
     let config = schema.config();
     let database = config
         .and_then(|config| config.entries.iter().find(|entry| entry.key == "database"))
@@ -191,8 +314,14 @@ pub fn render_dinoco_mod(schema: &Schema) -> String {
     let query_mode_variant = if query_mode == "single_query" { "SingleQuery" } else { "BatchQuery" };
 
     let mut out = String::from("#![allow(unused)]\n\n");
-    out.push_str("pub mod models;\n\n");
-    out.push_str("pub use models::*;\n\n");
+    out.push_str("pub mod models;\n");
+    if schema.migration_engine() == MigrationEngine::Manual {
+        if let Some(workspace) = workspace {
+            out.push_str(&format!("#[path = \"migrations/{workspace}/mod.rs\"]\n"));
+        }
+        out.push_str("pub mod migrations;\n");
+    }
+    out.push_str("\npub use models::*;\n\n");
     out.push_str("pub async fn connect() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n");
     out.push_str(&format!("    let database_url = std::env::var(\"{database_url_env}\")?;\n"));
     match database {
@@ -258,35 +387,6 @@ fn config_env_array<'a>(config: Option<&'a dinoco_compiler::ConfigBlock>, key: &
         .collect()
 }
 
-fn merged_derives(base: &[&str], schema: &Schema, target: &str) -> Vec<String> {
-    let mut derives = base.iter().map(|derive| (*derive).to_string()).collect::<Vec<_>>();
-    let mut names =
-        derives.iter().map(|derive| derive.rsplit("::").next().unwrap_or(derive).to_string()).collect::<BTreeSet<_>>();
-    for custom in schema.custom_derives().filter(|custom| custom.into == target) {
-        let short = custom.derive.rsplit("::").next().unwrap_or(&custom.derive);
-        if names.insert(short.to_string()) {
-            derives.push(custom.derive.clone());
-        }
-    }
-    derives
-}
-
-fn push_custom_imports(out: &mut String, schema: &Schema, target: &str) {
-    let imports = schema
-        .custom_derives()
-        .filter(|custom| custom.into == target)
-        .map(|custom| custom.import.trim().trim_end_matches(';'))
-        .filter(|import| !import.is_empty())
-        .collect::<BTreeSet<_>>();
-    for import in &imports {
-        out.push_str(import);
-        out.push_str(";\n");
-    }
-    if !out.is_empty() && !imports.is_empty() {
-        out.push('\n');
-    }
-}
-
 pub fn render_schema_snapshot(schema: &Schema) -> String {
     dinoco_formatter_like(schema)
 }
@@ -318,7 +418,10 @@ pub fn render_many_to_many_join_file(join: &ManyToManyJoin, schema: &Schema) -> 
     out
 }
 
-fn rust_type(model: &Model, field: &ModelField, schema: &Schema) -> String {
+/// Returns the base Rust type and whether it must be wrapped in `Option`.
+/// Scalar lists come back already wrapped in `Vec`; relation lists keep the
+/// element type (see [`tf::Relation::list`]).
+fn rust_type_parts(model: &Model, field: &ModelField, schema: &Schema) -> (String, bool) {
     let relation_default = referenced_relation_default(model, field, schema);
     let base = if has_default_call(field, "uuid") || relation_default == Some("uuid") {
         "::dinoco::Uuid".to_string()
@@ -338,15 +441,11 @@ fn rust_type(model: &Model, field: &ModelField, schema: &Schema) -> String {
     };
 
     if field.ty.list {
-        format!("Vec<{base}>")
+        if field.is_relation(schema) { (base, false) } else { (format!("Vec<{base}>"), false) }
     } else if field.ty.optional {
-        if field.is_relation(schema) && field.ty.name == model.name {
-            format!("Option<Box<{base}>>")
-        } else {
-            format!("Option<{base}>")
-        }
+        if field.is_relation(schema) && field.ty.name == model.name { (format!("Box<{base}>"), true) } else { (base, true) }
     } else {
-        base
+        (base, false)
     }
 }
 
@@ -397,7 +496,8 @@ fn model_primary_rust_type(schema: &Schema, model_name: &str) -> String {
         return "String".to_string();
     };
 
-    rust_type(model, field, schema)
+    let (base, nullable) = rust_type_parts(model, field, schema);
+    if nullable { format!("Option<{base}>") } else { base }
 }
 
 fn model_supports_copy(model: &Model, schema: &Schema) -> bool {

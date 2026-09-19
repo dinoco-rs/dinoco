@@ -1,0 +1,17 @@
+//! Manual Dinoco migrations.
+//!
+//! `dinoco migrate generate <name>` adds a file for each migration and keeps
+//! the two marked regions below up to date. Edit the migrations, not the markers.
+#![allow(unused)]
+
+// dinoco:migrations:mods:start
+// dinoco:migrations:mods:end
+
+/// Every migration, oldest first. Run them with `dinoco migrate run` or from
+/// your own code with `::dinoco::migrate_up(&client, migrations())`.
+pub fn migrations() -> Vec<::dinoco::MigrationEntry> {
+    vec![
+        // dinoco:migrations:list:start
+        // dinoco:migrations:list:end
+    ]
+}

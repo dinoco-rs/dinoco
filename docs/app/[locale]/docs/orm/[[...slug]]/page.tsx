@@ -4,6 +4,8 @@ import { notFound, redirect } from 'next/navigation';
 import DocsPage from '../../../../../src/components/DocsPage';
 import MarkdownContent from '../../../../../src/components/MarkdownContent';
 import { DOCS_THEME_COOKIE, resolveDocsTheme } from '../../../../../src/lib/docs-preferences';
+import { docsPageJsonLd, docsPageKeywords, docsPageTitle } from '../../../../../src/lib/seo';
+import { loadDocsIndex } from '../../../../../src/lib/docs-index';
 import { SITE_URL } from '../../../../../src/lib/site';
 import { SUPPORTED_LOCALES, getAllDocsSlugs, parseDocsPath, resolveDocsPath } from '../../../../../src/jsons/versions';
 
@@ -56,23 +58,32 @@ export async function generateMetadata({ params }: OrmDocsPageProps): Promise<Me
 		locale: otherLocale,
 	});
 
+	const title = docsPageTitle(resolved, resolvedLocale);
+	const url = `${SITE_URL}${resolved.path}`;
+	const languages: Record<string, string> = {
+		[resolvedLocale]: url,
+		...(alternateResolved ? { [otherLocale]: `${SITE_URL}${alternateResolved.path}` } : {}),
+	};
+	const imageUrl = `${SITE_URL}/og${resolved.path.replace('/docs/orm', '')}`;
+	const englishUrl = resolvedLocale === 'en-us' ? url : alternateResolved ? `${SITE_URL}${alternateResolved.path}` : url;
+
 	return {
-		alternates: {
-			canonical: `${SITE_URL}${resolved.path}`,
-			languages: {
-				[resolvedLocale]: `${SITE_URL}${resolved.path}`,
-				...(alternateResolved ? { [otherLocale]: `${SITE_URL}${alternateResolved.path}` } : {}),
-			},
-		},
+		alternates: { canonical: url, languages: { ...languages, 'x-default': englishUrl } },
 		description: resolved.item.description,
+		keywords: docsPageKeywords(resolved, resolvedLocale),
 		openGraph: {
+			alternateLocale: alternateResolved ? [otherLocale] : undefined,
 			description: resolved.item.description,
+			images: [{ alt: title, height: 630, url: imageUrl, width: 1200 }],
 			locale: resolvedLocale,
-			title: resolved.item.documentTitle,
+			siteName: 'Dinoco',
+			title,
 			type: 'article',
-			url: `${SITE_URL}${resolved.path}`,
+			url,
 		},
-		title: resolved.item.documentTitle,
+		robots: { follow: true, index: true },
+		title,
+		twitter: { card: 'summary_large_image', description: resolved.item.description, images: [imageUrl], title },
 	};
 }
 
@@ -95,10 +106,23 @@ const OrmDocsPage = async ({ params }: OrmDocsPageProps): Promise<React.JSX.Elem
 		redirect(resolved.path);
 	}
 
+	const entry = (await loadDocsIndex()).find(page => page.locale === resolvedLocale && page.path === resolved.path);
+	const jsonLd = docsPageJsonLd({
+		description: resolved.item.description,
+		keywords: docsPageKeywords(resolved, resolvedLocale),
+		locale: resolvedLocale,
+		modifiedAt: entry?.modifiedAt,
+		resolved,
+		title: docsPageTitle(resolved, resolvedLocale),
+	});
+
 	return (
-		<DocsPage initialLocale={resolvedLocale} initialTheme={theme} resolved={resolved}>
-			<MarkdownContent contentPath={resolved.item.contentPath} />
-		</DocsPage>
+		<>
+			<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
+			<DocsPage initialLocale={resolvedLocale} initialTheme={theme} resolved={resolved}>
+				<MarkdownContent contentPath={resolved.item.contentPath} />
+			</DocsPage>
+		</>
 	);
 };
 

@@ -56,43 +56,6 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
 }
 
 #[test]
-fn codegen_applies_and_deduplicates_multiple_custom_derives_and_imports() {
-    let schema = dinoco_compiler::compile(
-        r#"
-        config {
-            custom_derives = [
-                { into = "enum" derive = "EnumSchema" import = "use demo::{EnumSchema, EnumAudit};" },
-                { into = "enum" derive = "EnumAudit" import = "use demo::{EnumSchema, EnumAudit};" },
-                { into = "enum" derive = "Debug" import = "use demo::{EnumSchema, EnumAudit};" },
-                { into = "struct" derive = "Validate" import = "use validation::{Validate, Audit};" },
-                { into = "struct" derive = "Audit" import = "use validation::{Validate, Audit};" },
-                { into = "struct" derive = "Clone" import = "use validation::{Validate, Audit};" }
-            ]
-        }
-
-        enum Status { active inactive }
-
-        model User {
-            id     String @id
-            status Status
-        }
-        "#,
-    )
-    .expect("custom derives should compile");
-
-    let models_mod = dinoco_codegen::render_models_mod(&schema);
-    let user = schema.models().find(|model| model.name == "User").expect("user model");
-    let model_file = dinoco_codegen::render_model_file(user, &schema);
-
-    assert_eq!(models_mod.matches("use demo::{EnumSchema, EnumAudit};").count(), 1);
-    assert!(models_mod.contains("::dinoco::DinocoEnum, EnumSchema, EnumAudit)]"));
-    assert_eq!(models_mod.matches("Debug").count(), 1, "built-in enum derives must not be duplicated");
-    assert_eq!(model_file.matches("use validation::{Validate, Audit};").count(), 1);
-    assert!(model_file.contains("::dinoco::serde::Deserialize, Validate, Audit)]"));
-    assert_eq!(model_file.matches("Clone").count(), 1, "built-in struct derives must not be duplicated");
-}
-
-#[test]
 fn codegen_keeps_model_acronyms_together_in_generated_names() {
     let schema = dinoco_compiler::compile(
         r#"

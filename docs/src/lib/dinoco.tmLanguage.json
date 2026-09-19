@@ -61,7 +61,7 @@
         { "include": "#comments" },
         { "include": "#strings" },
         {
-          "match": "\\b(database|connection|database_url|read_replicas|snowflake_node_id)\\b\\s*(=)",
+          "match": "\\b(database|connection|database_url|read_replicas|snowflake_node_id|migration_engine)\\b\\s*(=)",
           "captures": {
             "1": { "name": "variable.other.property.dinoco" },
             "2": { "name": "keyword.operator.assignment.dinoco" }
