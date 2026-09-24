@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, anyhow};
 use dinoco_compiler::{ConfigValue, Schema};
@@ -142,4 +142,72 @@ pub fn validate_schema_relations(schema: &Schema) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Name of the folder, inside each workspace's migrations directory, that
+/// holds the copy of the schema last used for that workspace.
+pub const WORKSPACE_SCHEMA_DIR: &str = "schema";
+
+/// Where `workspace`'s copy of the schema lives: `dinoco/migrations/<workspace>/schema/`.
+pub fn workspace_schema_dir(workspace: &str) -> PathBuf {
+    Path::new("dinoco/migrations").join(workspace).join(WORKSPACE_SCHEMA_DIR)
+}
+
+/// Copies `dinoco/schema.dinoco` and every file it imports into
+/// `dinoco/migrations/<workspace>/schema/`, keeping their paths relative to
+/// `dinoco/`, so the copy compiles on its own. The previous copy is replaced
+/// as a whole, so files no longer imported disappear from it. Returns the
+/// saved paths, relative to the copy's root.
+pub fn save_workspace_schema(workspace: &str) -> anyhow::Result<Vec<PathBuf>> {
+    let root = Path::new("dinoco/schema.dinoco");
+    let (_, files) = dinoco_compiler::compile_file_with_sources(root).map_err(|err| anyhow!(err.to_string()))?;
+    let schema_dir = fs::canonicalize("dinoco").context("dinoco/ was not found")?;
+
+    let target = workspace_schema_dir(workspace);
+    let staging = target.with_file_name(format!(".{WORKSPACE_SCHEMA_DIR}.saving"));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+
+    let mut saved = files.iter().map(|file| snapshot_path(&schema_dir, file)).collect::<Vec<_>>();
+    for (file, relative) in files.iter().zip(&saved) {
+        let destination = staging.join(relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(file, &destination).with_context(|| format!("failed to save `{}`", file.display()))?;
+    }
+
+    if target.exists() {
+        fs::remove_dir_all(&target)?;
+    }
+    fs::rename(&staging, &target)?;
+
+    saved.sort();
+    Ok(saved)
+}
+
+/// A schema file's place inside the copy: its path relative to `dinoco/`.
+/// Files imported from outside `dinoco/` go under `_external/`, with each
+/// `..` spelled `_up` so they stay inside the copy.
+fn snapshot_path(schema_dir: &Path, file: &Path) -> PathBuf {
+    if let Ok(relative) = file.strip_prefix(schema_dir) {
+        return relative.to_path_buf();
+    }
+
+    let mut common = schema_dir.to_path_buf();
+    let mut ups = 0;
+    while !file.starts_with(&common) && common.pop() {
+        ups += 1;
+    }
+    let mut path = PathBuf::from("_external");
+    for _ in 0..ups {
+        path.push("_up");
+    }
+    for component in file.strip_prefix(&common).unwrap_or(file).components() {
+        if let Component::Normal(part) = component {
+            path.push(part);
+        }
+    }
+    path
 }

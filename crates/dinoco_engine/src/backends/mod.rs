@@ -32,6 +32,16 @@ impl Backend {
         Ok(crate::TransactionExecutor { sender, mysql: matches!(self, Backend::Mysql(_)) })
     }
 
+    /// The SQL compiler of this backend's database.
+    pub fn sql_compiler(&self) -> &dyn DinocoSqlCompiler {
+        match self {
+            Backend::Sqlite(adapter) => adapter,
+            Backend::Postgres(adapter) => adapter,
+            Backend::PgBouncer(adapter) => adapter,
+            Backend::Mysql(adapter) => adapter,
+        }
+    }
+
     pub fn set_logger(&mut self, enabled: bool) {
         match self {
             Backend::Sqlite(adapter) => adapter.set_logger(enabled),

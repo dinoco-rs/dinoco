@@ -58,38 +58,38 @@ const HomePage = ({ locale, theme }: HomePageProps): React.JSX.Element => {
 					</div>
 				</section>
 
-				<section className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 md:px-8">
-					<div className="mb-8 text-center">
+				<section className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 md:px-8">
+					<div className="mb-10 text-center">
 						<h2 className="text-2xl font-bold text-slate-900 dark:text-white">{intl.home.projectsTitle}</h2>
 						<p className="mt-2 text-slate-500 dark:text-slate-400">{intl.home.projectsSubtitle}</p>
 					</div>
 
-					<div className="grid gap-4 sm:grid-cols-3">
+					<div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
 						<Link
 							href={docsPath}
-							className="group flex flex-col justify-between rounded-lg border border-light-200 bg-light-100 p-6 transition-all duration-200 hover:border-dinoco-brand hover:bg-light-50 hover:shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:hover:border-dinoco-cyan dark:hover:bg-dark-800"
+							className="group flex flex-col justify-between rounded-lg border border-light-200 bg-light-100 p-6 transition-all duration-200 hover:border-dinoco-brand hover:bg-light-50 hover:shadow-sm md:col-span-2 sm:p-8 dark:border-dark-700 dark:bg-dark-900 dark:hover:border-dinoco-cyan dark:hover:bg-dark-800"
 						>
 							<div>
 								<div className="mb-4 flex h-10 w-10 items-center justify-center rounded-md bg-dinoco-brand/10 text-dinoco-brand dark:bg-dinoco-cyan/10 dark:text-dinoco-cyan">
 									<FiDatabase size={20} />
 								</div>
-								<h3 className="text-lg font-semibold text-slate-900 dark:text-white">{intl.home.ormName}</h3>
-								<p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{intl.home.ormDescription}</p>
+								<h3 className="text-xl font-semibold text-slate-900 dark:text-white">{intl.home.ormName}</h3>
+								<p className="mt-3 max-w-xl text-[15px] leading-7 text-slate-500 dark:text-slate-400">{intl.home.ormDescription}</p>
 							</div>
 
-							<div className="mt-6 flex items-center justify-between">
-								<span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-emerald-600 dark:text-emerald-400">
+							<div className="mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+								<span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
 									<span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
 									{intl.home.ormStatus}
 								</span>
-								<span className="flex items-center gap-1 text-sm font-semibold text-dinoco-brand transition-transform group-hover:translate-x-1 dark:text-dinoco-cyan">
+								<span className="flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-dinoco-brand transition-transform group-hover:translate-x-1 dark:text-dinoco-cyan">
 									{intl.home.ormCta}
 									<FiArrowRight size={14} />
 								</span>
 							</div>
 						</Link>
 
-						<div className="flex flex-col justify-between rounded-lg border border-dashed border-light-300 bg-light-100/50 p-6 dark:border-dark-700 dark:bg-dark-900/50">
+						<div className="flex flex-col justify-between rounded-lg border border-dashed border-light-300 bg-light-100/50 p-6 sm:p-7 dark:border-dark-700 dark:bg-dark-900/50">
 							<div>
 								<div className="mb-4 flex h-10 w-10 items-center justify-center rounded-md bg-slate-400/10 text-slate-400 dark:bg-slate-500/10 dark:text-slate-500">
 									<FiClock size={20} />
@@ -98,10 +98,10 @@ const HomePage = ({ locale, theme }: HomePageProps): React.JSX.Element => {
 								<p className="mt-2 text-sm leading-6 text-slate-400 dark:text-slate-500">{intl.home.supersonicDescription}</p>
 							</div>
 
-							<span className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full bg-slate-400/10 px-2.5 py-1 text-xs font-bold uppercase text-slate-500 dark:bg-slate-500/10 dark:text-slate-400">{intl.home.comingSoonBadge}</span>
+							<span className="mt-8 inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-400/10 px-2.5 py-1 text-xs font-bold uppercase text-slate-500 dark:bg-slate-500/10 dark:text-slate-400">{intl.home.comingSoonBadge}</span>
 						</div>
 
-						<div className="flex flex-col justify-between rounded-lg border border-dashed border-light-300 bg-light-100/50 p-6 dark:border-dark-700 dark:bg-dark-900/50">
+						<div className="flex flex-col justify-between rounded-lg border border-dashed border-light-300 bg-light-100/50 p-6 sm:p-7 dark:border-dark-700 dark:bg-dark-900/50">
 							<div>
 								<div className="mb-4 flex h-10 w-10 items-center justify-center rounded-md bg-slate-400/10 text-slate-400 dark:bg-slate-500/10 dark:text-slate-500">
 									<FiClock size={20} />
@@ -110,12 +110,12 @@ const HomePage = ({ locale, theme }: HomePageProps): React.JSX.Element => {
 								<p className="mt-2 text-sm leading-6 text-slate-400 dark:text-slate-500">{intl.home.dinocoDbDescription}</p>
 							</div>
 
-							<span className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full bg-slate-400/10 px-2.5 py-1 text-xs font-bold uppercase text-slate-500 dark:bg-slate-500/10 dark:text-slate-400">{intl.home.comingSoonBadge}</span>
+							<span className="mt-8 inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-400/10 px-2.5 py-1 text-xs font-bold uppercase text-slate-500 dark:bg-slate-500/10 dark:text-slate-400">{intl.home.comingSoonBadge}</span>
 						</div>
 					</div>
 				</section>
 
-				<section className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 md:px-8">
+				<section className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 md:px-8">
 					<div className="rounded-lg border border-light-200 bg-light-100 px-6 py-10 text-center dark:border-dark-700 dark:bg-dark-900 sm:px-12">
 						<h2 className="text-2xl font-bold text-slate-900 dark:text-white">{intl.home.openSourceTitle}</h2>
 						<p className="mx-auto mt-3 max-w-2xl text-slate-600 dark:text-slate-300">{intl.home.openSourceBody}</p>

@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     DeleteQuery, DinocoMysql, DinocoPostgres, DinocoRowModel, DinocoSqlCompiler, DinocoSqlite, DinocoValue, FindQuery,
-    InsertQuery, MysqlRow, PostgresRow, SqliteRow, UpdateQuery,
+    InsertQuery, ManyToManyRelationQuery, MysqlRow, PostgresRow, RelationOccurrenceQuery, SqliteRow, UpdateQuery,
 };
 
 type TransactionAny = Box<dyn Any + Send>;
@@ -88,6 +88,8 @@ pub struct TransactionCommand {
 
 enum TransactionStatement {
     Find(FindQuery),
+    RelationOccurrences(RelationOccurrenceQuery, Vec<DinocoValue>),
+    ManyToManyRelation(ManyToManyRelationQuery, Vec<DinocoValue>),
     Insert(InsertQuery),
     Update(UpdateQuery),
     Delete(DeleteQuery),
@@ -142,6 +144,24 @@ impl TransactionCommand {
         Self::rows::<M, Vec<M>, _>(TransactionStatement::Find(query), Ok)
     }
 
+    /// Loads relation rows for `includes(...)`; `params` are the parent keys
+    /// placed before the query's own parameters.
+    #[doc(hidden)]
+    pub fn relation_occurrences<M>(query: RelationOccurrenceQuery, params: Vec<DinocoValue>) -> Self
+    where
+        M: DinocoRowModel,
+    {
+        Self::rows::<M, Vec<M>, _>(TransactionStatement::RelationOccurrences(query, params), Ok)
+    }
+
+    #[doc(hidden)]
+    pub fn many_to_many_relation<M>(query: ManyToManyRelationQuery, params: Vec<DinocoValue>) -> Self
+    where
+        M: DinocoRowModel,
+    {
+        Self::rows::<M, Vec<M>, _>(TransactionStatement::ManyToManyRelation(query, params), Ok)
+    }
+
     pub fn insert(query: InsertQuery) -> Self {
         Self::unit(TransactionStatement::Insert(query))
     }
@@ -181,6 +201,16 @@ impl TransactionCommand {
     {
         let (sql, params) = match self.statement {
             TransactionStatement::Find(query) => compiler.compile_find_query(query),
+            TransactionStatement::RelationOccurrences(query, mut params) => {
+                let (sql, extra_params) = compiler.compile_relation_occurrence_query(query);
+                params.extend(extra_params);
+                (sql, params)
+            }
+            TransactionStatement::ManyToManyRelation(query, mut params) => {
+                let (sql, extra_params) = compiler.compile_many_to_many_relation_query(query);
+                params.extend(extra_params);
+                (sql, params)
+            }
             TransactionStatement::Insert(query) => compiler.compile_insert_query(query),
             TransactionStatement::Update(query) => compiler.compile_update_query(query),
             TransactionStatement::Delete(query) => compiler.compile_delete_query(query),
@@ -251,11 +281,11 @@ impl TransactionCommand {
 
     fn unit(statement: TransactionStatement) -> Self {
         let finish = Box::new(|raw| {
-            let RawTransactionOutput::Affected(_affected) = raw else {
+            let RawTransactionOutput::Affected(affected) = raw else {
                 anyhow::bail!("Dinoco transaction write received an unexpected database result.");
             };
 
-            Ok(Box::new(()) as TransactionAny)
+            Ok(Box::new(affected) as TransactionAny)
         });
 
         Self {
@@ -264,7 +294,7 @@ impl TransactionCommand {
                 kind: TransactionCommandKind::Execute,
                 decoder: None,
                 finish,
-                type_name: type_name::<()>(),
+                type_name: type_name::<usize>(),
                 atomic_update_returning: false,
             },
         }

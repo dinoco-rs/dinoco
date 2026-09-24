@@ -1656,6 +1656,15 @@ fn mark_unvalidated_legacy_foreign_keys(db: &CliDatabase, plan: &mut MigrationPl
     });
 }
 
+/// Every statement that builds `schema` from an empty SQLite database, as
+/// the automatic engine would plan it. Used by `dinoco::create_test_ambient`.
+pub fn sqlite_schema_statements(schema: &dinoco_compiler::Schema, adapter: dinoco_engine::SqliteAdapter) -> Vec<String> {
+    let db = CliDatabase::Sqlite(adapter);
+    let plan = plan_sqlite_database_migration(&desired_database_schema(schema), &crate::db::DatabaseSchema::default());
+
+    compile_plan(&db, plan)
+}
+
 fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     let mut create_enums = Vec::new();
     let mut alter_enums = Vec::new();
@@ -2408,6 +2417,15 @@ fn migration_dirs(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
     fs::read_dir(path)?
         .map(|entry| Ok(entry?.path()))
         .filter(|entry: &anyhow::Result<PathBuf>| entry.as_ref().map(|path| path.is_dir()).unwrap_or(true))
+        // The workspace's saved schema (and its staging folder) sit next to
+        // the migrations but aren't migrations.
+        .filter(|entry: &anyhow::Result<PathBuf>| {
+            entry.as_ref().map_or(true, |path| {
+                path.file_name().and_then(|name| name.to_str()).is_none_or(|name| {
+                    name != crate::schema::WORKSPACE_SCHEMA_DIR && !name.starts_with('.')
+                })
+            })
+        })
         .collect()
 }
 

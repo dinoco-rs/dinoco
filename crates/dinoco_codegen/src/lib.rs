@@ -322,7 +322,25 @@ pub fn render_dinoco_mod_for_workspace(schema: &Schema, workspace: Option<&str>)
         out.push_str("pub mod migrations;\n");
     }
     out.push_str("\npub use models::*;\n\n");
+    out.push_str(
+        "/// Connects to the database configured in `schema.dinoco`. When this crate is\n\
+         /// compiled for its own tests (`cfg(test)`), it returns [`connect_test`]\n\
+         /// instead, so code under test never reaches the real database.\n",
+    );
     out.push_str("pub async fn connect() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n");
+    out.push_str("    if cfg!(test) {\n        return connect_test().await;\n    }\n\n    connect_database().await\n}\n\n");
+    let workspace_call = workspace
+        .map(|workspace| format!("\n        .workspace(\"{}\")", escape_rust_string(workspace)))
+        .unwrap_or_default();
+    out.push_str(
+        "/// A fresh in-memory SQLite database with every table of `schema.dinoco`,\n\
+         /// isolated from every other call. See `dinoco::create_test_ambient`.\n",
+    );
+    out.push_str(&format!(
+        "pub async fn connect_test() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {{\n    ::dinoco::TestAmbient::new()\n        .schema(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/dinoco/schema.dinoco\")){workspace_call}\n        .create()\n        .await\n}}\n\n"
+    ));
+    out.push_str("/// Connects to the configured database, even under `cfg(test)`.\n");
+    out.push_str("pub async fn connect_database() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n");
     out.push_str(&format!("    let database_url = std::env::var(\"{database_url_env}\")?;\n"));
     match database {
         "postgresql" | "postgres" if connection == "pgbouncer" => out.push_str(

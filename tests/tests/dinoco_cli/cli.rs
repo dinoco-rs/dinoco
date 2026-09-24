@@ -206,6 +206,7 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
     assert!(project.join("dinoco/migrations/dev").is_dir());
     assert!(!project.join("dinoco/migrations/prod").exists());
     assert!(project.join("dinoco/models/user.rs").exists());
+    assert_eq!(saved_schema(&project, "dev"), WORKSPACE_SCHEMA, "dev keeps the schema it was generated from");
     assert!(dev_db.exists(), "the selected workspace primary must be used");
     assert!(!prod_db.exists(), "an unselected workspace database must not be opened");
     assert!(!dev_replica_db.exists(), "migration commands must not open read replicas");
@@ -234,6 +235,8 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
     assert!(prod_db.exists(), "the selected prod primary must be used");
     assert!(!prod_replica_db.exists(), "prod migrations must not open the prod replica");
     assert!(!project.join("dinoco/models/user.rs").exists(), "switching workspaces must remove stale generated models");
+    assert_eq!(saved_schema(&project, "prod"), WORKSPACE_ACCOUNT_SCHEMA);
+    assert_eq!(saved_schema(&project, "dev"), WORKSPACE_SCHEMA, "switching to prod leaves dev's saved schema alone");
     let generated = fs::read_to_string(project.join("dinoco/mod.rs")).expect("generated mod");
     assert!(generated.contains("PROD_DATABASE_URL"));
     assert!(generated.contains("PROD_REPLICA_DATABASE_URL"));
@@ -249,6 +252,7 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
     assert!(generated.contains("DEV_DATABASE_URL"));
     assert!(generated.contains("DEV_REPLICA_DATABASE_URL"));
     assert!(!generated.contains("PROD_REPLICA_DATABASE_URL"));
+    assert_eq!(saved_schema(&project, "dev"), WORKSPACE_ACCOUNT_SCHEMA, "generating for dev saves the current schema");
 
     let run = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
         .args(["migrate", "run", "--workspace", "dev"])
@@ -259,6 +263,126 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
         .expect("dev migrate run should run");
     assert!(run.status.success(), "stderr: {}", String::from_utf8_lossy(&run.stderr));
     assert!(!dev_replica_db.exists(), "migrate run must continue using only the workspace primary");
+
+    // The saved `schema/` folder sits next to dev's migrations without being
+    // mistaken for one: generating again plans the Account table normally.
+    let again = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate", "-w", "dev"])
+        .env("DEV_DATABASE_URL", &dev_db)
+        .env("DEV_REPLICA_DATABASE_URL", &dev_replica_db)
+        .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
+        .env("DINOCO_CLI_CONFIRM_DESTRUCTIVE", "true")
+        .current_dir(&project)
+        .output()
+        .expect("second dev migration should run");
+    assert!(again.status.success(), "stderr: {}", String::from_utf8_lossy(&again.stderr));
+    let dev_connection = Connection::open(&dev_db).expect("dev primary");
+    assert!(table_exists(&dev_connection, "account"));
+    let migrations = fs::read_dir(project.join("dinoco/migrations/dev"))
+        .expect("dev migrations")
+        .map(|entry| entry.expect("entry").file_name().into_string().expect("utf-8 name"))
+        .filter(|name| name != "schema")
+        .count();
+    assert_eq!(migrations, 2, "one migration per generate, besides the saved schema");
+}
+
+#[test]
+fn workspace_generation_saves_every_file_of_a_multi_file_schema() {
+    let project = temp_project("workspace-multi-file-schema");
+    fs::create_dir_all(project.join("dinoco/domain")).expect("dinoco directories");
+    fs::create_dir_all(project.join("shared")).expect("shared directory");
+    let root = r#"config {
+    imports = ["domain/business.dinoco", "../shared/common.dinoco"]
+
+    workspace {
+        dev {
+            database = "sqlite"
+            database_url = env("DEV_DATABASE_URL")
+        }
+
+        prod {
+            database = "sqlite"
+            database_url = env("PROD_DATABASE_URL")
+        }
+    }
+}
+"#;
+    let business = r#"import { BusinessStatus } from "../enums.dinoco"
+
+model Business {
+    id     String @id
+    status BusinessStatus
+}
+"#;
+    let enums = "enum BusinessStatus { active inactive }\n";
+    let common = "model Tag {\n    id String @id\n}\n";
+    fs::write(project.join("dinoco/schema.dinoco"), root).expect("root schema");
+    fs::write(project.join("dinoco/domain/business.dinoco"), business).expect("business schema");
+    fs::write(project.join("dinoco/enums.dinoco"), enums).expect("enum schema");
+    fs::write(project.join("shared/common.dinoco"), common).expect("shared schema");
+    fs::write(project.join("dinoco/notes.dinoco"), "model Unused {\n    id String @id\n}\n").expect("unused schema");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["models", "generate", "-w", "dev"])
+        .current_dir(&project)
+        .output()
+        .expect("models generation should run");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Schema saved to dinoco/migrations/dev/schema (4 files)"));
+
+    let saved = project.join("dinoco/migrations/dev/schema");
+    assert_eq!(fs::read_to_string(saved.join("schema.dinoco")).expect("root copy"), root);
+    assert_eq!(fs::read_to_string(saved.join("domain/business.dinoco")).expect("business copy"), business);
+    assert_eq!(fs::read_to_string(saved.join("enums.dinoco")).expect("enum copy"), enums);
+    assert_eq!(
+        fs::read_to_string(saved.join("_external/_up/shared/common.dinoco")).expect("external copy"),
+        common,
+        "a file imported from outside dinoco/ is kept inside the copy"
+    );
+    assert!(!saved.join("notes.dinoco").exists(), "only files the schema actually loads are saved");
+    assert!(!project.join("dinoco/migrations/prod").exists(), "other workspaces are not touched");
+
+    // Files inside dinoco/ keep their relative paths, so the copy compiles on its own
+    // once the external import is pointed at its saved location.
+    let copied_root = fs::read_to_string(saved.join("schema.dinoco"))
+        .expect("root copy")
+        .replace("../shared/common.dinoco", "_external/_up/shared/common.dinoco");
+    fs::write(saved.join("schema.dinoco"), copied_root).expect("rewrite copy");
+    let copy = dinoco_compiler::compile_file(saved.join("schema.dinoco")).expect("the saved schema compiles");
+    assert_eq!(copy.models().map(|model| model.name.as_str()).collect::<Vec<_>>().len(), 2);
+
+    // Dropping an import removes its file from the next copy.
+    fs::write(project.join("dinoco/schema.dinoco"), root.replace(", \"../shared/common.dinoco\"", "")).expect("root");
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["models", "generate", "-w", "dev"])
+        .current_dir(&project)
+        .output()
+        .expect("models generation should run");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(!saved.join("_external").exists(), "files the schema no longer loads are removed from the copy");
+    assert!(saved.join("domain/business.dinoco").exists());
+    assert!(!project.join("dinoco/migrations/dev/.schema.saving").exists(), "no staging folder is left behind");
+}
+
+#[test]
+fn generation_without_workspaces_saves_no_schema_copy() {
+    let project = temp_project("no-workspace-schema-copy");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco directory");
+    fs::write(project.join("dinoco/schema.dinoco"), "model User {\n    id String @id\n}\n").expect("schema");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["models", "generate"])
+        .current_dir(&project)
+        .output()
+        .expect("models generation should run");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(!project.join("dinoco/migrations/schema").exists());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("Schema saved"));
+}
+
+fn saved_schema(project: &std::path::Path, workspace: &str) -> String {
+    fs::read_to_string(project.join(format!("dinoco/migrations/{workspace}/schema/schema.dinoco")))
+        .unwrap_or_else(|error| panic!("{workspace} should have a saved schema: {error}"))
 }
 
 #[test]

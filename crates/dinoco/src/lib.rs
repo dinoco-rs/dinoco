@@ -1,10 +1,13 @@
 mod count;
 mod error;
 mod fields;
+mod hooks;
 mod insert;
 mod methods;
 mod order_by;
+mod read;
 mod relation;
+mod testing;
 mod transaction;
 mod update;
 
@@ -17,9 +20,12 @@ pub use serde;
 pub use count::*;
 pub use error::*;
 pub use fields::*;
+pub(crate) use hooks::*;
 pub use insert::*;
 pub use methods::*;
 pub use order_by::*;
+pub use read::*;
 pub use relation::*;
+pub use testing::*;
 pub use transaction::*;
 pub use update::*;

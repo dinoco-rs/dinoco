@@ -26,6 +26,12 @@ struct Resolver {
 }
 
 pub(crate) fn compile_file(path: &Path) -> CompileResult<Schema> {
+    compile_file_with_sources(path).map(|(schema, _)| schema)
+}
+
+/// Compiles `path` and also returns every schema file it loaded (itself and
+/// everything it imports, directly or not), canonicalized, in load order.
+pub(crate) fn compile_file_with_sources(path: &Path) -> CompileResult<(Schema, Vec<PathBuf>)> {
     if path.file_name().and_then(|name| name.to_str()) != Some("schema.dinoco") {
         return Err(CompileError::new("The main schema file must be named `schema.dinoco`", 1, 1)
             .with_file(path.display().to_string()));
@@ -46,7 +52,7 @@ pub(crate) fn compile_file(path: &Path) -> CompileResult<Schema> {
     }
     let schema = Schema { items };
     parser::validate_schema(&schema)?;
-    Ok(schema)
+    Ok((schema, resolver.order))
 }
 
 impl Resolver {

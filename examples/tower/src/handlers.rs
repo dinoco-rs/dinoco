@@ -204,7 +204,7 @@ pub async fn create_task(
         .returning::<Task>()
         .execute(client)
         .await
-        .map_err(AppError::internal)?;
+        .map_err(AppError::create)?;
 
     ok_json(StatusCode::CREATED, TaskResponse::from(task))
 }

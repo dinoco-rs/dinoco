@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue,
+    DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue,
     WhereComplex,
 };
 
-use crate::{Field, IncludeLoader, IntoIncludeLoader, load_includes};
+use crate::{Field, IncludeLoader, IntoIncludeLoader, ReadExecutor, load_includes};
 
 pub struct FindMany<M, S = M> {
     query: FindQuery,
@@ -125,10 +125,14 @@ where
         FindManyTransform { inner: self, transform: callback }
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<S>> {
-        let mut rows = client.read_backend(self.read_primary).query::<S>(self.query).await?;
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<S>>
+    where
+        C: ReadExecutor,
+    {
+        let target = client.read_target(self.read_primary)?;
+        let mut rows = target.query::<S>(self.query).await?;
 
-        load_includes(self.includes, client, &mut rows, self.read_primary).await?;
+        load_includes(self.includes, &target, &mut rows).await?;
 
         Ok(rows)
     }
@@ -164,8 +168,11 @@ where
         self
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<T>> {
-        let rows = client.read_backend(self.read_primary).query::<PluckValue<T>>(self.query).await?;
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<T>>
+    where
+        C: ReadExecutor,
+    {
+        let rows = client.read_target(self.read_primary)?.query::<PluckValue<T>>(self.query).await?;
 
         Ok(rows.into_iter().map(|value| value.0).collect())
     }
@@ -182,7 +189,10 @@ where
     S: DinocoRowModel,
     F: FnMut(S) -> R,
 {
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Vec<R>> {
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<R>>
+    where
+        C: ReadExecutor,
+    {
         let rows = self.inner.execute(client).await?;
         let mut transform = self.transform;
 

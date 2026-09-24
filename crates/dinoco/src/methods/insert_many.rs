@@ -63,7 +63,7 @@ where
         InsertManyPluck { items: self.items, field, marker: PhantomData }
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<()>
+    pub async fn execute<C>(self, client: C) -> Result<(), CreateError>
     where
         C: MutationExecutor,
     {
@@ -90,7 +90,7 @@ where
         InsertManyReturningTransform { inner: self, transform: callback }
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<S>>
+    pub async fn execute<C>(self, client: C) -> Result<Vec<S>, CreateError>
     where
         C: MutationExecutor,
     {
@@ -99,13 +99,13 @@ where
 
             return execute_insert_models_returning::<M, S, C>(&models, &client)
                 .await
-                .map_err(|error| CreateError::from_database(error).into());
+                .map_err(CreateError::from_database);
         }
 
         let inserted = execute_insert_payloads_returning::<M, V, V, C>(&self.items, &client)
             .await
             .map_err(CreateError::from_database)?;
-        reload_inserted::<M, S, C>(&inserted, &client).await.map_err(|error| CreateError::from_database(error).into())
+        reload_inserted::<M, S, C>(&inserted, &client).await.map_err(CreateError::from_database)
     }
 }
 
@@ -115,7 +115,7 @@ where
     V: InsertPayload<M>,
     PluckValue<T>: DinocoRowModel,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<T>>
+    pub async fn execute<C>(self, client: C) -> Result<Vec<T>, CreateError>
     where
         C: MutationExecutor,
     {
@@ -124,7 +124,7 @@ where
 
             return execute_insert_models_returning_field::<M, T, C>(&models, self.field, &client)
                 .await
-                .map_err(|error| CreateError::from_database(error).into());
+                .map_err(CreateError::from_database);
         }
 
         let inserted = execute_insert_payloads_returning::<M, V, V, C>(&self.items, &client)
@@ -132,7 +132,7 @@ where
             .map_err(CreateError::from_database)?;
         reload_inserted_field::<M, T, C>(&inserted, self.field, &client)
             .await
-            .map_err(|error| CreateError::from_database(error).into())
+            .map_err(CreateError::from_database)
     }
 }
 
@@ -148,7 +148,7 @@ where
     S: DinocoProjection<M> + DinocoRowModel,
     F: FnMut(S) -> R,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<R>>
+    pub async fn execute<C>(self, client: C) -> Result<Vec<R>, CreateError>
     where
         C: MutationExecutor,
     {

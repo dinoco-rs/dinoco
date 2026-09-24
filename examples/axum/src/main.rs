@@ -4,6 +4,8 @@ mod projects;
 mod routes;
 mod state;
 mod tasks;
+#[cfg(test)]
+mod tests;
 
 #[path = "../dinoco/mod.rs"]
 mod database;

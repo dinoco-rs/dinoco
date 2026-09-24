@@ -1,5 +1,6 @@
 mod backends;
 mod error;
+mod hooks;
 mod json_row;
 mod manual_migration;
 mod pluck;
@@ -9,9 +10,11 @@ mod transaction;
 mod value;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
 
 pub use backends::*;
 pub use error::*;
+pub use hooks::*;
 pub use json_row::*;
 pub use manual_migration::*;
 pub use pluck::*;
@@ -92,11 +95,18 @@ pub struct DinocoClient {
     pub read_replicas: Vec<Backend>,
     read_replica_index: AtomicUsize,
     query_mode: QueryMode,
+    hooks: RwLock<Option<Arc<QueryHooks>>>,
 }
 
 impl DinocoClient {
     pub fn new(backend: Backend) -> Self {
-        Self { backend, read_replicas: Vec::new(), read_replica_index: AtomicUsize::new(0), query_mode: QueryMode::default() }
+        Self {
+            backend,
+            read_replicas: Vec::new(),
+            read_replica_index: AtomicUsize::new(0),
+            query_mode: QueryMode::default(),
+            hooks: RwLock::new(None),
+        }
     }
 
     pub fn with_read_replicas(mut self, read_replicas: Vec<Backend>) -> Self {
@@ -119,6 +129,16 @@ impl DinocoClient {
 
     pub fn query_mode(&self) -> QueryMode {
         self.query_mode
+    }
+
+    /// Hooks installed by `dinoco::setup_test_methods::<M>`, if any.
+    pub fn query_hooks(&self) -> Option<Arc<QueryHooks>> {
+        self.hooks.read().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    }
+
+    pub fn set_query_hooks(&self, hooks: QueryHooks) {
+        let hooks = (!hooks.is_empty()).then(|| Arc::new(hooks));
+        *self.hooks.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = hooks;
     }
 
     pub fn read_backend(&self, primary: bool) -> &Backend {

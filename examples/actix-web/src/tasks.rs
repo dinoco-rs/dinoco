@@ -78,7 +78,7 @@ pub async fn create(
         .returning::<Task>()
         .execute(client.get_ref())
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(ApiError::create)?;
 
     Ok(HttpResponse::Created().json(TaskResponse::from(task)))
 }

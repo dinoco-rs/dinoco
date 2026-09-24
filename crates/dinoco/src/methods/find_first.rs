@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoClient, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue,
+    DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue,
     WhereComplex,
 };
 
-use crate::{Field, IncludeLoader, IntoIncludeLoader, load_includes};
+use crate::{Field, IncludeLoader, IntoIncludeLoader, ReadExecutor, load_includes};
 
 pub struct FindFirst<M, S = M> {
     query: FindQuery,
@@ -113,10 +113,14 @@ where
         FindFirstTransform { inner: self, transform: callback }
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Option<S>> {
-        let mut rows = client.read_backend(self.read_primary).query::<S>(self.query).await?;
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Option<S>>
+    where
+        C: ReadExecutor,
+    {
+        let target = client.read_target(self.read_primary)?;
+        let mut rows = target.query::<S>(self.query).await?;
 
-        load_includes(self.includes, client, &mut rows, self.read_primary).await?;
+        load_includes(self.includes, &target, &mut rows).await?;
 
         Ok(rows.into_iter().next())
     }
@@ -152,8 +156,11 @@ where
         self
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Option<T>> {
-        let rows = client.read_backend(self.read_primary).query::<PluckValue<T>>(self.query).await?;
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Option<T>>
+    where
+        C: ReadExecutor,
+    {
+        let rows = client.read_target(self.read_primary)?.query::<PluckValue<T>>(self.query).await?;
 
         Ok(rows.into_iter().next().map(|value| value.0))
     }
@@ -170,7 +177,10 @@ where
     S: DinocoRowModel,
     F: FnOnce(S) -> R,
 {
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<Option<R>> {
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Option<R>>
+    where
+        C: ReadExecutor,
+    {
         let row = self.inner.execute(client).await?;
 
         Ok(row.map(self.transform))

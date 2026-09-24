@@ -16,6 +16,9 @@ pub struct SqliteAdapter {
     pub path: String,
     pub pool: Arc<Pool>,
     with_logger: bool,
+    /// Keeps an in-memory database alive while any clone of the adapter
+    /// exists, even if the pool drops every connection.
+    memory_anchor: Option<Arc<std::sync::Mutex<rusqlite::Connection>>>,
 }
 
 #[async_trait::async_trait]
@@ -57,7 +60,7 @@ impl DinocoAdapter for SqliteAdapter {
         let connection = pool.get().await.map_err(|err| err.to_string())?;
         drop(connection);
 
-        Ok(Self { path, pool: Arc::new(pool), with_logger: false })
+        Ok(Self { path, pool: Arc::new(pool), with_logger: false, memory_anchor: None })
     }
 
     async fn query<M>(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<Vec<M>>
@@ -145,6 +148,24 @@ fn normalize_sqlite_path(path: String) -> String {
 }
 
 impl SqliteAdapter {
+    /// Opens a new, empty in-memory database that every pooled connection
+    /// (and every transaction) of this adapter shares. Each call gets its own
+    /// database, so parallel tests never see each other's rows. The database
+    /// is dropped with the last clone of the adapter.
+    pub async fn memory() -> anyhow::Result<Self> {
+        static NEXT_DATABASE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+        let id = NEXT_DATABASE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // The memdb VFS shares one in-memory database between connections by
+        // name and, unlike `cache=shared`, keeps SQLite's regular locking.
+        let path = format!("file:/dinoco-memory-{}-{id}?vfs=memdb", std::process::id());
+        let anchor = rusqlite::Connection::open(&path).context("failed to open the in-memory SQLite database")?;
+        let mut adapter = <Self as DinocoAdapter>::new(path).await.map_err(anyhow::Error::msg)?;
+        adapter.memory_anchor = Some(Arc::new(std::sync::Mutex::new(anchor)));
+
+        Ok(adapter)
+    }
+
     pub(crate) fn set_logger(&mut self, enabled: bool) {
         self.with_logger = enabled;
     }

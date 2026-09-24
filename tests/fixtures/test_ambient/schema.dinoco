@@ -1,0 +1,35 @@
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+}
+
+model Account {
+    id       String    @id
+    email    String    @unique
+    name     String
+    sessions Session[] @relation(fields: [id], references: [account_id])
+}
+
+model Session {
+    id         String   @id
+    account_id String?
+    active     Boolean  @default(true)
+    account    Account? @relation(fields: [account_id], references: [id])
+}
+
+enum AuditKind {
+    CREATED
+    DELETED
+}
+
+model AuditLog {
+    id         Integer   @id @default(autoincrement())
+    kind       AuditKind @default(CREATED)
+    tenant_id  String
+    slug       String
+    payload    Json?
+    created_at DateTime  @default(now())
+
+    @@uniques([tenant_id, slug])
+    @@indexes([created_at])
+}

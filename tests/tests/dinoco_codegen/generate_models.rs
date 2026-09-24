@@ -56,6 +56,71 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
 }
 
 #[test]
+fn codegen_routes_connect_to_the_test_ambient_under_cfg_test() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        config {
+            database = "postgresql"
+            database_url = env("DATABASE_URL")
+        }
+
+        model User {
+            id String @id
+        }
+        "#,
+    )
+    .expect("schema");
+
+    let dinoco_mod = dinoco_codegen::render_dinoco_mod(&schema);
+
+    assert!(dinoco_mod.contains(
+        "pub async fn connect() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n    if cfg!(test) {\n        return connect_test().await;\n    }\n\n    connect_database().await\n}"
+    ));
+    assert!(dinoco_mod.contains(
+        "pub async fn connect_test() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n    ::dinoco::TestAmbient::new()\n        .schema(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/dinoco/schema.dinoco\"))\n        .create()\n        .await\n}"
+    ));
+    let database = dinoco_mod.split("pub async fn connect_database()").nth(1).expect("connect_database");
+    assert!(database.contains("std::env::var(\"DATABASE_URL\")?"));
+    assert!(database.contains("PostgresAdapter::direct_with_pool(database_url, 2, 10)"));
+    assert!(!database.contains("TestAmbient"), "the real connection never uses the test ambient");
+}
+
+#[test]
+fn codegen_passes_the_workspace_to_the_test_ambient() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        config {
+            workspace {
+                dev {
+                    database     = "sqlite"
+                    database_url = env("DEV_DATABASE_URL")
+                }
+
+                prod {
+                    database     = "postgresql"
+                    database_url = env("PROD_DATABASE_URL")
+                }
+            }
+        }
+
+        model User {
+            id String @id
+        }
+        "#,
+    )
+    .expect("schema")
+    .for_workspace("prod")
+    .expect("prod workspace");
+
+    let dinoco_mod = dinoco_codegen::render_dinoco_mod_for_workspace(&schema, Some("prod"));
+
+    assert!(dinoco_mod.contains(
+        ".schema(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/dinoco/schema.dinoco\"))\n        .workspace(\"prod\")\n        .create()"
+    ));
+    assert!(dinoco_mod.contains("std::env::var(\"PROD_DATABASE_URL\")?"));
+}
+
+#[test]
 fn codegen_keeps_model_acronyms_together_in_generated_names() {
     let schema = dinoco_compiler::compile(
         r#"

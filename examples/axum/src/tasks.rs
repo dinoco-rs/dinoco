@@ -80,7 +80,7 @@ pub async fn create(
         .returning::<Task>()
         .execute(&client)
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(ApiError::create)?;
 
     Ok((StatusCode::CREATED, Json(task.into())))
 }

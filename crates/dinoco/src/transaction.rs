@@ -4,10 +4,18 @@ use dinoco_engine::{
 };
 use std::sync::Arc;
 
-use crate::TransactionError;
+use crate::{Observer, RowCountKind, TransactionError, observe_insert, observe_rows};
 
 tokio::task_local! {
-    static ACTIVE_TRANSACTION: TransactionExecutor;
+    static ACTIVE_TRANSACTION: ActiveTransaction;
+}
+
+/// The transaction a closure runs in, plus the hooks of the client that
+/// opened it.
+#[derive(Clone)]
+pub(crate) struct ActiveTransaction {
+    pub executor: TransactionExecutor,
+    pub observer: Option<Observer>,
 }
 
 /// Copyable capability passed to a transaction closure. It is valid only
@@ -43,47 +51,109 @@ impl MutationExecutor for DinocoClient {
     where
         M: DinocoRowModel,
     {
-        self.backend.query(query).await
+        let observer = Observer::for_client(self);
+        observe_rows(
+            observer.as_ref(),
+            RowCountKind::Find,
+            query.from,
+            query,
+            |compiler, query| compiler.compile_find_query(query),
+            |query| self.backend.query(query),
+            Vec::len,
+        )
+        .await
     }
 
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
-        self.backend.insert(query).await
+        let observer = Observer::for_client(self);
+        observe_insert(observer.as_ref(), query, |query| self.backend.insert(query)).await
     }
 
     async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        self.backend.insert_returning(query).await
+        let observer = Observer::for_client(self);
+        observe_insert(observer.as_ref(), query, |query| self.backend.insert_returning(query)).await
     }
 
     async fn update(&self, query: UpdateQuery) -> anyhow::Result<usize> {
-        self.backend.update(query).await
+        let observer = Observer::for_client(self);
+        observe_rows(
+            observer.as_ref(),
+            RowCountKind::Update,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_update_query(query),
+            |query| self.backend.update(query),
+            |affected| *affected,
+        )
+        .await
     }
 
     async fn update_returning<M>(&self, query: UpdateQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        self.backend.update_returning(query).await
+        let observer = Observer::for_client(self);
+        observe_rows(
+            observer.as_ref(),
+            RowCountKind::Update,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_update_query(query),
+            |query| self.backend.update_returning(query),
+            Vec::len,
+        )
+        .await
     }
 
     async fn atomic_update_returning<M>(&self, query: UpdateQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        self.backend.atomic_update_returning(query).await
+        let observer = Observer::for_client(self);
+        observe_rows(
+            observer.as_ref(),
+            RowCountKind::Update,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_update_query(query),
+            |query| self.backend.atomic_update_returning(query),
+            Vec::len,
+        )
+        .await
     }
 
     async fn delete(&self, query: DeleteQuery) -> anyhow::Result<usize> {
-        self.backend.delete(query).await
+        let observer = Observer::for_client(self);
+        observe_rows(
+            observer.as_ref(),
+            RowCountKind::Delete,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_delete_query(query),
+            |query| self.backend.delete(query),
+            |affected| *affected,
+        )
+        .await
     }
 
     async fn delete_returning<M>(&self, query: DeleteQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        self.backend.delete_returning(query).await
+        let observer = Observer::for_client(self);
+        observe_rows(
+            observer.as_ref(),
+            RowCountKind::Delete,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_delete_query(query),
+            |query| self.backend.delete_returning(query),
+            Vec::len,
+        )
+        .await
     }
 }
 
@@ -203,8 +273,7 @@ impl MutationExecutor for TransactionExecutor {
     }
 
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
-        self.execute::<()>(TransactionCommand::insert(query)).await?;
-        Ok(0)
+        self.execute(TransactionCommand::insert(query)).await
     }
 
     async fn insert_returning<M>(&self, mut query: InsertQuery) -> anyhow::Result<Vec<M>>
@@ -224,7 +293,7 @@ impl MutationExecutor for TransactionExecutor {
             let ids = query.rows.iter().map(|row| row[id_index].clone()).collect::<Vec<_>>();
             let table = query.table;
 
-            self.execute::<()>(TransactionCommand::insert(query)).await?;
+            self.execute::<usize>(TransactionCommand::insert(query)).await?;
 
             return self
                 .execute(TransactionCommand::find_many::<M>(FindQuery {
@@ -242,8 +311,7 @@ impl MutationExecutor for TransactionExecutor {
     }
 
     async fn update(&self, query: UpdateQuery) -> anyhow::Result<usize> {
-        self.execute::<()>(TransactionCommand::update(query)).await?;
-        Ok(0)
+        self.execute(TransactionCommand::update(query)).await
     }
 
     async fn update_returning<M>(&self, query: UpdateQuery) -> anyhow::Result<Vec<M>>
@@ -261,8 +329,7 @@ impl MutationExecutor for TransactionExecutor {
     }
 
     async fn delete(&self, query: DeleteQuery) -> anyhow::Result<usize> {
-        self.execute::<()>(TransactionCommand::delete(query)).await?;
-        Ok(0)
+        self.execute(TransactionCommand::delete(query)).await
     }
 
     async fn delete_returning<M>(&self, query: DeleteQuery) -> anyhow::Result<Vec<M>>
@@ -279,51 +346,113 @@ impl MutationExecutor for TransactionContext {
     where
         M: DinocoRowModel,
     {
-        active_transaction()?.query(query).await
+        let active = active_transaction()?;
+        observe_rows(
+            active.observer.as_ref(),
+            RowCountKind::Find,
+            query.from,
+            query,
+            |compiler, query| compiler.compile_find_query(query),
+            |query| active.executor.query(query),
+            Vec::len,
+        )
+        .await
     }
 
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
-        active_transaction()?.insert(query).await
+        let active = active_transaction()?;
+        observe_insert(active.observer.as_ref(), query, |query| active.executor.insert(query)).await
     }
 
     async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        active_transaction()?.insert_returning(query).await
+        let active = active_transaction()?;
+        observe_insert(active.observer.as_ref(), query, |query| active.executor.insert_returning(query)).await
     }
 
     async fn update(&self, query: UpdateQuery) -> anyhow::Result<usize> {
-        active_transaction()?.update(query).await
+        let active = active_transaction()?;
+        observe_rows(
+            active.observer.as_ref(),
+            RowCountKind::Update,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_update_query(query),
+            |query| active.executor.update(query),
+            |affected| *affected,
+        )
+        .await
     }
 
     async fn update_returning<M>(&self, query: UpdateQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        active_transaction()?.update_returning(query).await
+        let active = active_transaction()?;
+        observe_rows(
+            active.observer.as_ref(),
+            RowCountKind::Update,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_update_query(query),
+            |query| active.executor.update_returning(query),
+            Vec::len,
+        )
+        .await
     }
 
     async fn atomic_update_returning<M>(&self, query: UpdateQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        active_transaction()?.atomic_update_returning(query).await
+        let active = active_transaction()?;
+        observe_rows(
+            active.observer.as_ref(),
+            RowCountKind::Update,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_update_query(query),
+            |query| active.executor.atomic_update_returning(query),
+            Vec::len,
+        )
+        .await
     }
 
     async fn delete(&self, query: DeleteQuery) -> anyhow::Result<usize> {
-        active_transaction()?.delete(query).await
+        let active = active_transaction()?;
+        observe_rows(
+            active.observer.as_ref(),
+            RowCountKind::Delete,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_delete_query(query),
+            |query| active.executor.delete(query),
+            |affected| *affected,
+        )
+        .await
     }
 
     async fn delete_returning<M>(&self, query: DeleteQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        active_transaction()?.delete_returning(query).await
+        let active = active_transaction()?;
+        observe_rows(
+            active.observer.as_ref(),
+            RowCountKind::Delete,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_delete_query(query),
+            |query| active.executor.delete_returning(query),
+            Vec::len,
+        )
+        .await
     }
 }
 
-fn active_transaction() -> anyhow::Result<TransactionExecutor> {
+pub(crate) fn active_transaction() -> anyhow::Result<ActiveTransaction> {
     ACTIVE_TRANSACTION
         .try_with(Clone::clone)
         .map_err(|_| anyhow::anyhow!("transaction context used outside its transaction closure"))
@@ -340,7 +469,11 @@ where
         .await
         .map_err(|error| TransactionError::Begin(dinoco_engine::DatabaseError::new(error)))?;
 
-    let operation = ACTIVE_TRANSACTION.scope(executor.clone(), callback(TransactionContext)).await;
+    let active = ActiveTransaction {
+        executor: executor.clone(),
+        observer: Observer::for_client(client).map(Observer::in_transaction),
+    };
+    let operation = ACTIVE_TRANSACTION.scope(active, callback(TransactionContext)).await;
     match operation {
         Ok(value) => {
             executor

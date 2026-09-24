@@ -69,7 +69,7 @@ where
         InsertPluck { item: self.item, field, marker: PhantomData }
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<()>
+    pub async fn execute<C>(self, client: C) -> Result<(), CreateError>
     where
         C: MutationExecutor,
     {
@@ -97,7 +97,7 @@ where
         InsertReturningTransform { inner: self, transform: callback }
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<S>
+    pub async fn execute<C>(self, client: C) -> Result<S, CreateError>
     where
         C: MutationExecutor,
     {
@@ -109,7 +109,7 @@ where
                 .map_err(CreateError::from_database)?;
 
             return rows.pop().ok_or_else(|| {
-                anyhow::anyhow!("Record from table '{}' could not be returned after insert.", M::TABLE_NAME)
+                CreateError::NotReturned { table: M::TABLE_NAME }
             });
         }
 
@@ -119,7 +119,7 @@ where
         let mut rows = reload_inserted::<M, S, C>(&inserted, &client).await.map_err(CreateError::from_database)?;
 
         rows.pop()
-            .ok_or_else(|| anyhow::anyhow!("Record from table '{}' could not be loaded after insert.", M::TABLE_NAME))
+            .ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
     }
 }
 
@@ -129,7 +129,7 @@ where
     V: InsertPayload<M>,
     PluckValue<T>: DinocoRowModel,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<T>
+    pub async fn execute<C>(self, client: C) -> Result<T, CreateError>
     where
         C: MutationExecutor,
     {
@@ -142,7 +142,7 @@ where
                     .map_err(CreateError::from_database)?;
 
             return rows.pop().ok_or_else(|| {
-                anyhow::anyhow!("Record from table '{}' could not be returned after insert.", M::TABLE_NAME)
+                CreateError::NotReturned { table: M::TABLE_NAME }
             });
         }
 
@@ -153,7 +153,7 @@ where
             reload_inserted_field::<M, T, C>(&inserted, self.field, &client).await.map_err(CreateError::from_database)?;
 
         rows.pop()
-            .ok_or_else(|| anyhow::anyhow!("Record from table '{}' could not be loaded after insert.", M::TABLE_NAME))
+            .ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
     }
 }
 
@@ -169,7 +169,7 @@ where
     S: DinocoProjection<M> + DinocoRowModel,
     F: FnOnce(S) -> R,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<R>
+    pub async fn execute<C>(self, client: C) -> Result<R, CreateError>
     where
         C: MutationExecutor,
     {

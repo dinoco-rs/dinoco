@@ -3,9 +3,10 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 
 use dinoco_engine::{
-    DinocoClient, DinocoEntity, DinocoMysql, DinocoPostgres, DinocoProjection, DinocoRowModel, DinocoSqlite,
-    DinocoValue, FindOrderBy, FindQuery, FindWhere, ManyToManyRelationQuery, RelationOccurrenceQuery, WhereComplex,
+    DinocoEntity, DinocoMysql, DinocoPostgres, DinocoProjection, DinocoRowModel, DinocoSqlite, DinocoValue, FindOrderBy, FindQuery, FindWhere, ManyToManyRelationQuery, RelationOccurrenceQuery, WhereComplex,
 };
+
+use crate::ReadTarget;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncludeStrategy {
@@ -21,21 +22,18 @@ type RelationMarker<M, C, CS> = PhantomData<fn() -> (M, C, CS)>;
 pub trait IncludeLoader<S>: Send + Sync {
     fn load_applier<'a>(
         &'a self,
-        client: &'a DinocoClient,
+        target: &'a ReadTarget<'a>,
         parents: &'a [S],
-        read_primary: bool,
     ) -> IncludeLoaderFuture<'a, S>;
 }
 
 pub(crate) async fn load_includes<S>(
     includes: Vec<Box<dyn IncludeLoader<S>>>,
-    client: &DinocoClient,
+    target: &ReadTarget<'_>,
     items: &mut [S],
-    read_primary: bool,
 ) -> anyhow::Result<()> {
     let appliers =
-        futures::future::try_join_all(includes.iter().map(|include| include.load_applier(client, items, read_primary)))
-            .await?;
+        futures::future::try_join_all(includes.iter().map(|include| include.load_applier(target, items))).await?;
 
     for apply in appliers {
         apply(items);
@@ -331,9 +329,8 @@ where
 {
     fn load_applier<'a>(
         &'a self,
-        client: &'a DinocoClient,
+        target: &'a ReadTarget<'a>,
         parents: &'a [S],
-        read_primary: bool,
     ) -> IncludeLoaderFuture<'a, S> {
         Box::pin(async move {
             let keys = relation_values(parents, self.parent_field);
@@ -353,9 +350,7 @@ where
                     join_child_field: many_to_many.join_child_field,
                     key_count: keys.len(),
                 };
-                let child_rows = client
-                    .read_backend(read_primary)
-                    .query_many_to_many_relation::<RelationOccurrenceRow<C, CS>>(query, &keys)
+                let child_rows = target.query_many_to_many_relation::<RelationOccurrenceRow<C, CS>>(query, &keys)
                     .await?;
 
                 (
@@ -368,9 +363,7 @@ where
                     child_field: self.child_field,
                     key_count: keys.len(),
                 };
-                let child_rows = client
-                    .read_backend(read_primary)
-                    .query_relation_occurrences::<RelationOccurrenceRow<C, CS>>(query, &keys)
+                let child_rows = target.query_relation_occurrences::<RelationOccurrenceRow<C, CS>>(query, &keys)
                     .await?;
 
                 (
@@ -379,7 +372,7 @@ where
                 )
             };
             let appliers = futures::future::try_join_all(
-                self.includes.iter().map(|include| include.load_applier(client, &children, read_primary)),
+                self.includes.iter().map(|include| include.load_applier(target, &children)),
             )
             .await?;
 
@@ -426,9 +419,8 @@ where
 {
     fn load_applier<'a>(
         &'a self,
-        client: &'a DinocoClient,
+        target: &'a ReadTarget<'a>,
         parents: &'a [S],
-        read_primary: bool,
     ) -> IncludeLoaderFuture<'a, S> {
         Box::pin(async move {
             let keys = relation_values(parents, self.parent_field);
@@ -444,14 +436,12 @@ where
                 key_count: keys.len(),
             };
 
-            let child_rows = client
-                .read_backend(read_primary)
-                .query_relation_occurrences::<RelationOccurrenceRow<C, CS>>(query, &keys)
+            let child_rows = target.query_relation_occurrences::<RelationOccurrenceRow<C, CS>>(query, &keys)
                 .await?;
             let relation_ordinals = child_rows.iter().map(|row| row.ordinal).collect::<Vec<_>>();
             let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
             let appliers = futures::future::try_join_all(
-                self.includes.iter().map(|include| include.load_applier(client, &children, read_primary)),
+                self.includes.iter().map(|include| include.load_applier(target, &children)),
             )
             .await?;
 

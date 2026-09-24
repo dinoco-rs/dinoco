@@ -28,13 +28,28 @@ pub fn has_transform() -> bool {
 }
 
 /// Generates `dinoco/models/`, applying `dinoco/transform.rs` when it exists.
+///
+/// With a workspace, it also saves the schema it generated from into
+/// `dinoco/migrations/<workspace>/schema/`.
 pub fn generate_models(schema: &Schema, workspace: Option<&str>) -> anyhow::Result<()> {
-    if !has_transform() {
-        return dinoco_codegen::generate_models_for_workspace(schema, workspace);
+    if has_transform() {
+        crate::ui::info("Applying dinoco/transform.rs (building the Dinoco runner)");
+        run(&Task::Models, schema, workspace, None)?;
+    } else {
+        dinoco_codegen::generate_models_for_workspace(schema, workspace)?;
     }
 
-    crate::ui::info("Applying dinoco/transform.rs (building the Dinoco runner)");
-    run(&Task::Models, schema, workspace, None)
+    if let Some(workspace) = workspace {
+        let saved = crate::schema::save_workspace_schema(workspace)?;
+        crate::ui::info(format!(
+            "Schema saved to {} ({} file{})",
+            crate::schema::workspace_schema_dir(workspace).display(),
+            saved.len(),
+            if saved.len() == 1 { "" } else { "s" }
+        ));
+    }
+
+    Ok(())
 }
 
 pub enum Task {

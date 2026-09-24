@@ -40,3 +40,9 @@ pub fn compile(source: &str) -> CompileResult<Schema> {
 pub fn compile_file(path: impl AsRef<Path>) -> CompileResult<Schema> {
     resolver::compile_file(path.as_ref())
 }
+
+/// Like [`compile_file`], also returning every schema file the compilation
+/// read (the root and all imports), canonicalized, in load order.
+pub fn compile_file_with_sources(path: impl AsRef<Path>) -> CompileResult<(Schema, Vec<std::path::PathBuf>)> {
+    resolver::compile_file_with_sources(path.as_ref())
+}
