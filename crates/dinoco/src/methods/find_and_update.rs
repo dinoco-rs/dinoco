@@ -5,6 +5,7 @@ use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, U
 use crate::{
     AtomicUpdateError, DinocoRelationValue, IntoUpdateSets, MutationExecutor, duplicate_update_field,
     execute_relation_update_sets, has_many_to_many_update_sets, load_update_matches, split_update_sets,
+    touch_updated_at,
 };
 
 pub struct FindAndUpdate<M> {
@@ -87,7 +88,7 @@ where
 
         let query = UpdateQuery {
             table: M::TABLE_NAME,
-            sets,
+            sets: touch_updated_at::<M>(sets),
             conditions: self.conditions,
             returning: Some(<M as DinocoProjection<M>>::FIELDS),
         };

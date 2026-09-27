@@ -1,7 +1,7 @@
 use dinoco_engine::{
     DeleteQuery, DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
     ManyToManyMatch, MySqlAdapter, PostgresAdapter, RelationJoinQuery, SqliteAdapter, UpdateOperation, UpdateQuery,
-    UpdateSet,
+    UpdateSet, UpdatedAtField,
 };
 
 #[tokio::test]
@@ -311,4 +311,81 @@ async fn compilers_translate_many_to_many_virtual_key_filters_into_join_table_su
     assert_eq!(postgres_combined_params, [string("ERP"), string("business-a")]);
 
     Ok(())
+}
+
+#[tokio::test]
+async fn compilers_assign_updated_at_from_the_database_clock_without_binding_it() -> anyhow::Result<()> {
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let query = || UpdateQuery {
+        table: "article",
+        sets: vec![
+            UpdateSet { field: "views", value: DinocoValue::Integer(1), operation: UpdateOperation::Increment },
+            UpdatedAtField::timestamp("updated_at").update_set(),
+            UpdatedAtField::date("touched_on").update_set(),
+            UpdateSet {
+                field: "title",
+                value: DinocoValue::String("new".to_string()),
+                operation: UpdateOperation::Set,
+            },
+        ],
+        conditions: vec![FindWhere::Eq("id", DinocoValue::String("a".to_string()))],
+        returning: None,
+    };
+
+    let (sql, params) = sqlite.compile_update_query(query());
+    assert_eq!(
+        sql,
+        "UPDATE article SET views = views + ?, updated_at = strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now'), touched_on = date('now'), title = ? WHERE id = ?"
+    );
+    assert_eq!(
+        params,
+        vec![DinocoValue::Integer(1), DinocoValue::String("new".to_string()), DinocoValue::String("a".to_string())]
+    );
+
+    let (sql, params) = mysql.compile_update_query(query());
+    assert_eq!(
+        sql,
+        "UPDATE article SET views = views + ?, updated_at = UTC_TIMESTAMP(), touched_on = UTC_DATE(), title = ? WHERE id = ?"
+    );
+    assert_eq!(params.len(), 3);
+
+    let (sql, params) = postgres.compile_update_query(query());
+    assert_eq!(
+        sql,
+        "UPDATE article SET views = views + $1, updated_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'), touched_on = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date, title = $2 WHERE id = $3"
+    );
+    assert_eq!(params.len(), 3);
+
+    Ok(())
+}
+
+#[test]
+fn updated_at_operations_are_scalar_but_bind_nothing() {
+    for operation in [UpdateOperation::CurrentTimestamp, UpdateOperation::CurrentDate] {
+        assert!(operation.is_scalar());
+        assert!(!operation.binds_value());
+    }
+    for operation in [UpdateOperation::Set, UpdateOperation::Increment, UpdateOperation::Divide] {
+        assert!(operation.binds_value());
+    }
+
+    // A condition on `updated_at` no longer identifies the row after the
+    // update, so the MySQL reload drops it instead of reusing a stale value.
+    let query = UpdateQuery {
+        table: "article",
+        sets: vec![
+            UpdateSet { field: "title", value: DinocoValue::String("x".to_string()), operation: UpdateOperation::Set },
+            UpdatedAtField::timestamp("updated_at").update_set(),
+        ],
+        conditions: vec![
+            FindWhere::Eq("slug", DinocoValue::String("a".to_string())),
+            FindWhere::Lt("updated_at", DinocoValue::String("2001-01-01".to_string())),
+        ],
+        returning: Some(&["slug"]),
+    };
+    let reload = format!("{:?}", query.post_update_reload_conditions());
+    assert!(reload.contains("\"slug\""), "{reload}");
+    assert!(!reload.contains("updated_at"), "{reload}");
 }

@@ -339,3 +339,14 @@ model Topic {
             .expect("comment stripping is idempotent")
     );
 }
+
+#[test]
+fn formatter_keeps_updated_at_attributes() {
+    let raw = "model Article{\nid String @id\nupdated_at DateTime @updated_at @default(now())\ntouched_on Date? @default(now()) @updated_at\n}\n";
+    let formatted = dinoco_formatter::format_from_raw(raw).expect("format");
+
+    assert!(formatted.contains("updated_at  DateTime  @updated_at @default(now())"), "{formatted}");
+    assert!(formatted.contains("touched_on  Date?     @default(now()) @updated_at"), "{formatted}");
+    assert_eq!(dinoco_formatter::format_from_raw(&formatted).expect("format again"), formatted);
+    dinoco_compiler::compile(&formatted).expect("formatted schema compiles");
+}

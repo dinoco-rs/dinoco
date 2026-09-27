@@ -20,7 +20,7 @@ const RUNNER_DIR: &str = "dinoco/.runner";
 
 /// `dinoco/transform.rs`, when the project customizes generated code.
 pub fn transform_path() -> &'static Path {
-    Path::new("dinoco/transform.rs")
+    Path::new(dinoco_codegen::TRANSFORM_PATH)
 }
 
 pub fn has_transform() -> bool {

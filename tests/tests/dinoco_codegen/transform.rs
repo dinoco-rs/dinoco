@@ -236,11 +236,76 @@ fn transformed_output_is_written_by_generate_models_with() {
     std::fs::create_dir_all(project.path().join("dinoco")).expect("dinoco dir");
     std::env::set_current_dir(project.path()).expect("chdir");
 
+    // Without `dinoco/transform.rs`, `dinoco/mod.rs` does not reference it.
+    let plain = dinoco_codegen::generate_models_with(&schema(), None, &NoTransform);
+    let plain_mod = std::fs::read_to_string(project.path().join("dinoco/mod.rs"));
+
+    std::fs::write(project.path().join("dinoco/transform.rs"), "pub fn transformer() {}\n").expect("transform.rs");
     let result =
         dinoco_codegen::generate_models_with(&schema(), None, &transform_models(|model| model.add_derive("Hash")));
     let user = std::fs::read_to_string(project.path().join("dinoco/models/user.rs"));
+    let dinoco_mod = std::fs::read_to_string(project.path().join("dinoco/mod.rs"));
     std::env::set_current_dir(previous).expect("restore cwd");
 
+    plain.expect("generate without transform");
+    assert!(!plain_mod.expect("plain mod.rs").contains("mod transform;"));
     result.expect("generate");
     assert!(user.expect("user.rs").contains(", Hash)]"));
+    // With it, `dinoco/mod.rs` declares the module so editors analyze it.
+    let dinoco_mod = dinoco_mod.expect("mod.rs");
+    assert!(dinoco_mod.starts_with("#![allow(unused)]\n"), "{dinoco_mod}");
+    assert!(dinoco_mod.contains("\nmod transform;\n"), "{dinoco_mod}");
+}
+
+#[test]
+fn render_dinoco_mod_declares_transform_only_when_asked() {
+    let with = dinoco_codegen::render_dinoco_mod_with(&schema(), None, true);
+    let without = dinoco_codegen::render_dinoco_mod_with(&schema(), None, false);
+
+    assert!(with.contains("pub mod models;\n\n/// `dinoco/transform.rs`"), "{with}");
+    assert!(with.contains("\nmod transform;\n"), "{with}");
+    assert!(!without.contains("mod transform"), "{without}");
+    assert_eq!(without, dinoco_codegen::render_dinoco_mod(&schema()));
+}
+
+/// A transform written against `dinoco::codegen` only (no `dinoco_codegen`
+/// dependency) is the same transformer the CLI runner applies.
+mod through_dinoco {
+    use dinoco::codegen::*;
+
+    pub struct ViaDinoco;
+
+    impl DinocoTransformer for ViaDinoco {
+        fn transform_model(&self, model: &mut Model) {
+            model.add_import("std::fmt");
+            model.add_derive("Hash");
+            let mut method = ImplMethod::new("table", "&'static str", quote! { "via_dinoco" });
+            method.visibility = Visibility::Crate;
+            model.add_impl_method(method);
+        }
+
+        fn transform_field(&self, _model: &Model, field: &mut Field) {
+            if field.name == "deleted_at" {
+                field.ty = RustType::new("::std::string::String");
+            }
+        }
+    }
+
+    pub fn transformer() -> impl DinocoTransformer {
+        ViaDinoco
+    }
+}
+
+#[test]
+fn dinoco_codegen_reexports_everything_a_transform_uses() {
+    let transformer = through_dinoco::transformer();
+    let user = render_model(&transformer, "User");
+
+    assert!(user.contains("use std::fmt;"), "{user}");
+    assert!(user.contains(", Hash)]"), "{user}");
+    assert!(user.contains("pub(crate) fn table(&self) -> &'static str"), "{user}");
+    assert!(user.contains("pub deleted_at: Option<::std::string::String>"), "{user}");
+
+    let _: &dyn dinoco_codegen::DinocoTransformer = &transformer;
+    let _ = dinoco::codegen::prelude::Receiver::Owned;
 }

@@ -6,13 +6,15 @@ use crate::{
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
     ExistsQuery, FindBatchQuery, FindQuery, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
     MysqlRow, PostgresRow, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery,
-    RenameColumnMigration, RenameTableMigration, SqliteRow, UpdateQuery,
+    RenameColumnMigration, RenameTableMigration, SqliteRow, UpdateQuery, UpdatedAtField,
 };
 
 #[async_trait]
 pub trait DinocoEntity: Sized + Send + Sync + 'static {
     const TABLE_NAME: &'static str = "";
     const FIELDS: &'static [&'static str] = &[];
+    /// Columns refreshed by the database on every scalar update (`@updated_at`).
+    const UPDATED_AT_FIELDS: &'static [UpdatedAtField] = &[];
 
     type Where: Default;
     type OrderBy: Default;

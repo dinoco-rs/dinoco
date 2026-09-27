@@ -682,3 +682,46 @@ fn main() {
         .expect("cargo check generated self relation");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 }
+
+#[test]
+fn codegen_marks_updated_at_fields_for_the_entity_derive() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Article {
+            id         String    @id
+            created_at DateTime  @default(now())
+            updated_at DateTime  @updated_at @default(now())
+            edited_at  DateTime? @default(now()) @updated_at
+            touched_on Date      @updated_at @default(now())
+        }
+        "#,
+    )
+    .expect("schema");
+    let model = schema.models().next().expect("model");
+    let article = dinoco_codegen::render_model_file(model, &schema);
+
+    assert!(
+        article.contains(
+            "#[dinoco(default = ::dinoco::chrono::Utc::now())]\n    pub created_at: ::dinoco::chrono::DateTime<::dinoco::chrono::Utc>,"
+        ),
+        "{article}"
+    );
+    assert!(
+        article.contains(
+            "#[dinoco(updated_at, default = ::dinoco::chrono::Utc::now())]\n    pub updated_at: ::dinoco::chrono::DateTime<::dinoco::chrono::Utc>,"
+        ),
+        "{article}"
+    );
+    assert!(
+        article.contains(
+            "#[dinoco(updated_at, default = ::core::option::Option::Some(::dinoco::chrono::Utc::now()))]\n    pub edited_at: Option<::dinoco::chrono::DateTime<::dinoco::chrono::Utc>>,"
+        ),
+        "{article}"
+    );
+    assert!(
+        article.contains(
+            "#[dinoco(updated_at, default = ::dinoco::chrono::Utc::now().date_naive())]\n    pub touched_on: ::dinoco::chrono::NaiveDate,"
+        ),
+        "{article}"
+    );
+}

@@ -13,6 +13,7 @@ fn schema_completion_exposes_standard_and_fulltext_indexes() {
 
     assert!(items.iter().any(|item| item.label == "@index"));
     assert!(items.iter().any(|item| item.label == "@fulltext"));
+    assert!(items.iter().any(|item| item.label == "@updated_at"));
 }
 
 #[test]
@@ -115,5 +116,26 @@ config {
         diagnostics
             .iter()
             .any(|item| { item.code == Some(NumberOrString::String("dinoco.invalidPoolRange".to_string())) })
+    );
+}
+
+#[test]
+fn diagnostics_require_a_now_default_for_updated_at() {
+    let schema = |field: &str| {
+        format!(
+            "config {{\n    database = \"sqlite\"\n    database_url = env(\"DATABASE_URL\")\n}}\n\nmodel Article {{\n    id String @id\n    {field}\n}}\n"
+        )
+    };
+
+    let valid = schema("updated_at DateTime @updated_at @default(now())");
+    let diagnostics = analyze(&valid, &DocumentIndex::new(&valid));
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+
+    let missing = schema("updated_at DateTime @updated_at");
+    let diagnostics = analyze(&missing, &DocumentIndex::new(&missing));
+    assert!(
+        diagnostics.iter().any(|item| item.code == Some(NumberOrString::String("dinoco.schema".to_string()))
+            && item.message.contains("@updated_at on `Article.updated_at` requires @default(now())")),
+        "{diagnostics:#?}"
     );
 }

@@ -557,6 +557,7 @@ fn field_attribute_completions() -> Vec<CompletionItem> {
         value("@unique", CompletionItemKind::PROPERTY, "Unique constraint", "unique"),
         value("@index", CompletionItemKind::PROPERTY, "Database index", "index"),
         value("@fulltext", CompletionItemKind::PROPERTY, "Full-text search index", "fulltext"),
+        value("@updated_at", CompletionItemKind::PROPERTY, "Refreshed by the database on every update", "updated_at"),
         snippet("@default", CompletionItemKind::FUNCTION, "Default value", "default(${1})"),
         snippet(
             "@relation",

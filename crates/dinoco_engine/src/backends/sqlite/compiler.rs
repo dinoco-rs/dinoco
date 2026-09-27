@@ -1,5 +1,5 @@
 use crate::{
-    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
+    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery, CurrentTimeSql,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
     ExistsQuery, FindBatchQuery, FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery,
@@ -8,6 +8,11 @@ use crate::{
     RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration,
     RenameTableMigration, SqliteAdapter, UpdateQuery,
 };
+
+/// SQLite has no timestamp type: `DateTime` values are stored as RFC 3339
+/// text (see the adapter's `ToSql`), so `@updated_at` writes the same shape.
+const CURRENT_TIME: CurrentTimeSql =
+    CurrentTimeSql { timestamp: "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')", date: "date('now')" };
 
 impl DinocoSqlCompiler for SqliteAdapter {
     fn compile_find_query(&self, query: FindQuery) -> (String, Vec<DinocoValue>) {
@@ -36,10 +41,11 @@ impl DinocoSqlCompiler for SqliteAdapter {
 
     fn compile_update_query(&self, query: UpdateQuery) -> (String, Vec<DinocoValue>) {
         let sets = query.sets.iter().filter(|set| set.operation.is_scalar()).collect::<Vec<_>>();
-        let mut params = sets.iter().map(|set| set.value.clone()).collect::<Vec<_>>();
+        let mut params =
+            sets.iter().filter(|set| set.operation.binds_value()).map(|set| set.value.clone()).collect::<Vec<_>>();
         let set_sql = sets
             .iter()
-            .filter_map(|set| set.operation.assignment_sql(&sql_identifier(set.field), "?"))
+            .filter_map(|set| set.operation.assignment_sql(&sql_identifier(set.field), "?", CURRENT_TIME))
             .collect::<Vec<_>>()
             .join(", ");
         let mut sql = format!("UPDATE {} SET {set_sql}", sql_identifier(query.table));

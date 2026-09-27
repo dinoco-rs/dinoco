@@ -115,25 +115,80 @@ pub enum UpdateOperation {
     Disconnect,
     ConnectManyToMany(ManyToManyUpdate),
     DisconnectManyToMany(ManyToManyUpdate),
+    /// Assigns the database's current UTC timestamp (`@updated_at` on a
+    /// `DateTime` field). Binds no parameter: the value comes from the server.
+    CurrentTimestamp,
+    /// Assigns the database's current UTC date (`@updated_at` on a `Date`
+    /// field). Binds no parameter.
+    CurrentDate,
+}
+
+/// The SQL each dialect evaluates to "now" when assigning
+/// [`UpdateOperation::CurrentTimestamp`]/[`UpdateOperation::CurrentDate`].
+/// Both are UTC so they match the values Dinoco itself writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CurrentTimeSql {
+    pub timestamp: &'static str,
+    pub date: &'static str,
 }
 
 impl UpdateOperation {
     pub fn is_scalar(self) -> bool {
-        matches!(self, Self::Set | Self::Increment | Self::Decrement | Self::Multiply | Self::Divide)
+        matches!(
+            self,
+            Self::Set
+                | Self::Increment
+                | Self::Decrement
+                | Self::Multiply
+                | Self::Divide
+                | Self::CurrentTimestamp
+                | Self::CurrentDate
+        )
     }
 
-    /// Builds the right-hand side of a scalar assignment. Identifiers and
-    /// placeholders are supplied by the active dialect and values remain bind
-    /// parameters.
-    pub fn assignment_sql(self, field: &str, placeholder: &str) -> Option<String> {
+    /// Whether the assignment consumes the set's value as a bind parameter.
+    pub fn binds_value(self) -> bool {
+        self.is_scalar() && !matches!(self, Self::CurrentTimestamp | Self::CurrentDate)
+    }
+
+    /// Builds the right-hand side of a scalar assignment. Identifiers,
+    /// placeholders and the current-time expressions are supplied by the
+    /// active dialect and values remain bind parameters. `placeholder` is
+    /// ignored by operations that do not [bind a value](Self::binds_value).
+    pub fn assignment_sql(self, field: &str, placeholder: &str, now: CurrentTimeSql) -> Option<String> {
         match self {
             Self::Set => Some(format!("{field} = {placeholder}")),
             Self::Increment => Some(format!("{field} = {field} + {placeholder}")),
             Self::Decrement => Some(format!("{field} = {field} - {placeholder}")),
             Self::Multiply => Some(format!("{field} = {field} * {placeholder}")),
             Self::Divide => Some(format!("{field} = {field} / {placeholder}")),
+            Self::CurrentTimestamp => Some(format!("{field} = {}", now.timestamp)),
+            Self::CurrentDate => Some(format!("{field} = {}", now.date)),
             Self::Connect | Self::Disconnect | Self::ConnectManyToMany(_) | Self::DisconnectManyToMany(_) => None,
         }
+    }
+}
+
+/// A column the database refreshes on every scalar `UPDATE` of its row
+/// (`@updated_at` in the schema), unless the update sets it explicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UpdatedAtField {
+    pub name: &'static str,
+    /// [`UpdateOperation::CurrentTimestamp`] or [`UpdateOperation::CurrentDate`].
+    pub operation: UpdateOperation,
+}
+
+impl UpdatedAtField {
+    pub const fn timestamp(name: &'static str) -> Self {
+        Self { name, operation: UpdateOperation::CurrentTimestamp }
+    }
+
+    pub const fn date(name: &'static str) -> Self {
+        Self { name, operation: UpdateOperation::CurrentDate }
+    }
+
+    pub fn update_set(self) -> UpdateSet {
+        UpdateSet { field: self.name, value: DinocoValue::Null, operation: self.operation }
     }
 }
 

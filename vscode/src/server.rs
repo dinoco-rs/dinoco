@@ -1216,6 +1216,9 @@ fn attribute_description(name: &str) -> Option<&'static str> {
         "unique" => Some("`@unique` creates a unique constraint for this field."),
         "index" => Some("`@index` creates a standard database index for this field."),
         "fulltext" => Some("`@fulltext` enables native full-text search for this String field."),
+        "updated_at" => Some(
+            "`@updated_at` sets this DateTime/Date field to the database's current time on every update. Requires `@default(now())`.",
+        ),
         "ids" => Some("`@@ids([...])` defines the model's composite primary key."),
         "uniques" => Some("`@@uniques([...])` creates a composite unique constraint."),
         "indexes" => Some("`@@indexes([...])` creates a composite standard index."),

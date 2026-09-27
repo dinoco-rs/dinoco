@@ -158,7 +158,7 @@
 		},
 		"core_attributes": {
 			"comment": "Field-level attributes that are part of the Dinoco language itself, as opposed to unrecognized/typo\u2019d decorators.",
-			"match": "(@)(id|unique|relation|default|index|fulltext)\\b",
+			"match": "(@)(id|unique|relation|default|index|fulltext|updated_at)\\b",
 			"captures": {
 				"1": { "name": "punctuation.definition.decorator.dinoco" },
 				"2": { "name": "keyword.other.attribute.dinoco" }

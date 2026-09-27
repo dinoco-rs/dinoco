@@ -1,5 +1,5 @@
 use crate::{
-    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
+    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery, CurrentTimeSql,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
     ExistsQuery, FindBatchQuery, FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery,
@@ -10,6 +10,13 @@ use crate::{
 };
 
 use super::{PgBouncerAdapter, PostgresAdapter};
+
+/// `DateTime` columns are `TIMESTAMP` (without time zone) holding UTC wall
+/// clock values, so "now" is taken in UTC instead of the session time zone.
+const CURRENT_TIME: CurrentTimeSql = CurrentTimeSql {
+    timestamp: "(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')",
+    date: "(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date",
+};
 
 impl DinocoSqlCompiler for PostgresAdapter {
     fn compile_find_query(&self, query: FindQuery) -> (String, Vec<DinocoValue>) {
@@ -545,10 +552,14 @@ fn compile_insert_query(query: InsertQuery) -> (String, Vec<DinocoValue>) {
 fn compile_update_query(query: UpdateQuery) -> (String, Vec<DinocoValue>) {
     let mut placeholders = Placeholder::default();
     let sets = query.sets.iter().filter(|set| set.operation.is_scalar()).collect::<Vec<_>>();
-    let mut params = sets.iter().map(|set| set.value.clone()).collect::<Vec<_>>();
+    let mut params =
+        sets.iter().filter(|set| set.operation.binds_value()).map(|set| set.value.clone()).collect::<Vec<_>>();
     let set_sql = sets
         .iter()
-        .filter_map(|set| set.operation.assignment_sql(&sql_identifier(set.field), &placeholders.next()))
+        .filter_map(|set| {
+            let placeholder = if set.operation.binds_value() { placeholders.next() } else { String::new() };
+            set.operation.assignment_sql(&sql_identifier(set.field), &placeholder, CURRENT_TIME)
+        })
         .collect::<Vec<_>>()
         .join(", ");
     let mut sql = format!("UPDATE {} SET {set_sql}", sql_identifier(query.table));

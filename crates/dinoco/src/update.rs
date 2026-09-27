@@ -377,13 +377,36 @@ pub(crate) fn split_update_sets(sets: Vec<UpdateSet>) -> (Vec<UpdateSet>, Vec<Up
             | UpdateOperation::Increment
             | UpdateOperation::Decrement
             | UpdateOperation::Multiply
-            | UpdateOperation::Divide => updates.push(set),
+            | UpdateOperation::Divide
+            | UpdateOperation::CurrentTimestamp
+            | UpdateOperation::CurrentDate => updates.push(set),
             UpdateOperation::Connect | UpdateOperation::ConnectManyToMany(_) => connects.push(set),
             UpdateOperation::Disconnect | UpdateOperation::DisconnectManyToMany(_) => disconnects.push(set),
         }
     }
 
     (updates, connects, disconnects)
+}
+
+/// Adds a database-side "now" assignment for every `@updated_at` column of
+/// `M` that the statement does not set explicitly. Only statements that
+/// actually `UPDATE` the row (non-empty scalar sets) are touched, so
+/// relation-only updates leave the timestamp alone.
+pub(crate) fn touch_updated_at<M>(mut sets: Vec<UpdateSet>) -> Vec<UpdateSet>
+where
+    M: DinocoEntity,
+{
+    if sets.is_empty() {
+        return sets;
+    }
+
+    for field in M::UPDATED_AT_FIELDS {
+        if !sets.iter().any(|set| set.field == field.name) {
+            sets.push(field.update_set());
+        }
+    }
+
+    sets
 }
 
 pub(crate) fn duplicate_update_field(sets: &[UpdateSet]) -> Option<&'static str> {

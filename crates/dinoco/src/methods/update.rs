@@ -3,7 +3,10 @@ use std::marker::PhantomData;
 use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, PluckValue, UpdateQuery, UpdateSet};
 
 use crate::{DinocoRelationValue, Field, IntoUpdateSets, has_many_to_many_update_sets, load_update_matches};
-use crate::{MutationExecutor, UpdateError, duplicate_update_field, execute_relation_update_sets, split_update_sets};
+use crate::{
+    MutationExecutor, UpdateError, duplicate_update_field, execute_relation_update_sets, split_update_sets,
+    touch_updated_at,
+};
 
 pub struct Update<M> {
     sets: Vec<UpdateSet>,
@@ -62,7 +65,7 @@ where
         .await
         .map_err(UpdateError::from_database)?;
 
-    Ok(scalar_sets)
+    Ok(touch_updated_at::<M>(scalar_sets))
 }
 
 impl<M> Update<M>

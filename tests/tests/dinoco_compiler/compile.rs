@@ -947,3 +947,50 @@ fn compile_accepts_and_validates_the_migration_engine() {
     assert!(error.message.contains("migration_engine"), "{error}");
     assert!(error.message.contains("`automatic` or `manual`"), "{error}");
 }
+
+fn updated_at_schema(field: &str) -> String {
+    format!("model Article {{\n    id String @id\n    {field}\n}}\n")
+}
+
+#[test]
+fn compile_accepts_updated_at_with_a_now_default() {
+    for field in [
+        "updated_at DateTime @updated_at @default(now())",
+        "updated_at DateTime @default(now()) @updated_at",
+        "updated_at DateTime? @updated_at @default(now())",
+        "touched_on Date @updated_at @default(now())",
+    ] {
+        let schema = compile(&updated_at_schema(field)).unwrap_or_else(|error| panic!("{field}: {error}"));
+        let model = schema.models().next().expect("model");
+        assert!(model.fields[1].attributes.iter().any(|attribute| attribute.name == "updated_at"), "{field}");
+    }
+}
+
+#[test]
+fn compile_rejects_invalid_updated_at_fields() {
+    for (field, expected) in [
+        ("updated_at DateTime @updated_at", "requires @default(now())"),
+        (
+            "updated_at DateTime @updated_at @default(\"2020-01-01T00:00:00Z\")",
+            "requires @default(now())",
+        ),
+        ("updated_at String @updated_at @default(\"x\")", "requires a DateTime or Date field, found `String`"),
+        ("updated_at Integer @updated_at @default(autoincrement())", "requires a DateTime or Date field"),
+        ("updated_at DateTime @updated_at(now()) @default(now())", "does not take arguments"),
+        ("updated_at DateTime @updated_at @updated_at @default(now())", "declares @updated_at more than once"),
+    ] {
+        let error = compile(&updated_at_schema(field)).expect_err(field);
+        assert!(error.message.contains(expected), "{field}: {error}");
+        assert!(error.message.contains("updated_at"), "{field}: {error}");
+        assert_eq!(error.line, 3, "{field}: {error}");
+    }
+
+    let error = compile("model Event {\n    at DateTime @id @updated_at @default(now())\n}\n").expect_err("primary key");
+    assert!(error.message.contains("cannot be used on primary key field `Event.at`"), "{error}");
+
+    let error = compile(
+        "model Event {\n    name String\n    at DateTime @updated_at @default(now())\n    @@ids([name, at])\n}\n",
+    )
+    .expect_err("composite primary key");
+    assert!(error.message.contains("cannot be used on primary key field `Event.at`"), "{error}");
+}

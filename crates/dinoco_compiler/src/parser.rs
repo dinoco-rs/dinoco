@@ -143,6 +143,7 @@ pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
     validate_relation_attributes(schema)?;
     validate_relation_pairs(schema)?;
     validate_primary_keys(schema)?;
+    validate_updated_at(schema)?;
 
     let mut snowflake_origin = None;
 
@@ -363,7 +364,10 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
 
             let mut attributes = HashMap::new();
             for attribute in &field.attributes {
-                if matches!(attribute.name.as_str(), "id" | "unique" | "default" | "relation" | "index" | "fulltext")
+                if matches!(
+                    attribute.name.as_str(),
+                    "id" | "unique" | "default" | "relation" | "index" | "fulltext" | "updated_at"
+                )
                     && let Some(first) = attributes.insert(attribute.name.as_str(), &attribute.origin)
                 {
                     return Err(CompileError::at(
@@ -684,6 +688,58 @@ fn validate_primary_keys(schema: &Schema) -> CompileResult<()> {
                 &field.origin,
                 format!("Primary key `{}.{}` must be a required scalar or enum field", model.name, field.name),
             );
+        }
+    }
+
+    Ok(())
+}
+
+/// `@updated_at` marks a `DateTime`/`Date` column the database refreshes on
+/// every update. It must also declare `@default(now())`, so inserts get a value
+/// and the column is never left without one.
+fn validate_updated_at(schema: &Schema) -> CompileResult<()> {
+    for model in schema.models() {
+        let composite_ids = model.attribute("ids").and_then(|attribute| attribute.field_names()).unwrap_or_default();
+
+        for field in &model.fields {
+            let Some(updated_at) = field.attributes.iter().find(|attribute| attribute.name == "updated_at") else {
+                continue;
+            };
+            let target = format!("`{}.{}`", model.name, field.name);
+
+            if !updated_at.arguments.is_empty() {
+                return source_error(&updated_at.origin, format!("@updated_at on {target} does not take arguments"));
+            }
+            if field.ty.list || !matches!(field.ty.name.as_str(), "DateTime" | "Date") {
+                return source_error(
+                    &updated_at.origin,
+                    format!("@updated_at on {target} requires a DateTime or Date field, found `{}`", field.ty.name),
+                );
+            }
+            if field.attributes.iter().any(|attribute| attribute.name == "id")
+                || composite_ids.contains(&field.name.as_str())
+            {
+                return source_error(
+                    &updated_at.origin,
+                    format!("@updated_at cannot be used on primary key field {target}"),
+                );
+            }
+
+            let default_now = field.attributes.iter().find(|attribute| attribute.name == "default").is_some_and(
+                |default| {
+                    matches!(
+                        default.arguments.as_slice(),
+                        [AttributeArgument::Value(AttributeValue::Call { name, arguments })]
+                            if name == "now" && arguments.is_empty()
+                    )
+                },
+            );
+            if !default_now {
+                return source_error(
+                    &updated_at.origin,
+                    format!("@updated_at on {target} requires @default(now()) on the same field"),
+                );
+            }
         }
     }
 

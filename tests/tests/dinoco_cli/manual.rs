@@ -247,7 +247,7 @@ model User {
     .expect("schema");
     fs::write(
         project.join("dinoco/transform.rs"),
-        r##"use dinoco_codegen::prelude::*;
+        r##"use dinoco::codegen::*;
 
 struct Custom;
 
@@ -286,6 +286,30 @@ pub fn transformer() -> impl DinocoTransformer {
     assert!(user.contains("pub fn is_active(&self) -> bool"), "{user}");
     let models = fs::read_to_string(project.join("dinoco/models/mod.rs")).expect("models/mod.rs");
     assert!(models.contains("::dinoco::DinocoEnum, Hash)]"), "{models}");
+
+    // `dinoco/mod.rs` declares the transform, so the application compiles and
+    // analyzes it with nothing but the `dinoco` dependency.
+    let dinoco_mod = fs::read_to_string(project.join("dinoco/mod.rs")).expect("dinoco/mod.rs");
+    assert!(dinoco_mod.contains("\nmod transform;\n"), "{dinoco_mod}");
+    fs::create_dir_all(project.join("src")).expect("src dir");
+    fs::write(
+        project.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"transform-app\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[workspace]\n\n[dependencies]\ndinoco = {{ path = \"{}\" }}\n",
+            repo_root().join("crates/dinoco").display()
+        ),
+    )
+    .expect("app Cargo.toml");
+    fs::write(project.join("src/main.rs"), "#[path = \"../dinoco/mod.rs\"]\nmod database;\n\nfn main() {}\n")
+        .expect("app main.rs");
+    fs::copy(repo_root().join("Cargo.lock"), project.join("Cargo.lock")).expect("app Cargo.lock");
+    let check = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()))
+        .args(["check", "--quiet", "--offline"])
+        .current_dir(&project)
+        .env("CARGO_TARGET_DIR", repo_root().join("target/runner-tests"))
+        .output()
+        .expect("cargo check should run");
+    success(&check);
 
     // A broken transform surfaces the compiler error instead of silently
     // falling back to the untransformed models.

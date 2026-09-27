@@ -321,6 +321,12 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
     for field in fields.named.iter() {
         let parsed = ParsedField::new(field, &parent_snake)?;
+        if parsed.updated_at && (parsed.kind != FieldKind::Scalar || updated_at_operation(&parsed.ty).is_none()) {
+            return Err(syn::Error::new_spanned(
+                field,
+                "#[dinoco(updated_at)] requires a DateTime<Utc> or NaiveDate field (optionally wrapped in Option)",
+            ));
+        }
 
         match parsed.kind {
             FieldKind::Scalar => scalar_fields.push(parsed),
@@ -333,6 +339,12 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let field_names = scalar_fields.iter().map(|field| {
         let name = &field.name;
         quote! { #name }
+    });
+
+    let updated_at_fields = scalar_fields.iter().filter(|field| field.updated_at).map(|field| {
+        let name = &field.name;
+        let constructor = updated_at_operation(&field.ty).unwrap_or_else(|| format_ident!("timestamp"));
+        quote! { ::dinoco::UpdatedAtField::#constructor(#name) }
     });
 
     let where_fields = scalar_fields.iter().map(|field| {
@@ -981,6 +993,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         impl ::dinoco::DinocoEntity for #name {
             const TABLE_NAME: &'static str = #table_name;
             const FIELDS: &'static [&'static str] = &[#(#field_names),*];
+            const UPDATED_AT_FIELDS: &'static [::dinoco::UpdatedAtField] = &[#(#updated_at_fields),*];
 
             type Where = #where_name;
             type OrderBy = #order_by_name;
@@ -1455,6 +1468,7 @@ struct ParsedField {
     fulltext: Vec<String>,
     default_value: Option<DefaultValue>,
     auto_generate: Option<AutoGenerate>,
+    updated_at: bool,
     many_to_many: bool,
     join_table: Option<String>,
     parent_field: Option<String>,
@@ -1494,6 +1508,7 @@ impl ParsedField {
         let mut fulltext = Vec::new();
         let mut default_value = None;
         let mut auto_generate = None;
+        let mut updated_at = false;
         let mut many_to_many = false;
         let mut join_table = None;
         let mut parent_field = None;
@@ -1580,6 +1595,11 @@ impl ParsedField {
                     return Ok(());
                 }
 
+                if meta.path.is_ident("updated_at") {
+                    updated_at = true;
+                    return Ok(());
+                }
+
                 if meta.path.is_ident("fulltext") {
                     if meta.input.peek(syn::Token![=]) {
                         let value = meta.value()?.parse::<LitStr>()?;
@@ -1640,6 +1660,7 @@ impl ParsedField {
                 fulltext,
                 default_value,
                 auto_generate,
+                updated_at,
                 many_to_many,
                 join_table,
                 parent_field,
@@ -1678,6 +1699,7 @@ impl ParsedField {
                 fulltext,
                 default_value,
                 auto_generate,
+                updated_at,
                 many_to_many,
                 join_table,
                 parent_field,
@@ -1711,6 +1733,7 @@ impl ParsedField {
                 fulltext,
                 default_value,
                 auto_generate,
+                updated_at,
                 many_to_many,
                 join_table,
                 parent_field,
@@ -1746,6 +1769,7 @@ impl ParsedField {
                 fulltext,
                 default_value,
                 auto_generate,
+                updated_at,
                 many_to_many,
                 join_table,
                 parent_field,
@@ -1773,6 +1797,7 @@ impl ParsedField {
             fulltext,
             default_value,
             auto_generate,
+            updated_at,
             many_to_many,
             join_table,
             parent_field,
@@ -1973,6 +1998,21 @@ fn vec_inner(ty: &Type) -> Option<&Type> {
     };
 
     Some(inner)
+}
+
+/// The `UpdatedAtField` constructor for an `#[dinoco(updated_at)]` field:
+/// `date` for `NaiveDate`, `timestamp` for `DateTime`, `None` otherwise.
+fn updated_at_operation(ty: &Type) -> Option<syn::Ident> {
+    let ty = option_inner(ty).unwrap_or(ty);
+    let Type::Path(path) = ty else {
+        return None;
+    };
+
+    match path.path.segments.last()?.ident.to_string().as_str() {
+        "NaiveDate" => Some(format_ident!("date")),
+        "DateTime" => Some(format_ident!("timestamp")),
+        _ => None,
+    }
 }
 
 fn option_inner(ty: &Type) -> Option<&Type> {

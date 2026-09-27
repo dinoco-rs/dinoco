@@ -1,0 +1,21 @@
+config {
+    database = "sqlite"
+    database_url = env("DATABASE_URL")
+}
+
+model Article {
+    id         String   @id
+    title      String
+    views      Integer  @default(0)
+    created_at DateTime @default(now())
+    updated_at DateTime @updated_at @default(now())
+    touched_on Date     @updated_at @default(now())
+    edited_at  DateTime? @updated_at @default(now())
+    tags       Tag[]
+}
+
+model Tag {
+    id       String    @id
+    label    String
+    articles Article[]
+}

@@ -158,7 +158,7 @@
     "attributes": {
       "patterns": [
         {
-          "match": "(@)(id|unique|index|fulltext)\\b",
+          "match": "(@)(id|unique|index|fulltext|updated_at)\\b",
           "captures": {
             "1": { "name": "punctuation.definition.annotation.dinoco" },
             "2": { "name": "entity.name.function.attribute.dinoco" }

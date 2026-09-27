@@ -1,5 +1,5 @@
 use crate::{
-    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
+    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery, CurrentTimeSql,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoSqlCompiler, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
     ExistsQuery, FindBatchQuery, FindOrderBy, FindQuery, FindWhere, InsertQuery, ManyToManyRelationCountQuery,
@@ -8,6 +8,10 @@ use crate::{
     ReferentialAction, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery,
     RenameColumnMigration, RenameTableMigration, UpdateQuery,
 };
+
+/// UTC regardless of the session time zone, matching the naive UTC values the
+/// adapter binds for `DateTime`/`Date`.
+const CURRENT_TIME: CurrentTimeSql = CurrentTimeSql { timestamp: "UTC_TIMESTAMP()", date: "UTC_DATE()" };
 
 impl DinocoSqlCompiler for MySqlAdapter {
     fn compile_find_query(&self, query: FindQuery) -> (String, Vec<DinocoValue>) {
@@ -36,10 +40,11 @@ impl DinocoSqlCompiler for MySqlAdapter {
 
     fn compile_update_query(&self, query: UpdateQuery) -> (String, Vec<DinocoValue>) {
         let sets = query.sets.iter().filter(|set| set.operation.is_scalar()).collect::<Vec<_>>();
-        let mut params = sets.iter().map(|set| set.value.clone()).collect::<Vec<_>>();
+        let mut params =
+            sets.iter().filter(|set| set.operation.binds_value()).map(|set| set.value.clone()).collect::<Vec<_>>();
         let set_sql = sets
             .iter()
-            .filter_map(|set| set.operation.assignment_sql(&sql_identifier(set.field), "?"))
+            .filter_map(|set| set.operation.assignment_sql(&sql_identifier(set.field), "?", CURRENT_TIME))
             .collect::<Vec<_>>()
             .join(", ");
         let mut sql = format!("UPDATE {} SET {set_sql}", sql_identifier(query.table));

@@ -127,6 +127,18 @@ pub struct PostgresTemporalRecord {
     payload: dinoco::serde_json::Value,
 }
 
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "adapter_updated_at_article")]
+pub struct UpdatedAtArticle {
+    #[dinoco(primary_key)]
+    id: String,
+    title: String,
+    #[dinoco(updated_at, default = ::dinoco::chrono::Utc::now())]
+    updated_at: dinoco::chrono::DateTime<dinoco::chrono::Utc>,
+    #[dinoco(updated_at, default = ::dinoco::chrono::Utc::now().date_naive())]
+    touched_on: dinoco::chrono::NaiveDate,
+}
+
 #[derive(Debug, EntityExtend)]
 #[extend(User)]
 pub struct UserSelect {
@@ -216,6 +228,101 @@ async fn postgres_serializes_and_decodes_utc_datetime_for_timestamp_columns() ->
     assert_eq!(changed.verified_at, updated);
     assert_eq!(changed.verification_day, updated.date_naive());
     assert_eq!(changed.payload, updated_payload);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_refreshes_updated_at_on_every_update_method() -> anyhow::Result<()> {
+    let path = format!("/private/tmp/dinoco-updated-at-{}-{}.sqlite", std::process::id(), monotonic());
+    let adapter = SqliteAdapter::new(path.clone()).await.map_err(anyhow::Error::msg)?;
+    reset_updated_at_schema(&adapter).await?;
+    run_updated_at(DinocoClient::new(Backend::Sqlite(adapter))).await?;
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_refreshes_updated_at_on_every_update_method() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
+    let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
+    reset_updated_at_schema(&adapter).await?;
+    run_updated_at(DinocoClient::new(Backend::Postgres(adapter))).await
+}
+
+#[tokio::test]
+async fn mysql_refreshes_updated_at_on_every_update_method() -> anyhow::Result<()> {
+    let _guard = MYSQL_TEST_LOCK.lock().await;
+    let adapter = MySqlAdapter::new(MYSQL_URL);
+    reset_updated_at_schema(&adapter).await?;
+    run_updated_at(DinocoClient::new(Backend::Mysql(adapter))).await
+}
+
+async fn reset_updated_at_schema<A>(adapter: &A) -> anyhow::Result<()>
+where
+    A: DinocoAdapter + DinocoSqlCompiler,
+{
+    drop_table(adapter, "adapter_updated_at_article").await?;
+    create_table(
+        adapter,
+        "adapter_updated_at_article",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            column("title", MigrationColumnType::String),
+            default(column("updated_at", MigrationColumnType::DateTime), MigrationDefault::CurrentTimestamp),
+            column("touched_on", MigrationColumnType::Date),
+        ],
+    )
+    .await
+}
+
+/// `updated_at` is seeded far in the past; every update path must replace it
+/// with the database's current UTC time (within a small clock tolerance).
+async fn run_updated_at(client: DinocoClient) -> anyhow::Result<()> {
+    use dinoco::chrono::{Duration, TimeZone, Utc};
+
+    let past = Utc.with_ymd_and_hms(2001, 2, 3, 4, 5, 6).single().expect("valid timestamp");
+    let tolerance = Duration::seconds(5);
+    let seed = |id: &str| UpdatedAtArticle {
+        id: id.to_string(),
+        title: id.to_string(),
+        updated_at: past,
+        touched_on: past.date_naive(),
+    };
+    insert_many::<UpdatedAtArticle>().values(vec![seed("a"), seed("b"), seed("c"), seed("d")]).execute(&client).await?;
+    let reload = |id: &'static str| {
+        find_first::<UpdatedAtArticle>().where_(move |article| article.id.eq(id)).execute(&client)
+    };
+    let fresh = |article: &UpdatedAtArticle| {
+        let now = Utc::now();
+        article.updated_at > now - tolerance
+            && article.updated_at < now + tolerance
+            && article.touched_on >= (now - tolerance).date_naive()
+    };
+
+    update::<UpdatedAtArticle>().where_(|article| article.id.eq("a")).update(|article| article.title.set("A")).execute(&client).await?;
+    let a = reload("a").await?.expect("a");
+    assert!(fresh(&a), "update: {a:?}");
+
+    dinoco::update_many::<UpdatedAtArticle>()
+        .where_(|article| article.id.eq("b"))
+        .update(|article| article.title.set("B"))
+        .execute(&client)
+        .await?;
+    let b = reload("b").await?.expect("b");
+    assert!(fresh(&b), "update_many: {b:?}");
+
+    let c = dinoco::find_and_update::<UpdatedAtArticle>()
+        .where_(|article| article.id.eq("c"))
+        .update(|article| article.title.set("C"))
+        .execute(&client)
+        .await?;
+    assert!(fresh(&c), "find_and_update: {c:?}");
+    assert_eq!(reload("c").await?.expect("c").updated_at, c.updated_at);
+
+    let d = reload("d").await?.expect("d");
+    assert_eq!(d.updated_at, past, "untouched rows keep their value");
+    assert_eq!(d.touched_on, past.date_naive());
 
     Ok(())
 }
