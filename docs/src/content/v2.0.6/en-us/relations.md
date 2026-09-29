@@ -128,6 +128,19 @@ model Profile {
 
 For a composite one-to-one foreign key, declare uniqueness across the whole local tuple with `@@uniques([field_a, field_b])`. A composite `references` list can target either the related model's `@@ids([...])` or a matching `@@uniques([...])` group.
 
+Each struct contains the other, so both generated navigation fields are boxed — `User.profile` is `Option<Box<Profile>>` and `Profile.user` is `Option<Box<User>>`. Both sides can be included, and populating the side without the foreign key inserts the related row after the parent, with its key filled in:
+
+```rust
+let users = dinoco::find_many::<User>()
+    .includes(|x| x.profile())
+    .execute(&client)
+    .await?;
+
+let mut user = User::new("ana@example.com".to_string());
+user.profile = Some(Box::new(Profile::new(String::new(), "Hello".to_string())));
+dinoco::insert_into::<User>().values(&user).execute(&client).await?; // profile.user_id = user.id
+```
+
 ## Implicit many-to-many
 
 Two list fields, on both sides, with no `fields`/`references` on either — that's all it takes to declare an implicit many-to-many relation:

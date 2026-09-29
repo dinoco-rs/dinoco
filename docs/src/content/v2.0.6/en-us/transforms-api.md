@@ -96,7 +96,7 @@ Scalar list fields keep their `Vec<...>` inside `ty`. `RustType::new("::std::syn
 | `target` | The schema name of the model it points to |
 | `list` | Rendered as `Vec<ty>` |
 | `nullable` | Rendered as `Option<ty>` (ignored when `list` is set) |
-| `ty` | The related type (`Box<Self>` for an optional self-relation) |
+| `ty` | The related type (`Box<...>` when singular relations form a cycle: a self relation, both sides of a one-to-one) |
 | `attributes` | Attributes rendered above the field |
 
 ## ImplBlock

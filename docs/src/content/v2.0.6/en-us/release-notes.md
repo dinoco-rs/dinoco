@@ -1,6 +1,13 @@
-# Dinoco v2.0.5
+# Dinoco v2.0.6
 
 This page tracks what changed release over release. Each entry links to the page that documents the feature in depth — treat this as a changelog, not the primary reference.
+
+## v2.0.6
+
+> [!WARNING]
+> Singular relation fields that form a cycle — both sides of a one-to-one, or many-to-ones that lead back to the same model — are now generated as `Option<Box<T>>`. Code that assigns them needs `Some(Box::new(value))`; such models didn't compile before.
+
+- **One-to-one relations generate correctly.** The side without the foreign key (`User.profile`) used to be generated as a `many_to_one` with no keys, so its include loaded nothing and the two structs contained each other by value (`recursive types ... have infinite size`). It is now `#[dinoco(one_to_one, inverse, foreign_key = "...", references = "...")]`: `.includes(...)` loads it from either side, and populating it in `insert_into`/`insert_many` inserts the related row with its foreign key set. See [One-to-one](/en-us/docs/orm/guide/relations#one-to-one).
 
 ## v2.0.5
 

@@ -96,7 +96,7 @@ Campos escalares de lista mantêm o `Vec<...>` dentro de `ty`. `RustType::new(":
 | `target` | O nome, no schema, do model para o qual aponta |
 | `list` | Renderizado como `Vec<ty>` |
 | `nullable` | Renderizado como `Option<ty>` (ignorado quando `list` está ativo) |
-| `ty` | O tipo relacionado (`Box<Self>` numa auto-relação opcional) |
+| `ty` | O tipo relacionado (`Box<...>` quando relações singulares formam um ciclo: auto-relação, os dois lados de um one-to-one) |
 | `attributes` | Atributos renderizados acima do campo |
 
 ## ImplBlock

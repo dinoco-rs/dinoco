@@ -684,6 +684,194 @@ fn main() {
 }
 
 #[test]
+fn codegen_generates_both_sides_of_a_one_to_one_relation() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Account {
+            id      Integer  @id @default(autoincrement())
+            email   String   @unique
+            profile Profile?
+        }
+
+        model Profile {
+            id         String   @id @default(uuid())
+            account_id Integer  @unique
+            account    Account? @relation(fields: [account_id], references: [id], onDelete: Cascade)
+        }
+        "#,
+    )
+    .expect("one-to-one schema");
+    let account = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "Account").expect("account model"),
+        &schema,
+    );
+    let profile = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "Profile").expect("profile model"),
+        &schema,
+    );
+
+    assert!(
+        account.contains("#[dinoco(one_to_one, inverse, foreign_key = \"account_id\", references = \"id\")]"),
+        "{account}"
+    );
+    assert!(!account.contains("many_to_one"), "{account}");
+    assert!(account.contains("pub profile: Option<Box<Profile>>"), "{account}");
+    assert!(profile.contains("#[dinoco(one_to_one, foreign_key = \"account_id\", references = \"id\")]"), "{profile}");
+    assert!(profile.contains("pub account: Option<Box<Account>>"), "{profile}");
+}
+
+#[test]
+fn codegen_binds_named_and_self_one_to_one_inverses_to_their_owner() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Step {
+            id          Integer @id
+            next_id     Integer? @unique
+            next        Step?    @relation(name: "Chain", fields: [next_id], references: [id])
+            previous    Step?    @relation(name: "Chain")
+            reviewer_id Integer? @unique
+            reviewer    Reviewer? @relation(name: "Review", fields: [reviewer_id], references: [id])
+        }
+
+        model Reviewer {
+            id     Integer @id
+            step   Step?   @relation(name: "Review")
+        }
+        "#,
+    )
+    .expect("named one-to-one schema");
+    let step = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "Step").expect("step model"),
+        &schema,
+    );
+    let reviewer = dinoco_codegen::render_model_file(
+        schema.models().find(|model| model.name == "Reviewer").expect("reviewer model"),
+        &schema,
+    );
+
+    assert!(
+        step.contains(
+            "#[dinoco(one_to_one, relation_name = \"Chain\", foreign_key = \"next_id\", references = \"id\")]"
+        )
+    );
+    assert!(step.contains(
+        "#[dinoco(one_to_one, inverse, relation_name = \"Chain\", foreign_key = \"next_id\", references = \"id\")]"
+    ));
+    assert!(step.contains("pub previous: Option<Box<Step>>"), "{step}");
+    assert!(step.contains("pub reviewer: Option<Box<Reviewer>>"), "{step}");
+    assert!(reviewer.contains(
+        "#[dinoco(one_to_one, inverse, relation_name = \"Review\", foreign_key = \"reviewer_id\", references = \"id\")]"
+    ));
+    assert!(reviewer.contains("pub step: Option<Box<Step>>"), "{reviewer}");
+}
+
+#[test]
+fn codegen_boxes_singular_relations_that_form_a_cycle_across_models() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Warehouse {
+            id         Integer    @id
+            manager_id Integer?
+            manager    Employee?  @relation(fields: [manager_id], references: [id])
+            employees  Employee[] @relation(name: "Staff")
+            trucks     Truck[]
+        }
+
+        model Employee {
+            id           Integer     @id
+            warehouse_id Integer?
+            warehouse    Warehouse?  @relation(name: "Staff", fields: [warehouse_id], references: [id])
+            managed      Warehouse[]
+        }
+
+        model Truck {
+            id           Integer    @id
+            warehouse_id Integer
+            warehouse    Warehouse? @relation(fields: [warehouse_id], references: [id])
+        }
+        "#,
+    )
+    .expect("cyclic many-to-one schema");
+    let render = |name: &str| {
+        dinoco_codegen::render_model_file(schema.models().find(|model| model.name == name).expect("model"), &schema)
+    };
+    let warehouse = render("Warehouse");
+    let employee = render("Employee");
+    let truck = render("Truck");
+
+    assert!(warehouse.contains("pub manager: Option<Box<Employee>>"), "{warehouse}");
+    assert!(employee.contains("pub warehouse: Option<Box<Warehouse>>"), "{employee}");
+    assert!(truck.contains("pub warehouse: Option<Warehouse>"), "{truck}");
+}
+
+#[test]
+fn generated_one_to_one_models_compile_with_includes_and_nested_inserts() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Account {
+            id      Integer  @id
+            profile Profile?
+        }
+
+        model Profile {
+            id         Integer  @id
+            account_id Integer  @unique
+            account    Account? @relation(fields: [account_id], references: [id])
+        }
+        "#,
+    )
+    .expect("one-to-one schema");
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("workspace");
+    let fixture = tempfile::tempdir().expect("fixture");
+    std::fs::create_dir_all(fixture.path().join("src/models")).expect("models directory");
+    std::fs::write(
+        fixture.path().join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"dinoco_one_to_one_compile\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[dependencies]\ndinoco = {{ path = {:?} }}\n",
+            workspace.join("crates/dinoco")
+        ),
+    )
+    .expect("manifest");
+    std::fs::write(fixture.path().join("src/models/mod.rs"), dinoco_codegen::render_models_mod(&schema))
+        .expect("models module");
+    for model in schema.models() {
+        std::fs::write(
+            fixture.path().join(format!("src/models/{}.rs", model.name.to_lowercase())),
+            dinoco_codegen::render_model_file(model, &schema),
+        )
+        .expect("model file");
+    }
+    std::fs::write(
+        fixture.path().join("src/main.rs"),
+        r#"
+mod models;
+
+use models::{Account, Profile};
+
+fn main() {
+    let mut account = Account::new(1);
+    account.profile = Some(Box::new(Profile::new(2, 1)));
+    let json = dinoco::serde_json::to_string(&account).unwrap();
+    let _: Account = dinoco::serde_json::from_str(&json).unwrap();
+
+    let _ = dinoco::find_many::<Account>().includes(|account| account.profile().includes(|profile| profile.account()));
+    let _ = dinoco::find_first::<Profile>().includes(|profile| profile.account().includes(|account| account.profile()));
+    let _ = dinoco::insert_into::<Account>().values(&account);
+}
+"#,
+    )
+    .expect("main source");
+
+    let output = std::process::Command::new("cargo")
+        .args(["check", "--quiet", "--offline"])
+        .env("CARGO_TARGET_DIR", workspace.join("target"))
+        .current_dir(fixture.path())
+        .output()
+        .expect("cargo check generated one-to-one models");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+}
+
+#[test]
 fn codegen_marks_updated_at_fields_for_the_entity_derive() {
     let schema = dinoco_compiler::compile(
         r#"

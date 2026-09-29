@@ -128,6 +128,19 @@ model Profile {
 
 Para uma foreign key one-to-one composta, declare unicidade sobre a tupla local inteira com `@@uniques([field_a, field_b])`. Uma lista `references` composta pode apontar tanto para `@@ids([...])` quanto para um grupo `@@uniques([...])` correspondente no model relacionado.
 
+Cada struct contém a outra, então os dois fields de navegação gerados usam `Box` — `User.profile` é `Option<Box<Profile>>` e `Profile.user` é `Option<Box<User>>`. Os dois lados podem ser incluídos, e preencher o lado que não tem a foreign key insere a row relacionada depois do parent, já com a chave preenchida:
+
+```rust
+let users = dinoco::find_many::<User>()
+    .includes(|x| x.profile())
+    .execute(&client)
+    .await?;
+
+let mut user = User::new("ana@example.com".to_string());
+user.profile = Some(Box::new(Profile::new(String::new(), "Hello".to_string())));
+dinoco::insert_into::<User>().values(&user).execute(&client).await?; // profile.user_id = user.id
+```
+
 ## Many-to-many implícito
 
 Dois fields de lista, dos dois lados, sem `fields`/`references` em nenhum deles — é só isso que define uma relação many-to-many implícita:

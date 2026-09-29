@@ -479,10 +479,45 @@ fn rust_type_parts(model: &Model, field: &ModelField, schema: &Schema) -> (Strin
     if field.ty.list {
         if field.is_relation(schema) { (base, false) } else { (format!("Vec<{base}>"), false) }
     } else if field.ty.optional {
-        if field.is_relation(schema) && field.ty.name == model.name { (format!("Box<{base}>"), true) } else { (base, true) }
+        if field.is_relation(schema) && singular_relation_cycle(schema, &field.ty.name, &model.name) {
+            (format!("Box<{base}>"), true)
+        } else {
+            (base, true)
+        }
     } else {
         (base, false)
     }
+}
+
+/// Whether `target` reaches `source` through singular (non-list) relation
+/// fields. Such a chain makes the generated structs contain each other by
+/// value (a self relation, both sides of a one-to-one, a cycle of
+/// many-to-ones), so every singular relation inside it is boxed.
+fn singular_relation_cycle(schema: &Schema, target: &str, source: &str) -> bool {
+    let mut visited = BTreeSet::new();
+    let mut pending = vec![target];
+
+    while let Some(current) = pending.pop() {
+        if current == source {
+            return true;
+        }
+        if !visited.insert(current) {
+            continue;
+        }
+        let Some(model) = schema.models().find(|model| model.name == current) else {
+            continue;
+        };
+
+        pending.extend(
+            model
+                .fields
+                .iter()
+                .filter(|field| !field.ty.list && field.is_relation(schema))
+                .map(|field| field.ty.name.as_str()),
+        );
+    }
+
+    false
 }
 
 fn referenced_relation_default<'a>(model: &'a Model, field: &ModelField, schema: &'a Schema) -> Option<&'a str> {
@@ -672,6 +707,13 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
             } else {
                 ("many_to_many", None, None)
             }
+        } else if fields.is_none()
+            && let Some((foreign_key, references)) = inverse_relation_fields(model, field, schema)
+        {
+            // The opposite side owns the foreign key: the only singular relation
+            // without fields/references the compiler accepts is the non-owning
+            // side of a one-to-one.
+            ("one_to_one, inverse", Some(foreign_key), Some(references))
         } else if relation_is_unique(model, field, fields.as_deref()) {
             ("one_to_one", fields, references)
         } else {

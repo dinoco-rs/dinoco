@@ -330,7 +330,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
         match parsed.kind {
             FieldKind::Scalar => scalar_fields.push(parsed),
-            FieldKind::HasMany | FieldKind::BelongsTo => relations.push(parsed),
+            FieldKind::HasMany | FieldKind::BelongsTo | FieldKind::HasOne => relations.push(parsed),
             FieldKind::ManyToManyKey => many_to_many_keys.push(parsed),
             FieldKind::Extra => {}
         }
@@ -622,6 +622,18 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                     }
                 }
             }
+            FieldKind::HasOne => {
+                // The foreign key lives on the target, so the lookup runs the
+                // other way around: local `references` -> target `foreign_key`.
+                let child_field =
+                    if field.foreign_key.is_some() { foreign_key.to_string() } else { format!("{}_id", parent_snake) };
+
+                quote! {
+                    pub fn #ident(&self) -> ::dinoco::BelongsTo<#name, #target> {
+                        ::dinoco::BelongsTo::new(#relation_name, #references, #child_field)
+                    }
+                }
+            }
             FieldKind::Scalar | FieldKind::ManyToManyKey | FieldKind::Extra => quote! {},
         }
     });
@@ -633,15 +645,16 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             let ident = &field.ident;
             quote! { #relation_name => self.#ident = values, }
         });
-        let one_arms = fields.iter().filter(|field| field.kind == FieldKind::BelongsTo).map(|field| {
-            let relation_name = &field.name;
-            let ident = &field.ident;
-            if field.boxed_relation {
-                quote! { #relation_name => self.#ident = value.map(::std::boxed::Box::new), }
-            } else {
-                quote! { #relation_name => self.#ident = value, }
-            }
-        });
+        let one_arms =
+            fields.iter().filter(|field| matches!(field.kind, FieldKind::BelongsTo | FieldKind::HasOne)).map(|field| {
+                let relation_name = &field.name;
+                let ident = &field.ident;
+                if field.boxed_relation {
+                    quote! { #relation_name => self.#ident = value.map(::std::boxed::Box::new), }
+                } else {
+                    quote! { #relation_name => self.#ident = value, }
+                }
+            });
 
         quote! {
             impl ::dinoco::DinocoRelationApply<#target> for #name {
@@ -746,7 +759,11 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let ident = &field.ident;
         let ty = &field.ty;
         let bind_relation = field.relation_name.clone().or_else(|| field.foreign_key.clone()).unwrap_or_else(|| {
-            if field.kind == FieldKind::HasMany { format!("{parent_snake}_id") } else { field.name.clone() }
+            if matches!(field.kind, FieldKind::HasMany | FieldKind::HasOne) {
+                format!("{parent_snake}_id")
+            } else {
+                field.name.clone()
+            }
         });
 
         if let Some(inner) = vec_inner(ty) {
@@ -1143,7 +1160,7 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
 
         match parsed.kind {
             FieldKind::Scalar => scalar_fields.push(parsed),
-            FieldKind::HasMany | FieldKind::BelongsTo => relations.push(parsed),
+            FieldKind::HasMany | FieldKind::BelongsTo | FieldKind::HasOne => relations.push(parsed),
             FieldKind::ManyToManyKey | FieldKind::Extra => {}
         }
     }
@@ -1256,15 +1273,16 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             let ident = &field.ident;
             quote! { #relation_name => self.#ident = values, }
         });
-        let one_arms = fields.iter().filter(|field| field.kind == FieldKind::BelongsTo).map(|field| {
-            let relation_name = &field.name;
-            let ident = &field.ident;
-            if field.boxed_relation {
-                quote! { #relation_name => self.#ident = value.map(::std::boxed::Box::new), }
-            } else {
-                quote! { #relation_name => self.#ident = value, }
-            }
-        });
+        let one_arms =
+            fields.iter().filter(|field| matches!(field.kind, FieldKind::BelongsTo | FieldKind::HasOne)).map(|field| {
+                let relation_name = &field.name;
+                let ident = &field.ident;
+                if field.boxed_relation {
+                    quote! { #relation_name => self.#ident = value.map(::std::boxed::Box::new), }
+                } else {
+                    quote! { #relation_name => self.#ident = value, }
+                }
+            });
 
         quote! {
             impl ::dinoco::DinocoRelationApply<#target> for #name {
@@ -1448,7 +1466,10 @@ fn type_key(ty: &Type) -> String {
 enum FieldKind {
     Scalar,
     HasMany,
+    /// Singular relation whose foreign key is a local field.
     BelongsTo,
+    /// Non-owning side of a one-to-one: the foreign key lives on the target.
+    HasOne,
     ManyToManyKey,
     Extra,
 }
@@ -1501,6 +1522,8 @@ impl ParsedField {
         let mut extra = false;
         let mut enum_field = false;
         let mut relation_kind = None;
+        let mut one_to_one = false;
+        let mut inverse = false;
         let mut foreign_key = None;
         let mut references = None;
         let mut relation_name = None;
@@ -1550,6 +1573,12 @@ impl ParsedField {
 
                 if meta.path.is_ident("many_to_one") || meta.path.is_ident("one_to_one") {
                     relation_kind = Some(FieldKind::BelongsTo);
+                    one_to_one = meta.path.is_ident("one_to_one");
+                    return Ok(());
+                }
+
+                if meta.path.is_ident("inverse") {
+                    inverse = true;
                     return Ok(());
                 }
 
@@ -1642,6 +1671,13 @@ impl ParsedField {
 
                 Err(meta.error("unknown dinoco field attribute"))
             })?;
+        }
+
+        if inverse {
+            if !one_to_one {
+                return Err(syn::Error::new_spanned(field, "#[dinoco(inverse)] is only valid on one_to_one relations"));
+            }
+            relation_kind = Some(FieldKind::HasOne);
         }
 
         if extra {
@@ -1758,7 +1794,7 @@ impl ParsedField {
                 ident,
                 name,
                 ty: field.ty.clone(),
-                kind: FieldKind::BelongsTo,
+                kind: if relation_kind == Some(FieldKind::HasOne) { FieldKind::HasOne } else { FieldKind::BelongsTo },
                 target_ty: Some(target.clone()),
                 boxed_relation: box_inner(inner).is_some(),
                 foreign_key,
@@ -1925,7 +1961,7 @@ fn should_insert_nested_relation(field: &ParsedField, scalar_fields: &[ParsedFie
     }
 
     match field.kind {
-        FieldKind::HasMany => true,
+        FieldKind::HasMany | FieldKind::HasOne => true,
         FieldKind::BelongsTo => {
             let Some(foreign_key) = field.foreign_key.as_deref() else {
                 return true;

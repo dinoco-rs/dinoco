@@ -1,6 +1,13 @@
-# Dinoco v2.0.5
+# Dinoco v2.0.6
 
 Esta página acompanha o que mudou release a release. Cada item linka para a página que documenta a funcionalidade em profundidade — trate isto como um changelog, não como a referência principal.
+
+## v2.0.6
+
+> [!WARNING]
+> Fields de relação singulares que formam um ciclo — os dois lados de um one-to-one, ou many-to-ones que voltam ao mesmo model — agora são gerados como `Option<Box<T>>`. Código que atribui esses fields precisa de `Some(Box::new(value))`; esses models não compilavam antes.
+
+- **Relações one-to-one geradas corretamente.** O lado sem a foreign key (`User.profile`) era gerado como `many_to_one` sem chaves, então o include não carregava nada e as duas structs se continham por valor (`recursive types ... have infinite size`). Agora é `#[dinoco(one_to_one, inverse, foreign_key = "...", references = "...")]`: `.includes(...)` carrega a relação pelos dois lados, e preenchê-la em `insert_into`/`insert_many` insere a row relacionada com a foreign key preenchida. Veja [One-to-one](/pt-br/docs/orm/guide/relations#one-to-one).
 
 ## v2.0.5
 
