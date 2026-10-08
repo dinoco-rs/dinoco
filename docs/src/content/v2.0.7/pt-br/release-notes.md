@@ -1,6 +1,11 @@
-# Dinoco v2.0.6
+# Dinoco v2.0.7
 
 Esta página acompanha o que mudou release a release. Cada item linka para a página que documenta a funcionalidade em profundidade — trate isto como um changelog, não como a referência principal.
+
+## v2.0.7
+
+- **Filtros de relação.** Todo field de relação de um model agora existe no seu tipo `Where`, então uma query pode ser restringida pelas rows relacionadas sem carregá-las: `find_first::<Transaction>().where_(|x| x.payout.where_(|p| p.method.eq(PayoutMethod::Pix)))` retorna só as transactions cujo payout é Pix. Além de `where_`, os fields de relação oferecem `where_complex`, `none`, `every`, `exists` e `not_exists`, se aninham por outras relações e funcionam em todo formato de relação (many-to-one, one-to-many, os dois lados de um one-to-one, many-to-many implícito, self relations) e em todo builder que aceita `where_` — finds, `count`, `exists`, updates, deletes, filtros de include e transactions. Cada filtro vira uma subquery `EXISTS` correlacionada no mesmo statement. Veja [Filtros de relação](/pt-br/docs/orm/orm/relation-filters).
+- `FindWhere` ganhou a variante `Relation` (com `RelationMatch`, `RelationJoinTable` e `RelationQuantifier`); código que faz `match` exaustivo sobre `FindWhere` precisa de um braço para ela.
 
 ## v2.0.6
 

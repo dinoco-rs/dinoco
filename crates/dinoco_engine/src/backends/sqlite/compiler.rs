@@ -9,6 +9,8 @@ use crate::{
     RenameTableMigration, SqliteAdapter, UpdateQuery,
 };
 
+use crate::backends::RelationSubquery;
+
 /// SQLite has no timestamp type: `DateTime` values are stored as RFC 3339
 /// text (see the adapter's `ToSql`), so `@updated_at` writes the same shape.
 const CURRENT_TIME: CurrentTimeSql =
@@ -804,6 +806,12 @@ fn collect_conditions(
                     sql_identifier(match_.join_local_field),
                     sql_identifier(match_.join_table),
                 ));
+            }
+            FindWhere::Relation(relation) => {
+                let subquery = RelationSubquery::new(&relation, qualifier, sql_identifier);
+                let mut nested = Vec::new();
+                collect_conditions(&mut nested, params, relation.conditions, Some(subquery.alias()));
+                sql_conditions.push(subquery.finish(relation.quantifier, &nested));
             }
             FindWhere::And(conditions) => {
                 push_condition_group(sql_conditions, params, conditions, qualifier, "AND", "1 = 1");

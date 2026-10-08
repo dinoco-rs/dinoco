@@ -122,11 +122,14 @@ Para endpoints que já existem, use `.connect(value)`/`.disconnect(value)` a par
 | Membro de `@fulltext` ou `@@fulltexts` | `fulltext` |
 | `Integer`/`Float` (filtro) | `between` |
 | `Integer`/`Float` (update, opcionais inclusos) | `increment`, `decrement`, `multiply`, `divide` |
+| Field de relação (filtro) | `where_`, `where_complex`, `none`, `every`, `exists`, `not_exists` |
 | Ordenação | `asc`, `desc` |
 
 `fulltext` funciona em `find_first`, `find_many`, `find_and_update`, builders de include one/many, e dentro de árvores `where_complex` — inclusive quando `find_and_update` roda por um contexto de transaction. Chamá-lo em qualquer membro de um grupo `@@fulltexts` pesquisa o grupo declarado inteiro, não só aquele field. O method simplesmente não existe numa `String` sem `@fulltext`.
 
 `where_complex(|x, m| ...)` fornece `m.and`, `m.or`, `m.or_many` e `m.not`. No momento em que é usado, todo `where_` comum nesse mesmo builder é ignorado. Veja [Filtros](/pt-br/docs/orm/orm/filters) e [Where complex](/pt-br/docs/orm/orm/where-complex).
+
+Fields de relação filtram pelas rows relacionadas sem carregá-las, com uma subquery `EXISTS` correlacionada: `where_`/`where_complex` mantêm rows com alguma relacionada compatível, `none` rows sem nenhuma, `every` rows cujas relacionadas batem todas, e `exists`/`not_exists` testam se há qualquer relacionada. Os callbacks recebem o `Where` do model relacionado, então se aninham, e funcionam em todo builder que aceita `where_`. Veja [Filtros de relação](/pt-br/docs/orm/orm/relation-filters).
 
 ## Construtores de adapters
 

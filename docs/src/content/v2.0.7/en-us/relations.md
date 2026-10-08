@@ -104,6 +104,8 @@ let session = dinoco::find_first::<Session>()
 
 `.take(10)` on the list side applies **per parent account**, not to the overall result set.
 
+To return only the accounts that *have* such a session — without loading any — filter through the relation field instead: `.where_(|x| x.sessions.where_(|session| session.token.starts_with("secure-")))`. See [Relation filters](/en-us/docs/orm/orm/relation-filters).
+
 ## One-to-one
 
 A one-to-one relation is really a one-to-many relation with a `@unique` constraint on the foreign key — that constraint is what makes "many" impossible:
@@ -255,6 +257,16 @@ The virtual key carries the **full [filter](/en-us/docs/orm/orm/filters) surface
 ```rust
 let linked = dinoco::count::<System>()
     .where_(|system| system.business_id.eq(&business_id))
+    .execute(&client)
+    .await?;
+```
+
+The virtual key only sees the other side's id. To filter by any other field of the linked rows, use the navigation field as a [relation filter](/en-us/docs/orm/orm/relation-filters) — it goes through the same pivot:
+
+```rust
+// Systems linked to a business named "Dinoco".
+let systems = dinoco::find_many::<System>()
+    .where_(|system| system.business.where_(|business| business.name.eq("Dinoco")))
     .execute(&client)
     .await?;
 ```
@@ -499,6 +511,7 @@ model Employee {
 6. Leave both list fields unmapped only when you actually want an implicit many-to-many.
 7. Populate the generated virtual ID during `insert_into`/`insert_many` for new endpoints, or use `.connect(...)`/`.disconnect(...)` for existing ones — never assign directly to the navigation list.
 8. Filter one side of an implicit many-to-many by the other with the same virtual ID in `where_(...)` (`system.business_id.eq(&business_id)`); it never reads back as anything but `None`.
-9. Reach for an explicit pivot model the moment the link needs to store its own data.
-10. Name every relation that's either repeated between two models, or a self relation.
-11. Read the generated migration's constraints before applying it — a referential action decision is a data-integrity decision, not just a compiler-satisfying one.
+9. Filter by related rows with the navigation field in `where_(...)` (`session.account.where_(...)`, `account.sessions.none(...)`) instead of loading them with `.includes(...)` and filtering in Rust.
+10. Reach for an explicit pivot model the moment the link needs to store its own data.
+11. Name every relation that's either repeated between two models, or a self relation.
+12. Read the generated migration's constraints before applying it — a referential action decision is a data-integrity decision, not just a compiler-satisfying one.

@@ -449,19 +449,39 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         quote! { #ident: ::core::default::Default::default() }
     });
 
+    let relation_where_fields = relations.iter().map(|field| {
+        let ident = &field.ident;
+        let target = field.target_ty.as_ref().expect("relation target");
+        quote! { pub #ident: ::dinoco::RelationField<#target> }
+    });
+
+    let relation_where_defaults = relations.iter().map(|field| {
+        let ident = &field.ident;
+        let (parent_field, child_field) = relation_keys(field, &scalar_fields, &parent_snake);
+
+        if let Some((join_table, join_parent_field, join_child_field)) = many_to_many_join(field) {
+            quote! {
+                #ident: ::dinoco::RelationField::many_to_many(
+                    #table_name,
+                    #parent_field,
+                    #child_field,
+                    #join_table,
+                    #join_parent_field,
+                    #join_child_field,
+                )
+            }
+        } else {
+            quote! { #ident: ::dinoco::RelationField::new(#table_name, #parent_field, #child_field) }
+        }
+    });
+
     let count_methods = relations.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
         let ident = &field.ident;
         let relation_name = &field.name;
         let target = field.target_ty.as_ref().expect("relation target");
-        let foreign_key = field.foreign_key.as_deref().unwrap_or("id");
-        let references = field.references.as_deref().unwrap_or("id");
-        let child_field =
-            if field.foreign_key.is_some() { foreign_key.to_string() } else { format!("{}_id", parent_snake) };
+        let (references, child_field) = relation_keys(field, &scalar_fields, &parent_snake);
 
-        if field.many_to_many && field.join_table.is_some() {
-            let join_table = field.join_table.as_deref().expect("many-to-many join table");
-            let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
-            let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
+        if let Some((join_table, join_parent_field, join_child_field)) = many_to_many_join(field) {
             quote! {
                 pub fn #ident(&self) -> ::dinoco::RelationCount<#name, #target> {
                     ::dinoco::RelationCount::<#name, #target>::many_to_many(
@@ -575,23 +595,16 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let ident = &field.ident;
         let relation_name = &field.name;
         let target = field.target_ty.as_ref().expect("relation target");
-        let foreign_key = field.foreign_key.as_deref().unwrap_or("id");
-        let references = field.references.as_deref().unwrap_or("id");
+        let (parent_field, child_field) = relation_keys(field, &scalar_fields, &parent_snake);
 
         match field.kind {
             FieldKind::HasMany => {
-                let child_field =
-                    if field.foreign_key.is_some() { foreign_key.to_string() } else { format!("{}_id", parent_snake) };
-
-                if field.many_to_many && field.join_table.is_some() {
-                    let join_table = field.join_table.as_deref().expect("many-to-many join table");
-                    let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
-                    let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
+                if let Some((join_table, join_parent_field, join_child_field)) = many_to_many_join(field) {
                     quote! {
                         pub fn #ident(&self) -> ::dinoco::HasMany<#name, #target> {
                             ::dinoco::HasMany::many_to_many(
                                 #relation_name,
-                                #references,
+                                #parent_field,
                                 #child_field,
                                 #join_table,
                                 #join_parent_field,
@@ -602,38 +615,16 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 } else {
                     quote! {
                         pub fn #ident(&self) -> ::dinoco::HasMany<#name, #target> {
-                            ::dinoco::HasMany::new(#relation_name, #references, #child_field)
+                            ::dinoco::HasMany::new(#relation_name, #parent_field, #child_field)
                         }
                     }
                 }
             }
-            FieldKind::BelongsTo => {
-                let parent_field = if field.foreign_key.is_some() {
-                    foreign_key.to_string()
-                } else if let Some(inferred_foreign_key) = infer_belongs_to_foreign_key(relation_name, &scalar_fields) {
-                    inferred_foreign_key
-                } else {
-                    format!("{}_id", relation_name)
-                };
-
-                quote! {
-                    pub fn #ident(&self) -> ::dinoco::BelongsTo<#name, #target> {
-                        ::dinoco::BelongsTo::new(#relation_name, #parent_field, #references)
-                    }
+            FieldKind::BelongsTo | FieldKind::HasOne => quote! {
+                pub fn #ident(&self) -> ::dinoco::BelongsTo<#name, #target> {
+                    ::dinoco::BelongsTo::new(#relation_name, #parent_field, #child_field)
                 }
-            }
-            FieldKind::HasOne => {
-                // The foreign key lives on the target, so the lookup runs the
-                // other way around: local `references` -> target `foreign_key`.
-                let child_field =
-                    if field.foreign_key.is_some() { foreign_key.to_string() } else { format!("{}_id", parent_snake) };
-
-                quote! {
-                    pub fn #ident(&self) -> ::dinoco::BelongsTo<#name, #target> {
-                        ::dinoco::BelongsTo::new(#relation_name, #references, #child_field)
-                    }
-                }
-            }
+            },
             FieldKind::Scalar | FieldKind::ManyToManyKey | FieldKind::Extra => quote! {},
         }
     });
@@ -920,6 +911,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         pub struct #where_name {
             #(#where_fields,)*
             #(#many_to_many_where_fields,)*
+            #(#relation_where_fields,)*
         }
 
         impl ::core::default::Default for #where_name {
@@ -927,6 +919,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 Self {
                     #(#where_defaults,)*
                     #(#many_to_many_where_defaults,)*
+                    #(#relation_where_defaults,)*
                 }
             }
         }
@@ -1953,6 +1946,43 @@ fn infer_belongs_to_foreign_key(relation_name: &str, scalar_fields: &[ParsedFiel
     ];
 
     candidates.into_iter().find(|candidate| scalar_fields.iter().any(|field| field.name == *candidate))
+}
+
+/// The columns a relation is matched on: `(parent_field, child_field)`, where
+/// `parent_field` is on this entity's table and `child_field` on the related
+/// table. Includes, relation counts and relation filters all use these keys.
+fn relation_keys(field: &ParsedField, scalar_fields: &[ParsedField], parent_snake: &str) -> (String, String) {
+    let references = field.references.clone().unwrap_or_else(|| "id".to_string());
+
+    match field.kind {
+        FieldKind::BelongsTo => {
+            let foreign_key = field
+                .foreign_key
+                .clone()
+                .or_else(|| infer_belongs_to_foreign_key(&field.name, scalar_fields))
+                .unwrap_or_else(|| format!("{}_id", field.name));
+            (foreign_key, references)
+        }
+        // The foreign key lives on the target (or the join table), so the
+        // lookup runs the other way around: local `references` -> target key.
+        _ => {
+            let child_field = field.foreign_key.clone().unwrap_or_else(|| format!("{parent_snake}_id"));
+            (references, child_field)
+        }
+    }
+}
+
+/// `(join_table, join_parent_field, join_child_field)` of a many-to-many
+/// relation field.
+fn many_to_many_join(field: &ParsedField) -> Option<(&str, &str, &str)> {
+    if !field.many_to_many || field.kind != FieldKind::HasMany {
+        return None;
+    }
+
+    let join_table = field.join_table.as_deref()?;
+    let join_parent_field = field.join_parent_field.as_deref().expect("many-to-many parent join field");
+    let join_child_field = field.join_child_field.as_deref().expect("many-to-many child join field");
+    Some((join_table, join_parent_field, join_child_field))
 }
 
 fn should_insert_nested_relation(field: &ParsedField, scalar_fields: &[ParsedField]) -> bool {

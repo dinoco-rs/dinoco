@@ -97,6 +97,24 @@ let articles = dinoco::find_many::<Article>()
     .await?;
 ```
 
+## Combine with relation filters
+
+[Relation filters](/en-us/docs/orm/orm/relation-filters) are conditions like any other, so they can be grouped and negated:
+
+```rust
+let transactions = dinoco::find_many::<Transaction>()
+    .where_complex(|t, m| {
+        m.or(
+            t.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)),
+            m.not(t.items.exists()),
+        )
+    })
+    .execute(&client)
+    .await?;
+```
+
+A relation field also takes a tree of its own, over the related row: `t.items.where_complex(|item, m| m.or(item.refunded.eq(true), item.note.null()))`.
+
 ## Empty groups
 
 > [!WARNING]

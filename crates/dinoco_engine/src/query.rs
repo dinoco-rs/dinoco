@@ -90,6 +90,9 @@ fn condition_references_updated_field(condition: &FindWhere, sets: &[UpdateSet])
         | FindWhere::NotNull(field) => updated(field),
         FindWhere::FullText(fields, _) => fields.iter().any(|field| updated(field)),
         FindWhere::ManyToMany(match_) => updated(match_.local_key),
+        // The nested conditions are about the related table, which an
+        // `UPDATE` of this table never changes; only the link column can move.
+        FindWhere::Relation(relation) => updated(relation.parent_field),
         FindWhere::And(conditions) | FindWhere::Or(conditions) => {
             conditions.iter().any(|condition| condition_references_updated_field(condition, sets))
         }
@@ -476,6 +479,11 @@ pub enum FindWhere {
     /// side of a many-to-many relation by the id of a row on the other side.
     ManyToMany(ManyToManyMatch),
 
+    /// Filter on a related model, compiled to a correlated `[NOT] EXISTS`
+    /// subquery. Produced by the generated relation fields of `Where` types,
+    /// so a query can be narrowed by its related rows without loading them.
+    Relation(RelationMatch),
+
     And(Vec<FindWhere>),
     Or(Vec<FindWhere>),
     Not(Box<FindWhere>),
@@ -502,6 +510,57 @@ pub struct ManyToManyMatch {
     pub negated: bool,
     /// Condition applied to `join_target_field` inside the subquery.
     pub predicate: Box<FindWhere>,
+}
+
+/// Payload for [`FindWhere::Relation`].
+///
+/// Compiles to `EXISTS (SELECT 1 FROM <child_table> AS <alias> WHERE
+/// <alias>.<child_field> = <outer>.<parent_field> AND <conditions>)`, negated
+/// as the [`quantifier`](Self::quantifier) requires. A many-to-many relation
+/// reaches the related table through its join table instead. `<outer>` is the
+/// enclosing query's qualifier, or `parent_table` when it has none. Every
+/// subquery aliases its tables by nesting depth, so self relations and nested
+/// relation filters never shadow the row they correlate with.
+#[derive(Debug, Clone)]
+pub struct RelationMatch {
+    /// Table of the entity being filtered.
+    pub parent_table: &'static str,
+    /// Column on `parent_table` the relation is matched on.
+    pub parent_field: &'static str,
+    /// Table of the related entity.
+    pub child_table: &'static str,
+    /// Column on `child_table` matched against `parent_field` (against the
+    /// join table's `child_field` for a many-to-many relation).
+    pub child_field: &'static str,
+    /// Join table of a many-to-many relation.
+    pub join: Option<RelationJoinTable>,
+    pub quantifier: RelationQuantifier,
+    /// Conditions on the related entity, combined with `AND`. Empty matches
+    /// every related row.
+    pub conditions: Vec<FindWhere>,
+}
+
+/// Join table a many-to-many [`RelationMatch`] goes through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RelationJoinTable {
+    pub table: &'static str,
+    /// Join-table column that references the parent's `parent_field`.
+    pub parent_field: &'static str,
+    /// Join-table column that references the related table's `child_field`.
+    pub child_field: &'static str,
+}
+
+/// How many related rows must match a [`RelationMatch`]'s conditions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationQuantifier {
+    /// At least one related row matches (`EXISTS`).
+    Some,
+    /// No related row matches (`NOT EXISTS`).
+    None,
+    /// Every related row matches, vacuously true when there is none (`NOT
+    /// EXISTS` over the related rows whose conditions aren't `TRUE`, so a
+    /// condition that evaluates to `NULL` counts as not matching).
+    Every,
 }
 
 #[derive(Debug, Clone, Copy, Default)]

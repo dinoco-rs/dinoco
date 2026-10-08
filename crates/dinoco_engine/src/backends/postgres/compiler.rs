@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::{PgBouncerAdapter, PostgresAdapter};
+use crate::backends::RelationSubquery;
 
 /// `DateTime` columns are `TIMESTAMP` (without time zone) holding UTC wall
 /// clock values, so "now" is taken in UTC instead of the session time zone.
@@ -1097,6 +1098,12 @@ fn collect_conditions(
                     sql_identifier(match_.join_local_field),
                     sql_identifier(match_.join_table),
                 ));
+            }
+            FindWhere::Relation(relation) => {
+                let subquery = RelationSubquery::new(&relation, qualifier, sql_identifier);
+                let mut nested = Vec::new();
+                collect_conditions(&mut nested, params, relation.conditions, Some(subquery.alias()), placeholders);
+                sql_conditions.push(subquery.finish(relation.quantifier, &nested));
             }
             FindWhere::And(conditions) => {
                 push_condition_group(sql_conditions, params, conditions, qualifier, placeholders, "AND", "1 = 1");

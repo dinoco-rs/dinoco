@@ -97,6 +97,24 @@ let articles = dinoco::find_many::<Article>()
     .await?;
 ```
 
+## Combine com filtros de relação
+
+[Filtros de relação](/pt-br/docs/orm/orm/relation-filters) são condições como qualquer outra, então podem ser agrupados e negados:
+
+```rust
+let transactions = dinoco::find_many::<Transaction>()
+    .where_complex(|t, m| {
+        m.or(
+            t.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)),
+            m.not(t.items.exists()),
+        )
+    })
+    .execute(&client)
+    .await?;
+```
+
+Um field de relação também aceita uma árvore própria, sobre a row relacionada: `t.items.where_complex(|item, m| m.or(item.refunded.eq(true), item.note.null()))`.
+
 ## Grupos vazios
 
 > [!WARNING]

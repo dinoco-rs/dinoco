@@ -9,6 +9,8 @@ use crate::{
     RenameColumnMigration, RenameTableMigration, UpdateQuery,
 };
 
+use crate::backends::{RelationSubquery, relation_reads_table};
+
 /// UTC regardless of the session time zone, matching the naive UTC values the
 /// adapter binds for `DateTime`/`Date`.
 const CURRENT_TIME: CurrentTimeSql = CurrentTimeSql { timestamp: "UTC_TIMESTAMP()", date: "UTC_DATE()" };
@@ -49,7 +51,7 @@ impl DinocoSqlCompiler for MySqlAdapter {
             .join(", ");
         let mut sql = format!("UPDATE {} SET {set_sql}", sql_identifier(query.table));
 
-        params.extend(append_conditions(&mut sql, query.conditions, None));
+        params.extend(append_write_conditions(&mut sql, query.conditions, query.table));
 
         if let Some(returning) = query.returning {
             sql.push_str(" RETURNING ");
@@ -61,7 +63,7 @@ impl DinocoSqlCompiler for MySqlAdapter {
 
     fn compile_delete_query(&self, query: DeleteQuery) -> (String, Vec<DinocoValue>) {
         let mut sql = format!("DELETE FROM {}", sql_identifier(query.table));
-        let params = append_conditions(&mut sql, query.conditions, None);
+        let params = append_write_conditions(&mut sql, query.conditions, query.table);
 
         if let Some(returning) = query.returning {
             sql.push_str(" RETURNING ");
@@ -682,6 +684,70 @@ fn append_conditions(sql: &mut String, conditions: Vec<FindWhere>, qualifier: Op
     params
 }
 
+/// [`append_conditions`] for the `WHERE` of an `UPDATE`/`DELETE` on `table`.
+/// MySQL rejects a write whose subquery reads the table being written (error
+/// 1093), so relation filters that reach `table` read it from a materialized
+/// derived table instead; every other condition compiles as usual.
+fn append_write_conditions(sql: &mut String, conditions: Vec<FindWhere>, table: &str) -> Vec<DinocoValue> {
+    let mut params = Vec::new();
+    let mut sql_conditions = Vec::new();
+
+    collect_write_conditions(&mut sql_conditions, &mut params, conditions, table);
+
+    if !sql_conditions.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&sql_conditions.join(" AND "));
+    }
+
+    params
+}
+
+fn collect_write_conditions(
+    sql_conditions: &mut Vec<String>,
+    params: &mut Vec<DinocoValue>,
+    conditions: Vec<FindWhere>,
+    table: &str,
+) {
+    for condition in conditions {
+        match condition {
+            FindWhere::Relation(relation) if relation_reads_table(&relation, table) => {
+                let subquery = RelationSubquery::new(&relation, None, sql_identifier);
+                let mut nested = Vec::new();
+                collect_conditions(&mut nested, params, relation.conditions, Some(subquery.alias()));
+                sql_conditions.push(subquery.finish_materialized(relation.quantifier, &nested));
+            }
+            FindWhere::And(conditions) => {
+                push_write_condition_group(sql_conditions, params, conditions, table, "AND", "1 = 1");
+            }
+            FindWhere::Or(conditions) => {
+                push_write_condition_group(sql_conditions, params, conditions, table, "OR", "1 = 0");
+            }
+            FindWhere::Not(condition) => {
+                let mut nested = Vec::new();
+                collect_write_conditions(&mut nested, params, vec![*condition], table);
+                let expression = if nested.is_empty() { "1 = 1".to_string() } else { nested.join(" AND ") };
+                sql_conditions.push(format!("NOT ({expression})"));
+            }
+            condition => collect_conditions(sql_conditions, params, vec![condition], None),
+        }
+    }
+}
+
+fn push_write_condition_group(
+    sql_conditions: &mut Vec<String>,
+    params: &mut Vec<DinocoValue>,
+    conditions: Vec<FindWhere>,
+    table: &str,
+    operator: &str,
+    empty_expression: &str,
+) {
+    let mut nested = Vec::new();
+    collect_write_conditions(&mut nested, params, conditions, table);
+    let expression =
+        if nested.is_empty() { empty_expression.to_string() } else { nested.join(&format!(" {operator} ")) };
+    sql_conditions.push(format!("({expression})"));
+}
+
 fn collect_conditions_prefixed_with_and(
     sql: &mut String,
     params: &mut Vec<DinocoValue>,
@@ -774,6 +840,12 @@ fn collect_conditions(
                     sql_identifier(match_.join_local_field),
                     sql_identifier(match_.join_table),
                 ));
+            }
+            FindWhere::Relation(relation) => {
+                let subquery = RelationSubquery::new(&relation, qualifier, sql_identifier);
+                let mut nested = Vec::new();
+                collect_conditions(&mut nested, params, relation.conditions, Some(subquery.alias()));
+                sql_conditions.push(subquery.finish(relation.quantifier, &nested));
             }
             FindWhere::And(conditions) => {
                 push_condition_group(sql_conditions, params, conditions, qualifier, "AND", "1 = 1");

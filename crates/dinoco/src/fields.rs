@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoValue, FindWhere, ManyToManyMatch};
+use dinoco_engine::{
+    DinocoEntity, DinocoValue, FindWhere, ManyToManyMatch, RelationJoinTable, RelationMatch, RelationQuantifier,
+    WhereComplex,
+};
 
 /// Capability generated only for fields declared with `@fulltext`.
 ///
@@ -342,6 +345,134 @@ macro_rules! impl_many_to_many_string_field {
 }
 
 impl_many_to_many_string_field!(String, Option<String>);
+
+/// Query capability generated in `Where` for every relation field. It filters
+/// the queried rows by their related rows without loading them: each method
+/// compiles to a correlated `EXISTS` subquery, so it needs no `.includes(...)`
+/// and works in every builder that takes a `where_` — finds, `count`,
+/// `exists`, updates, deletes, include and count-include filters, and inside
+/// `where_complex` trees and transactions. Callbacks receive the related
+/// model's own `Where`, so relation filters nest.
+///
+/// For a singular relation "related rows" is the one row the foreign key
+/// points at (or that points back, for the non-owning side of a one-to-one),
+/// if any. Conditions inside one callback must hold on the same related row;
+/// separate relation filters may each be satisfied by a different one.
+///
+/// ```ignore
+/// // Transactions paid out through Pix; `payout` itself stays unloaded.
+/// find_many::<Transaction>()
+///     .where_(|transaction| transaction.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)))
+///     .execute(&client)
+///     .await?;
+/// ```
+pub struct RelationField<C> {
+    parent_table: &'static str,
+    parent_field: &'static str,
+    child_field: &'static str,
+    join: Option<RelationJoinTable>,
+    marker: PhantomData<fn() -> C>,
+}
+
+impl<C> Clone for RelationField<C> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<C> Copy for RelationField<C> {}
+
+impl<C> RelationField<C> {
+    /// A relation matched on `parent_table.parent_field = <related>.child_field`.
+    /// Takes the same keys as the relation's include builder.
+    pub const fn new(parent_table: &'static str, parent_field: &'static str, child_field: &'static str) -> Self {
+        Self { parent_table, parent_field, child_field, join: None, marker: PhantomData }
+    }
+
+    /// A many-to-many relation, reached through `join_table`.
+    pub const fn many_to_many(
+        parent_table: &'static str,
+        parent_field: &'static str,
+        child_field: &'static str,
+        join_table: &'static str,
+        join_parent_field: &'static str,
+        join_child_field: &'static str,
+    ) -> Self {
+        Self {
+            parent_table,
+            parent_field,
+            child_field,
+            join: Some(RelationJoinTable {
+                table: join_table,
+                parent_field: join_parent_field,
+                child_field: join_child_field,
+            }),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<C> RelationField<C>
+where
+    C: DinocoEntity,
+{
+    fn matching(self, quantifier: RelationQuantifier, conditions: Vec<FindWhere>) -> FindWhere {
+        FindWhere::Relation(RelationMatch {
+            parent_table: self.parent_table,
+            parent_field: self.parent_field,
+            child_table: C::TABLE_NAME,
+            child_field: self.child_field,
+            join: self.join,
+            quantifier,
+            conditions,
+        })
+    }
+
+    /// Keeps rows with at least one related row matching `callback`.
+    pub fn where_<F>(self, callback: F) -> FindWhere
+    where
+        F: FnOnce(C::Where) -> FindWhere,
+    {
+        self.matching(RelationQuantifier::Some, vec![callback(C::Where::default())])
+    }
+
+    /// [`where_`](Self::where_) with a [`WhereComplex`] tree over the related row.
+    pub fn where_complex<F>(self, callback: F) -> FindWhere
+    where
+        F: FnOnce(C::Where, WhereComplex) -> FindWhere,
+    {
+        self.matching(RelationQuantifier::Some, vec![callback(C::Where::default(), WhereComplex)])
+    }
+
+    /// Keeps rows with no related row matching `callback`, including rows
+    /// without any related row.
+    pub fn none<F>(self, callback: F) -> FindWhere
+    where
+        F: FnOnce(C::Where) -> FindWhere,
+    {
+        self.matching(RelationQuantifier::None, vec![callback(C::Where::default())])
+    }
+
+    /// Keeps rows whose related rows all match `callback`, including rows
+    /// without any related row. A related row whose condition evaluates to
+    /// `NULL` (a comparison against a `NULL` column) does not match.
+    pub fn every<F>(self, callback: F) -> FindWhere
+    where
+        F: FnOnce(C::Where) -> FindWhere,
+    {
+        self.matching(RelationQuantifier::Every, vec![callback(C::Where::default())])
+    }
+
+    /// Keeps rows with at least one related row.
+    pub fn exists(self) -> FindWhere {
+        self.matching(RelationQuantifier::Some, Vec::new())
+    }
+
+    /// Keeps rows without any related row.
+    pub fn not_exists(self) -> FindWhere {
+        self.matching(RelationQuantifier::None, Vec::new())
+    }
+}
 
 macro_rules! impl_many_to_many_between_field {
     ($($ty:ty),* $(,)?) => {

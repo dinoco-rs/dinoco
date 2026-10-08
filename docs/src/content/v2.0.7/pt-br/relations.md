@@ -104,6 +104,8 @@ let session = dinoco::find_first::<Session>()
 
 `.take(10)` no lado lista se aplica **por account pai**, não ao resultado geral.
 
+Para retornar só as accounts que *têm* uma session assim — sem carregar nenhuma — filtre pelo field de relação: `.where_(|x| x.sessions.where_(|session| session.token.starts_with("secure-")))`. Veja [Filtros de relação](/pt-br/docs/orm/orm/relation-filters).
+
 ## One-to-one
 
 Uma relação one-to-one é, na prática, uma one-to-many com uma constraint `@unique` na foreign key — essa constraint é o que torna o "muitos" impossível:
@@ -255,6 +257,16 @@ O ID virtual carrega a **superfície completa de [filtros](/pt-br/docs/orm/orm/f
 ```rust
 let linked = dinoco::count::<System>()
     .where_(|system| system.business_id.eq(&business_id))
+    .execute(&client)
+    .await?;
+```
+
+O ID virtual só enxerga o id do outro lado. Para filtrar por qualquer outro field das linhas vinculadas, use o field de navegação como [filtro de relação](/pt-br/docs/orm/orm/relation-filters) — ele passa pela mesma pivô:
+
+```rust
+// Systems vinculados a um business chamado "Dinoco".
+let systems = dinoco::find_many::<System>()
+    .where_(|system| system.business.where_(|business| business.name.eq("Dinoco")))
     .execute(&client)
     .await?;
 ```
@@ -499,6 +511,7 @@ model Employee {
 6. Deixe os dois fields de lista sem mapear só quando você realmente quer um many-to-many implícito.
 7. Preencha o ID virtual gerado em `insert_into`/`insert_many` para endpoints novos, ou use `.connect(...)`/`.disconnect(...)` para os que já existem — nunca atribua diretamente na lista de navegação.
 8. Filtre um lado de um many-to-many implícito pelo outro usando o mesmo ID virtual em `where_(...)` (`system.business_id.eq(&business_id)`); ele nunca volta na leitura como algo diferente de `None`.
-9. Use um model de pivô explícito no momento em que o vínculo precisa guardar seus próprios dados.
-10. Nomeie toda relação que seja repetida entre dois models, ou uma self relation.
-11. Leia as constraints da migration gerada antes de aplicá-la — uma decisão de ação referencial é uma decisão de integridade de dados, não só uma forma de agradar o compiler.
+9. Filtre pelas rows relacionadas com o field de navegação em `where_(...)` (`session.account.where_(...)`, `account.sessions.none(...)`) em vez de carregá-las com `.includes(...)` e filtrar em Rust.
+10. Use um model de pivô explícito no momento em que o vínculo precisa guardar seus próprios dados.
+11. Nomeie toda relação que seja repetida entre dois models, ou uma self relation.
+12. Leia as constraints da migration gerada antes de aplicá-la — uma decisão de ação referencial é uma decisão de integridade de dados, não só uma forma de agradar o compiler.

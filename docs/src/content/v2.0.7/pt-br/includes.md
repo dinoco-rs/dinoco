@@ -46,6 +46,16 @@ let accounts = dinoco::find_many::<Account>()
 > [!NOTE]
 > Numa relação "muitos", `take(5)` se aplica **por parent**, não ao resultado combinado de todos os parents — cada account recebe até cinco de suas próprias sessions mais recentes. Por baixo dos panos, o compiler consegue isso com uma query com window partition, em vez de disparar uma query separada por parent.
 
+O `where_` do include escolhe quais rows relacionadas são carregadas em cada parent; ele nunca remove um parent do resultado. Para retornar só os parents que têm rows relacionadas compatíveis, filtre o parent com um [filtro de relação](/pt-br/docs/orm/orm/relation-filters) — os dois se combinam:
+
+```rust
+let accounts = dinoco::find_many::<Account>()
+    .where_(|account| account.sessions.where_(|session| session.revoked.eq(false)))
+    .includes(|account| account.sessions().where_(|session| session.revoked.eq(false)))
+    .execute(&client)
+    .await?;
+```
+
 ## Use where complex e full-text
 
 ```rust

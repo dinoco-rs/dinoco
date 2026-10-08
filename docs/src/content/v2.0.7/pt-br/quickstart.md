@@ -12,8 +12,8 @@ Este guia leva você de um crate Rust binário vazio a um banco PostgreSQL migra
 Instale o binário da CLI e adicione os crates de runtime dos quais seu código gerado vai depender:
 
 ```bash
-cargo install dinoco --version 2.0.6
-cargo add dinoco@2.0.6 dinoco_engine@2.0.6 anyhow
+cargo install dinoco --version 2.0.7
+cargo add dinoco@2.0.7 dinoco_engine@2.0.7 anyhow
 cargo add tokio --features macros,rt-multi-thread
 ```
 

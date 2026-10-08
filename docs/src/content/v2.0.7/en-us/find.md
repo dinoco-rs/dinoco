@@ -100,6 +100,7 @@ Once you've picked a builder, these cover the pieces that plug into it:
 
 - [Filters](/en-us/docs/orm/orm/filters) for the simple operators (`eq`, `gt`, `like`, and so on).
 - [Where complex](/en-us/docs/orm/orm/where-complex) for explicit `AND`, `OR`, and `NOT` grouping.
+- [Relation filters](/en-us/docs/orm/orm/relation-filters) to filter by related rows without loading them.
 - [Full-text search](/en-us/docs/orm/orm/full-text-search).
 - [Select](/en-us/docs/orm/orm/select) for typed projections.
 - [Includes](/en-us/docs/orm/orm/includes) for loading relations.

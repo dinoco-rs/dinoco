@@ -77,6 +77,19 @@ let users = dinoco::find_many::<User>()
 
 `batch` emits SQL `IN (...)`. It's also what you'll reach for when you need to supply multiple source keys at once for a many-to-many pivot's `connect`/`disconnect` operations.
 
+## Filter by related records
+
+Relation fields are on `Where` too. They keep the rows whose related rows match, without loading the relation:
+
+```rust
+let transactions = dinoco::find_many::<Transaction>()
+    .where_(|transaction| transaction.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)))
+    .execute(&client)
+    .await?;
+```
+
+Besides `where_`, every relation field offers `where_complex`, `none`, `every`, `exists`, and `not_exists`, and the callbacks nest through further relations. See [Relation filters](/en-us/docs/orm/orm/relation-filters).
+
 ## Combine conditions
 
 ```rust

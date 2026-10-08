@@ -1,7 +1,8 @@
 use dinoco_engine::{
     DeleteQuery, DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    ManyToManyMatch, MySqlAdapter, PostgresAdapter, RelationJoinQuery, SqliteAdapter, UpdateOperation, UpdateQuery,
-    UpdateSet, UpdatedAtField,
+    ManyToManyMatch, MySqlAdapter, PostgresAdapter, RelationJoinQuery, RelationJoinTable, RelationMatch,
+    RelationOccurrenceQuery, RelationQuantifier, SqliteAdapter, UpdateOperation, UpdateQuery, UpdateSet,
+    UpdatedAtField,
 };
 
 #[tokio::test]
@@ -388,4 +389,302 @@ fn updated_at_operations_are_scalar_but_bind_nothing() {
     let reload = format!("{:?}", query.post_update_reload_conditions());
     assert!(reload.contains("\"slug\""), "{reload}");
     assert!(!reload.contains("updated_at"), "{reload}");
+}
+
+fn relation(
+    parent_table: &'static str,
+    parent_field: &'static str,
+    child_table: &'static str,
+    child_field: &'static str,
+    quantifier: RelationQuantifier,
+    conditions: Vec<FindWhere>,
+) -> FindWhere {
+    FindWhere::Relation(RelationMatch {
+        parent_table,
+        parent_field,
+        child_table,
+        child_field,
+        join: None,
+        quantifier,
+        conditions,
+    })
+}
+
+fn find(from: &'static str, conditions: Vec<FindWhere>) -> FindQuery {
+    FindQuery { fields: &["id"], from, conditions, limit: -1, skip: -1, order_by: None }
+}
+
+fn string(value: &str) -> DinocoValue {
+    DinocoValue::String(value.to_string())
+}
+
+#[tokio::test]
+async fn compilers_translate_relation_filters_into_correlated_exists_subqueries() -> anyhow::Result<()> {
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let pix = || {
+        relation(
+            "rf_transaction",
+            "payout_id",
+            "rf_payout",
+            "id",
+            RelationQuantifier::Some,
+            vec![FindWhere::Eq("method", DinocoValue::Enum("PayoutMethod".to_string(), "pix".to_string()))],
+        )
+    };
+
+    // The related table is aliased; the outer row is the unaliased queried table.
+    let (sql, params) = sqlite.compile_find_query(find("rf_transaction", vec![pix()]));
+    assert_eq!(
+        sql,
+        "SELECT id FROM rf_transaction WHERE EXISTS (SELECT 1 FROM rf_payout AS __dinoco_relation_1 WHERE __dinoco_relation_1.id = rf_transaction.payout_id AND __dinoco_relation_1.method = ?)"
+    );
+    assert_eq!(params, [DinocoValue::Enum("PayoutMethod".to_string(), "pix".to_string())]);
+    assert_eq!(mysql.compile_find_query(find("rf_transaction", vec![pix()])).0, sql);
+    assert_eq!(postgres.compile_find_query(find("rf_transaction", vec![pix()])).0, sql.replace('?', "$1"));
+
+    // Nested filters number their aliases by depth and correlate with the
+    // enclosing alias; Postgres placeholders follow the textual order.
+    let nested = || {
+        find(
+            "rf_transaction",
+            vec![
+                FindWhere::Gte("amount", DinocoValue::Integer(10)),
+                relation(
+                    "rf_transaction",
+                    "payout_id",
+                    "rf_payout",
+                    "id",
+                    RelationQuantifier::Some,
+                    vec![
+                        FindWhere::Eq("method", string("pix")),
+                        relation(
+                            "rf_payout",
+                            "bank_id",
+                            "rf_bank",
+                            "id",
+                            RelationQuantifier::Some,
+                            vec![FindWhere::Eq("name", string("Nubank"))],
+                        ),
+                    ],
+                ),
+                FindWhere::Lt("amount", DinocoValue::Integer(500)),
+            ],
+        )
+    };
+    let (sql, params) = postgres.compile_find_query(nested());
+    assert_eq!(
+        sql,
+        "SELECT id FROM rf_transaction WHERE amount >= $1 AND EXISTS (SELECT 1 FROM rf_payout AS __dinoco_relation_1 WHERE __dinoco_relation_1.id = rf_transaction.payout_id AND __dinoco_relation_1.method = $2 AND EXISTS (SELECT 1 FROM rf_bank AS __dinoco_relation_2 WHERE __dinoco_relation_2.id = __dinoco_relation_1.bank_id AND __dinoco_relation_2.name = $3)) AND amount < $4"
+    );
+    assert_eq!(params, [DinocoValue::Integer(10), string("pix"), string("Nubank"), DinocoValue::Integer(500)]);
+    let (sqlite_sql, sqlite_params) = sqlite.compile_find_query(nested());
+    assert_eq!(sqlite_sql, sql.replace("$1", "?").replace("$2", "?").replace("$3", "?").replace("$4", "?"));
+    assert_eq!(sqlite_params, params);
+
+    // Quantifiers: `none` negates, `every` negates the rows whose conditions
+    // aren't TRUE (so NULL doesn't match), an empty list tests for existence.
+    let items = |quantifier, conditions| {
+        find(
+            "rf_transaction",
+            vec![relation("rf_transaction", "id", "rf_item", "transaction_id", quantifier, conditions)],
+        )
+    };
+    let refunded = || vec![FindWhere::Eq("refunded", DinocoValue::Boolean(true))];
+    assert_eq!(
+        sqlite.compile_find_query(items(RelationQuantifier::None, refunded())).0,
+        "SELECT id FROM rf_transaction WHERE NOT EXISTS (SELECT 1 FROM rf_item AS __dinoco_relation_1 WHERE __dinoco_relation_1.transaction_id = rf_transaction.id AND __dinoco_relation_1.refunded = ?)"
+    );
+    assert_eq!(
+        postgres.compile_find_query(items(RelationQuantifier::Every, refunded())).0,
+        "SELECT id FROM rf_transaction WHERE NOT EXISTS (SELECT 1 FROM rf_item AS __dinoco_relation_1 WHERE __dinoco_relation_1.transaction_id = rf_transaction.id AND (__dinoco_relation_1.refunded = $1) IS NOT TRUE)"
+    );
+    assert_eq!(
+        mysql.compile_find_query(items(RelationQuantifier::Some, vec![])).0,
+        "SELECT id FROM rf_transaction WHERE EXISTS (SELECT 1 FROM rf_item AS __dinoco_relation_1 WHERE __dinoco_relation_1.transaction_id = rf_transaction.id)"
+    );
+    assert_eq!(
+        sqlite.compile_find_query(items(RelationQuantifier::None, vec![])).0,
+        "SELECT id FROM rf_transaction WHERE NOT EXISTS (SELECT 1 FROM rf_item AS __dinoco_relation_1 WHERE __dinoco_relation_1.transaction_id = rf_transaction.id)"
+    );
+    assert_eq!(
+        sqlite.compile_find_query(items(RelationQuantifier::Every, vec![])).0,
+        "SELECT id FROM rf_transaction WHERE 1 = 1"
+    );
+
+    // Many-to-many relations join the related table through the join table.
+    let tags = FindWhere::Relation(RelationMatch {
+        parent_table: "rf_transaction",
+        parent_field: "id",
+        child_table: "rf_tag",
+        child_field: "id",
+        join: Some(RelationJoinTable {
+            table: "_rf_tag_to_rf_transaction",
+            parent_field: "transaction_id",
+            child_field: "tag_id",
+        }),
+        quantifier: RelationQuantifier::None,
+        conditions: vec![FindWhere::Eq("name", string("vip"))],
+    });
+    assert_eq!(
+        mysql.compile_find_query(find("rf_transaction", vec![tags])).0,
+        "SELECT id FROM rf_transaction WHERE NOT EXISTS (SELECT 1 FROM _rf_tag_to_rf_transaction AS __dinoco_relation_join_1 INNER JOIN rf_tag AS __dinoco_relation_1 ON __dinoco_relation_1.id = __dinoco_relation_join_1.tag_id WHERE __dinoco_relation_join_1.transaction_id = rf_transaction.id AND __dinoco_relation_1.name = ?)"
+    );
+
+    // Relation filters compose with boolean groups like any other condition.
+    let (sql, params) = postgres.compile_find_query(find(
+        "rf_transaction",
+        vec![FindWhere::Or(vec![FindWhere::Not(Box::new(pix())), FindWhere::Eq("amount", DinocoValue::Integer(1))])],
+    ));
+    assert_eq!(
+        sql,
+        "SELECT id FROM rf_transaction WHERE (NOT (EXISTS (SELECT 1 FROM rf_payout AS __dinoco_relation_1 WHERE __dinoco_relation_1.id = rf_transaction.payout_id AND __dinoco_relation_1.method = $1)) OR amount = $2)"
+    );
+    assert_eq!(params.len(), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn relation_filters_keep_self_relations_and_qualified_queries_apart() -> anyhow::Result<()> {
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let manager_of_manager = || {
+        relation(
+            "employee",
+            "manager_id",
+            "employee",
+            "id",
+            RelationQuantifier::Some,
+            vec![relation(
+                "employee",
+                "manager_id",
+                "employee",
+                "id",
+                RelationQuantifier::Some,
+                vec![FindWhere::Eq("name", string("Ana"))],
+            )],
+        )
+    };
+
+    // Each depth has its own alias, so the outer `employee` is never shadowed.
+    assert_eq!(
+        sqlite.compile_find_query(find("employee", vec![manager_of_manager()])).0,
+        "SELECT id FROM employee WHERE EXISTS (SELECT 1 FROM employee AS __dinoco_relation_1 WHERE __dinoco_relation_1.id = employee.manager_id AND EXISTS (SELECT 1 FROM employee AS __dinoco_relation_2 WHERE __dinoco_relation_2.id = __dinoco_relation_1.manager_id AND __dinoco_relation_2.name = ?))"
+    );
+
+    // Inside a qualified query the outer row is the query's own qualifier.
+    let join_query = RelationJoinQuery {
+        query: find("employee", vec![manager_of_manager()]),
+        parent_table: "employee",
+        child_table: "employee",
+        parent_field: "manager_id",
+        child_field: "id",
+        key_count: 1,
+    };
+    let (sql, _) = postgres.compile_relation_join_query(join_query);
+    assert!(sql.contains("__dinoco_relation_1.id = __dinoco_child.manager_id"), "{sql}");
+    assert!(sql.contains("__dinoco_relation_2.id = __dinoco_relation_1.manager_id"), "{sql}");
+
+    let (sql, params) = mysql.compile_relation_occurrence_query(RelationOccurrenceQuery {
+        query: find("employee", vec![manager_of_manager()]),
+        child_field: "manager_id",
+        key_count: 2,
+    });
+    assert!(sql.contains("WHERE __dinoco_relation_1.id = employee.manager_id"), "{sql}");
+    assert_eq!(params, [string("Ana")]);
+
+    // Identifiers are quoted per dialect, aliases included where needed.
+    let order =
+        || find("Order", vec![relation("Order", "customerId", "Customer", "id", RelationQuantifier::Some, vec![])]);
+    assert_eq!(
+        sqlite.compile_find_query(order()).0,
+        r#"SELECT id FROM "Order" WHERE EXISTS (SELECT 1 FROM "Customer" AS __dinoco_relation_1 WHERE __dinoco_relation_1.id = "Order"."customerId")"#
+    );
+    assert_eq!(
+        mysql.compile_find_query(order()).0,
+        "SELECT id FROM `Order` WHERE EXISTS (SELECT 1 FROM `Customer` AS __dinoco_relation_1 WHERE __dinoco_relation_1.id = `Order`.`customerId`)"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn mysql_writes_read_their_own_table_through_a_materialized_derived_table() -> anyhow::Result<()> {
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let managed_by_ana = || {
+        relation(
+            "employee",
+            "manager_id",
+            "employee",
+            "id",
+            RelationQuantifier::Some,
+            vec![FindWhere::Eq("name", string("Ana"))],
+        )
+    };
+    let has_badge = || relation("employee", "id", "badge", "employee_id", RelationQuantifier::None, vec![]);
+    let update = |conditions| UpdateQuery {
+        table: "employee",
+        sets: vec![UpdateSet { field: "name", value: string("Lead"), operation: UpdateOperation::Set }],
+        conditions,
+        returning: None,
+    };
+
+    // MySQL error 1093: the write can't read `employee` straight from a subquery.
+    let (sql, params) = mysql.compile_update_query(update(vec![managed_by_ana(), has_badge()]));
+    assert_eq!(
+        sql,
+        "UPDATE employee SET name = ? WHERE EXISTS (SELECT 1 FROM (SELECT DISTINCT __dinoco_relation_1.id AS __dinoco_key FROM employee AS __dinoco_relation_1 WHERE __dinoco_relation_1.name = ?) AS __dinoco_relation_keys_1 WHERE __dinoco_relation_keys_1.__dinoco_key = employee.manager_id) AND NOT EXISTS (SELECT 1 FROM badge AS __dinoco_relation_1 WHERE __dinoco_relation_1.employee_id = employee.id)"
+    );
+    assert_eq!(params, [string("Lead"), string("Ana")]);
+
+    // Nested in boolean groups, and reached only through a nested relation.
+    let through_badge = relation(
+        "employee",
+        "id",
+        "badge",
+        "employee_id",
+        RelationQuantifier::Every,
+        vec![relation("badge", "issuer_id", "employee", "id", RelationQuantifier::Some, vec![])],
+    );
+    let (sql, _) = mysql.compile_delete_query(DeleteQuery {
+        table: "employee",
+        conditions: vec![FindWhere::Or(vec![FindWhere::Not(Box::new(managed_by_ana())), through_badge])],
+        returning: None,
+    });
+    assert_eq!(
+        sql,
+        "DELETE FROM employee WHERE (NOT (EXISTS (SELECT 1 FROM (SELECT DISTINCT __dinoco_relation_1.id AS __dinoco_key FROM employee AS __dinoco_relation_1 WHERE __dinoco_relation_1.name = ?) AS __dinoco_relation_keys_1 WHERE __dinoco_relation_keys_1.__dinoco_key = employee.manager_id)) OR NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT __dinoco_relation_1.employee_id AS __dinoco_key FROM badge AS __dinoco_relation_1 WHERE (EXISTS (SELECT 1 FROM employee AS __dinoco_relation_2 WHERE __dinoco_relation_2.id = __dinoco_relation_1.issuer_id)) IS NOT TRUE) AS __dinoco_relation_keys_1 WHERE __dinoco_relation_keys_1.__dinoco_key = employee.id))"
+    );
+
+    // Reads, and the other dialects, keep the plain correlated subquery.
+    assert!(!mysql.compile_find_query(find("employee", vec![managed_by_ana()])).0.contains("DISTINCT"));
+    assert!(!sqlite.compile_update_query(update(vec![managed_by_ana()])).0.contains("DISTINCT"));
+    assert_eq!(
+        postgres.compile_update_query(update(vec![managed_by_ana()])).0,
+        "UPDATE employee SET name = $1 WHERE EXISTS (SELECT 1 FROM employee AS __dinoco_relation_1 WHERE __dinoco_relation_1.id = employee.manager_id AND __dinoco_relation_1.name = $2)"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn mysql_update_reload_keeps_relation_filters_unless_their_key_changes() {
+    let query = |field: &'static str| UpdateQuery {
+        table: "rf_transaction",
+        sets: vec![UpdateSet { field, value: string("p-ted"), operation: UpdateOperation::Set }],
+        conditions: vec![relation("rf_transaction", "payout_id", "rf_payout", "id", RelationQuantifier::Some, vec![])],
+        returning: Some(&["id"]),
+    };
+
+    let reload = format!("{:?}", query("note").post_update_reload_conditions());
+    assert!(reload.contains("Relation"), "{reload}");
+
+    let reload = format!("{:?}", query("payout_id").post_update_reload_conditions());
+    assert!(!reload.contains("Relation"), "{reload}");
+    assert!(reload.contains("Eq(\"payout_id\""), "{reload}");
 }
