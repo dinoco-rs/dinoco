@@ -2,46 +2,6 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Field, Fields, GenericArgument, LitStr, PathArguments, Type, parse_macro_input};
 
-/// Marks a type as a manual migration: `#[dinoco(migration)]`.
-///
-/// The type is left untouched; the macro only asserts at compile time that it
-/// implements `DinocoMigration`, so a forgotten impl is reported on the type.
-#[proc_macro_attribute]
-pub fn dinoco(args: TokenStream, input: TokenStream) -> TokenStream {
-    let args = proc_macro2::TokenStream::from(args);
-    let item = proc_macro2::TokenStream::from(input);
-    let kind = args.to_string();
-
-    if kind.trim() != "migration" {
-        return syn::Error::new_spanned(args, "unknown `#[dinoco(..)]` item attribute; expected `#[dinoco(migration)]`")
-            .to_compile_error()
-            .into();
-    }
-
-    let parsed = match syn::parse2::<DeriveInput>(item.clone()) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            return syn::Error::new_spanned(item, "`#[dinoco(migration)]` can only be applied to a struct or enum")
-                .to_compile_error()
-                .into();
-        }
-    };
-    let name = &parsed.ident;
-    let (impl_generics, type_generics, where_clause) = parsed.generics.split_for_impl();
-
-    quote! {
-        #item
-
-        const _: () = {
-            fn assert_dinoco_migration #impl_generics () #where_clause {
-                fn implements<T: ::dinoco::DinocoMigration>() {}
-                implements::<#name #type_generics>();
-            }
-        };
-    }
-    .into()
-}
-
 #[proc_macro_derive(Entity, attributes(dinoco))]
 pub fn derive_entity(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -554,16 +514,6 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         })
         .collect::<Vec<_>>();
 
-    let json_row_initializers = scalar_fields
-        .iter()
-        .map(|field| {
-            let ident = &field.ident;
-            let name = &field.name;
-            let value = json_row_value(&field.ty, field.is_option, name);
-            quote! { #ident: #value }
-        })
-        .collect::<Vec<_>>();
-
     let relation_initializers = relations
         .iter()
         .map(|field| {
@@ -1061,16 +1011,6 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             }
         }
 
-        impl ::dinoco::DinocoJson for #name {
-            fn from_json_row(value: &::dinoco::serde_json::Value) -> ::core::option::Option<Self> {
-                ::core::option::Option::Some(Self {
-                    #(#json_row_initializers,)*
-                    #(#relation_initializers,)*
-                    #(#many_to_many_key_initializers,)*
-                })
-            }
-        }
-
         impl ::dinoco::DinocoRelationValue for #name {
             fn dinoco_relation_value(&self, field: &'static str) -> ::core::option::Option<::dinoco::DinocoValue> {
                 match field {
@@ -1216,16 +1156,6 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             let index = scalar_index;
             scalar_index += 1;
             let value = mysql_row_value(&field.ty, field.is_option, quote! { #index });
-            quote! { #ident: #value }
-        })
-        .collect::<Vec<_>>();
-
-    let json_row_initializers = scalar_fields
-        .iter()
-        .map(|field| {
-            let ident = &field.ident;
-            let name = &field.name;
-            let value = json_row_value(&field.ty, field.is_option, name);
             quote! { #ident: #value }
         })
         .collect::<Vec<_>>();
@@ -1407,15 +1337,6 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
 
                 ::core::option::Option::Some(Self {
                     #(#mysql_row_initializers,)*
-                    #(#relation_initializers,)*
-                })
-            }
-        }
-
-        impl ::dinoco::DinocoJson for #name {
-            fn from_json_row(value: &::dinoco::serde_json::Value) -> ::core::option::Option<Self> {
-                ::core::option::Option::Some(Self {
-                    #(#json_row_initializers,)*
                     #(#relation_initializers,)*
                 })
             }
@@ -2137,53 +2058,6 @@ fn mysql_row_value(ty: &Type, is_option: bool, index: proc_macro2::TokenStream) 
     } else {
         quote! {
             row.take::<::dinoco::chrono::NaiveDateTime, _>(#index)?.and_utc()
-        }
-    }
-}
-
-/// Builds the `from_json_row` expression for one field, reading it out of the
-/// JSON object produced by `find_batch(...)`'s aggregated query instead of a
-/// native driver row.
-fn json_row_value(ty: &Type, is_option: bool, name: &str) -> proc_macro2::TokenStream {
-    let inner_ty = option_inner(ty).unwrap_or(ty);
-    let ident = |wanted: &[&str]| {
-        matches!(inner_ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| wanted.contains(&segment.ident.to_string().as_str())))
-    };
-
-    let extract = if ident(&["DateTime"]) {
-        quote! { ::dinoco::datetime_from_json(__value)? }
-    } else if ident(&["NaiveDate"]) {
-        quote! { ::dinoco::naive_date_from_json(__value)? }
-    } else if ident(&["Value", "JsonValue"]) {
-        quote! { __value.clone() }
-    } else if ident(&["bool"]) {
-        quote! { __value.as_bool()? }
-    } else if ident(&["f32", "f64"]) {
-        quote! { __value.as_f64()? as #inner_ty }
-    } else if is_custom_type(inner_ty) {
-        quote! { <#inner_ty as ::core::str::FromStr>::from_str(__value.as_str()?).ok()? }
-    } else if is_string(inner_ty) {
-        quote! { __value.as_str()?.to_string() }
-    } else {
-        quote! { __value.as_i64()? as #inner_ty }
-    };
-
-    if is_option {
-        quote! {
-            match value.get(#name) {
-                ::core::option::Option::Some(__value) if !__value.is_null() => ::core::option::Option::Some(#extract),
-                _ => ::core::option::Option::None,
-            }
-        }
-    } else {
-        quote! {
-            {
-                let __value = value.get(#name)?;
-                if __value.is_null() {
-                    return ::core::option::Option::None;
-                }
-                #extract
-            }
         }
     }
 }

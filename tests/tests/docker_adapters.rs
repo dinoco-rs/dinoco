@@ -1,4 +1,6 @@
-use dinoco::{Entity, EntityExtend, count, find_first, find_many, insert_into, insert_many, transaction, update};
+use dinoco::{
+    Entity, EntityExtend, TransactionError, count, find_first, find_many, insert_into, insert_many, transaction, update,
+};
 use dinoco_engine::{
     Backend, CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler,
     MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex, MigrationIndexKind,
@@ -1139,7 +1141,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     let account = TransactionAccount::new("committed".to_string(), "commit@dinoco.rs".to_string());
     transaction(&client, |tx| async move {
         insert_into::<TransactionAccount>().values(&account).execute(tx).await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await?;
     assert_eq!(
@@ -1161,7 +1163,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
         transaction(&client, |tx| async move {
             insert_into::<TransactionAccount>().values(&first).execute(tx).await?;
             insert_into::<TransactionAccount>().values(&duplicate).execute(tx).await?;
-            Ok(())
+            Ok::<_, TransactionError>(())
         })
         .await
         .is_err()
@@ -1183,7 +1185,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
             .update(|item| item.system_id.connect(&system_id))
             .execute(tx)
             .await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await?;
     let loaded = find_many::<AdapterTransactionBusiness>()
@@ -1202,7 +1204,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
             .update(|item| item.system_id.connect(&system_id))
             .execute(tx)
             .await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await;
     assert!(duplicate.is_err());
@@ -1223,7 +1225,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
             .update(|item| item.system_id.disconnect(&system_id))
             .execute(tx)
             .await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await?;
     let loaded = find_many::<AdapterTransactionBusiness>()
@@ -1245,7 +1247,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     transaction(&client, |tx| async move {
         insert_into::<AdapterTransactionSystem>().values(&finance).execute(tx).await?;
         insert_many::<AdapterTransactionSystem>().values(&extra_systems).execute(tx).await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await?;
     let loaded = find_many::<AdapterTransactionBusiness>()
@@ -1254,6 +1256,19 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
         .execute(&client)
         .await?;
     assert_eq!(loaded[0].systems.len(), 3);
+
+    #[derive(Debug, PartialEq)]
+    enum Rejected {
+        Blocked,
+    }
+    let blocked = TransactionAccount::new("blocked".to_string(), "blocked@dinoco.rs".to_string());
+    let result: Result<(), TransactionError<Rejected>> = transaction(&client, |tx| async move {
+        insert_into::<TransactionAccount>().values(&blocked).execute(tx).await?;
+        Err(TransactionError::Custom(Rejected::Blocked))
+    })
+    .await;
+    assert!(matches!(result, Err(TransactionError::Custom(Rejected::Blocked))));
+    assert!(find_first::<TransactionAccount>().where_(|item| item.id.eq("blocked")).execute(&client).await?.is_none());
 
     Ok(())
 }

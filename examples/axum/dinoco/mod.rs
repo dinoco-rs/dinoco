@@ -31,5 +31,5 @@ pub async fn connect_database() -> ::dinoco::anyhow::Result<::dinoco::DinocoClie
     let client = ::dinoco::DinocoClient::new(::dinoco::Backend::Sqlite(adapter));
     let read_replicas = vec![
     ];
-    Ok(client.with_read_replicas(read_replicas).with_logger(false).with_query_mode(::dinoco::QueryMode::BatchQuery))
+    Ok(client.with_read_replicas(read_replicas).with_logger(false))
 }

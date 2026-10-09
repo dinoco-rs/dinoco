@@ -184,28 +184,6 @@ impl MySqlAdapter {
 
         Ok(flag != 0)
     }
-
-    pub async fn query_find_batch(
-        &self,
-        query: &str,
-        params: &[DinocoValue],
-        column_count: usize,
-    ) -> anyhow::Result<Vec<Vec<crate::serde_json::Value>>> {
-        let mut conn = self.pool.get_conn().await.context("Failed to get mysql connection from pool")?;
-        let mut row: mysql_async::Row = conn
-            .exec_first(query, mysql_params(params))
-            .await?
-            .ok_or_else(|| anyhow!("find_batch query returned no rows"))?;
-
-        (0..column_count)
-            .map(|index| {
-                let text: String = row
-                    .take(index)
-                    .ok_or_else(|| anyhow!("find_batch column {index} is missing from the result row"))?;
-                crate::serde_json::from_str::<Vec<crate::serde_json::Value>>(&text).map_err(anyhow::Error::from)
-            })
-            .collect()
-    }
 }
 
 async fn execute_transaction_command(

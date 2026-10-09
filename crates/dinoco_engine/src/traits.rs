@@ -4,9 +4,9 @@ use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeadpoolPostgresRow, DeleteQuery, DinocoValue,
     DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
-    ExistsQuery, FindBatchQuery, FindQuery, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery,
-    MysqlRow, PostgresRow, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery,
-    RenameColumnMigration, RenameTableMigration, SqliteRow, UpdateQuery, UpdatedAtField,
+    ExistsQuery, FindQuery, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, MysqlRow, PostgresRow,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration,
+    RenameTableMigration, SqliteRow, UpdateQuery, UpdatedAtField,
 };
 
 #[async_trait]
@@ -46,7 +46,6 @@ pub trait DinocoSqlCompiler {
     fn compile_delete_query(&self, query: DeleteQuery) -> (String, Vec<DinocoValue>);
     fn compile_count_query(&self, query: CountQuery) -> (String, Vec<DinocoValue>);
     fn compile_exists_query(&self, query: ExistsQuery) -> (String, Vec<DinocoValue>);
-    fn compile_find_batch_query(&self, query: FindBatchQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_count_query(&self, query: RelationCountQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_batch_query(&self, query: RelationBatchQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>);

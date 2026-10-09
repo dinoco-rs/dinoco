@@ -136,19 +136,6 @@ where
 
         Ok(rows)
     }
-
-    /// Splits this builder into the parts `find_batch(...)` needs.
-    ///
-    /// `.includes(...)` isn't supported inside `find_batch(...)` yet (it
-    /// requires follow-up queries of its own), so this fails loudly instead
-    /// of silently dropping the relation.
-    pub(crate) fn into_batch_parts(self) -> anyhow::Result<(FindQuery, bool)> {
-        if !self.includes.is_empty() {
-            anyhow::bail!("find_batch(...) does not support .includes(...) yet");
-        }
-
-        Ok((self.query, self.read_primary))
-    }
 }
 
 pub struct Pluck<M, T> {

@@ -925,27 +925,30 @@ fn compile_rejects_the_removed_custom_derives_key_with_a_pointer_to_transform_rs
 }
 
 #[test]
-fn compile_accepts_and_validates_the_migration_engine() {
-    let automatic = compile("config { database = \"sqlite\" database_url = env(\"DATABASE_URL\") }\n").expect("default");
-    assert_eq!(automatic.migration_engine(), dinoco_compiler::MigrationEngine::Automatic);
-
-    for (value, expected) in [
-        ("automatic", dinoco_compiler::MigrationEngine::Automatic),
-        ("manual", dinoco_compiler::MigrationEngine::Manual),
+fn compile_rejects_the_removed_migration_engine_and_query_mode_keys() {
+    for (entry, expected) in [
+        ("migration_engine = \"manual\"", "migrations are always generated from schema.dinoco"),
+        ("migration_engine = \"automatic\"", "migrations are always generated from schema.dinoco"),
+        ("query_mode = \"single_query\"", "removed together with `find_batch(...)`"),
     ] {
-        let schema = compile(&format!(
-            "config {{ database = \"sqlite\" database_url = env(\"DATABASE_URL\") migration_engine = \"{value}\" }}\n"
+        let error = compile(&format!(
+            "config {{ database = \"sqlite\" database_url = env(\"DATABASE_URL\") {entry} }}\n"
         ))
-        .expect("valid migration engine");
-        assert_eq!(schema.migration_engine(), expected);
+        .expect_err("removed config key");
+        assert!(error.message.contains(&format!("`config.{}` was removed", entry.split(' ').next().unwrap())), "{error}");
+        assert!(error.message.contains(expected), "{error}");
     }
 
     let error = compile(
-        "config { database = \"sqlite\" database_url = env(\"DATABASE_URL\") migration_engine = \"sometimes\" }\n",
+        r#"config {
+            workspace {
+                dev { database = "sqlite" database_url = env("DEV_DATABASE_URL") migration_engine = "manual" }
+            }
+        }
+        "#,
     )
-    .expect_err("invalid migration engine");
-    assert!(error.message.contains("migration_engine"), "{error}");
-    assert!(error.message.contains("`automatic` or `manual`"), "{error}");
+    .expect_err("removed config key inside a workspace");
+    assert!(error.message.contains("`config.workspace.dev.migration_engine` was removed"), "{error}");
 }
 
 fn updated_at_schema(field: &str) -> String {

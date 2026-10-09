@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use dinoco::chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use dinoco::{
-    DinocoClient, DinocoEntity, Entity, TestAmbient, UpdatedAtField, find_and_update, find_first, find_many,
-    insert_many, setup_test_methods, transaction, update, update_many,
+    DinocoClient, DinocoEntity, Entity, TestAmbient, TransactionError, UpdatedAtField, find_and_update, find_first,
+    find_many, insert_many, setup_test_methods, transaction, update, update_many,
 };
 
 #[derive(Debug, Clone, Entity)]
@@ -256,7 +256,7 @@ async fn updates_inside_a_transaction_refresh_updated_at() -> anyhow::Result<()>
             .update(|article| article.title.set("tx"))
             .execute(tx)
             .await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await?;
 

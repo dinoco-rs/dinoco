@@ -1,3 +1,6 @@
+use std::convert::Infallible;
+use std::fmt;
+
 use dinoco_engine::{ConstraintDetails, DatabaseConstraintError, DatabaseError, is_decode_error};
 
 macro_rules! operation_error {
@@ -197,31 +200,94 @@ pub enum AtomicUpdateError {
     Database(#[source] DatabaseError),
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum TransactionError {
-    #[error("failed to begin transaction: {0}")]
-    Begin(#[source] DatabaseError),
-    #[error("create failed: {0}")]
-    Create(#[from] CreateError),
-    #[error("update failed: {0}")]
-    Update(#[from] UpdateError),
-    #[error("delete failed: {0}")]
-    Delete(#[from] DeleteError),
-    #[error("atomic update failed: {0}")]
-    AtomicUpdate(#[from] AtomicUpdateError),
-    #[error("transaction operation failed: {0}")]
-    Operation(#[source] anyhow::Error),
-    #[error("failed to commit transaction: {0}")]
-    Commit(#[source] DatabaseError),
-    #[error("rollback failed after `{source}`: {rollback_error}")]
-    RollbackFailed {
-        source: Box<TransactionError>,
-        #[source]
-        rollback_error: DatabaseError,
-    },
+/// Failures produced by `transaction(...)`.
+///
+/// `E` is the closure's own error type: returning
+/// `Err(TransactionError::Custom(error))` rolls the transaction back and hands
+/// `error` to the caller, to be matched like any other variant. It defaults to
+/// [`Infallible`] for closures that never return a custom error.
+#[derive(Debug)]
+pub enum TransactionError<E = Infallible> {
+    Begin(DatabaseError),
+    Create(CreateError),
+    Update(UpdateError),
+    Delete(DeleteError),
+    AtomicUpdate(AtomicUpdateError),
+    Operation(anyhow::Error),
+    Custom(E),
+    Commit(DatabaseError),
+    RollbackFailed { source: Box<TransactionError<E>>, rollback_error: DatabaseError },
 }
 
-impl TransactionError {
+// Written by hand: `thiserror` would bound these impls on
+// `Box<TransactionError<E>>` itself (through `RollbackFailed`), which never
+// resolves.
+impl<E: fmt::Display> fmt::Display for TransactionError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Begin(error) => write!(formatter, "failed to begin transaction: {error}"),
+            Self::Create(error) => write!(formatter, "create failed: {error}"),
+            Self::Update(error) => write!(formatter, "update failed: {error}"),
+            Self::Delete(error) => write!(formatter, "delete failed: {error}"),
+            Self::AtomicUpdate(error) => write!(formatter, "atomic update failed: {error}"),
+            Self::Operation(error) => write!(formatter, "transaction operation failed: {error}"),
+            Self::Custom(error) => error.fmt(formatter),
+            Self::Commit(error) => write!(formatter, "failed to commit transaction: {error}"),
+            Self::RollbackFailed { source, rollback_error } => {
+                write!(formatter, "rollback failed after `{source}`: {rollback_error}")
+            }
+        }
+    }
+}
+
+impl<E: fmt::Debug + fmt::Display> std::error::Error for TransactionError<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Begin(error) | Self::Commit(error) => Some(error),
+            Self::RollbackFailed { rollback_error, .. } => Some(rollback_error),
+            Self::Create(error) => Some(error),
+            Self::Update(error) => Some(error),
+            Self::Delete(error) => Some(error),
+            Self::AtomicUpdate(error) => Some(error),
+            Self::Operation(error) => Some(error.as_ref()),
+            Self::Custom(_) => None,
+        }
+    }
+}
+
+impl<E> From<CreateError> for TransactionError<E> {
+    fn from(error: CreateError) -> Self {
+        Self::Create(error)
+    }
+}
+
+impl<E> From<UpdateError> for TransactionError<E> {
+    fn from(error: UpdateError) -> Self {
+        Self::Update(error)
+    }
+}
+
+impl<E> From<DeleteError> for TransactionError<E> {
+    fn from(error: DeleteError) -> Self {
+        Self::Delete(error)
+    }
+}
+
+impl<E> From<AtomicUpdateError> for TransactionError<E> {
+    fn from(error: AtomicUpdateError) -> Self {
+        Self::AtomicUpdate(error)
+    }
+}
+
+/// Lets `?` propagate reads and other `anyhow::Result` operations inside a
+/// transaction closure; Dinoco's typed operation errors keep their variant.
+impl<E> From<anyhow::Error> for TransactionError<E> {
+    fn from(error: anyhow::Error) -> Self {
+        Self::from_operation(error)
+    }
+}
+
+impl<E> TransactionError<E> {
     pub(crate) fn from_operation(error: anyhow::Error) -> Self {
         if error.is::<AtomicUpdateError>() {
             return Self::AtomicUpdate(error.downcast().expect("checked atomic update error"));

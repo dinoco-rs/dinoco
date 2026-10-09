@@ -10,8 +10,8 @@
 use std::future::Future;
 
 use dinoco::{
-    DinocoEnum, Entity, FindWhere, QueryMode, WhereComplex, count, delete, delete_many, exists, find_and_update,
-    find_batch, find_first, find_many, insert_many, transaction, update, update_many,
+    DinocoEnum, Entity, FindWhere, TransactionError, WhereComplex, count, delete, delete_many, exists, find_and_update,
+    find_first, find_many, insert_many, transaction, update, update_many,
 };
 use dinoco_engine::{
     Backend, CreateEnumMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler, DinocoValue, DropEnumMigration,
@@ -69,7 +69,7 @@ on_every_backend!(
     where_complex,
     writes,
     includes_and_relation_counts,
-    transactions_and_find_batch,
+    transactions,
 );
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, DinocoEnum)]
@@ -552,7 +552,7 @@ async fn includes_and_relation_counts(client: DinocoClient) -> anyhow::Result<()
     Ok(())
 }
 
-async fn transactions_and_find_batch(client: DinocoClient) -> anyhow::Result<()> {
+async fn transactions(client: DinocoClient) -> anyhow::Result<()> {
     let pix = transaction(&client, |tx| async move {
         update_many::<Transaction>()
             .where_(|t| t.tags.where_(|tag| tag.name.eq("vip")))
@@ -560,29 +560,27 @@ async fn transactions_and_find_batch(client: DinocoClient) -> anyhow::Result<()>
             .execute(tx)
             .await?;
 
-        Ok(find_many::<Transaction>()
-            .where_(|t| t.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)))
-            .where_(|t| t.amount.gt(1000))
-            .execute(tx)
-            .await?)
+        Ok::<_, TransactionError>(
+            find_many::<Transaction>()
+                .where_(|t| t.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)))
+                .where_(|t| t.amount.gt(1000))
+                .execute(tx)
+                .await?,
+        )
     })
     .await?;
     assert_eq!(ids(&pix, |transaction| &transaction.id), ["t1"]);
     assert_eq!(amount_of(&client, "t5").await?, 1075);
 
-    let single_query = DinocoClient::new(client.backend.clone()).with_query_mode(QueryMode::SingleQuery);
-    for client in [&client, &single_query] {
-        let (transactions, payout) = find_batch((
-            find_many::<Transaction>()
-                .where_(|t| t.items.where_(|item| item.refunded.eq(true)))
-                .order_by(|t| t.id.asc()),
-            find_first::<Payout>().where_(|payout| payout.transactions.none(|t| t.items.exists())),
-        ))
-        .execute(client)
+    let refunded = find_many::<Transaction>()
+        .where_(|t| t.items.where_(|item| item.refunded.eq(true)))
+        .order_by(|t| t.id.asc())
+        .execute(&client)
         .await?;
-        assert_eq!(ids(&transactions, |transaction| &transaction.id), ["t2", "t5"]);
-        assert_eq!(payout.map(|payout| payout.id), None, "every payout has a transaction with items");
-    }
+    assert_eq!(ids(&refunded, |transaction| &transaction.id), ["t2", "t5"]);
+    let payout =
+        find_first::<Payout>().where_(|payout| payout.transactions.none(|t| t.items.exists())).execute(&client).await?;
+    assert_eq!(payout.map(|payout| payout.id), None, "every payout has a transaction with items");
 
     Ok(())
 }

@@ -21,7 +21,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     #[command(about = "Create a dinoco/schema.dinoco file")]
-    Init(InitArgs),
+    Init,
     #[command(about = "Generate and run database migrations")]
     #[command(subcommand)]
     Migrate(MigrateCommands),
@@ -32,40 +32,10 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum MigrateCommands {
-    #[command(
-        about = "Automatic engine: diff the schema, create a migration, apply it and generate models. Manual engine: scaffold a Rust migration"
-    )]
-    Generate(MigrateGenerateArgs),
+    #[command(about = "Compile the schema, create a migration, apply it, and generate models")]
+    Generate(WorkspaceArgs),
     #[command(about = "Apply all pending migrations")]
     Run(WorkspaceArgs),
-    #[command(about = "Revert applied migrations (manual engine only)")]
-    Rollback(RollbackArgs),
-    #[command(about = "List applied and pending migrations (manual engine only)")]
-    Status(WorkspaceArgs),
-}
-
-#[derive(Args)]
-struct InitArgs {
-    #[arg(long, value_name = "ENGINE", value_parser = ["automatic", "manual"], help = "How migrations are produced (default: automatic)")]
-    migration_engine: Option<String>,
-}
-
-#[derive(Args)]
-struct MigrateGenerateArgs {
-    #[arg(value_name = "NAME", help = "Migration name (manual engine)")]
-    name: Option<String>,
-
-    #[command(flatten)]
-    workspace: WorkspaceArgs,
-}
-
-#[derive(Args)]
-struct RollbackArgs {
-    #[arg(long, default_value_t = 1, value_name = "N", help = "How many applied migrations to revert")]
-    steps: usize,
-
-    #[command(flatten)]
-    workspace: WorkspaceArgs,
 }
 
 #[derive(Subcommand)]
@@ -86,15 +56,9 @@ pub async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init(args) => commands::init::run(args.migration_engine.as_deref())?,
-        Commands::Migrate(MigrateCommands::Generate(args)) => {
-            commands::migrate::generate(args.workspace.workspace, args.name).await?
-        }
+        Commands::Init => commands::init::run()?,
+        Commands::Migrate(MigrateCommands::Generate(args)) => commands::migrate::generate(args.workspace).await?,
         Commands::Migrate(MigrateCommands::Run(args)) => commands::migrate::run(args.workspace).await?,
-        Commands::Migrate(MigrateCommands::Rollback(args)) => {
-            commands::migrate::rollback(args.workspace.workspace, args.steps).await?
-        }
-        Commands::Migrate(MigrateCommands::Status(args)) => commands::migrate::status(args.workspace).await?,
         Commands::Models(ModelsCommands::Generate(args)) => commands::models::generate(args.workspace).await?,
     }
 

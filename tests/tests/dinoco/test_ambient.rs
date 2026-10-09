@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use dinoco::{
     AtomicUpdateError, Backend, CreateError, DatabaseConstraintError, DinocoAdapter, DinocoClient, DinocoEntity,
-    Entity, QueryMode, TestAmbient, count, delete, delete_many, find_and_update, find_first, find_many, insert_into,
-    insert_many, remove_test_methods, setup_test_methods, transaction, update, update_many,
+    Entity, TestAmbient, TransactionError, count, delete, delete_many, find_and_update, find_first, find_many,
+    insert_into, insert_many, remove_test_methods, setup_test_methods, transaction, update, update_many,
 };
 
 #[derive(Debug, Clone, Entity)]
@@ -174,12 +174,12 @@ async fn test_ambient_shares_one_database_between_pooled_connections_and_transac
 
     transaction(&client, |tx| async move {
         insert_into::<Account>().values(&account("account-1", "ada@dinoco.rs")).execute(tx).await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await?;
-    let rolled_back: Result<(), _> = transaction(&client, |tx| async move {
+    let rolled_back: Result<(), TransactionError> = transaction(&client, |tx| async move {
         insert_into::<Account>().values(&account("account-2", "grace@dinoco.rs")).execute(tx).await?;
-        anyhow::bail!("roll back")
+        Err(anyhow::anyhow!("roll back").into())
     })
     .await;
     assert!(rolled_back.is_err());
@@ -230,7 +230,7 @@ async fn test_ambient_applies_the_workspace_and_its_config() -> anyhow::Result<(
         dev {
             database     = "sqlite"
             database_url = env("DEV_DATABASE_URL")
-            query_mode   = "single_query"
+            with_logger  = true
         }
 
         prod {
@@ -244,19 +244,13 @@ async fn test_ambient_applies_the_workspace_and_its_config() -> anyhow::Result<(
     std::fs::write(&path, schema)?;
 
     let dev = TestAmbient::new().schema(&path).workspace("dev").create().await?;
-    assert_eq!(dev.query_mode(), QueryMode::SingleQuery);
+    assert!(dev.backend.logger_enabled(), "the dev workspace enables the logger");
     insert_into::<Account>().values(&account("account-1", "ada@dinoco.rs")).execute(&dev).await?;
-    let (accounts, first) = dinoco::find_batch((
-        find_many::<Account>(),
-        find_first::<Account>().where_(|account| account.id.eq("account-1")),
-    ))
-    .execute(&dev)
-    .await?;
-    assert_eq!(accounts.len(), 1);
-    assert!(first.is_some(), "single_query find_batch works on the ambient");
+    assert_eq!(find_many::<Account>().execute(&dev).await?.len(), 1);
+    assert!(find_first::<Account>().where_(|account| account.id.eq("account-1")).execute(&dev).await?.is_some());
 
     let prod = TestAmbient::new().schema(&path).workspace("prod").create().await?;
-    assert_eq!(prod.query_mode(), QueryMode::BatchQuery);
+    assert!(!prod.backend.logger_enabled(), "the prod workspace keeps the default logger");
 
     let Err(error) = TestAmbient::new().schema(&path).workspace("staging").create().await else {
         panic!("an unknown workspace must fail");
@@ -482,12 +476,12 @@ async fn test_methods_observe_transactions_including_rolled_back_work() -> anyho
             .execute(tx)
             .await?;
         find_first::<Account>().includes(|account| account.sessions()).execute(tx).await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await?;
-    let _: Result<(), _> = transaction(&client, |tx| async move {
+    let _: Result<(), TransactionError> = transaction(&client, |tx| async move {
         delete::<Session>().where_(|session| session.id.eq("session-2")).execute(tx).await?;
-        anyhow::bail!("roll back the delete")
+        Err(anyhow::anyhow!("roll back the delete").into())
     })
     .await;
 

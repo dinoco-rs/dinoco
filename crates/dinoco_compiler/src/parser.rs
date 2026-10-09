@@ -805,15 +805,15 @@ fn validate_config_scope(scope: &str, entries: &[ConfigEntry]) -> CompileResult<
             ("with_logger", _) => {
                 return schema_error(format!("`{scope}.with_logger` must be `true` or `false`"));
             }
-            ("query_mode", ConfigValue::String(value) | ConfigValue::Ident(value))
-                if matches!(value.as_str(), "single_query" | "batch_query") => {}
             ("query_mode", _) => {
-                return schema_error(format!("`{scope}.query_mode` must be `single_query` or `batch_query`"));
+                return schema_error(format!(
+                    "`{scope}.query_mode` was removed together with `find_batch(...)`; delete this entry"
+                ));
             }
-            ("migration_engine", ConfigValue::String(value) | ConfigValue::Ident(value))
-                if matches!(value.as_str(), "automatic" | "manual") => {}
             ("migration_engine", _) => {
-                return schema_error(format!("`{scope}.migration_engine` must be `automatic` or `manual`"));
+                return schema_error(format!(
+                    "`{scope}.migration_engine` was removed; migrations are always generated from schema.dinoco, so delete this entry"
+                ));
             }
             ("min_connection" | "max_connection", ConfigValue::Integer(value)) if *value > 0 => {}
             ("min_connection" | "max_connection", _) => {

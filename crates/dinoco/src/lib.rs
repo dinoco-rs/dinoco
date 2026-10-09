@@ -26,7 +26,7 @@ pub mod codegen {
 
 pub use anyhow;
 pub use async_trait::async_trait;
-pub use dinoco_derives::{DinocoEnum, Entity, EntityExtend, Extend, dinoco};
+pub use dinoco_derives::{DinocoEnum, Entity, EntityExtend, Extend};
 pub use dinoco_engine::*;
 pub use serde;
 

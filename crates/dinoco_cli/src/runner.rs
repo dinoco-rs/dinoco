@@ -1,7 +1,7 @@
-//! Runs project-owned Rust (`dinoco/transform.rs` and manual migrations).
+//! Runs project-owned Rust (`dinoco/transform.rs`).
 //!
 //! The CLI is a prebuilt binary and cannot load user code, so it generates a
-//! tiny cargo project in `dinoco/.runner/` that `#[path]`-includes those files
+//! tiny cargo project in `dinoco/.runner/` that `#[path]`-includes that file
 //! and runs it. Set `DINOCO_RUNNER_CRATES_PATH` to a Dinoco checkout to build
 //! the runner against local crates instead of the published ones.
 
@@ -12,9 +12,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, bail};
-use dinoco_compiler::{MigrationEngine, Schema};
-
-use crate::schema::{Database, PostgresConnection, RuntimeConfig};
+use dinoco_compiler::Schema;
 
 const RUNNER_DIR: &str = "dinoco/.runner";
 
@@ -34,7 +32,7 @@ pub fn has_transform() -> bool {
 pub fn generate_models(schema: &Schema, workspace: Option<&str>) -> anyhow::Result<()> {
     if has_transform() {
         crate::ui::info("Applying dinoco/transform.rs (building the Dinoco runner)");
-        run(&Task::Models, schema, workspace, None)?;
+        run(workspace)?;
     } else {
         dinoco_codegen::generate_models_for_workspace(schema, workspace)?;
     }
@@ -52,68 +50,19 @@ pub fn generate_models(schema: &Schema, workspace: Option<&str>) -> anyhow::Resu
     Ok(())
 }
 
-pub enum Task {
-    Models,
-    MigrateUp,
-    MigrateDown(usize),
-    MigrateStatus,
-}
+/// Builds and runs the runner, which generates the models with
+/// `dinoco/transform.rs` applied.
+fn run(workspace: Option<&str>) -> anyhow::Result<()> {
+    write_project()?;
 
-impl Task {
-    fn arguments(&self) -> Vec<String> {
-        match self {
-            Task::Models => vec!["models".into()],
-            Task::MigrateUp => vec!["up".into()],
-            Task::MigrateDown(steps) => vec!["down".into(), steps.to_string()],
-            Task::MigrateStatus => vec!["status".into()],
-        }
-    }
-}
-
-/// Builds and runs the runner for `task`. `database` is required by the
-/// migration tasks.
-pub fn run(
-    task: &Task,
-    schema: &Schema,
-    workspace: Option<&str>,
-    database: Option<&RuntimeConfig>,
-) -> anyhow::Result<()> {
-    let manual = schema.migration_engine() == MigrationEngine::Manual;
-    write_project(manual, workspace)?;
-
-    let mut command = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()));
-    command
+    let status = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()))
         .args(["run", "--quiet", "--manifest-path"])
         .arg(format!("{RUNNER_DIR}/Cargo.toml"))
         .arg("--")
-        .args(task.arguments())
-        .env("DINOCO_RUNNER_WORKSPACE", workspace.unwrap_or(""));
-
-    if let Some(config) = database {
-        command
-            .env(
-                "DINOCO_RUNNER_DATABASE",
-                match config.database {
-                    Database::Postgresql => "postgresql",
-                    Database::Mysql => "mysql",
-                    Database::Sqlite => "sqlite",
-                },
-            )
-            .env(
-                "DINOCO_RUNNER_CONNECTION",
-                match config.postgres_connection {
-                    PostgresConnection::Direct => "direct",
-                    PostgresConnection::PgBouncer => "pgbouncer",
-                },
-            )
-            .env("DINOCO_RUNNER_DATABASE_URL", &config.database_url)
-            .env("DINOCO_RUNNER_MIN_CONNECTION", config.min_connection.to_string())
-            .env("DINOCO_RUNNER_MAX_CONNECTION", config.max_connection.to_string());
-    }
-
-    let status = command.status().context(
-        "failed to launch `cargo`; Rust code in dinoco/ (transform.rs, manual migrations) needs a Rust toolchain",
-    )?;
+        .arg("models")
+        .env("DINOCO_RUNNER_WORKSPACE", workspace.unwrap_or(""))
+        .status()
+        .context("failed to launch `cargo`; dinoco/transform.rs needs a Rust toolchain")?;
     if !status.success() {
         bail!("the Dinoco runner failed (see the output above)");
     }
@@ -121,12 +70,12 @@ pub fn run(
     Ok(())
 }
 
-fn write_project(manual: bool, workspace: Option<&str>) -> anyhow::Result<()> {
+fn write_project() -> anyhow::Result<()> {
     let src = Path::new(RUNNER_DIR).join("src");
     fs::create_dir_all(&src)?;
     fs::write(Path::new(RUNNER_DIR).join(".gitignore"), "*\n")?;
     fs::write(Path::new(RUNNER_DIR).join("Cargo.toml"), render_manifest())?;
-    fs::write(src.join("main.rs"), render_main(has_transform(), manual, workspace))?;
+    fs::write(src.join("main.rs"), render_main())?;
 
     // A local checkout resolves offline against the checkout's own lockfile.
     if let Ok(root) = std::env::var("DINOCO_RUNNER_CRATES_PATH") {
@@ -158,50 +107,28 @@ fn render_manifest() -> String {
     for name in ["dinoco", "dinoco_codegen", "dinoco_compiler"] {
         manifest.push_str(&dependency(name));
     }
-    manifest
-        .push_str("anyhow = \"1.0\"\ntokio = { version = \"1.50\", features = [\"rt-multi-thread\", \"macros\"] }\n");
+    manifest.push_str("anyhow = \"1.0\"\n");
     manifest
 }
 
-fn render_main(transform: bool, manual: bool, workspace: Option<&str>) -> String {
-    let mut out = String::from("// Generated by the Dinoco CLI.\n#![allow(unused)]\n\n");
-    if transform {
-        out.push_str("#[path = \"../../transform.rs\"]\nmod transform;\n\n");
-    }
-    if manual {
-        let migrations = match workspace {
-            Some(workspace) => format!("../../migrations/{workspace}/mod.rs"),
-            None => "../../migrations/mod.rs".to_string(),
-        };
-        out.push_str(&format!("#[path = \"{migrations}\"]\nmod migrations;\n\n"));
-    }
+fn render_main() -> String {
+    String::from(
+        r#"// Generated by the Dinoco CLI.
+#![allow(unused)]
 
-    out.push_str(
-        r#"fn main() -> ::anyhow::Result<()> {
-    let mut args = std::env::args().skip(1);
-    let task = args.next().unwrap_or_default();
+#[path = "../../transform.rs"]
+mod transform;
+
+fn main() -> ::anyhow::Result<()> {
+    let task = std::env::args().nth(1).unwrap_or_default();
     let workspace = std::env::var("DINOCO_RUNNER_WORKSPACE").ok().filter(|value| !value.is_empty());
 
     match task.as_str() {
-"#,
-    );
-    if transform {
-        out.push_str("        \"models\" => models(workspace.as_deref()),\n");
+        "models" => models(workspace.as_deref()),
+        other => ::anyhow::bail!("unknown runner task `{other}`"),
     }
-    if manual {
-        out.push_str(
-            r#"        "up" | "down" | "status" => {
-            let steps = args.next().and_then(|value| value.parse::<usize>().ok()).unwrap_or(1);
-            ::tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(migrate(&task, steps))
-        }
-"#,
-        );
-    }
-    out.push_str("        other => ::anyhow::bail!(\"unknown runner task `{other}`\"),\n    }\n}\n");
+}
 
-    if transform {
-        out.push_str(
-            r#"
 fn models(workspace: Option<&str>) -> ::anyhow::Result<()> {
     let schema = ::dinoco_compiler::compile_file(std::path::Path::new("dinoco/schema.dinoco"))
         .map_err(|error| ::anyhow::anyhow!(error.to_string()))?;
@@ -215,69 +142,5 @@ fn models(workspace: Option<&str>) -> ::anyhow::Result<()> {
     Ok(())
 }
 "#,
-        );
-    }
-    if manual {
-        out.push_str(
-            r#"
-async fn connect() -> ::anyhow::Result<::dinoco::DinocoClient> {
-    let env = |key: &str| std::env::var(key).map_err(|_| ::anyhow::anyhow!("missing runner environment `{key}`"));
-    let url = env("DINOCO_RUNNER_DATABASE_URL")?;
-    let min = env("DINOCO_RUNNER_MIN_CONNECTION")?.parse::<usize>()?;
-    let max = env("DINOCO_RUNNER_MAX_CONNECTION")?.parse::<usize>()?;
-    let backend = match (env("DINOCO_RUNNER_DATABASE")?.as_str(), env("DINOCO_RUNNER_CONNECTION")?.as_str()) {
-        ("sqlite", _) => ::dinoco::Backend::Sqlite(
-            <::dinoco::SqliteAdapter as ::dinoco::DinocoAdapter>::new(url).await.map_err(::anyhow::Error::msg)?,
-        ),
-        ("mysql", _) => ::dinoco::Backend::Mysql(::dinoco::MySqlAdapter::new(url)),
-        (_, "pgbouncer") => ::dinoco::Backend::PgBouncer(::dinoco::PgBouncerAdapter::new(url).await?),
-        _ => ::dinoco::Backend::Postgres(::dinoco::PostgresAdapter::direct_with_pool(url, min, max).await?),
-    };
-
-    Ok(::dinoco::DinocoClient::new(backend))
-}
-
-async fn migrate(task: &str, steps: usize) -> ::anyhow::Result<()> {
-    let client = connect().await?;
-    let entries = migrations::migrations();
-
-    match task {
-        "up" => {
-            let ran = ::dinoco::migrate_up(&client, &entries).await?;
-            for name in &ran {
-                println!("Migration applied: {name}");
-            }
-            if ran.is_empty() {
-                println!("No pending migrations.");
-            } else {
-                println!("Applied {} migration(s).", ran.len());
-            }
-        }
-        "down" => {
-            let reverted = ::dinoco::migrate_down(&client, &entries, steps).await?;
-            for name in &reverted {
-                println!("Migration reverted: {name}");
-            }
-            if reverted.is_empty() {
-                println!("No applied migrations to revert.");
-            }
-        }
-        _ => {
-            let status = ::dinoco::migration_status(&client, &entries).await?;
-            if status.is_empty() {
-                println!("No manual migrations were found.");
-            }
-            for item in status {
-                println!("[{}] {}", if item.applied { "applied" } else { "pending" }, item.name);
-            }
-        }
-    }
-
-    Ok(())
-}
-"#,
-        );
-    }
-
-    out
+    )
 }

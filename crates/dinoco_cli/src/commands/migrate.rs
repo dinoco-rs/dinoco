@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
-use dinoco_compiler::MigrationEngine;
 use inquire::Confirm;
 use sha2::{Digest, Sha256};
 
@@ -22,34 +21,8 @@ const MIGRATION_CHECKSUM_MARKER: &str = "-- dinoco-checksum: ";
 const MIGRATION_CHECKSUM_PLACEHOLDER: &str = "__DINOCO_INTERNAL_SHA256_PLACEHOLDER_7F43A9C2__";
 const SQLITE_REBUILD_MARKER: &str = "dinoco-sqlite-table-rebuild";
 
-pub async fn rollback(workspace: Option<String>, steps: usize) -> anyhow::Result<()> {
-    require_manual_engine(workspace.as_deref(), "migrate rollback")?;
-    super::manual::rollback(workspace, steps).await
-}
-
-pub async fn status(workspace: Option<String>) -> anyhow::Result<()> {
-    require_manual_engine(workspace.as_deref(), "migrate status")?;
-    super::manual::status(workspace).await
-}
-
-fn require_manual_engine(workspace: Option<&str>, command: &str) -> anyhow::Result<()> {
-    let (_, schema, _) = read_schema_for_workspace(workspace)?;
-    if schema.migration_engine() != MigrationEngine::Manual {
-        anyhow::bail!(
-            "`dinoco {command}` needs `migration_engine = \"manual\"` in schema.dinoco; the automatic engine only moves forward"
-        );
-    }
-    Ok(())
-}
-
-pub async fn generate(workspace: Option<String>, name: Option<String>) -> anyhow::Result<()> {
+pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
     let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
-    if schema.migration_engine() == MigrationEngine::Manual {
-        return super::manual::generate(&schema, workspace.as_deref(), name).await;
-    }
-    if name.is_some() {
-        ui::warning("The migration name is only used by `migration_engine = \"manual\"`; ignoring it.");
-    }
     let config = runtime_config(&schema)?;
     let db = CliDatabase::connect(&config).await?;
     db.adopt_legacy_migration_history().await?;
@@ -839,9 +812,6 @@ async fn repair_pending_history_drift(
 
 pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
     let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
-    if schema.migration_engine() == MigrationEngine::Manual {
-        return super::manual::run(workspace).await;
-    }
     let config = runtime_config(&schema)?;
     let db = CliDatabase::connect(&config).await?;
     db.adopt_legacy_migration_history().await?;

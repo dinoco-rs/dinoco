@@ -17,8 +17,8 @@ const RESOURCE_PREFIX = 'dinoco://docs/';
 const INSTRUCTIONS = [
 	'Documentation for Dinoco, a schema-driven Rust ORM (schema.dinoco -> generated models, typed queries, migrations).',
 	'Start with search_docs to find pages, then get_doc to read one. Use list_docs to see the whole outline.',
-	'Pass locale "en-us" (default) or "pt-br". Page ids look like "orm/find-many" (group/item) or "guide/writing-migrations" (group/item/subitem).',
-	'Docs cover: schema and config, queries (find, insert, update, delete, count, exists, where_complex), relations, manual migrations, code transforms (dinoco/transform.rs), and the CLI.',
+	'Pass locale "en-us" (default) or "pt-br". Page ids look like "orm/find-many" or "guide/transforms-recipes" (group/item).',
+	'Docs cover: schema and config, queries (find, insert, update, delete, count, exists, where_complex), relations, transactions, migrations, code transforms (dinoco/transform.rs), and the CLI.',
 ].join(' ');
 
 type JsonRpcId = string | number | null;
@@ -54,7 +54,7 @@ const TOOLS = [
 				group: { description: 'Restrict to one group: guide, orm, tooling, or reference.', type: 'string' },
 				limit: { default: 8, description: 'Maximum results (1-25).', maximum: 25, minimum: 1, type: 'integer' },
 				locale: localeProperty,
-				query: { description: 'What to look for, e.g. "where_complex count" or "rollback manual migration".', type: 'string' },
+				query: { description: 'What to look for, e.g. "where_complex count" or "transaction custom error".', type: 'string' },
 			},
 			required: ['query'],
 			type: 'object',

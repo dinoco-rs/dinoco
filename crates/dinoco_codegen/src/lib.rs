@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use dinoco_compiler::{AttributeValue, ConfigValue, MigrationEngine, Model, ModelField, Schema};
+use dinoco_compiler::{AttributeValue, ConfigValue, Model, ModelField, Schema};
 
 pub mod transform;
 
@@ -19,13 +19,6 @@ pub mod prelude {
 
 /// The project file that customizes generated code, relative to the project root.
 pub const TRANSFORM_PATH: &str = "dinoco/transform.rs";
-
-const MIGRATIONS_MOD_TEMPLATE: &str = include_str!("migrations_mod.rs.txt");
-
-/// The skeleton written to `dinoco/migrations/mod.rs` for manual migrations.
-pub fn migrations_mod_template() -> &'static str {
-    MIGRATIONS_MOD_TEMPLATE
-}
 
 pub fn generate_models(schema: &Schema) -> anyhow::Result<()> {
     generate_models_for_workspace(schema, None)
@@ -95,13 +88,6 @@ pub fn generate_models_with(
         }
     }
     fs::write("dinoco/mod.rs", render_dinoco_mod_with(schema, workspace, Path::new(TRANSFORM_PATH).is_file()))?;
-    if schema.migration_engine() == MigrationEngine::Manual {
-        let migrations_mod = manual_migrations_dir(workspace).join("mod.rs");
-        if !migrations_mod.exists() {
-            ensure_parent(&migrations_mod)?;
-            fs::write(&migrations_mod, MIGRATIONS_MOD_TEMPLATE)?;
-        }
-    }
     fs::write(marker, requested_workspace)?;
     Ok(())
 }
@@ -264,12 +250,6 @@ fn build_model(model: &Model, schema: &Schema) -> tf::Model {
     }
 }
 
-/// Directory holding the manual migrations of `workspace`.
-pub fn manual_migrations_dir(workspace: Option<&str>) -> std::path::PathBuf {
-    let root = Path::new("dinoco/migrations");
-    workspace.map_or_else(|| root.to_path_buf(), |workspace| root.join(workspace))
-}
-
 pub fn render_dinoco_mod(schema: &Schema) -> String {
     render_dinoco_mod_for_workspace(schema, None)
 }
@@ -315,23 +295,9 @@ pub fn render_dinoco_mod_with(schema: &Schema, workspace: Option<&str>, transfor
     let min_connection = config_integer(config, "min_connection").unwrap_or(2);
     let max_connection = config_integer(config, "max_connection").unwrap_or(10);
     let read_replica_envs = config_env_array(config, "read_replicas");
-    let query_mode = config
-        .and_then(|config| config.entries.iter().find(|entry| entry.key == "query_mode"))
-        .and_then(|entry| match &entry.value {
-            ConfigValue::String(value) | ConfigValue::Ident(value) => Some(value.as_str()),
-            _ => None,
-        })
-        .unwrap_or("batch_query");
-    let query_mode_variant = if query_mode == "single_query" { "SingleQuery" } else { "BatchQuery" };
 
     let mut out = String::from("#![allow(unused)]\n\n");
     out.push_str("pub mod models;\n");
-    if schema.migration_engine() == MigrationEngine::Manual {
-        if let Some(workspace) = workspace {
-            out.push_str(&format!("#[path = \"migrations/{workspace}/mod.rs\"]\n"));
-        }
-        out.push_str("pub mod migrations;\n");
-    }
     if transform {
         out.push_str(
             "\n/// `dinoco/transform.rs`, declared so editors and `cargo check` analyze it; the\n\
@@ -393,9 +359,7 @@ pub fn render_dinoco_mod_with(schema: &Schema, workspace: Option<&str>, transfor
         }
     }
     out.push_str("    ];\n");
-    out.push_str(&format!(
-        "    Ok(client.with_read_replicas(read_replicas).with_logger({with_logger}).with_query_mode(::dinoco::QueryMode::{query_mode_variant}))\n"
-    ));
+    out.push_str(&format!("    Ok(client.with_read_replicas(read_replicas).with_logger({with_logger}))\n"));
     out.push_str("}\n");
     out
 }

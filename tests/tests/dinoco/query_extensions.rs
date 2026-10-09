@@ -1,8 +1,6 @@
-use dinoco::{Entity, delete, delete_many, exists, find_batch, find_first, find_many, insert_into, insert_many, update};
+use dinoco::{Entity, delete, delete_many, exists, find_first, find_many, insert_into, insert_many, update};
 use dinoco_engine::serde_json::json;
-use dinoco_engine::{
-    Backend, DinocoAdapter, DinocoClient, MigrationColumnType, PostgresAdapter, QueryMode, SqliteAdapter,
-};
+use dinoco_engine::{Backend, DinocoAdapter, DinocoClient, MigrationColumnType, PostgresAdapter, SqliteAdapter};
 use dinoco_tests::{column, create_table, drop_table, primary};
 
 const POSTGRES_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
@@ -194,66 +192,6 @@ async fn connect_batch_and_disconnect_batch_link_many_values_in_one_round_trip()
 }
 
 #[tokio::test]
-async fn find_batch_runs_independent_queries_together_in_batch_query_mode() -> anyhow::Result<()> {
-    let (client, path) = setup("find-batch-multi").await?;
-
-    insert_many::<User>()
-        .values(vec![
-            User::new("user-1".to_string(), "Ada".to_string(), 30),
-            User::new("user-2".to_string(), "Grace".to_string(), 40),
-        ])
-        .execute(&client)
-        .await?;
-    insert_into::<Tag>().values(Tag::new("tag-1".to_string(), "rust".to_string())).execute(&client).await?;
-    insert_into::<Post>().values(Post::new("post-1".to_string(), "Hello".to_string())).execute(&client).await?;
-
-    let (users, tags, posts) =
-        find_batch((find_many::<User>(), find_many::<Tag>(), find_many::<Post>())).execute(&client).await?;
-
-    assert_eq!(users.len(), 2);
-    assert_eq!(tags.len(), 1);
-    assert_eq!(posts.len(), 1);
-    assert_eq!(posts[0].title, "Hello");
-
-    let _ = std::fs::remove_file(path);
-    Ok(())
-}
-
-#[tokio::test]
-async fn find_batch_runs_as_a_single_round_trip_in_single_query_mode() -> anyhow::Result<()> {
-    let (client, path) = setup("find-batch-single").await?;
-    let client = client.with_query_mode(QueryMode::SingleQuery);
-
-    insert_many::<User>()
-        .values(vec![
-            User::new("user-1".to_string(), "Ada".to_string(), 30),
-            User::new("user-2".to_string(), "Grace".to_string(), 40),
-        ])
-        .execute(&client)
-        .await?;
-    insert_into::<Tag>().values(Tag::new("tag-1".to_string(), "rust".to_string())).execute(&client).await?;
-
-    let (mut users, tags, grace) = find_batch((
-        find_many::<User>(),
-        find_many::<Tag>(),
-        find_first::<User>().where_(|x| x.name.eq("Grace")),
-    ))
-    .execute(&client)
-    .await?;
-    users.sort_by(|a, b| a.id.cmp(&b.id));
-
-    assert_eq!(users.len(), 2);
-    assert_eq!(users[0].name, "Ada");
-    assert_eq!(users[1].age, 40);
-    assert_eq!(tags.len(), 1);
-    assert_eq!(tags[0].name, "rust");
-    assert_eq!(grace.map(|user| user.age), Some(40));
-
-    let _ = std::fs::remove_file(path);
-    Ok(())
-}
-
-#[tokio::test]
 async fn pluck_and_transform_work_on_insert_and_update_returning() -> anyhow::Result<()> {
     let (client, path) = setup("returning-extensions").await?;
 
@@ -299,7 +237,7 @@ pub struct PgExistsUser {
 }
 
 #[tokio::test]
-async fn exists_and_find_batch_single_query_mode_work_on_postgres() -> anyhow::Result<()> {
+async fn exists_and_pluck_work_on_postgres() -> anyhow::Result<()> {
     let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
     drop_table(&adapter, "qxpg_user_exists").await?;
     create_table(
@@ -312,7 +250,7 @@ async fn exists_and_find_batch_single_query_mode_work_on_postgres() -> anyhow::R
         ],
     )
     .await?;
-    let client = DinocoClient::new(Backend::Postgres(adapter)).with_query_mode(QueryMode::SingleQuery);
+    let client = DinocoClient::new(Backend::Postgres(adapter));
 
     insert_many::<PgExistsUser>()
         .values(vec![
@@ -327,18 +265,6 @@ async fn exists_and_find_batch_single_query_mode_work_on_postgres() -> anyhow::R
 
     let ids = find_many::<PgExistsUser>().order_by(|x| x.id.asc()).pluck(|x| x.id).execute(&client).await?;
     assert_eq!(ids, vec!["pg-user-1".to_string(), "pg-user-2".to_string()]);
-
-    let (mut users, grace) = find_batch((
-        find_many::<PgExistsUser>(),
-        find_first::<PgExistsUser>().where_(|x| x.name.eq("Grace")),
-    ))
-    .execute(&client)
-    .await?;
-    users.sort_by(|a, b| a.id.cmp(&b.id));
-
-    assert_eq!(users.len(), 2);
-    assert_eq!(users[0].name, "Ada");
-    assert_eq!(grace.map(|user| user.age), Some(40));
 
     Ok(())
 }

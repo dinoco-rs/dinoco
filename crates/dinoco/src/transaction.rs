@@ -458,10 +458,17 @@ pub(crate) fn active_transaction() -> anyhow::Result<ActiveTransaction> {
         .map_err(|_| anyhow::anyhow!("transaction context used outside its transaction closure"))
 }
 
-pub async fn transaction<T, F, Fut>(client: &DinocoClient, callback: F) -> Result<T, TransactionError>
+/// Runs `callback` inside a database transaction, committing when it returns
+/// `Ok` and rolling back when it returns `Err`.
+///
+/// The closure returns `Result<T, TransactionError<E>>`: `?` converts
+/// Dinoco's operation errors (and any `anyhow::Error`) into their variant,
+/// and `Err(TransactionError::Custom(error))` aborts with a domain error of
+/// type `E` that the caller matches like the others.
+pub async fn transaction<T, E, F, Fut>(client: &DinocoClient, callback: F) -> Result<T, TransactionError<E>>
 where
     F: FnOnce(TransactionContext) -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<T>>,
+    Fut: std::future::Future<Output = Result<T, TransactionError<E>>>,
 {
     let executor = client
         .backend
@@ -482,15 +489,12 @@ where
                 .map_err(|error| TransactionError::Commit(dinoco_engine::DatabaseError::new(error)))?;
             Ok(value)
         }
-        Err(error) => {
-            let source = TransactionError::from_operation(error);
-            match executor.rollback().await {
-                Ok(()) => Err(source),
-                Err(error) => Err(TransactionError::RollbackFailed {
-                    source: Box::new(source),
-                    rollback_error: dinoco_engine::DatabaseError::new(error),
-                }),
-            }
-        }
+        Err(source) => match executor.rollback().await {
+            Ok(()) => Err(source),
+            Err(error) => Err(TransactionError::RollbackFailed {
+                source: Box::new(source),
+                rollback_error: dinoco_engine::DatabaseError::new(error),
+            }),
+        },
     }
 }

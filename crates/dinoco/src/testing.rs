@@ -5,8 +5,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use dinoco_compiler::{ConfigValue, Schema};
 use dinoco_engine::{
-    Backend, DatabaseError, DinocoAdapter, DinocoClient, DinocoEntity, ExecutedQuery, QueryMode, SqliteAdapter,
-    TableHooks,
+    Backend, DatabaseError, DinocoAdapter, DinocoClient, DinocoEntity, ExecutedQuery, SqliteAdapter, TableHooks,
 };
 
 /// Creates a client over a fresh in-memory SQLite database with every table,
@@ -69,11 +68,7 @@ impl TestAmbient {
         }
 
         Ok(DinocoClient::new(Backend::Sqlite(adapter))
-            .with_logger(config_bool(&schema, "with_logger").unwrap_or(false))
-            .with_query_mode(match config_string(&schema, "query_mode") {
-                Some("single_query") => QueryMode::SingleQuery,
-                _ => QueryMode::BatchQuery,
-            }))
+            .with_logger(config_bool(&schema, "with_logger").unwrap_or(false)))
     }
 
     fn read_schema(&self) -> anyhow::Result<Schema> {
@@ -97,13 +92,6 @@ fn config_value<'a>(schema: &'a Schema, key: &str) -> Option<&'a ConfigValue> {
 fn config_bool(schema: &Schema, key: &str) -> Option<bool> {
     match config_value(schema, key)? {
         ConfigValue::Boolean(value) => Some(*value),
-        _ => None,
-    }
-}
-
-fn config_string<'a>(schema: &'a Schema, key: &str) -> Option<&'a str> {
-    match config_value(schema, key)? {
-        ConfigValue::String(value) | ConfigValue::Ident(value) => Some(value),
         _ => None,
     }
 }

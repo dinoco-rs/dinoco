@@ -63,19 +63,6 @@ impl Schema {
         self.workspaces().find(|workspace| workspace.name == name)
     }
 
-    /// How migrations are produced for this schema's effective config
-    /// (`config.migration_engine`, `automatic` unless set to `manual`).
-    pub fn migration_engine(&self) -> MigrationEngine {
-        let manual = self.config().is_some_and(|config| {
-            config.entries.iter().any(|entry| {
-                entry.key == "migration_engine"
-                    && matches!(&entry.value, ConfigValue::String(value) | ConfigValue::Ident(value) if value == "manual")
-            })
-        });
-
-        if manual { MigrationEngine::Manual } else { MigrationEngine::Automatic }
-    }
-
     /// Returns a schema whose effective config is the selected workspace.
     ///
     /// Models and enums are shared by every workspace. Consumers that operate on
@@ -92,16 +79,6 @@ impl Schema {
         config.workspaces.clear();
         Some(schema)
     }
-}
-
-/// Value of `config.migration_engine`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum MigrationEngine {
-    /// Dinoco diffs `schema.dinoco` and writes SQL migrations itself.
-    #[default]
-    Automatic,
-    /// Migrations are hand-written Rust in `dinoco/migrations/`.
-    Manual,
 }
 
 #[derive(Debug, Clone, PartialEq)]

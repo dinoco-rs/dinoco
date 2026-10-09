@@ -52,7 +52,7 @@ async fn transaction_closure_commits_and_rolls_back_with_typed_errors() -> anyho
             .update(|account| account.email.set("updated@dinoco.rs"))
             .execute(tx)
             .await?;
-        Ok(())
+        Ok::<_, TransactionError>(())
     })
     .await?;
     assert_eq!(
@@ -66,7 +66,7 @@ async fn transaction_closure_commits_and_rolls_back_with_typed_errors() -> anyho
     );
 
     let rolled_back = Account::new("account-rolled-back".to_string(), "rollback@dinoco.rs".to_string());
-    let result = transaction(&client, |tx| async move {
+    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
         insert_into::<Account>().value(&rolled_back).execute(tx).await?;
         find_and_update::<Account>()
             .where_(|account| account.id.eq("missing"))
@@ -87,7 +87,7 @@ async fn transaction_closure_commits_and_rolls_back_with_typed_errors() -> anyho
 
     let first = Account::new("account-first".to_string(), "duplicate@dinoco.rs".to_string());
     let duplicate = Account::new("account-duplicate".to_string(), "duplicate@dinoco.rs".to_string());
-    let result = transaction(&client, |tx| async move {
+    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
         insert_into::<Account>().value(&first).execute(tx).await?;
         insert_into::<Account>().value(&duplicate).execute(tx).await?;
         Ok(())
@@ -113,7 +113,7 @@ async fn transaction_closure_classifies_update_and_delete_errors_and_rolls_back(
     insert_many::<Account>().values([&first, &second]).execute(&client).await?;
 
     let update_session = AccountSession::new("session-before-update".to_string(), first.id.clone());
-    let result = transaction(&client, |tx| async move {
+    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
         insert_into::<AccountSession>().value(&update_session).execute(tx).await?;
         update::<Account>()
             .where_(|account| account.id.eq("account-update-second"))
@@ -147,7 +147,7 @@ async fn transaction_closure_classifies_update_and_delete_errors_and_rolls_back(
         .await?;
 
     let delete_session = AccountSession::new("session-before-delete".to_string(), first.id.clone());
-    let result = transaction(&client, |tx| async move {
+    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
         insert_into::<AccountSession>().value(&delete_session).execute(tx).await?;
         delete::<Account>().where_(|account| account.id.eq("account-update-first")).execute(tx).await?;
         Ok(())
@@ -167,6 +167,148 @@ async fn transaction_closure_classifies_update_and_delete_errors_and_rolls_back(
             .execute(&client)
             .await?
             .is_some()
+    );
+
+    drop(client);
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[derive(Debug, Entity)]
+#[dinoco(table_name = "transaction_business")]
+pub struct Business {
+    id: String,
+    balance: i64,
+    is_admin: bool,
+}
+
+#[derive(Debug, PartialEq)]
+enum RuntimeError {
+    WithoutPermission,
+}
+
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("the business is not allowed to withdraw")
+    }
+}
+
+impl std::error::Error for RuntimeError {}
+
+async fn withdraw(
+    client: &DinocoClient,
+    business_id: &str,
+    amount: i64,
+) -> Result<Business, TransactionError<RuntimeError>> {
+    transaction(client, |tx| async move {
+        let business = find_and_update::<Business>()
+            .where_(|business| business.id.eq(business_id))
+            .where_(|business| business.balance.gte(amount))
+            .update(|business| business.balance.decrement(amount))
+            .execute(tx)
+            .await?;
+
+        if !business.is_admin {
+            return Err(TransactionError::Custom(RuntimeError::WithoutPermission));
+        }
+
+        Ok(business)
+    })
+    .await
+}
+
+#[tokio::test]
+async fn transaction_closure_custom_errors_roll_back_and_match_like_the_others() -> anyhow::Result<()> {
+    let (client, path) = client("custom-errors").await?;
+    create_business_table(&client).await?;
+    insert_many::<Business>()
+        .values([
+            &Business::new("business-admin".to_string(), 100, true),
+            &Business::new("business-member".to_string(), 100, false),
+        ])
+        .execute(&client)
+        .await?;
+    let balance = |id: &'static str| {
+        let client = &client;
+        async move {
+            anyhow::Ok(
+                find_first::<Business>()
+                    .where_(|business| business.id.eq(id))
+                    .execute(client)
+                    .await?
+                    .expect("business")
+                    .balance,
+            )
+        }
+    };
+    let describe = |result: Result<Business, TransactionError<RuntimeError>>| match result {
+        Ok(business) => format!("withdrew, {} left", business.balance),
+        Err(TransactionError::Custom(RuntimeError::WithoutPermission)) => "forbidden".to_string(),
+        Err(TransactionError::AtomicUpdate(AtomicUpdateError::RowNotAffected)) => "insufficient balance".to_string(),
+        Err(other) => panic!("unexpected transaction error: {other}"),
+    };
+
+    assert_eq!(describe(withdraw(&client, "business-admin", 30).await), "withdrew, 70 left");
+    assert_eq!(balance("business-admin").await?, 70);
+
+    // The decrement already ran inside the transaction; the custom error rolls it back.
+    assert_eq!(describe(withdraw(&client, "business-member", 30).await), "forbidden");
+    assert_eq!(balance("business-member").await?, 100);
+
+    assert_eq!(describe(withdraw(&client, "business-admin", 1_000).await), "insufficient balance");
+    assert_eq!(balance("business-admin").await?, 70);
+
+    // A custom error displays as itself and survives `?` into `anyhow::Error`.
+    let error = withdraw(&client, "business-member", 10).await.expect_err("member cannot withdraw");
+    assert_eq!(error.to_string(), "the business is not allowed to withdraw");
+    let error = anyhow::Error::from(error);
+    assert!(matches!(
+        error.downcast_ref::<TransactionError<RuntimeError>>(),
+        Some(TransactionError::Custom(RuntimeError::WithoutPermission))
+    ));
+    assert_eq!(balance("business-member").await?, 100);
+
+    drop(client);
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[tokio::test]
+async fn transaction_closure_custom_errors_need_no_display_and_compose_with_map_err() -> anyhow::Result<()> {
+    #[derive(Debug, PartialEq)]
+    enum Denied {
+        Reserved(&'static str),
+    }
+
+    fn check_email(email: &str) -> Result<(), Denied> {
+        if email.ends_with("@reserved.dinoco.rs") { Err(Denied::Reserved("email domain")) } else { Ok(()) }
+    }
+
+    let (client, path) = client("custom-error-map-err").await?;
+
+    let reserved = Account::new("account-reserved".to_string(), "root@reserved.dinoco.rs".to_string());
+    let result = transaction(&client, |tx| async move {
+        insert_into::<Account>().value(&reserved).execute(tx).await?;
+        check_email(&reserved.email).map_err(TransactionError::Custom)?;
+        Ok(())
+    })
+    .await;
+    assert!(matches!(result, Err(TransactionError::Custom(Denied::Reserved("email domain")))));
+    assert!(
+        find_first::<Account>().where_(|account| account.id.eq("account-reserved")).execute(&client).await?.is_none()
+    );
+
+    let allowed = Account::new("account-allowed".to_string(), "ada@dinoco.rs".to_string());
+    let inserted = transaction(&client, |tx| async move {
+        insert_into::<Account>().value(&allowed).execute(tx).await?;
+        check_email(&allowed.email).map_err(TransactionError::Custom)?;
+        Ok(allowed.id)
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+    assert_eq!(inserted, "account-allowed");
+    assert!(
+        find_first::<Account>().where_(|account| account.id.eq("account-allowed")).execute(&client).await?.is_some()
     );
 
     drop(client);
@@ -207,19 +349,21 @@ async fn transaction_reads_see_uncommitted_writes_and_load_includes() -> anyhow:
         let lengths = find_many::<Post>().transform(|post| post.title.len()).execute(tx).await?;
         assert_eq!(lengths.iter().sum::<usize>(), "Engines".len() + "Analytical".len());
 
-        find_many::<Post>().order_by(|post| post.title.asc()).pluck(|post| post.title).execute(tx).await
+        Ok::<_, TransactionError>(
+            find_many::<Post>().order_by(|post| post.title.asc()).pluck(|post| post.title).execute(tx).await?,
+        )
     })
     .await?;
     assert_eq!(titles, ["Analytical", "Engines"]);
     assert_eq!(find_many::<Post>().execute(&client).await?.len(), 2);
 
     let author = Author::new("author-2".to_string(), "Grace".to_string());
-    let result: Result<(), _> = transaction(&client, |tx| async move {
+    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
         insert_into::<Author>().value(&author).execute(tx).await?;
         let visible = find_first::<Author>().where_(|author| author.id.eq("author-2")).execute(tx).await?;
         assert!(visible.is_some(), "a read inside the transaction sees its own insert");
 
-        anyhow::bail!("abort after reading")
+        Err(anyhow::anyhow!("abort after reading").into())
     })
     .await;
     assert!(matches!(result, Err(TransactionError::Operation(_))));
@@ -234,13 +378,27 @@ async fn transaction_reads_see_uncommitted_writes_and_load_includes() -> anyhow:
 async fn transaction_reads_reject_a_context_used_after_its_closure() -> anyhow::Result<()> {
     let (client, path) = client("leaked-reads").await?;
 
-    let leaked = transaction(&client, |tx| async move { Ok(tx) }).await?;
+    let leaked = transaction(&client, |tx| async move { Ok::<_, TransactionError>(tx) }).await?;
     let error = find_many::<Account>().execute(leaked).await.expect_err("context outside its closure");
     assert!(error.to_string().contains("outside its transaction closure"));
 
     drop(client);
     let _ = std::fs::remove_file(path);
     Ok(())
+}
+
+async fn create_business_table(client: &DinocoClient) -> anyhow::Result<()> {
+    let Backend::Sqlite(adapter) = &client.backend else { unreachable!("sqlite transaction test") };
+    create_table(
+        adapter,
+        "transaction_business",
+        vec![
+            primary(column("id", MigrationColumnType::String)),
+            column("balance", MigrationColumnType::Integer),
+            column("is_admin", MigrationColumnType::Boolean),
+        ],
+    )
+    .await
 }
 
 async fn create_blog_tables(client: &DinocoClient) -> anyhow::Result<()> {
