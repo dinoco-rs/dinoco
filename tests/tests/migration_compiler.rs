@@ -1,7 +1,8 @@
 use dinoco_engine::{
-    CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, DropIndexMigration, FindQuery,
-    InsertQuery, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex,
-    MigrationIndexKind, ReferentialAction, RenameTableMigration, SqliteAdapter,
+    CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoSqlCompiler,
+    DropIndexMigration, FindQuery, InsertQuery, MigrationColumn, MigrationColumnType, MigrationDefault,
+    MigrationForeignKey, MigrationIndex, MigrationIndexKind, MySqlAdapter, PostgresAdapter, ReferentialAction,
+    RenameTableMigration, SqliteAdapter,
 };
 
 #[tokio::test]
@@ -181,4 +182,60 @@ async fn sqlite_adapter_compiles_and_applies_indexes() -> anyhow::Result<()> {
     adapter.execute(&drop, &[]).await?;
 
     Ok(())
+}
+
+fn auth_method_values() -> Vec<String> {
+    vec!["PASSWORD".to_string(), "GOOGLE".to_string()]
+}
+
+fn auth_method_table() -> CreateTableMigration {
+    CreateTableMigration {
+        table: "account".to_string(),
+        if_not_exists: false,
+        columns: vec![MigrationColumn {
+            name: "auth_method".to_string(),
+            ty: MigrationColumnType::Enum { name: "AuthMethod".to_string(), values: auth_method_values() },
+            primary_key: false,
+            unique: false,
+            nullable: false,
+            default: None,
+        }],
+        foreign_keys: Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn sqlite_uses_text_with_a_check_constraint_for_enums() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let sql = adapter.compile_create_table_migration(auth_method_table());
+
+    assert!(sql.contains("auth_method TEXT CHECK (auth_method IN ('PASSWORD', 'GOOGLE')) NOT NULL"), "{sql}");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_uses_a_named_native_enum_type() -> anyhow::Result<()> {
+    // The PgBouncer constructor builds its pool lazily, so compiling SQL needs no server.
+    let adapter = PostgresAdapter::pgbouncer("postgres://postgres@localhost/compile_only").await?;
+
+    assert_eq!(
+        adapter.compile_create_enum_migration(CreateEnumMigration {
+            name: "AuthMethod".to_string(),
+            values: auth_method_values(),
+        }),
+        ["CREATE TYPE \"AuthMethod\" AS ENUM ('PASSWORD', 'GOOGLE');"]
+    );
+    let sql = adapter.compile_create_table_migration(auth_method_table());
+    assert!(sql.contains("auth_method \"AuthMethod\" NOT NULL"), "{sql}");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn mysql_uses_an_inline_native_enum() {
+    let adapter = MySqlAdapter::new("mysql://root@localhost/compile_only");
+    let sql = adapter.compile_create_table_migration(auth_method_table());
+
+    assert!(sql.contains("auth_method ENUM('PASSWORD', 'GOOGLE') NOT NULL"), "{sql}");
 }

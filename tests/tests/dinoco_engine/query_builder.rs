@@ -688,3 +688,63 @@ fn mysql_update_reload_keeps_relation_filters_unless_their_key_changes() {
     assert!(!reload.contains("Relation"), "{reload}");
     assert!(reload.contains("Eq(\"payout_id\""), "{reload}");
 }
+
+// What a MySQL `find_and_update` runs inside a transaction: the conditional
+// UPDATE, then, since MySQL has no RETURNING, a SELECT of the row by
+// `post_update_reload_conditions`.
+fn mysql_atomic_update(update: UpdateQuery) -> [(String, Vec<DinocoValue>); 2] {
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let reload = update.post_update_reload_conditions();
+    let (table, returning) = (update.table, update.returning.expect("returning projection"));
+
+    [
+        mysql.compile_update_query(UpdateQuery { returning: None, ..update }),
+        mysql.compile_find_query(FindQuery {
+            fields: returning,
+            from: table,
+            conditions: reload,
+            limit: 1,
+            skip: -1,
+            order_by: None,
+        }),
+    ]
+}
+
+#[tokio::test]
+async fn mysql_atomic_update_compiles_the_update_before_its_compatibility_read() {
+    let [(update_sql, _), (reload_sql, reload_params)] = mysql_atomic_update(UpdateQuery {
+        table: "business",
+        sets: vec![UpdateSet {
+            field: "balance",
+            value: DinocoValue::Integer(80),
+            operation: UpdateOperation::Decrement,
+        }],
+        conditions: vec![
+            FindWhere::Eq("id", DinocoValue::String("business-1".to_string())),
+            FindWhere::Gte("balance", DinocoValue::Integer(80)),
+        ],
+        returning: Some(&["id"]),
+    });
+
+    assert_eq!(update_sql, "UPDATE business SET balance = balance - ? WHERE id = ? AND balance >= ?");
+    assert_eq!(reload_sql, "SELECT id FROM business WHERE id = ? LIMIT ?");
+    assert_eq!(reload_params[0], DinocoValue::String("business-1".to_string()));
+}
+
+#[tokio::test]
+async fn mysql_atomic_update_reloads_a_changed_filter_by_its_new_set_value() {
+    let [(update_sql, _), (reload_sql, reload_params)] = mysql_atomic_update(UpdateQuery {
+        table: "document",
+        sets: vec![UpdateSet {
+            field: "body",
+            value: DinocoValue::String("updated body".to_string()),
+            operation: UpdateOperation::Set,
+        }],
+        conditions: vec![FindWhere::FullText(&["body"], DinocoValue::String("original".to_string()))],
+        returning: Some(&["id"]),
+    });
+
+    assert_eq!(update_sql, "UPDATE document SET body = ? WHERE MATCH (body) AGAINST (? IN NATURAL LANGUAGE MODE)");
+    assert_eq!(reload_sql, "SELECT id FROM document WHERE body = ? LIMIT ?");
+    assert_eq!(reload_params[0], DinocoValue::String("updated body".to_string()));
+}

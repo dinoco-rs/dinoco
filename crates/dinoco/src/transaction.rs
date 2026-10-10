@@ -461,11 +461,39 @@ pub(crate) fn active_transaction() -> anyhow::Result<ActiveTransaction> {
 /// Runs `callback` inside a database transaction, committing when it returns
 /// `Ok` and rolling back when it returns `Err`.
 ///
+/// The closure returns `anyhow::Result<T>`; Dinoco's operation errors keep
+/// their variant in the returned `TransactionError`, and any other error
+/// becomes `TransactionError::Operation`. To roll back with an error type of
+/// your own, use [`transaction_with_error`].
+pub async fn transaction<T, F, Fut>(client: &DinocoClient, callback: F) -> Result<T, TransactionError>
+where
+    F: FnOnce(TransactionContext) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    run_transaction(client, |tx| {
+        let operation = callback(tx);
+        async move { operation.await.map_err(TransactionError::from_operation) }
+    })
+    .await
+}
+
+/// Like [`transaction`], with a custom error type `E`.
+///
 /// The closure returns `Result<T, TransactionError<E>>`: `?` converts
 /// Dinoco's operation errors (and any `anyhow::Error`) into their variant,
 /// and `Err(TransactionError::Custom(error))` aborts with a domain error of
-/// type `E` that the caller matches like the others.
-pub async fn transaction<T, E, F, Fut>(client: &DinocoClient, callback: F) -> Result<T, TransactionError<E>>
+/// type `E` that the caller matches like the others. `E` comes first so it
+/// can be named at the call,
+/// `transaction_with_error::<RuntimeError, _>(&client, |tx| async move { ... })`,
+/// with `_` for the success type.
+pub async fn transaction_with_error<E, T>(
+    client: &DinocoClient,
+    callback: impl AsyncFnOnce(TransactionContext) -> Result<T, TransactionError<E>>,
+) -> Result<T, TransactionError<E>> {
+    run_transaction(client, |tx| callback(tx)).await
+}
+
+async fn run_transaction<T, E, F, Fut>(client: &DinocoClient, callback: F) -> Result<T, TransactionError<E>>
 where
     F: FnOnce(TransactionContext) -> Fut,
     Fut: std::future::Future<Output = Result<T, TransactionError<E>>>,

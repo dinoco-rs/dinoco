@@ -200,12 +200,13 @@ pub enum AtomicUpdateError {
     Database(#[source] DatabaseError),
 }
 
-/// Failures produced by `transaction(...)`.
+/// Failures produced by `transaction(...)` and `transaction_with_error(...)`.
 ///
-/// `E` is the closure's own error type: returning
-/// `Err(TransactionError::Custom(error))` rolls the transaction back and hands
-/// `error` to the caller, to be matched like any other variant. It defaults to
-/// [`Infallible`] for closures that never return a custom error.
+/// `E` is the custom error type of `transaction_with_error`: returning
+/// `Err(TransactionError::Custom(error))` from its closure rolls the
+/// transaction back and hands `error` to the caller, to be matched like any
+/// other variant. `transaction(...)` has no custom errors, so its result uses
+/// the default, [`Infallible`].
 #[derive(Debug)]
 pub enum TransactionError<E = Infallible> {
     Begin(DatabaseError),

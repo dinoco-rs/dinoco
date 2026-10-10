@@ -1,7 +1,7 @@
-use dinoco_vscode::completion::complete;
+use dinoco_vscode::completion::{ImportCompletionContext, complete, import_completion_context};
 use dinoco_vscode::diagnostics::analyze;
 use dinoco_vscode::document::DocumentIndex;
-use dinoco_vscode::tower_lsp::lsp_types::{CompletionResponse, NumberOrString, Position};
+use dinoco_vscode::tower_lsp::lsp_types::{CompletionResponse, NumberOrString, Position, Range};
 
 #[test]
 fn schema_completion_exposes_standard_and_fulltext_indexes() {
@@ -137,5 +137,88 @@ fn diagnostics_require_a_now_default_for_updated_at() {
         diagnostics.iter().any(|item| item.code == Some(NumberOrString::String("dinoco.schema".to_string()))
             && item.message.contains("@updated_at on `Article.updated_at` requires @default(now())")),
         "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn suggests_target_fields_inside_references() {
+    let source = r#"model User { id String @id }
+model Token {
+    user User? @relation(fields: [user_id], references: [i
+    user_id String?
+}"#;
+    let index = DocumentIndex::new(source);
+    let response = complete(source, &index, Position::new(2, 65));
+    let CompletionResponse::Array(items) = response else {
+        panic!("array response");
+    };
+    assert!(items.iter().any(|item| item.label == "id"));
+}
+
+#[test]
+fn suggests_enum_defaults() {
+    let source = "enum Role { USER ADMIN }\nmodel User { role Role @default( }";
+    let index = DocumentIndex::new(source);
+    let cursor = source.lines().nth(1).expect("model line").encode_utf16().count() as u32 - 1;
+    let response = complete(source, &index, Position::new(1, cursor));
+    let CompletionResponse::Array(items) = response else {
+        panic!("array response");
+    };
+    assert!(items.iter().any(|item| item.label == "USER"));
+}
+
+#[test]
+fn suggests_main_schema_config_imports() {
+    let source = "config {\n    \n}";
+    let index = DocumentIndex::new(source);
+    let response = complete(source, &index, Position::new(1, 4));
+    let CompletionResponse::Array(items) = response else {
+        panic!("array response");
+    };
+
+    let imports = items.iter().find(|item| item.label == "imports").expect("imports completion");
+    assert_eq!(imports.insert_text.as_deref(), Some("imports = [\"${1:models/account.dinoco}\"]"));
+}
+
+#[test]
+fn imported_declarations_participate_in_model_type_completion() {
+    let source = "model Account {\n    session \n}";
+    let local = DocumentIndex::new(source);
+    let imported = DocumentIndex::new("model Session { id String @id }\nenum SessionState { ACTIVE EXPIRED }");
+    let semantic = local.with_external_declarations(imported.blocks);
+    let CompletionResponse::Array(items) = complete(source, &semantic, Position::new(1, 12)) else {
+        panic!("completion array");
+    };
+
+    assert!(items.iter().any(|item| item.label == "Session"));
+    assert!(items.iter().any(|item| item.label == "SessionState"));
+}
+
+#[test]
+fn recognizes_symbol_completion_only_with_a_complete_import_path() {
+    let source = "import {  } from \"./entities.dinoco\"";
+    assert_eq!(
+        import_completion_context(source, Position::new(0, 9)),
+        Some(ImportCompletionContext::Symbols { path: Some("./entities.dinoco".to_string()) })
+    );
+
+    let incomplete = "import {  } from \"./missing";
+    assert_eq!(
+        import_completion_context(incomplete, Position::new(0, 9)),
+        Some(ImportCompletionContext::Symbols { path: None })
+    );
+}
+
+#[test]
+fn recognizes_import_path_completion_ranges() {
+    let source = "import { Account } from \"./ent\"";
+    let context = import_completion_context(source, Position::new(0, 30)).expect("import path context");
+    assert_eq!(
+        context,
+        ImportCompletionContext::Path {
+            fragment: "./ent".to_string(),
+            replace: Range::new(Position::new(0, 25), Position::new(0, 30)),
+            quoted: true,
+        }
     );
 }

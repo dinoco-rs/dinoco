@@ -1193,26 +1193,3 @@ impl Placeholder {
         format!("${}", self.index)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn postgres_uses_a_named_native_enum_type() {
-        assert_eq!(
-            compile_create_enum_migration(CreateEnumMigration {
-                name: "AuthMethod".to_string(),
-                values: vec!["PASSWORD".to_string(), "GOOGLE".to_string()],
-            }),
-            ["CREATE TYPE \"AuthMethod\" AS ENUM ('PASSWORD', 'GOOGLE');"]
-        );
-        assert_eq!(
-            migration_type(&MigrationColumnType::Enum {
-                name: "AuthMethod".to_string(),
-                values: vec!["PASSWORD".to_string(), "GOOGLE".to_string()],
-            }),
-            "\"AuthMethod\""
-        );
-    }
-}

@@ -895,29 +895,3 @@ fn is_reserved_identifier(identifier: &str) -> bool {
             | "check"
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sqlite_uses_text_with_a_check_constraint_for_enums() {
-        let sql = compile_migration_column(
-            &MigrationColumn {
-                name: "auth_method".to_string(),
-                ty: MigrationColumnType::Enum {
-                    name: "AuthMethod".to_string(),
-                    values: vec!["PASSWORD".to_string(), "GOOGLE".to_string()],
-                },
-                primary_key: false,
-                unique: false,
-                nullable: false,
-                default: None,
-            },
-            DatabaseDialect::Sqlite,
-            true,
-        );
-
-        assert_eq!(sql, "auth_method TEXT CHECK (auth_method IN ('PASSWORD', 'GOOGLE')) NOT NULL");
-    }
-}

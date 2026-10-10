@@ -1,10 +1,12 @@
 use dinoco::{
-    Entity, EntityExtend, TransactionError, count, find_first, find_many, insert_into, insert_many, transaction, update,
+    Entity, EntityExtend, TransactionError, count, find_first, find_many, insert_into, insert_many, transaction,
+    transaction_with_error, update,
 };
 use dinoco_engine::{
-    Backend, CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler,
-    MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex, MigrationIndexKind,
-    MySqlAdapter, PostgresAdapter, ReferentialAction, SqliteAdapter,
+    Backend, CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler, DinocoValue,
+    FindWhere, MigrationColumn, MigrationColumnType, MigrationDefault, MigrationForeignKey, MigrationIndex,
+    MigrationIndexKind, MySqlAdapter, PostgresAdapter, ReferentialAction, SingleIdRow, SqliteAdapter,
+    TransactionCommand, UpdateOperation, UpdateQuery, UpdateSet,
 };
 use dinoco_tests::{column, create_table, default, drop_table, nullable, primary};
 
@@ -231,6 +233,115 @@ async fn postgres_serializes_and_decodes_utc_datetime_for_timestamp_columns() ->
     assert_eq!(changed.verification_day, updated.date_naive());
     assert_eq!(changed.payload, updated_payload);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_binds_enum_and_null_parameters_to_native_enum_columns() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
+    let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
+    adapter.execute("DROP TABLE IF EXISTS adapter_postgres_enum_param", &[]).await?;
+    adapter.execute("DROP TYPE IF EXISTS \"AdapterAuthMethod\"", &[]).await?;
+    adapter.execute("CREATE TYPE \"AdapterAuthMethod\" AS ENUM ('PASSWORD', 'GOOGLE')", &[]).await?;
+    adapter
+        .execute(
+            "CREATE TABLE adapter_postgres_enum_param (id BIGINT PRIMARY KEY, method \"AdapterAuthMethod\" NOT NULL, fallback \"AdapterAuthMethod\")",
+            &[],
+        )
+        .await?;
+
+    adapter
+        .execute(
+            "INSERT INTO adapter_postgres_enum_param (id, method, fallback) VALUES (1, $1, $2)",
+            &[DinocoValue::Enum("AdapterAuthMethod".to_string(), "GOOGLE".to_string()), DinocoValue::Null],
+        )
+        .await?;
+    let stored: Vec<SingleIdRow> = adapter
+        .query("SELECT id FROM adapter_postgres_enum_param WHERE method = 'GOOGLE' AND fallback IS NULL", &[])
+        .await?;
+    assert_eq!(stored.len(), 1);
+
+    adapter.execute("DROP TABLE adapter_postgres_enum_param", &[]).await?;
+    adapter.execute("DROP TYPE \"AdapterAuthMethod\"", &[]).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_binds_datetime_parameters_to_timestamp_and_timestamptz_but_not_date() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
+    let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
+    adapter.execute("DROP TABLE IF EXISTS adapter_postgres_datetime_param", &[]).await?;
+    adapter
+        .execute(
+            "CREATE TABLE adapter_postgres_datetime_param (id BIGINT PRIMARY KEY, plain TIMESTAMP, zoned TIMESTAMPTZ, day DATE)",
+            &[],
+        )
+        .await?;
+    let value = DinocoValue::DateTime(
+        dinoco::chrono::DateTime::from_timestamp(1_700_000_000, 123_456_000).expect("valid timestamp"),
+    );
+
+    adapter
+        .execute(
+            "INSERT INTO adapter_postgres_datetime_param (id, plain, zoned) VALUES (1, $1, $2)",
+            &[value.clone(), value.clone()],
+        )
+        .await?;
+    let stored: Vec<SingleIdRow> = adapter
+        .query(
+            "SELECT id FROM adapter_postgres_datetime_param WHERE plain = $1 AND zoned = $2",
+            &[value.clone(), value.clone()],
+        )
+        .await?;
+    assert_eq!(stored.len(), 1);
+    assert!(adapter.execute("UPDATE adapter_postgres_datetime_param SET day = $1", &[value]).await.is_err());
+
+    adapter.execute("DROP TABLE adapter_postgres_datetime_param", &[]).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn mysql_atomic_update_returning_reloads_the_row_by_the_value_it_set() -> anyhow::Result<()> {
+    let _guard = MYSQL_TEST_LOCK.lock().await;
+    let adapter = MySqlAdapter::new(MYSQL_URL);
+    adapter.execute("DROP TABLE IF EXISTS adapter_mysql_atomic_order", &[]).await?;
+    adapter
+        .execute(
+            "CREATE TABLE adapter_mysql_atomic_order (id VARCHAR(64) PRIMARY KEY, status VARCHAR(32) NOT NULL, balance BIGINT NOT NULL)",
+            &[],
+        )
+        .await?;
+    adapter.execute("INSERT INTO adapter_mysql_atomic_order VALUES ('order-1', 'pending', 100)", &[]).await?;
+
+    // Once updated the row no longer matches `status = 'pending'`, so MySQL's
+    // compatibility read has to find it by the status the UPDATE just set.
+    let executor = Backend::Mysql(MySqlAdapter::new(MYSQL_URL)).begin_transaction().await?;
+    let rows: Vec<SingleIdRow> = executor
+        .execute(TransactionCommand::atomic_update_returning::<SingleIdRow>(UpdateQuery {
+            table: "adapter_mysql_atomic_order",
+            sets: vec![
+                UpdateSet {
+                    field: "status",
+                    value: DinocoValue::String("paid".to_string()),
+                    operation: UpdateOperation::Set,
+                },
+                UpdateSet { field: "balance", value: DinocoValue::Integer(80), operation: UpdateOperation::Decrement },
+            ],
+            conditions: vec![
+                FindWhere::Eq("status", DinocoValue::String("pending".to_string())),
+                FindWhere::Gte("balance", DinocoValue::Integer(80)),
+            ],
+            returning: Some(&["id"]),
+        }))
+        .await?;
+    executor.commit().await?;
+    assert_eq!(rows.into_iter().map(|row| row.id).collect::<Vec<_>>(), [DinocoValue::String("order-1".to_string())]);
+
+    let paid: Vec<SingleIdRow> =
+        adapter.query("SELECT id FROM adapter_mysql_atomic_order WHERE status = 'paid' AND balance = 20", &[]).await?;
+    assert_eq!(paid.len(), 1);
+
+    adapter.execute("DROP TABLE adapter_mysql_atomic_order", &[]).await?;
     Ok(())
 }
 
@@ -1141,7 +1252,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     let account = TransactionAccount::new("committed".to_string(), "commit@dinoco.rs".to_string());
     transaction(&client, |tx| async move {
         insert_into::<TransactionAccount>().values(&account).execute(tx).await?;
-        Ok::<_, TransactionError>(())
+        Ok(())
     })
     .await?;
     assert_eq!(
@@ -1163,7 +1274,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
         transaction(&client, |tx| async move {
             insert_into::<TransactionAccount>().values(&first).execute(tx).await?;
             insert_into::<TransactionAccount>().values(&duplicate).execute(tx).await?;
-            Ok::<_, TransactionError>(())
+            Ok(())
         })
         .await
         .is_err()
@@ -1185,7 +1296,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
             .update(|item| item.system_id.connect(&system_id))
             .execute(tx)
             .await?;
-        Ok::<_, TransactionError>(())
+        Ok(())
     })
     .await?;
     let loaded = find_many::<AdapterTransactionBusiness>()
@@ -1204,7 +1315,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
             .update(|item| item.system_id.connect(&system_id))
             .execute(tx)
             .await?;
-        Ok::<_, TransactionError>(())
+        Ok(())
     })
     .await;
     assert!(duplicate.is_err());
@@ -1225,7 +1336,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
             .update(|item| item.system_id.disconnect(&system_id))
             .execute(tx)
             .await?;
-        Ok::<_, TransactionError>(())
+        Ok(())
     })
     .await?;
     let loaded = find_many::<AdapterTransactionBusiness>()
@@ -1247,7 +1358,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
     transaction(&client, |tx| async move {
         insert_into::<AdapterTransactionSystem>().values(&finance).execute(tx).await?;
         insert_many::<AdapterTransactionSystem>().values(&extra_systems).execute(tx).await?;
-        Ok::<_, TransactionError>(())
+        Ok(())
     })
     .await?;
     let loaded = find_many::<AdapterTransactionBusiness>()
@@ -1262,7 +1373,7 @@ async fn run_transactions(client: DinocoClient) -> anyhow::Result<()> {
         Blocked,
     }
     let blocked = TransactionAccount::new("blocked".to_string(), "blocked@dinoco.rs".to_string());
-    let result: Result<(), TransactionError<Rejected>> = transaction(&client, |tx| async move {
+    let result = transaction_with_error::<Rejected, ()>(&client, |tx| async move {
         insert_into::<TransactionAccount>().values(&blocked).execute(tx).await?;
         Err(TransactionError::Custom(Rejected::Blocked))
     })

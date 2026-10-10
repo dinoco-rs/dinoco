@@ -81,7 +81,8 @@ fn database_connection_error_context(config: &RuntimeConfig) -> String {
 
 /// Hides the userinfo (`user:password@`) segment of a connection URL so
 /// credentials never end up in terminal output, logs, or bug reports.
-fn redact_database_url(url: &str) -> String {
+#[doc(hidden)]
+pub fn redact_database_url(url: &str) -> String {
     let Some(scheme_end) = url.find("://") else {
         return url.to_string();
     };
@@ -2022,19 +2023,4 @@ where
         }
     }
     Ok(enums)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn redact_database_url_hides_credentials_but_keeps_host_and_database() {
-        assert_eq!(
-            redact_database_url("postgresql://app_user:s3cret@db.internal:5432/app"),
-            "postgresql://***@db.internal:5432/app"
-        );
-        assert_eq!(redact_database_url("file:./dinoco/dev.sqlite"), "file:./dinoco/dev.sqlite");
-        assert_eq!(redact_database_url("not a url"), "not a url");
-    }
 }

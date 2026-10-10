@@ -10,8 +10,8 @@
 use std::future::Future;
 
 use dinoco::{
-    DinocoEnum, Entity, FindWhere, TransactionError, WhereComplex, count, delete, delete_many, exists, find_and_update,
-    find_first, find_many, insert_many, transaction, update, update_many,
+    DinocoEnum, Entity, FindWhere, WhereComplex, count, delete, delete_many, exists, find_and_update, find_first,
+    find_many, insert_many, transaction, update, update_many,
 };
 use dinoco_engine::{
     Backend, CreateEnumMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler, DinocoValue, DropEnumMigration,
@@ -560,13 +560,11 @@ async fn transactions(client: DinocoClient) -> anyhow::Result<()> {
             .execute(tx)
             .await?;
 
-        Ok::<_, TransactionError>(
-            find_many::<Transaction>()
-                .where_(|t| t.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)))
-                .where_(|t| t.amount.gt(1000))
-                .execute(tx)
-                .await?,
-        )
+        Ok(find_many::<Transaction>()
+            .where_(|t| t.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)))
+            .where_(|t| t.amount.gt(1000))
+            .execute(tx)
+            .await?)
     })
     .await?;
     assert_eq!(ids(&pix, |transaction| &transaction.id), ["t1"]);

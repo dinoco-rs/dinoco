@@ -997,3 +997,44 @@ fn compile_rejects_invalid_updated_at_fields() {
     .expect_err("composite primary key");
     assert!(error.message.contains("cannot be used on primary key field `Event.at`"), "{error}");
 }
+
+#[test]
+fn compiles_schema_model() {
+    let schema = parse(
+        r#"
+            config {
+                database = "postgresql"
+                database_url = env("DATABASE_URL")
+                read_replicas = [env("DATABASE_URL"), env("READ_DATABASE_URL")]
+            }
+
+            enum Status {
+                Active
+                Canceled
+            }
+
+            model User {
+                id      String  @id @default(uuid())
+                email   String
+                status  Status
+                tokens  Token[]
+            }
+
+            model Token {
+                id       String  @id @default(uuid())
+                user     User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+                user_id  String?
+            }
+            "#,
+    )
+    .expect("schema should compile");
+
+    assert_eq!(schema.config().expect("config").entries.len(), 3);
+    assert_eq!(schema.enums().count(), 1);
+    assert_eq!(schema.models().count(), 2);
+
+    let token = schema.models().find(|model| model.name == "Token").expect("token");
+    let user = token.fields.iter().find(|field| field.name == "user").expect("user");
+    assert!(user.ty.optional);
+    assert!(user.attributes.iter().any(|attribute| attribute.name == "relation"));
+}

@@ -1,6 +1,7 @@
 use dinoco::{
-    AtomicUpdateError, CreateError, DatabaseConstraintError, Entity, TransactionContext, TransactionError, count, delete,
-    delete_many, find_and_update, find_first, find_many, insert_into, insert_many, transaction, update, update_many,
+    AtomicUpdateError, CreateError, DatabaseConstraintError, Entity, TransactionContext, TransactionError, count,
+    delete, delete_many, find_and_update, find_first, find_many, insert_into, insert_many, transaction,
+    transaction_with_error, update, update_many,
 };
 use dinoco_engine::{Backend, DinocoAdapter, DinocoClient, MigrationColumnType, SqliteAdapter};
 use dinoco_tests::{column, create_table, nullable, primary};
@@ -52,7 +53,7 @@ async fn transaction_closure_commits_and_rolls_back_with_typed_errors() -> anyho
             .update(|account| account.email.set("updated@dinoco.rs"))
             .execute(tx)
             .await?;
-        Ok::<_, TransactionError>(())
+        Ok(())
     })
     .await?;
     assert_eq!(
@@ -66,7 +67,7 @@ async fn transaction_closure_commits_and_rolls_back_with_typed_errors() -> anyho
     );
 
     let rolled_back = Account::new("account-rolled-back".to_string(), "rollback@dinoco.rs".to_string());
-    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
+    let result = transaction(&client, |tx| async move {
         insert_into::<Account>().value(&rolled_back).execute(tx).await?;
         find_and_update::<Account>()
             .where_(|account| account.id.eq("missing"))
@@ -87,7 +88,7 @@ async fn transaction_closure_commits_and_rolls_back_with_typed_errors() -> anyho
 
     let first = Account::new("account-first".to_string(), "duplicate@dinoco.rs".to_string());
     let duplicate = Account::new("account-duplicate".to_string(), "duplicate@dinoco.rs".to_string());
-    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
+    let result = transaction(&client, |tx| async move {
         insert_into::<Account>().value(&first).execute(tx).await?;
         insert_into::<Account>().value(&duplicate).execute(tx).await?;
         Ok(())
@@ -113,7 +114,7 @@ async fn transaction_closure_classifies_update_and_delete_errors_and_rolls_back(
     insert_many::<Account>().values([&first, &second]).execute(&client).await?;
 
     let update_session = AccountSession::new("session-before-update".to_string(), first.id.clone());
-    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
+    let result = transaction(&client, |tx| async move {
         insert_into::<AccountSession>().value(&update_session).execute(tx).await?;
         update::<Account>()
             .where_(|account| account.id.eq("account-update-second"))
@@ -147,7 +148,7 @@ async fn transaction_closure_classifies_update_and_delete_errors_and_rolls_back(
         .await?;
 
     let delete_session = AccountSession::new("session-before-delete".to_string(), first.id.clone());
-    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
+    let result = transaction(&client, |tx| async move {
         insert_into::<AccountSession>().value(&delete_session).execute(tx).await?;
         delete::<Account>().where_(|account| account.id.eq("account-update-first")).execute(tx).await?;
         Ok(())
@@ -200,7 +201,7 @@ async fn withdraw(
     business_id: &str,
     amount: i64,
 ) -> Result<Business, TransactionError<RuntimeError>> {
-    transaction(client, |tx| async move {
+    transaction_with_error(client, |tx| async move {
         let business = find_and_update::<Business>()
             .where_(|business| business.id.eq(business_id))
             .where_(|business| business.balance.gte(amount))
@@ -274,6 +275,71 @@ async fn transaction_closure_custom_errors_roll_back_and_match_like_the_others()
 }
 
 #[tokio::test]
+async fn transaction_turbofish_names_the_custom_error() -> anyhow::Result<()> {
+    let (client, path) = client("custom-error-turbofish").await?;
+    create_business_table(&client).await?;
+    insert_many::<Business>()
+        .values([
+            &Business::new("business-turbofish-admin".to_string(), 100, true),
+            &Business::new("business-turbofish-member".to_string(), 100, false),
+        ])
+        .execute(&client)
+        .await?;
+
+    // Only the turbofish names the error: no binding type, no `Ok::<_, ...>`.
+    let result = transaction_with_error::<RuntimeError, _>(&client, |tx| async move {
+        let business = find_and_update::<Business>()
+            .where_(|business| business.id.eq("business-turbofish-member"))
+            .update(|business| business.balance.decrement(30))
+            .execute(tx)
+            .await?;
+
+        if !business.is_admin {
+            return Err(TransactionError::Custom(RuntimeError::WithoutPermission));
+        }
+
+        Ok((business.id, business.balance))
+    })
+    .await;
+    assert!(matches!(result, Err(TransactionError::Custom(RuntimeError::WithoutPermission))));
+    assert_eq!(
+        find_first::<Business>()
+            .where_(|business| business.id.eq("business-turbofish-member"))
+            .execute(&client)
+            .await?
+            .expect("member")
+            .balance,
+        100
+    );
+
+    // A tuple result goes through `.await?` into `anyhow::Error`, with `String` as the custom error.
+    let (id, balance) = transaction_with_error::<String, _>(&client, |tx| async move {
+        let business = find_and_update::<Business>()
+            .where_(|business| business.id.eq("business-turbofish-admin"))
+            .update(|business| business.balance.decrement(30))
+            .execute(tx)
+            .await?;
+        let owner = find_first::<Account>()
+            .where_(|account| account.id.eq("missing"))
+            .execute(tx)
+            .await?
+            .map(|account| account.id)
+            .unwrap_or_default();
+        if !owner.is_empty() {
+            return Err(TransactionError::Custom(format!("unexpected owner {owner}")));
+        }
+
+        Ok((business.id, business.balance))
+    })
+    .await?;
+    assert_eq!((id.as_str(), balance), ("business-turbofish-admin", 70));
+
+    drop(client);
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[tokio::test]
 async fn transaction_closure_custom_errors_need_no_display_and_compose_with_map_err() -> anyhow::Result<()> {
     #[derive(Debug, PartialEq)]
     enum Denied {
@@ -287,7 +353,7 @@ async fn transaction_closure_custom_errors_need_no_display_and_compose_with_map_
     let (client, path) = client("custom-error-map-err").await?;
 
     let reserved = Account::new("account-reserved".to_string(), "root@reserved.dinoco.rs".to_string());
-    let result = transaction(&client, |tx| async move {
+    let result = transaction_with_error(&client, |tx| async move {
         insert_into::<Account>().value(&reserved).execute(tx).await?;
         check_email(&reserved.email).map_err(TransactionError::Custom)?;
         Ok(())
@@ -299,7 +365,7 @@ async fn transaction_closure_custom_errors_need_no_display_and_compose_with_map_
     );
 
     let allowed = Account::new("account-allowed".to_string(), "ada@dinoco.rs".to_string());
-    let inserted = transaction(&client, |tx| async move {
+    let inserted = transaction_with_error(&client, |tx| async move {
         insert_into::<Account>().value(&allowed).execute(tx).await?;
         check_email(&allowed.email).map_err(TransactionError::Custom)?;
         Ok(allowed.id)
@@ -349,21 +415,19 @@ async fn transaction_reads_see_uncommitted_writes_and_load_includes() -> anyhow:
         let lengths = find_many::<Post>().transform(|post| post.title.len()).execute(tx).await?;
         assert_eq!(lengths.iter().sum::<usize>(), "Engines".len() + "Analytical".len());
 
-        Ok::<_, TransactionError>(
-            find_many::<Post>().order_by(|post| post.title.asc()).pluck(|post| post.title).execute(tx).await?,
-        )
+        Ok(find_many::<Post>().order_by(|post| post.title.asc()).pluck(|post| post.title).execute(tx).await?)
     })
     .await?;
     assert_eq!(titles, ["Analytical", "Engines"]);
     assert_eq!(find_many::<Post>().execute(&client).await?.len(), 2);
 
     let author = Author::new("author-2".to_string(), "Grace".to_string());
-    let result: Result<(), TransactionError> = transaction(&client, |tx| async move {
+    let result: Result<(), _> = transaction(&client, |tx| async move {
         insert_into::<Author>().value(&author).execute(tx).await?;
         let visible = find_first::<Author>().where_(|author| author.id.eq("author-2")).execute(tx).await?;
         assert!(visible.is_some(), "a read inside the transaction sees its own insert");
 
-        Err(anyhow::anyhow!("abort after reading").into())
+        anyhow::bail!("abort after reading")
     })
     .await;
     assert!(matches!(result, Err(TransactionError::Operation(_))));
@@ -378,7 +442,7 @@ async fn transaction_reads_see_uncommitted_writes_and_load_includes() -> anyhow:
 async fn transaction_reads_reject_a_context_used_after_its_closure() -> anyhow::Result<()> {
     let (client, path) = client("leaked-reads").await?;
 
-    let leaked = transaction(&client, |tx| async move { Ok::<_, TransactionError>(tx) }).await?;
+    let leaked = transaction(&client, |tx| async move { Ok(tx) }).await?;
     let error = find_many::<Account>().execute(leaked).await.expect_err("context outside its closure");
     assert!(error.to_string().contains("outside its transaction closure"));
 
@@ -486,4 +550,8 @@ fn public_operation_futures_are_send(client: &DinocoClient) {
     assert_send(delete::<Account>().where_(|item| item.id.eq("account-1")).returning::<Account>().execute(client));
     assert_send(delete_many::<Account>().execute(client));
     assert_send(delete_many::<Account>().returning::<Account>().execute(client));
+    assert_send(transaction(client, |tx| async move { find_many::<Account>().execute(tx).await }));
+    assert_send(transaction_with_error::<RuntimeError, _>(client, |tx| async move {
+        Ok(find_many::<Account>().execute(tx).await?)
+    }));
 }

@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use dinoco::{
     AtomicUpdateError, Backend, CreateError, DatabaseConstraintError, DinocoAdapter, DinocoClient, DinocoEntity,
-    Entity, TestAmbient, TransactionError, count, delete, delete_many, find_and_update, find_first, find_many,
-    insert_into, insert_many, remove_test_methods, setup_test_methods, transaction, update, update_many,
+    Entity, TestAmbient, count, delete, delete_many, find_and_update, find_first, find_many, insert_into, insert_many,
+    remove_test_methods, setup_test_methods, transaction, update, update_many,
 };
 
 #[derive(Debug, Clone, Entity)]
@@ -174,12 +174,12 @@ async fn test_ambient_shares_one_database_between_pooled_connections_and_transac
 
     transaction(&client, |tx| async move {
         insert_into::<Account>().values(&account("account-1", "ada@dinoco.rs")).execute(tx).await?;
-        Ok::<_, TransactionError>(())
+        Ok(())
     })
     .await?;
-    let rolled_back: Result<(), TransactionError> = transaction(&client, |tx| async move {
+    let rolled_back: Result<(), _> = transaction(&client, |tx| async move {
         insert_into::<Account>().values(&account("account-2", "grace@dinoco.rs")).execute(tx).await?;
-        Err(anyhow::anyhow!("roll back").into())
+        anyhow::bail!("roll back")
     })
     .await;
     assert!(rolled_back.is_err());
@@ -476,12 +476,12 @@ async fn test_methods_observe_transactions_including_rolled_back_work() -> anyho
             .execute(tx)
             .await?;
         find_first::<Account>().includes(|account| account.sessions()).execute(tx).await?;
-        Ok::<_, TransactionError>(())
+        Ok(())
     })
     .await?;
-    let _: Result<(), TransactionError> = transaction(&client, |tx| async move {
+    let _: Result<(), _> = transaction(&client, |tx| async move {
         delete::<Session>().where_(|session| session.id.eq("session-2")).execute(tx).await?;
-        Err(anyhow::anyhow!("roll back the delete").into())
+        anyhow::bail!("roll back the delete")
     })
     .await;
 
