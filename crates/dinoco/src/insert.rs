@@ -8,6 +8,8 @@ use dinoco_engine::{
     DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery, PluckValue,
 };
 
+use crate::single_field;
+
 pub type Uuid = String;
 pub type Snowflake = i64;
 
@@ -18,6 +20,12 @@ pub trait DinocoInsertable: DinocoEntity + Sized {
 
     fn dinoco_insert_values(&self) -> Vec<DinocoValue>;
     fn dinoco_insert_identity(&self) -> Vec<FindWhere>;
+
+    /// [`dinoco_insert_values`](Self::dinoco_insert_values), moving the
+    /// values out of the model instead of copying them.
+    fn dinoco_into_insert_values(self) -> Vec<DinocoValue> {
+        self.dinoco_insert_values()
+    }
 }
 
 pub trait InsertPayload<M>: Sync
@@ -27,6 +35,15 @@ where
     const HAS_NESTED: bool = false;
 
     fn dinoco_insert_model(&self) -> M;
+
+    /// [`dinoco_insert_model`](Self::dinoco_insert_model), consuming the
+    /// payload so an owned model can be inserted without being copied.
+    fn dinoco_into_insert_model(self) -> M
+    where
+        Self: Sized,
+    {
+        self.dinoco_insert_model()
+    }
 
     fn dinoco_insert_nested<'a, C>(&'a self, _parent: &'a M, _client: &'a C) -> InsertNestedFuture<'a>
     where
@@ -153,6 +170,67 @@ where
     client.insert_returning::<S>(query).await
 }
 
+/// Inserts payloads without nested relations, moving each one into its row.
+pub(crate) async fn execute_insert_owned<M, V, C>(values: Vec<V>, client: &C) -> anyhow::Result<usize>
+where
+    M: DinocoInsertable,
+    V: InsertPayload<M>,
+    C: crate::MutationExecutor,
+{
+    if values.is_empty() {
+        return Ok(0);
+    }
+
+    client.insert(owned_insert_query::<M, V>(values, None)).await
+}
+
+/// [`execute_insert_owned`] returning the inserted rows projected onto `S`.
+pub(crate) async fn execute_insert_owned_returning<M, V, S, C>(values: Vec<V>, client: &C) -> anyhow::Result<Vec<S>>
+where
+    M: DinocoInsertable,
+    V: InsertPayload<M>,
+    S: DinocoProjection<M> + DinocoRowModel,
+    C: crate::MutationExecutor,
+{
+    if values.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    client.insert_returning::<S>(owned_insert_query::<M, V>(values, Some(S::FIELDS))).await
+}
+
+/// [`execute_insert_owned`] returning one column of the inserted rows.
+pub(crate) async fn execute_insert_owned_returning_field<M, V, T, C>(
+    values: Vec<V>,
+    field: &'static str,
+    client: &C,
+) -> anyhow::Result<Vec<T>>
+where
+    M: DinocoInsertable,
+    V: InsertPayload<M>,
+    PluckValue<T>: DinocoRowModel,
+    C: crate::MutationExecutor,
+{
+    if values.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let fields = single_field(field, <M as DinocoEntity>::FIELDS);
+    let rows = client.insert_returning::<PluckValue<T>>(owned_insert_query::<M, V>(values, Some(fields))).await?;
+
+    Ok(rows.into_iter().map(|value| value.0).collect())
+}
+
+fn owned_insert_query<M, V>(values: Vec<V>, returning: Option<&'static [&'static str]>) -> InsertQuery
+where
+    M: DinocoInsertable,
+    V: InsertPayload<M>,
+{
+    let rows = values.into_iter().map(|value| value.dinoco_into_insert_model().dinoco_into_insert_values()).collect();
+
+    InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning }
+}
+
 pub async fn reload_inserted<M, S, C>(models: &[M], client: &C) -> anyhow::Result<Vec<S>>
 where
     M: DinocoInsertable,
@@ -175,31 +253,6 @@ where
     Ok(result)
 }
 
-/// Single-column counterpart of [`execute_insert_models_returning`], backing
-/// `insert_into::<M>().pluck(...)`.
-pub(crate) async fn execute_insert_models_returning_field<M, T, C>(
-    models: &[M],
-    field: &'static str,
-    client: &C,
-) -> anyhow::Result<Vec<T>>
-where
-    M: DinocoInsertable,
-    PluckValue<T>: DinocoRowModel,
-    C: crate::MutationExecutor,
-{
-    if models.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let rows = models.iter().map(DinocoInsertable::dinoco_insert_values).collect::<Vec<_>>();
-    let fields: &'static [&'static str] = Box::leak(vec![field].into_boxed_slice());
-    let query = InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning: Some(fields) };
-
-    let rows = client.insert_returning::<PluckValue<T>>(query).await?;
-
-    Ok(rows.into_iter().map(|value| value.0).collect())
-}
-
 /// Single-column counterpart of [`reload_inserted`], backing nested-insert
 /// payloads passed through `insert_into::<M>().pluck(...)`.
 pub(crate) async fn reload_inserted_field<M, T, C>(
@@ -212,7 +265,7 @@ where
     PluckValue<T>: DinocoRowModel,
     C: crate::MutationExecutor,
 {
-    let fields: &'static [&'static str] = Box::leak(vec![field].into_boxed_slice());
+    let fields = single_field(field, <M as DinocoEntity>::FIELDS);
     let mut result = Vec::with_capacity(models.len());
 
     for model in models {

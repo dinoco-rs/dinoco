@@ -1,16 +1,29 @@
 use std::env;
 use std::fs;
+use std::io::ErrorKind as IoErrorKind;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, anyhow};
 use dinoco_compiler::{ConfigValue, Schema};
-use inquire::Select;
+
+use crate::error::{CliError, WithCliError};
+use crate::prompt::{self, Choice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Database {
     Postgresql,
     Mysql,
     Sqlite,
+}
+
+impl Database {
+    pub fn label(self) -> &'static str {
+        match self {
+            Database::Postgresql => "PostgreSQL",
+            Database::Mysql => "MySQL",
+            Database::Sqlite => "SQLite",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,33 +41,92 @@ pub struct RuntimeConfig {
     pub max_connection: usize,
 }
 
-pub fn read_schema() -> anyhow::Result<(String, Schema)> {
-    let path = Path::new("dinoco/schema.dinoco");
-    let source = fs::read_to_string(path).context("dinoco/schema.dinoco was not found. Run `dinoco init`.")?;
-    let schema = dinoco_compiler::compile_file(path).map_err(|err| anyhow!(err.to_string()))?;
+impl RuntimeConfig {
+    /// The database and, for PostgreSQL, how it is reached.
+    pub fn database_label(&self) -> &'static str {
+        match (self.database, self.postgres_connection) {
+            (Database::Postgresql, PostgresConnection::PgBouncer) => "PostgreSQL (through PgBouncer)",
+            (database, _) => database.label(),
+        }
+    }
+}
 
-    validate_schema_relations(&schema)?;
+const SCHEMA_PATH: &str = "dinoco/schema.dinoco";
+
+pub fn read_schema() -> anyhow::Result<(String, Schema)> {
+    let path = Path::new(SCHEMA_PATH);
+    let source = match fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(error) if error.kind() == IoErrorKind::NotFound => {
+            return Err(CliError::failure("dinoco/schema.dinoco was not found in the current directory.")
+                .hint("Run `dinoco init` to create a project, or run the command from the project root.")
+                .into());
+        }
+        Err(error) => {
+            return Err(error).cli_error(|| CliError::failure("dinoco/schema.dinoco could not be read."));
+        }
+    };
+    let schema = dinoco_compiler::compile_file(path).map_err(|err| anyhow!(err.to_string())).cli_error(|| {
+        CliError::failure("dinoco/schema.dinoco has errors.").hint("Fix the errors below, then run the command again.")
+    })?;
+
+    validate_schema_relations(&schema).cli_error(|| {
+        CliError::failure("dinoco/schema.dinoco has errors.").hint("Fix the errors below, then run the command again.")
+    })?;
 
     Ok((source, schema))
 }
 
+/// Reads the schema and selects the workspace to use: `requested`, the only
+/// one defined, or the one the user picks. Without a terminal and with more
+/// than one workspace, `--workspace` is required.
 pub fn read_schema_for_workspace(requested: Option<&str>) -> anyhow::Result<(String, Schema, Option<String>)> {
     let (source, schema) = read_schema()?;
-    let workspace_names = schema.workspaces().map(|workspace| workspace.name.clone()).collect::<Vec<_>>();
+    let workspaces = schema.workspaces().collect::<Vec<_>>();
+    let names = || workspaces.iter().map(|workspace| workspace.name.as_str()).collect::<Vec<_>>().join(", ");
 
-    if workspace_names.is_empty() {
+    if workspaces.is_empty() {
         if let Some(requested) = requested {
-            anyhow::bail!("Workspace `{requested}` was requested, but schema.dinoco does not configure workspaces");
+            return Err(CliError::usage(
+                "--workspace was passed, but dinoco/schema.dinoco does not define workspaces.",
+            )
+            .detail("Workspace", requested)
+            .hint("Remove --workspace, or define workspaces in the config block.")
+            .into());
         }
         return Ok((source, schema, None));
     }
 
     let workspace = match requested {
-        Some(name) if workspace_names.iter().any(|candidate| candidate == name) => name.to_string(),
+        Some(name) if workspaces.iter().any(|workspace| workspace.name == name) => name.to_string(),
         Some(name) => {
-            anyhow::bail!("Workspace `{name}` was not found. Available workspaces: {}", workspace_names.join(", "))
+            return Err(CliError::usage(format!("Workspace `{name}` is not defined in dinoco/schema.dinoco."))
+                .detail("Available", names())
+                .hint(format!("Pass one of the defined workspaces, for example --workspace {}.", workspaces[0].name))
+                .into());
         }
-        None => Select::new("Which workspace do you want to use?", workspace_names).prompt()?,
+        // A single workspace is not a choice.
+        None if workspaces.len() == 1 => workspaces[0].name.clone(),
+        None if prompt::is_interactive() => {
+            let choices = workspaces
+                .iter()
+                .map(|workspace| {
+                    let label = match workspace_database_url_env(&workspace.entries) {
+                        Some(env) => format!("{}  (database URL from {env})", workspace.name),
+                        None => workspace.name.clone(),
+                    };
+                    Choice::new(label, workspace.name.clone())
+                })
+                .collect();
+            prompt::select("Which workspace do you want to use?", choices, 0)?
+        }
+        None => {
+            return Err(CliError::decision_required("A workspace must be selected.")
+                .detail("Available", names())
+                .reason("dinoco/schema.dinoco defines more than one workspace, and each one targets its own database.")
+                .hint(format!("Pass --workspace <name>, for example --workspace {}.", workspaces[0].name))
+                .into());
+        }
     };
     let selected = schema
         .for_workspace(&workspace)
@@ -63,8 +135,19 @@ pub fn read_schema_for_workspace(requested: Option<&str>) -> anyhow::Result<(Str
     Ok((source, selected, Some(workspace)))
 }
 
+fn workspace_database_url_env(entries: &[dinoco_compiler::ConfigEntry]) -> Option<&str> {
+    entries.iter().find(|entry| entry.key == "database_url").and_then(|entry| match &entry.value {
+        ConfigValue::Env(value) => Some(value.as_str()),
+        _ => None,
+    })
+}
+
 pub fn runtime_config(schema: &Schema) -> anyhow::Result<RuntimeConfig> {
-    let config = schema.config().context("config block was not found in the schema")?;
+    let config = schema.config().ok_or_else(|| {
+        CliError::failure("dinoco/schema.dinoco has no config block.").hint(
+            "Add a config block that sets `database` and `database_url`. `dinoco init` writes one in new projects.",
+        )
+    })?;
     let database = config
         .entries
         .iter()
@@ -73,12 +156,20 @@ pub fn runtime_config(schema: &Schema) -> anyhow::Result<RuntimeConfig> {
             ConfigValue::String(value) | ConfigValue::Ident(value) => Some(value.as_str()),
             _ => None,
         })
-        .context("config.database was not found")?;
+        .ok_or_else(|| {
+            CliError::failure("The config block does not set `database`.")
+                .hint("Add database = \"postgresql\", \"mysql\" or \"sqlite\" to the config block.")
+        })?;
     let database = match database {
         "postgresql" | "postgres" => Database::Postgresql,
         "mysql" => Database::Mysql,
         "sqlite" => Database::Sqlite,
-        other => return Err(anyhow!("database `{other}` is not supported")),
+        other => {
+            return Err(CliError::failure(format!("Database `{other}` is not supported."))
+                .detail("Supported", "postgresql, mysql, sqlite")
+                .hint("Set `database` in the config block to one of the supported databases.")
+                .into());
+        }
     };
     let postgres_connection = config
         .entries
@@ -92,16 +183,15 @@ pub fn runtime_config(schema: &Schema) -> anyhow::Result<RuntimeConfig> {
             _ => None,
         })
         .unwrap_or(PostgresConnection::Direct);
-    let database_url_env = config
-        .entries
-        .iter()
-        .find(|entry| entry.key == "database_url")
-        .and_then(|entry| match &entry.value {
-            ConfigValue::Env(value) => Some(value),
-            _ => None,
-        })
-        .context("config.database_url must be env(\"DATABASE_URL\")")?;
-    let database_url = env::var(database_url_env).with_context(|| format!("env `{database_url_env}` was not found"))?;
+    let database_url_env = workspace_database_url_env(&config.entries).ok_or_else(|| {
+        CliError::failure("The config block must read `database_url` from an environment variable.")
+            .hint("Write database_url = env(\"DATABASE_URL\") in the config block.")
+    })?;
+    let database_url = env::var(database_url_env).map_err(|_| {
+        CliError::failure(format!("The environment variable `{database_url_env}` is not set."))
+            .reason(format!("The config block reads the {} connection URL from it.", database.label()))
+            .hint(format!("Set {database_url_env} in your environment or in a .env file in the project root."))
+    })?;
     let min_connection = config_integer(config, "min_connection").unwrap_or(2);
     let max_connection = config_integer(config, "max_connection").unwrap_or(10);
 

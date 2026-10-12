@@ -1,24 +1,20 @@
 [package]
 name = "dinoco_tests"
-version = "2.0.9"
+version = "2.1.0"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4.5", features = ["derive"] }
-colored = "3"
-dotenvy = "0.15"
-inquire = "0.7"
 tokio = { version = "1.50", features = ["full"] }
 tempfile = "3"
-dinoco = { path = "../crates/dinoco", version = "2.0.9" }
-dinoco_cli = { path = "../crates/dinoco_cli", version = "2.0.9" }
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.0.9" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.0.9" }
-dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.0.9" }
-dinoco_engine = { path = "../crates/dinoco_engine", version = "2.0.9" }
-dinoco_vscode = { path = "../vscode", version = "2.0.9" }
+dinoco = { path = "../crates/dinoco", version = "2.1.0" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "2.1.0" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.1.0" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.1.0" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.1.0" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "2.1.0" }
+dinoco_vscode = { path = "../vscode", version = "2.1.0" }
 
 [[bin]]
 name = "dinoco_cli"
@@ -89,6 +85,10 @@ name = "dinoco_updated_at"
 path = "tests/dinoco/updated_at.rs"
 
 [[test]]
+name = "dinoco_runtime_regressions"
+path = "tests/dinoco/runtime_regressions.rs"
+
+[[test]]
 name = "dinoco_cli_commands"
 path = "tests/dinoco_cli/cli.rs"
 
@@ -99,6 +99,10 @@ path = "tests/dinoco_cli/migration_plan.rs"
 [[test]]
 name = "dinoco_cli_migration_files"
 path = "tests/dinoco_cli/migration_files.rs"
+
+[[test]]
+name = "dinoco_cli_interface"
+path = "tests/dinoco_cli/interface.rs"
 
 [[test]]
 name = "dinoco_codegen_generate_models"

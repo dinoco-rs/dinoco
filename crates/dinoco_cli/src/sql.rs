@@ -16,6 +16,46 @@ pub struct MigrationPlan {
     pub steps: Vec<MigrationStep>,
     pub warnings: Vec<MigrationWarning>,
     pub errors: Vec<String>,
+    /// Renames the planner inferred from matching structure. They are guesses
+    /// the user confirms or rejects (see [`PlanOptions::rejected_renames`]).
+    pub inferred_renames: Vec<InferredRename>,
+}
+
+/// A rename the planner inferred: a removed table or column whose structure
+/// matches an added one.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum InferredRename {
+    Table {
+        from: String,
+        to: String,
+    },
+    /// `table` is the table's name in the desired schema.
+    Column {
+        table: String,
+        from: String,
+        to: String,
+    },
+}
+
+impl InferredRename {
+    /// `TABLE.OLD=NEW` for a column, `OLD=NEW` for a table: the form the
+    /// `--rename`/`--no-rename` options take.
+    pub fn mapping(&self) -> String {
+        match self {
+            InferredRename::Table { from, to } => format!("{from}={to}"),
+            InferredRename::Column { table, from, to } => format!("{table}.{from}={to}"),
+        }
+    }
+}
+
+/// Decisions that change how a migration is planned.
+#[derive(Debug, Clone, Default)]
+pub struct PlanOptions {
+    /// Inferred renames to plan as a removal plus an addition instead.
+    pub rejected_renames: BTreeSet<InferredRename>,
+    /// Inferred renames the user confirmed. They are planned without the
+    /// warning that asks to review the mapping.
+    pub confirmed_renames: BTreeSet<InferredRename>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +75,21 @@ pub enum MigrationStep {
     CreateIndex(CreateIndexMigration),
     DropIndex(DropIndexMigration),
     RebuildTable(SqliteTableRebuild),
+    /// Rewrites the rows that still hold an enum value the migration removes.
+    /// Added by the CLI from the user's choice, never by the planner.
+    ReplaceEnumValue(EnumValueReplacement),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumValueReplacement {
+    /// Table and column as they exist before the migration runs.
+    pub table: String,
+    pub column: String,
+    pub enum_name: String,
+    pub from: String,
+    pub to: String,
+    /// Rows that held `from` when the migration was planned.
+    pub rows: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -99,10 +154,19 @@ pub fn plan_schema_migration(schema: &Schema, current: &DatabaseSchema) -> Migra
 }
 
 pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchema) -> MigrationPlan {
+    plan_database_migration_with(desired, current, &PlanOptions::default())
+}
+
+/// [`plan_database_migration`] with the user's planning decisions.
+pub fn plan_database_migration_with(
+    desired: &DatabaseSchema,
+    current: &DatabaseSchema,
+    options: &PlanOptions,
+) -> MigrationPlan {
     let mut plan = MigrationPlan::default();
     let (current, table_renames) = normalize_legacy_table_names(desired, current);
     plan.steps.extend(table_renames.into_iter().map(MigrationStep::RenameTable));
-    let (current, detected_renames) = detect_table_renames(&mut plan, desired, &current);
+    let (current, detected_renames) = detect_table_renames(&mut plan, desired, &current, options);
     plan.steps.extend(detected_renames.into_iter().map(MigrationStep::RenameTable));
     let current_tables = current.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
     let desired_tables = desired.tables.iter().map(|table| (table.name.as_str(), table)).collect::<BTreeMap<_, _>>();
@@ -165,7 +229,7 @@ pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchem
             continue;
         };
 
-        diff_columns(&mut plan, current_table, desired_table);
+        diff_columns(&mut plan, current_table, desired_table, options);
         diff_foreign_keys(&mut plan, current_table, desired_table);
         diff_indexes(&mut plan, current_table, desired_table);
     }
@@ -200,7 +264,16 @@ pub fn plan_database_migration(desired: &DatabaseSchema, current: &DatabaseSchem
 /// Produces the regular schema diff and lowers table changes that SQLite cannot
 /// express safely with `ALTER TABLE` into explicit, data-preserving rebuilds.
 pub fn plan_sqlite_database_migration(desired: &DatabaseSchema, current: &DatabaseSchema) -> MigrationPlan {
-    let mut plan = plan_database_migration(desired, current);
+    plan_sqlite_database_migration_with(desired, current, &PlanOptions::default())
+}
+
+/// [`plan_sqlite_database_migration`] with the user's planning decisions.
+pub fn plan_sqlite_database_migration_with(
+    desired: &DatabaseSchema,
+    current: &DatabaseSchema,
+    options: &PlanOptions,
+) -> MigrationPlan {
+    let mut plan = plan_database_migration_with(desired, current, options);
     let (current, _) = normalize_legacy_table_names(desired, current);
     let dropped_tables = plan
         .steps
@@ -235,11 +308,17 @@ pub fn plan_sqlite_database_migration(desired: &DatabaseSchema, current: &Databa
         .tables
         .iter()
         .flat_map(|table| {
-            table.foreign_keys.iter().filter_map(|foreign_key| {
-                (rebuild_tables.contains(table.name.as_str())
-                    || rebuild_tables.contains(foreign_key.references_table.as_str()))
-                .then(|| SqliteForeignKeyCheck { table: table.name.clone(), foreign_key: foreign_key.clone() })
-            })
+            table
+                .foreign_keys
+                .iter()
+                .filter(|foreign_key| {
+                    rebuild_tables.contains(table.name.as_str())
+                        || rebuild_tables.contains(foreign_key.references_table.as_str())
+                })
+                .map(|foreign_key| SqliteForeignKeyCheck {
+                    table: table.name.clone(),
+                    foreign_key: foreign_key.clone(),
+                })
         })
         .collect::<Vec<_>>();
     let rebuild_changes = rebuild_tables
@@ -325,6 +404,7 @@ fn step_table(step: &MigrationStep) -> Option<&str> {
         MigrationStep::CreateIndex(item) => Some(&item.table),
         MigrationStep::DropIndex(item) => Some(&item.table),
         MigrationStep::RebuildTable(item) => Some(&item.desired.name),
+        MigrationStep::ReplaceEnumValue(item) => Some(&item.table),
         MigrationStep::CreateEnum(_) | MigrationStep::DropEnum(_) | MigrationStep::AlterEnum(_) => None,
     }
 }
@@ -392,6 +472,7 @@ fn detect_table_renames(
     plan: &mut MigrationPlan,
     desired: &DatabaseSchema,
     current: &DatabaseSchema,
+    options: &PlanOptions,
 ) -> (DatabaseSchema, Vec<RenameTableMigration>) {
     let desired_names = desired.tables.iter().map(|table| table.name.as_str()).collect::<BTreeSet<_>>();
     let current_names = current.tables.iter().map(|table| table.name.as_str()).collect::<BTreeSet<_>>();
@@ -411,18 +492,26 @@ fn detect_table_renames(
                     && !claimed_current.contains(current_table.name.as_str())
                     && current_table.name != desired_table.name
                     && table_rename_compatible(current_table, desired_table)
+                    && !options.rejected_renames.contains(&InferredRename::Table {
+                        from: current_table.name.clone(),
+                        to: desired_table.name.clone(),
+                    })
             })
             .collect::<Vec<_>>();
 
         match candidates.as_slice() {
             [candidate] => {
-                plan.warnings.push(MigrationWarning {
-                    message: format!(
-                        "Table `{}` looks like it was renamed to `{}`. Dinoco cannot prove that both tables have the same meaning; review the mapping before applying it.",
-                        candidate.name, desired_table.name,
-                    ),
-                    destructive: true,
-                });
+                let rename = InferredRename::Table { from: candidate.name.clone(), to: desired_table.name.clone() };
+                if !options.confirmed_renames.contains(&rename) {
+                    plan.warnings.push(MigrationWarning {
+                        message: format!(
+                            "Table `{}` looks like it was renamed to `{}`. Dinoco cannot prove that both tables have the same meaning; review the mapping before applying it.",
+                            candidate.name, desired_table.name,
+                        ),
+                        destructive: true,
+                    });
+                }
+                plan.inferred_renames.push(rename);
                 claimed_current.insert(candidate.name.clone());
                 rename_map.insert(candidate.name.clone(), desired_table.name.clone());
             }
@@ -515,7 +604,12 @@ pub fn desired_database_schema(schema: &Schema) -> DatabaseSchema {
     }
 }
 
-fn diff_columns(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired_table: &DatabaseTable) {
+fn diff_columns(
+    plan: &mut MigrationPlan,
+    current_table: &DatabaseTable,
+    desired_table: &DatabaseTable,
+    options: &PlanOptions,
+) {
     let current_columns =
         current_table.columns.iter().map(|column| (column.name.as_str(), column)).collect::<BTreeMap<_, _>>();
     let desired_columns =
@@ -532,18 +626,31 @@ fn diff_columns(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired
                 !desired_columns.contains_key(**name)
                     && !renamed_current.contains(**name)
                     && rename_compatible(current_column, desired_column)
+                    && !options.rejected_renames.contains(&InferredRename::Column {
+                        table: desired_table.name.clone(),
+                        from: (**name).to_string(),
+                        to: (*desired_name).to_string(),
+                    })
             })
             .collect::<Vec<_>>();
 
         if candidates.len() == 1 {
             let (current_name, current_column) = candidates[0];
-            plan.warnings.push(MigrationWarning {
-                message: format!(
-                    "Column `{}.{}` looks like it was renamed to `{}`. Dinoco cannot prove that both fields have the same meaning; review the mapping before applying it.",
-                    current_table.name, current_column.name, desired_column.name,
-                ),
-                destructive: true,
-            });
+            let rename = InferredRename::Column {
+                table: desired_table.name.clone(),
+                from: (*current_name).to_string(),
+                to: (*desired_name).to_string(),
+            };
+            if !options.confirmed_renames.contains(&rename) {
+                plan.warnings.push(MigrationWarning {
+                    message: format!(
+                        "Column `{}.{}` looks like it was renamed to `{}`. Dinoco cannot prove that both fields have the same meaning; review the mapping before applying it.",
+                        current_table.name, current_column.name, desired_column.name,
+                    ),
+                    destructive: true,
+                });
+            }
+            plan.inferred_renames.push(rename);
             plan.steps.push(MigrationStep::RenameColumn(RenameColumnMigration {
                 table: desired_table.name.clone(),
                 from: (*current_name).to_string(),

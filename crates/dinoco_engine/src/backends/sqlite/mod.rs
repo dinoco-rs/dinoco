@@ -6,6 +6,8 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, 
 
 mod compiler;
 
+use super::Decode;
+use super::sql::Dialect;
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoSqlite, DinocoValue,
     LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
@@ -67,71 +69,18 @@ impl DinocoAdapter for SqliteAdapter {
     where
         M: DinocoSqlite,
     {
-        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
-        let query_owned = query.to_string();
-        let params_owned = params.to_vec();
-
-        conn.interact(move |conn| -> anyhow::Result<Vec<M>> {
-            let mut stmt = conn.prepare_cached(&query_owned)?;
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-
-            let mut rows = stmt.query(params_refs.as_slice())?;
-            let mut result = Vec::new();
-
-            while let Some(row) = rows.next()? {
-                let item = M::from_sqlite_row(row).ok_or_else(|| RowDecodeError::new(std::any::type_name::<M>()))?;
-                result.push(item);
-            }
-
-            Ok(result)
-        })
-        .await
-        .map_err(|err| anyhow!(err.to_string()))?
+        self.fetch(query.to_owned(), params.to_vec(), Decode::Strict).await
     }
 
     async fn query_optional<M>(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<Vec<M>>
     where
         M: DinocoSqlite,
     {
-        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
-        let query_owned = query.to_string();
-        let params_owned = params.to_vec();
-
-        conn.interact(move |conn| -> anyhow::Result<Vec<M>> {
-            let mut stmt = conn.prepare_cached(&query_owned)?;
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-
-            let mut rows = stmt.query(params_refs.as_slice())?;
-            let mut result = Vec::new();
-
-            while let Some(row) = rows.next()? {
-                if let Some(item) = M::from_sqlite_row(row) {
-                    result.push(item);
-                }
-            }
-
-            Ok(result)
-        })
-        .await
-        .map_err(|err| anyhow!(err.to_string()))?
+        self.fetch(query.to_owned(), params.to_vec(), Decode::Lenient).await
     }
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<usize> {
-        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
-        let query_owned = query.to_string();
-        let params_owned = params.to_vec();
-
-        conn.interact(move |conn| -> anyhow::Result<usize> {
-            let mut stmt = conn.prepare_cached(&query_owned)?;
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-
-            Ok(stmt.execute(params_refs.as_slice())?)
-        })
-        .await
-        .map_err(|err| anyhow!(err.to_string()))?
+        self.run(query.to_owned(), params.to_vec()).await
     }
 }
 
@@ -174,11 +123,59 @@ impl SqliteAdapter {
         self.with_logger
     }
 
+    /// Runs `operation` on a pooled connection, on a blocking thread.
+    async fn interact<T, F>(&self, operation: F) -> anyhow::Result<T>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> anyhow::Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let connection = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
+        connection.interact(operation).await.map_err(|err| anyhow!(err.to_string()))?
+    }
+
+    pub(crate) async fn fetch<M>(&self, sql: String, params: Vec<DinocoValue>, decode: Decode) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoSqlite,
+    {
+        self.interact(move |connection| {
+            let mut statement = connection.prepare_cached(&sql)?;
+            let mut rows = statement.query(rusqlite::params_from_iter(&params))?;
+            decode_rows(&mut rows, decode, std::any::type_name::<M>())
+        })
+        .await
+    }
+
+    pub(crate) async fn run(&self, sql: String, params: Vec<DinocoValue>) -> anyhow::Result<usize> {
+        self.interact(move |connection| {
+            let mut statement = connection.prepare_cached(&sql)?;
+            Ok(statement.execute(rusqlite::params_from_iter(&params))?)
+        })
+        .await
+    }
+
+    pub(crate) async fn fetch_count(&self, sql: String, params: Vec<DinocoValue>) -> anyhow::Result<i64> {
+        self.fetch_scalar(sql, params).await
+    }
+
+    pub(crate) async fn fetch_exists(&self, sql: String, params: Vec<DinocoValue>) -> anyhow::Result<bool> {
+        self.fetch_scalar(sql, params).await
+    }
+
+    async fn fetch_scalar<T>(&self, sql: String, params: Vec<DinocoValue>) -> anyhow::Result<T>
+    where
+        T: FromSql + Send + 'static,
+    {
+        self.interact(move |connection| {
+            let mut statement = connection.prepare_cached(&sql)?;
+            Ok(statement.query_row(rusqlite::params_from_iter(&params), |row| row.get(0))?)
+        })
+        .await
+    }
+
     pub(crate) async fn begin_live_transaction(
         &self,
     ) -> anyhow::Result<tokio::sync::mpsc::Sender<LiveTransactionMessage>> {
         let connection = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
-        let compiler = self.clone();
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
         let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
 
@@ -197,7 +194,7 @@ impl SqliteAdapter {
                     while let Some(message) = receiver.blocking_recv() {
                         match message {
                             LiveTransactionMessage::Execute { command, reply } => {
-                                let result = command.compile(&compiler).and_then(|command| {
+                                let result = (*command).compile(Dialect::Sqlite).and_then(|command| {
                                     execute_transaction_command(&transaction, &command)
                                         .and_then(|raw| command.finish(raw))
                                 });
@@ -227,36 +224,37 @@ impl SqliteAdapter {
     }
 
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
-        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
-        let query_owned = query.to_string();
-        let params_owned = params.to_vec();
-
-        conn.interact(move |conn| -> anyhow::Result<i64> {
-            let mut stmt = conn.prepare_cached(&query_owned)?;
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-
-            Ok(stmt.query_row(params_refs.as_slice(), |row| row.get(0))?)
-        })
-        .await
-        .map_err(|err| anyhow!(err.to_string()))?
+        self.fetch_count(query.to_owned(), params.to_vec()).await
     }
 
     pub async fn query_exists(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<bool> {
-        let conn = self.pool.get().await.context("Failed to get sqlite connection from pool")?;
-        let query_owned = query.to_string();
-        let params_owned = params.to_vec();
-
-        conn.interact(move |conn| -> anyhow::Result<bool> {
-            let mut stmt = conn.prepare_cached(&query_owned)?;
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_owned.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-
-            Ok(stmt.query_row(params_refs.as_slice(), |row| row.get(0))?)
-        })
-        .await
-        .map_err(|err| anyhow!(err.to_string()))?
+        self.fetch_exists(query.to_owned(), params.to_vec()).await
     }
+}
+
+fn decode_rows<M>(rows: &mut rusqlite::Rows<'_>, decode: Decode, model: &'static str) -> anyhow::Result<Vec<M>>
+where
+    M: DinocoSqlite,
+{
+    let mut items = Vec::new();
+
+    while let Some(row) = rows.next()? {
+        match M::from_sqlite_row(row) {
+            Some(item) => items.push(item),
+            None if decode == Decode::Strict => return Err(RowDecodeError::new(model).into()),
+            None => {}
+        }
+    }
+
+    Ok(items)
+}
+
+/// Decodes every row of a transaction query into a boxed `Vec<M>`.
+pub(crate) fn decode_sqlite_transaction_rows<M>(rows: &mut rusqlite::Rows<'_>) -> anyhow::Result<crate::DecodedRows>
+where
+    M: DinocoSqlite,
+{
+    Ok(crate::DecodedRows::new(decode_rows::<M>(rows, Decode::Strict, std::any::type_name::<M>())?))
 }
 
 fn execute_transaction_command(
@@ -279,13 +277,10 @@ fn execute_transaction_statement(
     command: &CompiledTransactionStatement,
 ) -> anyhow::Result<RawTransactionOutput> {
     if command.sql.is_empty() {
-        return match command.kind {
-            TransactionCommandKind::Rows => Ok(RawTransactionOutput::Rows(Vec::new())),
-            TransactionCommandKind::Execute => Ok(RawTransactionOutput::Affected(0)),
-        };
+        return Ok(command.empty_output());
     }
 
-    let params_refs = command.params.iter().map(|param| param as &dyn rusqlite::ToSql).collect::<Vec<_>>();
+    let params = rusqlite::params_from_iter(&command.params);
 
     match command.kind {
         TransactionCommandKind::Rows => {
@@ -293,36 +288,31 @@ fn execute_transaction_statement(
                 .decoder
                 .ok_or_else(|| anyhow!("Dinoco transaction query is missing its sqlite row decoder."))?;
             let mut statement = transaction.prepare_cached(&command.sql)?;
-            let mut rows = statement.query(params_refs.as_slice())?;
-            let mut values = Vec::new();
+            let mut rows = statement.query(params)?;
 
-            while let Some(row) = rows.next()? {
-                values.push((decoder.sqlite)(row).ok_or_else(|| RowDecodeError::new("transaction result"))?);
-            }
-
-            Ok(RawTransactionOutput::Rows(values))
+            Ok(RawTransactionOutput::Rows((decoder.sqlite)(&mut rows)?))
         }
         TransactionCommandKind::Execute => {
             let mut statement = transaction.prepare_cached(&command.sql)?;
-            Ok(RawTransactionOutput::Affected(statement.execute(params_refs.as_slice())?))
+            Ok(RawTransactionOutput::Affected(statement.execute(params)?))
         }
     }
 }
 
+/// Text and blobs are bound by reference; SQLite copies them itself.
 impl rusqlite::ToSql for DinocoValue {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        match self {
-            DinocoValue::Null => Ok(ToSqlOutput::Owned(Value::Null)),
-            DinocoValue::Integer(i) => Ok(ToSqlOutput::Owned(Value::Integer(*i))),
-            DinocoValue::Float(f) => Ok(ToSqlOutput::Owned(Value::Real(*f))),
-            DinocoValue::Boolean(b) => Ok(ToSqlOutput::Owned(Value::Integer(if *b { 1 } else { 0 }))),
-            DinocoValue::String(s) => Ok(ToSqlOutput::Owned(Value::Text(s.clone()))),
-            DinocoValue::Enum(_, s) => Ok(ToSqlOutput::Owned(Value::Text(s.clone()))),
-            DinocoValue::Bytes(v) => Ok(ToSqlOutput::Owned(Value::Blob(v.clone()))),
-            DinocoValue::Json(v) => Ok(ToSqlOutput::Owned(Value::Blob(v.to_string().into_bytes()))),
-            DinocoValue::DateTime(dt) => Ok(ToSqlOutput::Owned(Value::Text(dt.to_rfc3339()))),
-            DinocoValue::Date(date) => Ok(ToSqlOutput::Owned(Value::Text(date.to_string()))),
-        }
+        Ok(match self {
+            DinocoValue::Null => ToSqlOutput::Borrowed(ValueRef::Null),
+            DinocoValue::Integer(i) => ToSqlOutput::Owned(Value::Integer(*i)),
+            DinocoValue::Float(f) => ToSqlOutput::Owned(Value::Real(*f)),
+            DinocoValue::Boolean(b) => ToSqlOutput::Owned(Value::Integer(i64::from(*b))),
+            DinocoValue::String(s) | DinocoValue::Enum(_, s) => ToSqlOutput::Borrowed(ValueRef::Text(s.as_bytes())),
+            DinocoValue::Bytes(v) => ToSqlOutput::Borrowed(ValueRef::Blob(v)),
+            DinocoValue::Json(v) => ToSqlOutput::Owned(Value::Blob(v.to_string().into_bytes())),
+            DinocoValue::DateTime(dt) => ToSqlOutput::Owned(Value::Text(dt.to_rfc3339())),
+            DinocoValue::Date(date) => ToSqlOutput::Owned(Value::Text(date.to_string())),
+        })
     }
 }
 
@@ -332,8 +322,8 @@ impl FromSql for DinocoValue {
             ValueRef::Null => Ok(DinocoValue::Null),
             ValueRef::Integer(value) => Ok(DinocoValue::Integer(value)),
             ValueRef::Real(value) => Ok(DinocoValue::Float(value)),
-            ValueRef::Text(value) => String::from_utf8(value.to_vec())
-                .map(DinocoValue::String)
+            ValueRef::Text(value) => std::str::from_utf8(value)
+                .map(|value| DinocoValue::String(value.to_owned()))
                 .map_err(|err| FromSqlError::Other(Box::new(err))),
             ValueRef::Blob(value) => Ok(DinocoValue::Bytes(value.to_vec())),
         }

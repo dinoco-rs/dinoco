@@ -1,7 +1,8 @@
 [package]
 name = "dinoco_derives"
-version = "2.0.9"
+version = "2.1.0"
 edition = "2024"
+rust-version = "1.95"
 license = "Apache-2.0"
 description = "Procedural macros for Dinoco models, projections, and type-safe ORM helpers."
 homepage = "https://dinoco.io"
@@ -13,7 +14,6 @@ keywords = ["orm", "macros", "proc-macro", "derive", "database"]
 proc-macro = true
 
 [dependencies]
-proc-macro-crate = "3.4.0"
 proc-macro2 = "1.0.106"
 quote = "1.0.45"
 syn = { version = "2.0.117", features = ["full", "parsing", "extra-traits"] }

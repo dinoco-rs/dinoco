@@ -1,462 +1,301 @@
+#[cfg(feature = "mysql")]
 mod mysql;
+#[cfg(feature = "postgres")]
 mod postgres;
-mod relation_filter;
+pub(crate) mod sql;
+#[cfg(feature = "sqlite")]
 mod sqlite;
 
+#[cfg(feature = "mysql")]
 pub use mysql::*;
+#[cfg(feature = "postgres")]
 pub use postgres::*;
-pub(crate) use relation_filter::*;
+#[cfg(feature = "sqlite")]
 pub use sqlite::*;
 
+use sql::Dialect;
+
 use crate::{
-    CountQuery, DeleteQuery, DinocoAdapter, DinocoRowModel, DinocoSqlCompiler, FindQuery, InsertQuery,
-    ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
-    RelationOccurrenceQuery, UpdateQuery,
+    CountQuery, DeleteQuery, DinocoRowModel, DinocoSqlCompiler, DinocoValue, ExistsQuery, FindQuery, FindWhere,
+    InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery,
+    RelationJoinQuery, RelationOccurrenceQuery, UpdateQuery,
 };
 
 /// Cloning a backend is cheap: adapters share their connection pool.
 #[derive(Clone)]
 pub enum Backend {
+    #[cfg(feature = "sqlite")]
     Sqlite(SqliteAdapter),
+    #[cfg(feature = "postgres")]
     Postgres(PostgresAdapter),
+    #[cfg(feature = "postgres")]
     PgBouncer(PgBouncerAdapter),
+    #[cfg(feature = "mysql")]
     Mysql(MySqlAdapter),
 }
 
+/// What an adapter does with a row the model cannot be decoded from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Decode {
+    /// Fail the whole query.
+    Strict,
+    /// Leave the row out; used by `LEFT JOIN` relation loads, whose
+    /// unmatched rows carry only NULLs.
+    Lenient,
+}
+
+type Compiled = (String, Vec<DinocoValue>);
+
+/// Runs `$body` with `$adapter` bound to the adapter of `$backend`. PgBouncer
+/// executes through the PostgreSQL adapter it wraps.
+///
+/// Statement executions are awaited through [`boxed`]: a pool checkout plus a
+/// round trip makes for a large state machine (up to ~2 KB for PostgreSQL),
+/// and keeping it out of line keeps every builder future that awaits one
+/// small, for one allocation per round trip.
+macro_rules! with_adapter {
+    ($backend:expr, $adapter:ident => $body:expr) => {
+        match $backend {
+            #[cfg(feature = "sqlite")]
+            Backend::Sqlite($adapter) => $body,
+            #[cfg(feature = "postgres")]
+            Backend::Postgres($adapter) => $body,
+            #[cfg(feature = "postgres")]
+            Backend::PgBouncer(adapter) => {
+                let $adapter = adapter.inner();
+                $body
+            }
+            #[cfg(feature = "mysql")]
+            Backend::Mysql($adapter) => $body,
+        }
+    };
+}
+
 impl Backend {
+    pub(crate) fn dialect(&self) -> Dialect {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Backend::Sqlite(_) => Dialect::Sqlite,
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(_) | Backend::PgBouncer(_) => Dialect::Postgres,
+            #[cfg(feature = "mysql")]
+            Backend::Mysql(_) => Dialect::Mysql,
+        }
+    }
+
+    fn is_mysql(&self) -> bool {
+        #[cfg(feature = "mysql")]
+        return matches!(self, Backend::Mysql(_));
+        #[cfg(not(feature = "mysql"))]
+        return false;
+    }
+
     pub async fn begin_transaction(&self) -> anyhow::Result<crate::TransactionExecutor> {
-        let sender = match self {
-            Backend::Sqlite(adapter) => adapter.begin_live_transaction().await?,
-            Backend::Postgres(adapter) => adapter.begin_live_transaction().await?,
-            Backend::PgBouncer(adapter) => adapter.inner().begin_live_transaction().await?,
-            Backend::Mysql(adapter) => adapter.begin_live_transaction().await?,
-        };
-        Ok(crate::TransactionExecutor { sender, mysql: matches!(self, Backend::Mysql(_)) })
+        let sender = with_adapter!(self, adapter => boxed(adapter.begin_live_transaction()).await?);
+        Ok(crate::TransactionExecutor { sender, mysql: self.is_mysql() })
     }
 
     /// The SQL compiler of this backend's database.
     pub fn sql_compiler(&self) -> &dyn DinocoSqlCompiler {
         match self {
+            #[cfg(feature = "sqlite")]
             Backend::Sqlite(adapter) => adapter,
+            #[cfg(feature = "postgres")]
             Backend::Postgres(adapter) => adapter,
+            #[cfg(feature = "postgres")]
             Backend::PgBouncer(adapter) => adapter,
+            #[cfg(feature = "mysql")]
             Backend::Mysql(adapter) => adapter,
         }
     }
 
     pub fn set_logger(&mut self, enabled: bool) {
         match self {
+            #[cfg(feature = "sqlite")]
             Backend::Sqlite(adapter) => adapter.set_logger(enabled),
+            #[cfg(feature = "postgres")]
             Backend::Postgres(adapter) => adapter.set_logger(enabled),
+            #[cfg(feature = "postgres")]
             Backend::PgBouncer(adapter) => adapter.set_logger(enabled),
+            #[cfg(feature = "mysql")]
             Backend::Mysql(adapter) => adapter.set_logger(enabled),
         }
     }
 
     pub fn logger_enabled(&self) -> bool {
-        match self {
-            Backend::Sqlite(adapter) => adapter.logger_enabled(),
-            Backend::Postgres(adapter) => adapter.logger_enabled(),
-            Backend::PgBouncer(adapter) => adapter.logger_enabled(),
-            Backend::Mysql(adapter) => adapter.logger_enabled(),
-        }
+        with_adapter!(self, adapter => adapter.logger_enabled())
     }
 
-    fn log_query(&self, sql: &str, params: &[crate::DinocoValue]) {
+    fn log_query(&self, sql: &str, params: &[DinocoValue]) {
         if self.logger_enabled() {
             println!("SQL: {}, params: {:#?}", sql, params);
         }
+    }
+
+    async fn fetch<M>(&self, (sql, params): Compiled, decode: Decode) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        self.log_query(&sql, &params);
+        with_adapter!(self, adapter => boxed(adapter.fetch(sql, params, decode)).await)
+    }
+
+    async fn run(&self, (sql, params): Compiled) -> anyhow::Result<usize> {
+        self.log_query(&sql, &params);
+        with_adapter!(self, adapter => boxed(adapter.run(sql, params)).await)
+    }
+
+    async fn fetch_count(&self, (sql, params): Compiled) -> anyhow::Result<i64> {
+        self.log_query(&sql, &params);
+        with_adapter!(self, adapter => boxed(adapter.fetch_count(sql, params)).await)
     }
 
     pub async fn query<M>(&self, query: FindQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_find_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_find_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_find_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, params) = adapter.compile_find_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-        }
+        self.fetch(sql::find(self.dialect(), query), Decode::Strict).await
     }
 
+    /// `params` are the parent keys, bound before the query's own values.
     pub async fn query_relation_join_optional<M>(
         &self,
         query: RelationJoinQuery,
-        params: &[crate::DinocoValue],
+        params: &[DinocoValue],
     ) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, extra_params) = adapter.compile_relation_join_query(query);
-                let mut params = params.to_vec();
-                params.extend(extra_params);
+        let (sql, extra_params) = sql::relation_join(self.dialect(), query);
+        let mut all_params = Vec::with_capacity(params.len() + extra_params.len());
+        all_params.extend_from_slice(params);
+        all_params.extend(extra_params);
 
-                self.log_query(&sql, &params);
-
-                adapter.query_optional::<M>(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, extra_params) = adapter.compile_relation_join_query(query);
-                let mut params = params.to_vec();
-                params.extend(extra_params);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_optional::<M>(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, extra_params) = adapter.compile_relation_join_query(query);
-                let mut params = params.to_vec();
-                params.extend(extra_params);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_optional::<M>(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, extra_params) = adapter.compile_relation_join_query(query);
-                let mut params = params.to_vec();
-                params.extend(extra_params);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_optional::<M>(&sql, &params).await
-            }
-        }
+        self.fetch((sql, all_params), Decode::Lenient).await
     }
 
     pub async fn query_relation_batch<M>(&self, query: RelationBatchQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_relation_batch_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_relation_batch_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_relation_batch_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, params) = adapter.compile_relation_batch_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-        }
+        self.fetch(sql::relation_batch(self.dialect(), query), Decode::Strict).await
     }
 
+    /// `params` are the parent keys, bound before the query's own values.
     #[doc(hidden)]
     pub async fn query_relation_occurrences<M>(
         &self,
         query: RelationOccurrenceQuery,
-        params: &[crate::DinocoValue],
+        params: &[DinocoValue],
     ) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        macro_rules! query {
-            ($adapter:expr) => {{
-                let (sql, extra_params) = $adapter.compile_relation_occurrence_query(query);
-                let mut params = params.to_vec();
-                params.extend(extra_params);
-                self.log_query(&sql, &params);
-                $adapter.query::<M>(&sql, &params).await
-            }};
-        }
-
-        match &self {
-            Backend::Sqlite(adapter) => query!(adapter),
-            Backend::Postgres(adapter) => query!(adapter),
-            Backend::PgBouncer(adapter) => query!(adapter),
-            Backend::Mysql(adapter) => query!(adapter),
-        }
+        self.query_relation_occurrences_with_keys(query, params.to_vec()).await
     }
 
+    /// [`query_relation_occurrences`](Self::query_relation_occurrences) taking
+    /// ownership of the parent keys.
+    #[doc(hidden)]
+    pub async fn query_relation_occurrences_with_keys<M>(
+        &self,
+        query: RelationOccurrenceQuery,
+        keys: Vec<DinocoValue>,
+    ) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        self.fetch(sql::relation_occurrence_with_keys(self.dialect(), query, keys), Decode::Strict).await
+    }
+
+    /// `params` are the parent keys, bound before the query's own values.
     pub async fn query_many_to_many_relation<M>(
         &self,
         query: ManyToManyRelationQuery,
-        params: &[crate::DinocoValue],
+        params: &[DinocoValue],
     ) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        macro_rules! query {
-            ($adapter:expr) => {{
-                let (sql, extra_params) = $adapter.compile_many_to_many_relation_query(query);
-                let mut params = params.to_vec();
-                params.extend(extra_params);
-                self.log_query(&sql, &params);
-                $adapter.query::<M>(&sql, &params).await
-            }};
-        }
+        self.query_many_to_many_relation_with_keys(query, params.to_vec()).await
+    }
 
-        match &self {
-            Backend::Sqlite(adapter) => query!(adapter),
-            Backend::Postgres(adapter) => query!(adapter),
-            Backend::PgBouncer(adapter) => query!(adapter),
-            Backend::Mysql(adapter) => query!(adapter),
-        }
+    /// [`query_many_to_many_relation`](Self::query_many_to_many_relation)
+    /// taking ownership of the parent keys.
+    #[doc(hidden)]
+    pub async fn query_many_to_many_relation_with_keys<M>(
+        &self,
+        query: ManyToManyRelationQuery,
+        keys: Vec<DinocoValue>,
+    ) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        self.fetch(sql::many_to_many_relation_with_keys(self.dialect(), query, keys), Decode::Strict).await
     }
 
     pub async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_insert_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_insert_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_insert_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, params) = adapter.compile_insert_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-        }
+        self.run(sql::insert(self.dialect(), query)).await
     }
 
-    pub async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>
+    pub async fn insert_returning<M>(&self, mut query: InsertQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_insert_query(query);
+        // MySQL has no `RETURNING`: insert, then read the rows back by `id`.
+        let (true, Some(returning)) = (self.is_mysql(), query.returning) else {
+            return self.fetch(sql::insert(self.dialect(), query), Decode::Strict).await;
+        };
 
-                self.log_query(&sql, &params);
+        let id_index = query
+            .fields
+            .iter()
+            .position(|field| *field == "id")
+            .ok_or_else(|| anyhow::anyhow!("MySQL insert returning fallback requires an `id` field."))?;
+        let ids = query.rows.iter().map(|row| row[id_index].clone()).collect::<Vec<_>>();
+        let table = query.table;
+        query.returning = None;
+        self.run(sql::insert(Dialect::Mysql, query)).await?;
 
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_insert_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_insert_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let Some(returning) = query.returning else {
-                    let (sql, params) = adapter.compile_insert_query(query);
-
-                    self.log_query(&sql, &params);
-
-                    return adapter.query::<M>(&sql, &params).await;
-                };
-
-                let id_index = query
-                    .fields
-                    .iter()
-                    .position(|field| *field == "id")
-                    .ok_or_else(|| anyhow::anyhow!("MySQL insert returning fallback requires an `id` field."))?;
-                let ids = query.rows.iter().map(|row| row[id_index].clone()).collect::<Vec<_>>();
-                let mut insert_query = query;
-                insert_query.returning = None;
-                let table = insert_query.table;
-                let (sql, params) = adapter.compile_insert_query(insert_query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await?;
-
-                let find = FindQuery {
-                    fields: returning,
-                    from: table,
-                    conditions: vec![crate::FindWhere::Batch("id", ids)],
-                    limit: -1,
-                    skip: -1,
-                    order_by: None,
-                };
-                let (sql, params) = adapter.compile_find_query(find);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-        }
+        self.query(reload_by_id(returning, table, ids)).await
     }
 
     pub async fn update(&self, query: UpdateQuery) -> anyhow::Result<usize> {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_update_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_update_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_update_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, params) = adapter.compile_update_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-        }
+        self.run(sql::update(self.dialect(), query)).await
     }
 
-    pub async fn update_returning<M>(&self, query: UpdateQuery) -> anyhow::Result<Vec<M>>
+    pub async fn update_returning<M>(&self, mut query: UpdateQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_update_query(query);
+        // MySQL has no `RETURNING`: find the ids, update, then read them back.
+        let (true, Some(returning)) = (self.is_mysql(), query.returning) else {
+            return self.fetch(sql::update(self.dialect(), query), Decode::Strict).await;
+        };
 
-                self.log_query(&sql, &params);
+        let ids = self
+            .query::<crate::SingleIdRow>(FindQuery {
+                fields: &["id"],
+                from: query.table,
+                conditions: query.conditions.clone(),
+                limit: -1,
+                skip: -1,
+                order_by: None,
+            })
+            .await?
+            .into_iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>();
 
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_update_query(query);
+        let table = query.table;
+        query.returning = None;
+        self.run(sql::update(Dialect::Mysql, query)).await?;
 
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_update_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let Some(returning) = query.returning else {
-                    let (sql, params) = adapter.compile_update_query(query);
-
-                    self.log_query(&sql, &params);
-
-                    return adapter.query::<M>(&sql, &params).await;
-                };
-
-                let conditions = query.conditions.clone();
-                let id_lookup = FindQuery {
-                    fields: &["id"],
-                    from: query.table,
-                    conditions: conditions.clone(),
-                    limit: -1,
-                    skip: -1,
-                    order_by: None,
-                };
-                let (sql, params) = adapter.compile_find_query(id_lookup);
-
-                self.log_query(&sql, &params);
-
-                let ids = adapter
-                    .query::<crate::SingleIdRow>(&sql, &params)
-                    .await?
-                    .into_iter()
-                    .map(|row| row.id)
-                    .collect::<Vec<_>>();
-
-                let mut update_query = query;
-                update_query.returning = None;
-                let table = update_query.table;
-                let (sql, params) = adapter.compile_update_query(update_query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await?;
-
-                if ids.is_empty() {
-                    return Ok(Vec::new());
-                }
-
-                let find = FindQuery {
-                    fields: returning,
-                    from: table,
-                    conditions: vec![crate::FindWhere::Batch("id", ids)],
-                    limit: -1,
-                    skip: -1,
-                    order_by: None,
-                };
-                let (sql, params) = adapter.compile_find_query(find);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
+        if ids.is_empty() {
+            return Ok(Vec::new());
         }
+
+        self.query(reload_by_id(returning, table, ids)).await
     }
 
     /// Executes the mutation before any MySQL compatibility read. This keeps
@@ -465,246 +304,80 @@ impl Backend {
     where
         M: DinocoRowModel,
     {
-        if !matches!(self, Backend::Mysql(_)) {
-            return self.update_returning::<M>(query).await;
+        #[cfg(feature = "mysql")]
+        #[allow(irrefutable_let_patterns)]
+        if let Backend::Mysql(adapter) = self {
+            let (update, find) = crate::transaction::mysql_atomic_update_statements(query)?;
+            self.log_query(&update.0, &update.1);
+            self.log_query(&find.0, &find.1);
+            return boxed(adapter.execute_atomic_update_returning::<M>(update, find)).await;
         }
 
-        let Backend::Mysql(adapter) = self else {
-            unreachable!();
-        };
-        let returning =
-            query.returning.ok_or_else(|| anyhow::anyhow!("atomic update returning requires a projection"))?;
-        if query.sets.iter().any(|set| set.field == "id") {
-            anyhow::bail!("MySQL atomic find_and_update cannot change the `id` field");
-        }
-        let find_conditions = query.post_update_reload_conditions();
-
-        let table = query.table;
-        let mut update = query;
-        update.returning = None;
-        let (update_sql, update_params) = adapter.compile_update_query(update);
-        self.log_query(&update_sql, &update_params);
-
-        let find = FindQuery {
-            fields: returning,
-            from: table,
-            conditions: find_conditions,
-            limit: 1,
-            skip: -1,
-            order_by: None,
-        };
-        let (find_sql, find_params) = adapter.compile_find_query(find);
-        self.log_query(&find_sql, &find_params);
-        adapter.execute_atomic_update_returning::<M>(&update_sql, &update_params, &find_sql, &find_params).await
+        self.update_returning::<M>(query).await
     }
 
     pub async fn delete(&self, query: DeleteQuery) -> anyhow::Result<usize> {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_delete_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_delete_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_delete_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, params) = adapter.compile_delete_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await
-            }
-        }
+        self.run(sql::delete(self.dialect(), query)).await
     }
 
-    pub async fn delete_returning<M>(&self, query: DeleteQuery) -> anyhow::Result<Vec<M>>
+    pub async fn delete_returning<M>(&self, mut query: DeleteQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_delete_query(query);
+        // MySQL has no `RETURNING`: read the rows, then delete them.
+        let (true, Some(returning)) = (self.is_mysql(), query.returning) else {
+            return self.fetch(sql::delete(self.dialect(), query), Decode::Strict).await;
+        };
 
-                self.log_query(&sql, &params);
+        let rows = self
+            .query::<M>(FindQuery {
+                fields: returning,
+                from: query.table,
+                conditions: query.conditions.clone(),
+                limit: -1,
+                skip: -1,
+                order_by: None,
+            })
+            .await?;
+        query.returning = None;
+        self.run(sql::delete(Dialect::Mysql, query)).await?;
 
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_delete_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_delete_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query::<M>(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let Some(returning) = query.returning else {
-                    let (sql, params) = adapter.compile_delete_query(query);
-
-                    self.log_query(&sql, &params);
-
-                    return adapter.query::<M>(&sql, &params).await;
-                };
-
-                let find = FindQuery {
-                    fields: returning,
-                    from: query.table,
-                    conditions: query.conditions.clone(),
-                    limit: -1,
-                    skip: -1,
-                    order_by: None,
-                };
-                let (sql, params) = adapter.compile_find_query(find);
-
-                self.log_query(&sql, &params);
-
-                let rows = adapter.query::<M>(&sql, &params).await?;
-                let mut delete_query = query;
-                delete_query.returning = None;
-                let (sql, params) = adapter.compile_delete_query(delete_query);
-
-                self.log_query(&sql, &params);
-
-                adapter.execute(&sql, &params).await?;
-
-                Ok(rows)
-            }
-        }
+        Ok(rows)
     }
 
     pub async fn count(&self, query: CountQuery) -> anyhow::Result<i64> {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_count_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_count(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_count_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_count(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_count_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_count(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, params) = adapter.compile_count_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_count(&sql, &params).await
-            }
-        }
+        self.fetch_count(sql::count(self.dialect(), query)).await
     }
 
-    pub async fn exists(&self, query: crate::ExistsQuery) -> anyhow::Result<bool> {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_exists_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_exists(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_exists_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_exists(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_exists_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_exists(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, params) = adapter.compile_exists_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_exists(&sql, &params).await
-            }
-        }
+    pub async fn exists(&self, query: ExistsQuery) -> anyhow::Result<bool> {
+        let (sql, params) = sql::exists(self.dialect(), query);
+        self.log_query(&sql, &params);
+        with_adapter!(self, adapter => boxed(adapter.fetch_exists(sql, params)).await)
     }
 
     pub async fn count_relation(&self, query: RelationCountQuery) -> anyhow::Result<i64> {
-        match &self {
-            Backend::Sqlite(adapter) => {
-                let (sql, params) = adapter.compile_relation_count_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_count(&sql, &params).await
-            }
-            Backend::Postgres(adapter) => {
-                let (sql, params) = adapter.compile_relation_count_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_count(&sql, &params).await
-            }
-            Backend::PgBouncer(adapter) => {
-                let (sql, params) = adapter.compile_relation_count_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_count(&sql, &params).await
-            }
-            Backend::Mysql(adapter) => {
-                let (sql, params) = adapter.compile_relation_count_query(query);
-
-                self.log_query(&sql, &params);
-
-                adapter.query_count(&sql, &params).await
-            }
-        }
+        self.fetch_count(sql::relation_count(self.dialect(), query)).await
     }
 
     pub async fn count_many_to_many_relation(&self, query: ManyToManyRelationCountQuery) -> anyhow::Result<i64> {
-        macro_rules! count {
-            ($adapter:expr) => {{
-                let (sql, params) = $adapter.compile_many_to_many_relation_count_query(query);
-                self.log_query(&sql, &params);
-                $adapter.query_count(&sql, &params).await
-            }};
-        }
+        self.fetch_count(sql::many_to_many_relation_count(self.dialect(), query)).await
+    }
+}
 
-        match &self {
-            Backend::Sqlite(adapter) => count!(adapter),
-            Backend::Postgres(adapter) => count!(adapter),
-            Backend::PgBouncer(adapter) => count!(adapter),
-            Backend::Mysql(adapter) => count!(adapter),
-        }
+fn boxed<'a, T>(
+    future: impl std::future::Future<Output = T> + Send + 'a,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>> {
+    Box::pin(future)
+}
+
+/// The rows with the given `id`s, projected onto `fields`.
+fn reload_by_id(fields: &'static [&'static str], table: &'static str, ids: Vec<DinocoValue>) -> FindQuery {
+    FindQuery {
+        fields,
+        from: table,
+        conditions: vec![FindWhere::Batch("id", ids)],
+        limit: -1,
+        skip: -1,
+        order_by: None,
     }
 }

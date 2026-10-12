@@ -1,7 +1,7 @@
 use dinoco_vscode::completion::{ImportCompletionContext, complete, import_completion_context};
 use dinoco_vscode::diagnostics::analyze;
 use dinoco_vscode::document::DocumentIndex;
-use dinoco_vscode::tower_lsp::lsp_types::{CompletionResponse, NumberOrString, Position, Range};
+use dinoco_vscode::tower_lsp_server::ls_types::{CompletionResponse, NumberOrString, Position, Range};
 
 #[test]
 fn schema_completion_exposes_standard_and_fulltext_indexes() {

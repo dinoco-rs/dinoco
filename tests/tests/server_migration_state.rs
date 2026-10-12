@@ -28,6 +28,26 @@ async fn mysql_migrations_preserve_data_repair_missing_tables_and_verify_checksu
 }
 
 #[tokio::test]
+async fn postgres_create_only_writes_the_migration_and_migrate_run_applies_it() -> anyhow::Result<()> {
+    exercise_create_only(ServerDatabase::Postgres).await
+}
+
+#[tokio::test]
+async fn mysql_create_only_writes_the_migration_and_migrate_run_applies_it() -> anyhow::Result<()> {
+    exercise_create_only(ServerDatabase::Mysql).await
+}
+
+#[tokio::test]
+async fn mysql_replaces_removed_enum_values_before_narrowing_the_column() -> anyhow::Result<()> {
+    exercise_enum_value_removal(ServerDatabase::Mysql).await
+}
+
+#[tokio::test]
+async fn postgres_refuses_to_remove_enum_values_without_asking_for_a_replacement() -> anyhow::Result<()> {
+    exercise_enum_value_removal(ServerDatabase::Postgres).await
+}
+
+#[tokio::test]
 async fn postgres_generate_upgrades_legacy_pascal_case_tables_without_losing_rows() -> anyhow::Result<()> {
     let suffix = format!("{}_{}_{}", std::process::id(), monotonic(), NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed));
     let database_name = format!("dinoco_pg_legacy_{suffix}");
@@ -335,6 +355,156 @@ async fn exercise_server_migrations(database: ServerDatabase) -> anyhow::Result<
         assert!(!tampered.status.success(), "{}", combined_output(&tampered));
         assert!(combined_output(&tampered).to_ascii_lowercase().contains("checksum"));
 
+        Ok::<_, anyhow::Error>(())
+    }
+    .await;
+
+    let _ = fs::remove_dir_all(&project);
+    let cleanup = drop_database(database, &database_name).await;
+    outcome.and(cleanup)
+}
+
+/// Runs the CLI with no approval from the environment, so only options
+/// approve a plan.
+fn run_cli_with_options(project: &Path, database_url: &str, args: &[&str]) -> Output {
+    run_cli(project, database_url, args, &[("DINOCO_CLI_CONFIRM_MIGRATION", "false")])
+}
+
+async fn temporary_database(database: ServerDatabase, label: &str) -> anyhow::Result<(String, String, PathBuf)> {
+    let adapter = match database {
+        ServerDatabase::Postgres => "pg",
+        ServerDatabase::Mysql => "mysql",
+    };
+    let suffix =
+        format!("{label}_{}_{}_{}", std::process::id(), monotonic(), NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed));
+    let database_name = format!("dinoco_{adapter}_{suffix}");
+    create_database(database, &database_name).await?;
+    let database_url = match database {
+        ServerDatabase::Postgres => format!("postgres://postgres:postgres@localhost:5432/{database_name}"),
+        ServerDatabase::Mysql => format!("mysql://root:root@localhost:3306/{database_name}"),
+    };
+    Ok((database_name, database_url, temporary_project(adapter, &suffix)))
+}
+
+async fn exercise_create_only(database: ServerDatabase) -> anyhow::Result<()> {
+    let (database_name, database_url, project) = temporary_database(database, "create_only").await?;
+    write_schema(&project, database);
+
+    let outcome = async {
+        let created = run_cli_with_options(&project, &database_url, &["migrate", "generate", "--create-only", "--yes"]);
+        assert_success(&created);
+        let output = combined_output(&created);
+        assert!(output.contains("Migration created:"), "{output}");
+        assert!(output.contains("It was not applied to the database."), "{output}");
+        assert_eq!(migration_dirs(&project).len(), 1);
+        assert!(!project.join("dinoco/models").exists(), "--create-only does not regenerate the models");
+
+        let db = connect(database, &database_url).await?;
+        assert!(db.inspect_schema().await?.tables.is_empty(), "--create-only must not change the database");
+        drop(db);
+
+        let run = run_cli_with_options(&project, &database_url, &["migrate", "run"]);
+        assert_success(&run);
+        assert!(combined_output(&run).contains("Applied 1 migration."), "{}", combined_output(&run));
+
+        let db = connect(database, &database_url).await?;
+        let schema = db.inspect_schema().await?;
+        for table in ["account", "business", "profile", "address"] {
+            assert!(schema.tables.iter().any(|item| item.name == table), "missing {table}");
+        }
+        drop(db);
+
+        let stable = run_cli_with_options(&project, &database_url, &["migrate", "generate"]);
+        assert_success(&stable);
+        assert!(combined_output(&stable).contains("No schema changes were found"), "{}", combined_output(&stable));
+        Ok::<_, anyhow::Error>(())
+    }
+    .await;
+
+    let _ = fs::remove_dir_all(&project);
+    let cleanup = drop_database(database, &database_name).await;
+    outcome.and(cleanup)
+}
+
+fn write_task_schema(project: &Path, database: ServerDatabase, values: &str) {
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco directory");
+    let provider = match database {
+        ServerDatabase::Postgres => "postgresql",
+        ServerDatabase::Mysql => "mysql",
+    };
+    fs::write(
+        project.join("dinoco/schema.dinoco"),
+        format!(
+            r#"
+config {{
+    database = "{provider}"
+    database_url = env("DATABASE_URL")
+}}
+
+enum Status {{
+    {values}
+}}
+
+model Task {{
+    id     Integer @id @default(autoincrement())
+    status Status
+}}
+"#
+        ),
+    )
+    .expect("schema");
+}
+
+async fn exercise_enum_value_removal(database: ServerDatabase) -> anyhow::Result<()> {
+    let (database_name, database_url, project) = temporary_database(database, "enum_removal").await?;
+    write_task_schema(&project, database, "ACTIVE\n    PROCESSING\n    DONE");
+
+    let outcome = async {
+        assert_success(&run_cli_with_options(&project, &database_url, &["migrate", "generate", "--yes"]));
+        let db = connect(database, &database_url).await?;
+        db.execute("INSERT INTO task (status) VALUES ('PROCESSING'), ('PROCESSING'), ('ACTIVE')").await?;
+        drop(db);
+
+        write_task_schema(&project, database, "ACTIVE\n    DONE");
+        match database {
+            ServerDatabase::Mysql => {
+                let undecided =
+                    run_cli_with_options(&project, &database_url, &["migrate", "generate", "--allow-destructive"]);
+                assert_eq!(undecided.status.code(), Some(2), "{}", combined_output(&undecided));
+                let output = combined_output(&undecided);
+                assert!(output.contains("Status.PROCESSING (2 rows; replace with ACTIVE, DONE)"), "{output}");
+                assert_eq!(migration_dirs(&project).len(), 1);
+
+                let replaced = run_cli_with_options(
+                    &project,
+                    &database_url,
+                    &["migrate", "generate", "--allow-destructive", "--replace-enum-value", "Status.PROCESSING=DONE"],
+                );
+                assert_success(&replaced);
+                let up = fs::read_to_string(migration_dirs(&project).last().unwrap().join("up.sql"))?;
+                assert!(up.contains("UPDATE `task` SET `status` = 'DONE' WHERE `status` = 'PROCESSING';"), "{up}");
+
+                let db = connect(database, &database_url).await?;
+                assert_eq!(db.count("SELECT COUNT(*) FROM task WHERE status = 'DONE'").await?, 2);
+                assert_eq!(db.count("SELECT COUNT(*) FROM task WHERE status = 'ACTIVE'").await?, 1);
+                drop(db);
+
+                let stable = run_cli_with_options(&project, &database_url, &["migrate", "generate"]);
+                assert_success(&stable);
+                assert!(combined_output(&stable).contains("No schema changes were found"));
+            }
+            ServerDatabase::Postgres => {
+                // PostgreSQL cannot drop a value from an enum type, so the plan
+                // is refused before any replacement is asked for.
+                let refused =
+                    run_cli_with_options(&project, &database_url, &["migrate", "generate", "--allow-destructive"]);
+                assert_eq!(refused.status.code(), Some(1), "{}", combined_output(&refused));
+                let output = combined_output(&refused);
+                assert!(output.contains("requires a reviewed custom migration"), "{output}");
+                assert!(!output.contains("--replace-enum-value"), "{output}");
+                assert_eq!(migration_dirs(&project).len(), 1);
+            }
+        }
         Ok::<_, anyhow::Error>(())
     }
     .await;

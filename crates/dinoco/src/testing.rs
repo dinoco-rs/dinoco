@@ -2,11 +2,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::Context;
-use dinoco_compiler::{ConfigValue, Schema};
-use dinoco_engine::{
-    Backend, DatabaseError, DinocoAdapter, DinocoClient, DinocoEntity, ExecutedQuery, SqliteAdapter, TableHooks,
-};
+use dinoco_engine::{DatabaseError, DinocoClient, DinocoEntity, ExecutedQuery, TableHooks};
 
 /// Creates a client over a fresh in-memory SQLite database with every table,
 /// index, and foreign key of `dinoco/schema.dinoco` already created — the
@@ -54,8 +50,33 @@ impl TestAmbient {
         self
     }
 
+    #[cfg(feature = "cli")]
     pub async fn create(self) -> anyhow::Result<DinocoClient> {
-        let schema = self.read_schema()?;
+        ambient::create(self).await
+    }
+
+    /// Without the `cli` feature Dinoco has no schema compiler to build the
+    /// tables from, so creating the ambient fails at runtime; generated code
+    /// that refers to it keeps compiling.
+    #[cfg(not(feature = "cli"))]
+    pub async fn create(self) -> anyhow::Result<DinocoClient> {
+        anyhow::bail!(
+            "dinoco test ambients need the `cli` feature of `dinoco` (enabled by default) to compile `{}`",
+            self.schema_path.display()
+        )
+    }
+}
+
+#[cfg(feature = "cli")]
+mod ambient {
+    use anyhow::Context;
+    use dinoco_compiler::{ConfigValue, Schema};
+    use dinoco_engine::{Backend, DinocoAdapter, DinocoClient, SqliteAdapter};
+
+    use super::TestAmbient;
+
+    pub(super) async fn create(ambient: TestAmbient) -> anyhow::Result<DinocoClient> {
+        let schema = read_schema(&ambient)?;
         let adapter = SqliteAdapter::memory().await?;
 
         // Tables are created in dependency-free order; SQLite checks foreign
@@ -71,11 +92,11 @@ impl TestAmbient {
             .with_logger(config_bool(&schema, "with_logger").unwrap_or(false)))
     }
 
-    fn read_schema(&self) -> anyhow::Result<Schema> {
-        let schema = dinoco_compiler::compile_file(&self.schema_path)
+    fn read_schema(ambient: &TestAmbient) -> anyhow::Result<Schema> {
+        let schema = dinoco_compiler::compile_file(&ambient.schema_path)
             .map_err(|error| anyhow::anyhow!(error.to_string()))
-            .with_context(|| format!("failed to compile `{}` for the test ambient", self.schema_path.display()))?;
-        let schema = match &self.workspace {
+            .with_context(|| format!("failed to compile `{}` for the test ambient", ambient.schema_path.display()))?;
+        let schema = match &ambient.workspace {
             Some(name) => schema.for_workspace(name).with_context(|| format!("workspace `{name}` was not found"))?,
             None => schema,
         };
@@ -83,16 +104,16 @@ impl TestAmbient {
 
         Ok(schema)
     }
-}
 
-fn config_value<'a>(schema: &'a Schema, key: &str) -> Option<&'a ConfigValue> {
-    schema.config()?.entries.iter().find(|entry| entry.key == key).map(|entry| &entry.value)
-}
+    fn config_value<'a>(schema: &'a Schema, key: &str) -> Option<&'a ConfigValue> {
+        schema.config()?.entries.iter().find(|entry| entry.key == key).map(|entry| &entry.value)
+    }
 
-fn config_bool(schema: &Schema, key: &str) -> Option<bool> {
-    match config_value(schema, key)? {
-        ConfigValue::Boolean(value) => Some(*value),
-        _ => None,
+    fn config_bool(schema: &Schema, key: &str) -> Option<bool> {
+        match config_value(schema, key)? {
+            ConfigValue::Boolean(value) => Some(*value),
+            _ => None,
+        }
     }
 }
 

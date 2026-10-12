@@ -4,4 +4,4 @@ pub mod document;
 pub mod server;
 pub mod workspace;
 
-pub use tower_lsp;
+pub use tower_lsp_server;

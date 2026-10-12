@@ -1,4 +1,4 @@
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    dinoco_cli::run().await
+async fn main() -> std::process::ExitCode {
+    dinoco_cli::main().await
 }

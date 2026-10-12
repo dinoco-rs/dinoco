@@ -3,7 +3,8 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 
 use dinoco_engine::{
-    DinocoEntity, DinocoMysql, DinocoPostgres, DinocoProjection, DinocoRowModel, DinocoSqlite, DinocoValue, FindOrderBy, FindQuery, FindWhere, ManyToManyRelationQuery, RelationOccurrenceQuery, WhereComplex,
+    DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindOrderBy, FindQuery, FindWhere,
+    ManyToManyRelationQuery, RelationOccurrenceQuery, WhereComplex,
 };
 
 use crate::ReadTarget;
@@ -20,11 +21,7 @@ pub(crate) type IncludeLoaderFuture<'a, S> =
 type RelationMarker<M, C, CS> = PhantomData<fn() -> (M, C, CS)>;
 
 pub trait IncludeLoader<S>: Send + Sync {
-    fn load_applier<'a>(
-        &'a self,
-        target: &'a ReadTarget<'a>,
-        parents: &'a [S],
-    ) -> IncludeLoaderFuture<'a, S>;
+    fn load_applier<'a>(&'a self, target: &'a ReadTarget<'a>, parents: &'a [S]) -> IncludeLoaderFuture<'a, S>;
 }
 
 pub(crate) async fn load_includes<S>(
@@ -33,7 +30,7 @@ pub(crate) async fn load_includes<S>(
     items: &mut [S],
 ) -> anyhow::Result<()> {
     let appliers =
-        futures::future::try_join_all(includes.iter().map(|include| include.load_applier(target, items))).await?;
+        futures_util::future::try_join_all(includes.iter().map(|include| include.load_applier(target, items))).await?;
 
     for apply in appliers {
         apply(items);
@@ -327,20 +324,16 @@ where
     C: DinocoEntity + DinocoRowModel,
     CS: DinocoProjection<C> + DinocoRelationValue + 'static,
 {
-    fn load_applier<'a>(
-        &'a self,
-        target: &'a ReadTarget<'a>,
-        parents: &'a [S],
-    ) -> IncludeLoaderFuture<'a, S> {
+    fn load_applier<'a>(&'a self, target: &'a ReadTarget<'a>, parents: &'a [S]) -> IncludeLoaderFuture<'a, S> {
         Box::pin(async move {
-            let keys = relation_values(parents, self.parent_field);
+            let (keys, has_key) = relation_keys(parents, self.parent_field);
 
             if keys.is_empty() {
                 return Ok(noop_include_applier());
             }
             let key_count = keys.len();
 
-            let (relation_ordinals, mut children) = if let Some(many_to_many) = self.many_to_many {
+            let rows = if let Some(many_to_many) = self.many_to_many {
                 let query = ManyToManyRelationQuery {
                     query: self.query.clone(),
                     join_table: many_to_many.join_table,
@@ -348,61 +341,36 @@ where
                     child_field: self.child_field,
                     join_parent_field: many_to_many.join_parent_field,
                     join_child_field: many_to_many.join_child_field,
-                    key_count: keys.len(),
+                    key_count,
                 };
-                let child_rows = target.query_many_to_many_relation::<RelationOccurrenceRow<C, CS>>(query, &keys)
-                    .await?;
-
-                (
-                    child_rows.iter().map(|row| row.ordinal).collect::<Vec<_>>(),
-                    child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>(),
-                )
+                target.query_many_to_many_relation::<RelationOccurrenceRow<C, CS>>(query, keys).await?
             } else {
-                let query = RelationOccurrenceQuery {
-                    query: self.query.clone(),
-                    child_field: self.child_field,
-                    key_count: keys.len(),
-                };
-                let child_rows = target.query_relation_occurrences::<RelationOccurrenceRow<C, CS>>(query, &keys)
-                    .await?;
-
-                (
-                    child_rows.iter().map(|row| row.ordinal).collect::<Vec<_>>(),
-                    child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>(),
-                )
+                let query =
+                    RelationOccurrenceQuery { query: self.query.clone(), child_field: self.child_field, key_count };
+                target.query_relation_occurrences::<RelationOccurrenceRow<C, CS>>(query, keys).await?
             };
-            let appliers = futures::future::try_join_all(
-                self.includes.iter().map(|include| include.load_applier(target, &children)),
-            )
-            .await?;
+            let (ordinals, children) = load_nested_includes(&self.includes, target, rows).await?;
 
-            for apply in appliers {
-                apply(&mut children);
+            // Every parent's children, in one exactly sized vector each.
+            let mut counts = vec![0usize; key_count];
+            for &ordinal in &ordinals {
+                if let Some(count) = counts.get_mut(ordinal) {
+                    *count += 1;
+                }
             }
-
-            let relation = self.relation;
-            let parent_field = self.parent_field;
-
-            let mut grouped = (0..key_count).map(|_| Vec::new()).collect::<Vec<Vec<CS>>>();
-
-            for (ordinal, child) in relation_ordinals.into_iter().zip(children) {
+            let mut grouped = counts.into_iter().map(Vec::with_capacity).collect::<Vec<Vec<CS>>>();
+            for (ordinal, child) in ordinals.into_iter().zip(children) {
                 if let Some(values) = grouped.get_mut(ordinal) {
                     values.push(child);
                 }
             }
 
+            let relation = self.relation;
             Ok(Box::new(move |parents: &mut [S]| {
-                let mut ordinal = 0;
+                let mut grouped = grouped.into_iter();
 
-                for parent in parents {
-                    let values = if parent.dinoco_relation_value(parent_field).is_some() {
-                        let values = grouped.get_mut(ordinal).map(std::mem::take).unwrap_or_default();
-                        ordinal += 1;
-                        values
-                    } else {
-                        Vec::new()
-                    };
-
+                for (parent, has_key) in parents.iter_mut().zip(has_key) {
+                    let values = if has_key { grouped.next().unwrap_or_default() } else { Vec::new() };
                     parent.dinoco_apply_many(relation, values);
                 }
             }) as IncludeApplier<S>)
@@ -417,66 +385,64 @@ where
     C: DinocoEntity + DinocoRowModel,
     CS: DinocoProjection<C> + DinocoRelationValue + 'static,
 {
-    fn load_applier<'a>(
-        &'a self,
-        target: &'a ReadTarget<'a>,
-        parents: &'a [S],
-    ) -> IncludeLoaderFuture<'a, S> {
+    fn load_applier<'a>(&'a self, target: &'a ReadTarget<'a>, parents: &'a [S]) -> IncludeLoaderFuture<'a, S> {
         Box::pin(async move {
-            let keys = relation_values(parents, self.parent_field);
+            let (keys, has_key) = relation_keys(parents, self.parent_field);
 
             if keys.is_empty() {
                 return Ok(noop_include_applier());
             }
 
             let key_count = keys.len();
-            let query = RelationOccurrenceQuery {
-                query: self.query.clone(),
-                child_field: self.child_field,
-                key_count: keys.len(),
-            };
+            let query = RelationOccurrenceQuery { query: self.query.clone(), child_field: self.child_field, key_count };
+            let rows = target.query_relation_occurrences::<RelationOccurrenceRow<C, CS>>(query, keys).await?;
+            let (ordinals, children) = load_nested_includes(&self.includes, target, rows).await?;
 
-            let child_rows = target.query_relation_occurrences::<RelationOccurrenceRow<C, CS>>(query, &keys)
-                .await?;
-            let relation_ordinals = child_rows.iter().map(|row| row.ordinal).collect::<Vec<_>>();
-            let mut children = child_rows.into_iter().map(|row| row.item).collect::<Vec<_>>();
-            let appliers = futures::future::try_join_all(
-                self.includes.iter().map(|include| include.load_applier(target, &children)),
-            )
-            .await?;
-
-            for apply in appliers {
-                apply(&mut children);
-            }
-
-            let mut grouped = (0..key_count).map(|_| Vec::new()).collect::<Vec<Vec<CS>>>();
-
-            for (ordinal, child) in relation_ordinals.into_iter().zip(children) {
-                if let Some(values) = grouped.get_mut(ordinal) {
-                    values.push(child);
+            // The last row matched for each parent wins.
+            let mut matched = (0..key_count).map(|_| None).collect::<Vec<Option<CS>>>();
+            for (ordinal, child) in ordinals.into_iter().zip(children) {
+                if let Some(slot) = matched.get_mut(ordinal) {
+                    *slot = Some(child);
                 }
             }
 
             let relation = self.relation;
-            let parent_field = self.parent_field;
-
             Ok(Box::new(move |parents: &mut [S]| {
-                let mut ordinal = 0;
+                let mut matched = matched.into_iter();
 
-                for parent in parents {
-                    let value = if parent.dinoco_relation_value(parent_field).is_some() {
-                        let value = grouped.get_mut(ordinal).and_then(Vec::pop);
-                        ordinal += 1;
-                        value
-                    } else {
-                        None
-                    };
-
+                for (parent, has_key) in parents.iter_mut().zip(has_key) {
+                    let value = if has_key { matched.next().flatten() } else { None };
                     parent.dinoco_apply_one(relation, value);
                 }
             }) as IncludeApplier<S>)
         })
     }
+}
+
+/// Splits relation rows into their parent ordinals and items, then loads the
+/// items' own includes.
+async fn load_nested_includes<C, CS>(
+    includes: &[Box<dyn IncludeLoader<CS>>],
+    target: &ReadTarget<'_>,
+    rows: Vec<RelationOccurrenceRow<C, CS>>,
+) -> anyhow::Result<(Vec<usize>, Vec<CS>)> {
+    let mut ordinals = Vec::with_capacity(rows.len());
+    let mut children = Vec::with_capacity(rows.len());
+    for row in rows {
+        ordinals.push(row.ordinal);
+        children.push(row.item);
+    }
+
+    if !includes.is_empty() {
+        let appliers =
+            futures_util::future::try_join_all(includes.iter().map(|include| include.load_applier(target, &children)))
+                .await?;
+        for apply in appliers {
+            apply(&mut children);
+        }
+    }
+
+    Ok((ordinals, children))
 }
 
 struct RelationOccurrenceRow<C, CS> {
@@ -485,74 +451,92 @@ struct RelationOccurrenceRow<C, CS> {
     marker: PhantomData<C>,
 }
 
-impl<C, CS> DinocoSqlite for RelationOccurrenceRow<C, CS>
-where
-    C: DinocoEntity,
-    CS: DinocoProjection<C>,
-{
-    fn from_sqlite_row(row: &dinoco_engine::SqliteRow<'_>) -> Option<Self> {
-        Some(Self {
-            item: CS::from_sqlite_row(row)?,
-            ordinal: row.get::<_, i64>(CS::FIELDS.len() + 1).ok()?.try_into().ok()?,
-            marker: PhantomData,
-        })
+dinoco_engine::__dinoco_sqlite! {
+    impl<C, CS> dinoco_engine::DinocoSqlite for RelationOccurrenceRow<C, CS>
+    where
+        C: DinocoEntity,
+        CS: DinocoProjection<C>,
+    {
+        fn from_sqlite_row(row: &dinoco_engine::SqliteRow<'_>) -> Option<Self> {
+            Some(Self {
+                item: CS::from_sqlite_row(row)?,
+                ordinal: row.get::<_, i64>(CS::FIELDS.len() + 1).ok()?.try_into().ok()?,
+                marker: PhantomData,
+            })
+        }
     }
 }
 
-impl<C, CS> DinocoPostgres for RelationOccurrenceRow<C, CS>
-where
-    C: DinocoEntity,
-    CS: DinocoProjection<C>,
-{
-    fn from_deadpool_posgres_row(row: &dinoco_engine::DeadpoolPostgresRow) -> Option<Self> {
-        Some(Self {
-            item: CS::from_deadpool_posgres_row(row)?,
-            ordinal: postgres_relation_ordinal(row, CS::FIELDS.len() + 1)?,
-            marker: PhantomData,
-        })
+dinoco_engine::__dinoco_postgres! {
+    impl<C, CS> dinoco_engine::DinocoPostgres for RelationOccurrenceRow<C, CS>
+    where
+        C: DinocoEntity,
+        CS: DinocoProjection<C>,
+    {
+        fn from_deadpool_posgres_row(row: &dinoco_engine::DeadpoolPostgresRow) -> Option<Self> {
+            Self::from_postgres_row(row)
+        }
+
+        fn from_deadpool_postgres_row(row: &dinoco_engine::DeadpoolPostgresRow) -> Option<Self> {
+            Self::from_postgres_row(row)
+        }
+
+        fn from_postgres_row(row: &dinoco_engine::PostgresRow) -> Option<Self> {
+            Some(Self {
+                item: CS::from_postgres_row(row)?,
+                ordinal: postgres_relation_ordinal(row, CS::FIELDS.len() + 1)?,
+                marker: PhantomData,
+            })
+        }
     }
 
-    fn from_deadpool_postgres_row(row: &dinoco_engine::DeadpoolPostgresRow) -> Option<Self> {
-        Self::from_deadpool_posgres_row(row)
-    }
-
-    fn from_postgres_row(row: &dinoco_engine::PostgresRow) -> Option<Self> {
-        Some(Self {
-            item: CS::from_postgres_row(row)?,
-            ordinal: postgres_relation_ordinal(row, CS::FIELDS.len() + 1)?,
-            marker: PhantomData,
-        })
-    }
-}
-
-impl<C, CS> DinocoMysql for RelationOccurrenceRow<C, CS>
-where
-    C: DinocoEntity,
-    CS: DinocoProjection<C>,
-{
-    fn from_mysql_row(row: &dinoco_engine::MysqlRow) -> Option<Self> {
-        let mut row = row.clone();
-
-        Some(Self {
-            item: CS::from_mysql_row(&row)?,
-            ordinal: row.take::<i64, _>(CS::FIELDS.len() + 1)?.try_into().ok()?,
-            marker: PhantomData,
-        })
+    /// The parent ordinal column: `INT4` for a `VALUES` list, `INT8` otherwise.
+    fn postgres_relation_ordinal(row: &dinoco_engine::PostgresRow, index: usize) -> Option<usize> {
+        if *row.columns().get(index)?.type_() == dinoco_engine::tokio_postgres::types::Type::INT4 {
+            row.try_get::<_, i32>(index).ok()?.try_into().ok()
+        } else {
+            row.try_get::<_, i64>(index).ok()?.try_into().ok()
+        }
     }
 }
 
-fn postgres_relation_ordinal(row: &dinoco_engine::PostgresRow, index: usize) -> Option<usize> {
-    row.try_get::<_, i64>(index)
-        .ok()
-        .and_then(|value| value.try_into().ok())
-        .or_else(|| row.try_get::<_, i32>(index).ok().and_then(|value| value.try_into().ok()))
+dinoco_engine::__dinoco_mysql! {
+    impl<C, CS> dinoco_engine::DinocoMysql for RelationOccurrenceRow<C, CS>
+    where
+        C: DinocoEntity,
+        CS: DinocoProjection<C>,
+    {
+        fn from_mysql_row(row: &dinoco_engine::MysqlRow) -> Option<Self> {
+            Self::from_mysql_row_owned(row.clone())
+        }
+
+        fn from_mysql_row_owned(mut row: dinoco_engine::MysqlRow) -> Option<Self> {
+            let ordinal = dinoco_engine::mysql_take::<i64>(&mut row, CS::FIELDS.len() + 1)?.try_into().ok()?;
+
+            Some(Self { item: CS::from_mysql_row_owned(row)?, ordinal, marker: PhantomData })
+        }
+    }
 }
 
-fn relation_values<S>(items: &[S], field: &'static str) -> Vec<DinocoValue>
+/// The relation keys of `parents`, and which parents have one: the loaded
+/// rows are numbered by the position of their parent's key.
+fn relation_keys<S>(parents: &[S], field: &'static str) -> (Vec<DinocoValue>, Vec<bool>)
 where
     S: DinocoRelationValue,
 {
-    items.iter().filter_map(|item| item.dinoco_relation_value(field)).collect()
+    let mut keys = Vec::with_capacity(parents.len());
+    let has_key = parents
+        .iter()
+        .map(|parent| match parent.dinoco_relation_value(field) {
+            Some(key) => {
+                keys.push(key);
+                true
+            }
+            None => false,
+        })
+        .collect();
+
+    (keys, has_key)
 }
 
 fn noop_include_applier<S>() -> IncludeApplier<S> {

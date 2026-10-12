@@ -5,6 +5,7 @@ mod hooks;
 mod insert;
 mod methods;
 mod order_by;
+mod projection;
 mod read;
 mod relation;
 mod testing;
@@ -19,6 +20,7 @@ mod update;
 /// ```ignore
 /// use dinoco::codegen::*;
 /// ```
+#[cfg(feature = "cli")]
 pub mod codegen {
     pub use dinoco_codegen::prelude;
     pub use dinoco_codegen::prelude::*;
@@ -28,6 +30,8 @@ pub use anyhow;
 pub use async_trait::async_trait;
 pub use dinoco_derives::{DinocoEnum, Entity, EntityExtend, Extend};
 pub use dinoco_engine::*;
+#[doc(hidden)]
+pub use dinoco_engine::{__dinoco_mysql, __dinoco_postgres, __dinoco_sqlite};
 pub use serde;
 
 pub use count::*;
@@ -37,6 +41,7 @@ pub(crate) use hooks::*;
 pub use insert::*;
 pub use methods::*;
 pub use order_by::*;
+pub(crate) use projection::*;
 pub use read::*;
 pub use relation::*;
 pub use testing::*;

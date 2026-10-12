@@ -96,6 +96,7 @@ pub fn is_decode_error(error: &anyhow::Error) -> bool {
 
 fn classify_constraint(error: &anyhow::Error) -> Option<DatabaseConstraintError> {
     for source in error.chain() {
+        #[cfg(feature = "sqlite")]
         if let Some(error) = source.downcast_ref::<rusqlite::Error>()
             && let rusqlite::Error::SqliteFailure(code, _) = error
         {
@@ -110,6 +111,7 @@ fn classify_constraint(error: &anyhow::Error) -> Option<DatabaseConstraintError>
             };
         }
 
+        #[cfg(feature = "postgres")]
         if let Some(error) = source.downcast_ref::<tokio_postgres::Error>()
             && let Some(error) = error.as_db_error()
         {
@@ -124,6 +126,7 @@ fn classify_constraint(error: &anyhow::Error) -> Option<DatabaseConstraintError>
             };
         }
 
+        #[cfg(feature = "mysql")]
         if let Some(mysql_async::Error::Server(error)) = source.downcast_ref::<mysql_async::Error>() {
             return match error.code {
                 1062 => Some(DatabaseConstraintError::UniqueViolation),
@@ -140,10 +143,12 @@ fn classify_constraint(error: &anyhow::Error) -> Option<DatabaseConstraintError>
 
 fn constraint_details(error: &anyhow::Error) -> ConstraintDetails {
     for source in error.chain() {
+        #[cfg(feature = "sqlite")]
         if let Some(rusqlite::Error::SqliteFailure(_, Some(message))) = source.downcast_ref::<rusqlite::Error>() {
             return sqlite_constraint_details(message);
         }
 
+        #[cfg(feature = "postgres")]
         if let Some(error) = source.downcast_ref::<tokio_postgres::Error>()
             && let Some(error) = error.as_db_error()
         {
@@ -159,6 +164,7 @@ fn constraint_details(error: &anyhow::Error) -> ConstraintDetails {
             };
         }
 
+        #[cfg(feature = "mysql")]
         if let Some(mysql_async::Error::Server(error)) = source.downcast_ref::<mysql_async::Error>() {
             return mysql_constraint_details(error.code, &error.message);
         }
@@ -167,6 +173,7 @@ fn constraint_details(error: &anyhow::Error) -> ConstraintDetails {
     ConstraintDetails::default()
 }
 
+#[cfg(feature = "sqlite")]
 /// `UNIQUE constraint failed: account.email, account.tenant_id`,
 /// `NOT NULL constraint failed: account.email`, `CHECK constraint failed: name`.
 fn sqlite_constraint_details(message: &str) -> ConstraintDetails {
@@ -193,6 +200,7 @@ fn sqlite_constraint_details(message: &str) -> ConstraintDetails {
 }
 
 /// `Key (email)=(duplicate@dinoco.rs) already exists.`
+#[cfg(feature = "postgres")]
 fn postgres_detail_columns(detail: &str) -> Vec<String> {
     detail
         .strip_prefix("Key (")
@@ -201,6 +209,7 @@ fn postgres_detail_columns(detail: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+#[cfg(feature = "mysql")]
 fn mysql_constraint_details(code: u16, message: &str) -> ConstraintDetails {
     match code {
         // Duplicate entry 'value' for key 'table.key_name'
@@ -234,6 +243,7 @@ fn mysql_constraint_details(code: u16, message: &str) -> ConstraintDetails {
     }
 }
 
+#[cfg(feature = "mysql")]
 fn between<'a>(message: &'a str, start: &str, end: &str) -> Option<&'a str> {
     let (_, rest) = message.split_once(start)?;
     rest.split_once(end).map(|(value, _)| value)

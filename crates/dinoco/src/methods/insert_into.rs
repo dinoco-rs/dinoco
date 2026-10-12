@@ -3,9 +3,9 @@ use std::marker::PhantomData;
 use dinoco_engine::{DinocoProjection, DinocoRowModel, PluckValue};
 
 use crate::{
-    CreateError, DinocoInsertable, Field, InsertPayload, MutationExecutor, execute_insert_models_returning,
-    execute_insert_models_returning_field, execute_insert_payloads, execute_insert_payloads_returning,
-    reload_inserted, reload_inserted_field,
+    CreateError, DinocoInsertable, Field, InsertPayload, MutationExecutor, execute_insert_owned,
+    execute_insert_owned_returning, execute_insert_owned_returning_field, execute_insert_payloads,
+    execute_insert_payloads_returning, reload_inserted, reload_inserted_field,
 };
 
 pub struct Insert<M, V = M> {
@@ -74,7 +74,11 @@ where
         C: MutationExecutor,
     {
         let item = self.item.expect("insert_into().values(...) must be called before execute()");
-        execute_insert_payloads::<M, V, V, C>(&[item], &client).await.map_err(CreateError::from_database)?;
+        if V::HAS_NESTED {
+            execute_insert_payloads::<M, V, V, C>(&[item], &client).await.map_err(CreateError::from_database)?;
+        } else {
+            execute_insert_owned::<M, V, C>(vec![item], &client).await.map_err(CreateError::from_database)?;
+        }
 
         Ok(())
     }
@@ -104,13 +108,11 @@ where
         let item = self.item.expect("insert_into().values(...) must be called before execute()");
 
         if !V::HAS_NESTED {
-            let mut rows = execute_insert_models_returning::<M, S, C>(&[item.dinoco_insert_model()], &client)
+            let mut rows = execute_insert_owned_returning::<M, V, S, C>(vec![item], &client)
                 .await
                 .map_err(CreateError::from_database)?;
 
-            return rows.pop().ok_or_else(|| {
-                CreateError::NotReturned { table: M::TABLE_NAME }
-            });
+            return rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
         }
 
         let inserted = execute_insert_payloads_returning::<M, V, V, C>(&[item], &client)
@@ -118,8 +120,7 @@ where
             .map_err(CreateError::from_database)?;
         let mut rows = reload_inserted::<M, S, C>(&inserted, &client).await.map_err(CreateError::from_database)?;
 
-        rows.pop()
-            .ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
+        rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
     }
 }
 
@@ -136,24 +137,21 @@ where
         let item = self.item.expect("insert_into().values(...) must be called before execute()");
 
         if !V::HAS_NESTED {
-            let mut rows =
-                execute_insert_models_returning_field::<M, T, C>(&[item.dinoco_insert_model()], self.field, &client)
-                    .await
-                    .map_err(CreateError::from_database)?;
+            let mut rows = execute_insert_owned_returning_field::<M, V, T, C>(vec![item], self.field, &client)
+                .await
+                .map_err(CreateError::from_database)?;
 
-            return rows.pop().ok_or_else(|| {
-                CreateError::NotReturned { table: M::TABLE_NAME }
-            });
+            return rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
         }
 
         let inserted = execute_insert_payloads_returning::<M, V, V, C>(&[item], &client)
             .await
             .map_err(CreateError::from_database)?;
-        let mut rows =
-            reload_inserted_field::<M, T, C>(&inserted, self.field, &client).await.map_err(CreateError::from_database)?;
+        let mut rows = reload_inserted_field::<M, T, C>(&inserted, self.field, &client)
+            .await
+            .map_err(CreateError::from_database)?;
 
-        rows.pop()
-            .ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
+        rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
     }
 }
 

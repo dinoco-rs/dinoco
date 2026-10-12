@@ -1,7 +1,8 @@
 [package]
 name = "dinoco_codegen"
-version = "2.0.9"
+version = "2.1.0"
 edition = "2024"
+rust-version = "1.95"
 license = "Apache-2.0"
 description = "Code generation utilities for Dinoco models and typed Rust client output."
 homepage = "https://dinoco.io"
@@ -10,6 +11,6 @@ readme = "../../crates.md"
 keywords = ["orm", "codegen", "models", "database", "rust"]
 
 [dependencies]
-dinoco_compiler = { path = "../dinoco_compiler", version = "2.0.9" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "2.1.0" }
 anyhow = "1.0"
 quote = "1.0"

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use dinoco_engine::{DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, PluckValue};
 
-use crate::{DeleteError, Field, MutationExecutor};
+use crate::{DeleteError, Field, MutationExecutor, single_field};
 pub struct DeleteMany<M> {
     conditions: Vec<FindWhere>,
     marker: PhantomData<M>,
@@ -105,7 +105,7 @@ where
     where
         C: MutationExecutor,
     {
-        let fields: &'static [&'static str] = Box::leak(vec![self.field].into_boxed_slice());
+        let fields = single_field(self.field, <M as DinocoEntity>::FIELDS);
         let query = DeleteQuery { table: M::TABLE_NAME, conditions: self.conditions, returning: Some(fields) };
 
         let rows = client.delete_returning::<PluckValue<T>>(query).await.map_err(DeleteError::from_database)?;
@@ -132,6 +132,6 @@ where
         let rows = self.inner.execute(client).await?;
         let mut transform = self.transform;
 
-        Ok(rows.into_iter().map(|row| transform(row)).collect())
+        Ok(rows.into_iter().map(&mut transform).collect())
     }
 }

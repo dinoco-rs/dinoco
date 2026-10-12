@@ -1,11 +1,10 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue,
-    WhereComplex,
+    DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue, WhereComplex,
 };
 
-use crate::{Field, IncludeLoader, IntoIncludeLoader, ReadExecutor, load_includes};
+use crate::{Field, IncludeLoader, IntoIncludeLoader, ReadExecutor, load_includes, single_field};
 
 pub struct FindFirst<M, S = M> {
     query: FindQuery,
@@ -96,7 +95,7 @@ where
     {
         let name = callback(M::Where::default()).field_name();
         let mut query = self.query;
-        query.fields = Box::leak(vec![name].into_boxed_slice());
+        query.fields = single_field(name, M::FIELDS);
 
         PluckFirst { query, read_primary: self.read_primary, marker: PhantomData }
     }

@@ -10,6 +10,9 @@ use crate::{Observer, RowCountKind, TransactionContext, active_transaction, obse
 /// Where a read builder (`find_first`, `find_many`) runs: `&client`, which
 /// may route to a read replica, or the `tx` handed to a transaction closure,
 /// which reads on the transaction's own connection and sees its writes.
+///
+/// Transaction reads are awaited boxed, so the far more common client reads
+/// do not carry the transaction channel's state in their futures.
 pub trait ReadExecutor: Send + Sync {
     #[doc(hidden)]
     fn read_target(&self, read_primary: bool) -> anyhow::Result<ReadTarget<'_>>;
@@ -43,7 +46,7 @@ impl ReadTarget<'_> {
                         client.read_backend(*read_primary).query::<M>(query).await
                     }
                     ReadTargetInner::Transaction(executor) => {
-                        executor.execute(TransactionCommand::find_many::<M>(query)).await
+                        Box::pin(executor.execute(TransactionCommand::find_many::<M>(query))).await
                     }
                 }
             },
@@ -52,10 +55,11 @@ impl ReadTarget<'_> {
         .await
     }
 
+    /// `keys` are the parent keys, bound before the query's own values.
     pub(crate) async fn query_relation_occurrences<M>(
         &self,
         query: RelationOccurrenceQuery,
-        keys: &[DinocoValue],
+        keys: Vec<DinocoValue>,
     ) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
@@ -64,7 +68,7 @@ impl ReadTarget<'_> {
             self.observer.as_ref(),
             RowCountKind::Find,
             query.query.from,
-            (query, keys.to_vec()),
+            (query, keys),
             |compiler, (query, mut keys)| {
                 let (sql, params) = compiler.compile_relation_occurrence_query(query);
                 keys.extend(params);
@@ -73,10 +77,10 @@ impl ReadTarget<'_> {
             |(query, keys)| async move {
                 match &self.inner {
                     ReadTargetInner::Client { client, read_primary } => {
-                        client.read_backend(*read_primary).query_relation_occurrences::<M>(query, &keys).await
+                        client.read_backend(*read_primary).query_relation_occurrences_with_keys::<M>(query, keys).await
                     }
                     ReadTargetInner::Transaction(executor) => {
-                        executor.execute(TransactionCommand::relation_occurrences::<M>(query, keys)).await
+                        Box::pin(executor.execute(TransactionCommand::relation_occurrences::<M>(query, keys))).await
                     }
                 }
             },
@@ -85,10 +89,11 @@ impl ReadTarget<'_> {
         .await
     }
 
+    /// `keys` are the parent keys, bound before the query's own values.
     pub(crate) async fn query_many_to_many_relation<M>(
         &self,
         query: ManyToManyRelationQuery,
-        keys: &[DinocoValue],
+        keys: Vec<DinocoValue>,
     ) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
@@ -97,7 +102,7 @@ impl ReadTarget<'_> {
             self.observer.as_ref(),
             RowCountKind::Find,
             query.query.from,
-            (query, keys.to_vec()),
+            (query, keys),
             |compiler, (query, mut keys)| {
                 let (sql, params) = compiler.compile_many_to_many_relation_query(query);
                 keys.extend(params);
@@ -106,10 +111,10 @@ impl ReadTarget<'_> {
             |(query, keys)| async move {
                 match &self.inner {
                     ReadTargetInner::Client { client, read_primary } => {
-                        client.read_backend(*read_primary).query_many_to_many_relation::<M>(query, &keys).await
+                        client.read_backend(*read_primary).query_many_to_many_relation_with_keys::<M>(query, keys).await
                     }
                     ReadTargetInner::Transaction(executor) => {
-                        executor.execute(TransactionCommand::many_to_many_relation::<M>(query, keys)).await
+                        Box::pin(executor.execute(TransactionCommand::many_to_many_relation::<M>(query, keys))).await
                     }
                 }
             },

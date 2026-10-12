@@ -2,13 +2,23 @@ use std::any::{Any, type_name};
 
 use tokio::sync::{mpsc, oneshot};
 
+#[cfg(any(feature = "postgres", feature = "mysql"))]
+use crate::RowDecodeError;
+use crate::backends::sql::{self, Dialect};
 use crate::{
-    DeleteQuery, DinocoMysql, DinocoPostgres, DinocoRowModel, DinocoSqlCompiler, DinocoSqlite, DinocoValue, FindQuery,
-    InsertQuery, ManyToManyRelationQuery, MysqlRow, PostgresRow, RelationOccurrenceQuery, SqliteRow, UpdateQuery,
+    DeleteQuery, DinocoRowModel, DinocoValue, FindQuery, InsertQuery, ManyToManyRelationQuery, RelationOccurrenceQuery,
+    UpdateQuery,
 };
+#[cfg(feature = "mysql")]
+use crate::{DinocoMysql, MysqlRow};
+#[cfg(feature = "postgres")]
+use crate::{DinocoPostgres, PostgresRow};
 
-type TransactionAny = Box<dyn Any + Send>;
-type TransactionFinish = Box<dyn FnOnce(RawTransactionOutput) -> anyhow::Result<TransactionAny> + Send + Sync>;
+pub(crate) type TransactionAny = Box<dyn Any + Send>;
+
+/// A compiled statement and its bound values.
+#[cfg(feature = "mysql")]
+type Compiled = (String, Vec<DinocoValue>);
 
 pub(crate) struct TransactionValue {
     value: TransactionAny,
@@ -29,9 +39,18 @@ impl TransactionValue {
 }
 
 pub(crate) enum LiveTransactionMessage {
-    Execute { command: TransactionCommand, reply: oneshot::Sender<anyhow::Result<TransactionValue>> },
-    Commit { reply: oneshot::Sender<anyhow::Result<()>> },
-    Rollback { reply: oneshot::Sender<anyhow::Result<()>> },
+    /// The command is boxed: the channel's buffer is sized by its largest
+    /// message.
+    Execute {
+        command: Box<TransactionCommand>,
+        reply: oneshot::Sender<anyhow::Result<TransactionValue>>,
+    },
+    Commit {
+        reply: oneshot::Sender<anyhow::Result<()>>,
+    },
+    Rollback {
+        reply: oneshot::Sender<anyhow::Result<()>>,
+    },
 }
 
 /// A live transaction pinned to one physical database connection.
@@ -50,11 +69,15 @@ impl TransactionExecutor {
     where
         T: Send + 'static,
     {
-        let (reply, result) = oneshot::channel();
-        self.sender
-            .send(LiveTransactionMessage::Execute { command, reply })
+        // Waiting for a free slot before building the message keeps the
+        // command out of the wait's state.
+        let permit = self
+            .sender
+            .reserve()
             .await
             .map_err(|_| anyhow::anyhow!("database transaction worker stopped unexpectedly"))?;
+        let (reply, result) = oneshot::channel();
+        permit.send(LiveTransactionMessage::Execute { command: Box::new(command), reply });
         result
             .await
             .map_err(|_| anyhow::anyhow!("database transaction worker dropped its operation result"))??
@@ -83,7 +106,7 @@ impl TransactionExecutor {
 
 pub struct TransactionCommand {
     statement: TransactionStatement,
-    output: TransactionOutputAdapter,
+    output: TransactionOutput,
 }
 
 enum TransactionStatement {
@@ -95,19 +118,42 @@ enum TransactionStatement {
     Delete(DeleteQuery),
 }
 
-struct TransactionOutputAdapter {
+#[derive(Clone, Copy)]
+struct TransactionOutput {
     kind: TransactionCommandKind,
     decoder: Option<TransactionRowDecoder>,
-    finish: TransactionFinish,
     type_name: &'static str,
     atomic_update_returning: bool,
 }
 
+/// Decodes every row of a statement's result into one boxed `Vec<M>`.
 #[derive(Clone, Copy)]
 pub(crate) struct TransactionRowDecoder {
-    pub sqlite: fn(&SqliteRow<'_>) -> Option<TransactionAny>,
-    pub postgres: fn(&PostgresRow) -> Option<TransactionAny>,
-    pub mysql: fn(&MysqlRow) -> Option<TransactionAny>,
+    #[cfg(feature = "sqlite")]
+    pub sqlite: fn(&mut rusqlite::Rows<'_>) -> anyhow::Result<DecodedRows>,
+    #[cfg(feature = "postgres")]
+    pub postgres: fn(&[PostgresRow]) -> anyhow::Result<DecodedRows>,
+    #[cfg(feature = "mysql")]
+    pub mysql: fn(Vec<MysqlRow>) -> anyhow::Result<DecodedRows>,
+    pub empty: fn() -> DecodedRows,
+}
+
+/// The rows of one statement, as the boxed `Vec<M>` the command returns.
+pub(crate) struct DecodedRows {
+    pub rows: TransactionAny,
+    /// Read by the MySQL atomic update, which fails on an empty read-back.
+    #[cfg_attr(not(feature = "mysql"), allow(dead_code))]
+    pub len: usize,
+}
+
+impl DecodedRows {
+    pub(crate) fn new<M>(rows: Vec<M>) -> Self
+    where
+        M: Send + 'static,
+    {
+        let len = rows.len();
+        Self { rows: Box::new(rows), len }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -117,14 +163,16 @@ pub(crate) enum TransactionCommandKind {
 }
 
 pub(crate) enum RawTransactionOutput {
-    Rows(Vec<TransactionAny>),
+    /// Produced by the statement's [`TransactionRowDecoder`].
+    Rows(DecodedRows),
     Affected(usize),
 }
 
 pub(crate) struct CompiledTransactionCommand {
     pub statements: Vec<CompiledTransactionStatement>,
-    finish: TransactionFinish,
+    kind: TransactionCommandKind,
     type_name: &'static str,
+    #[cfg_attr(not(feature = "mysql"), allow(dead_code))]
     pub atomic_update_returning: bool,
 }
 
@@ -136,12 +184,22 @@ pub(crate) struct CompiledTransactionStatement {
     pub output: bool,
 }
 
+impl CompiledTransactionStatement {
+    /// The result of a statement that compiled to no SQL at all.
+    pub(crate) fn empty_output(&self) -> RawTransactionOutput {
+        match (self.kind, self.decoder) {
+            (TransactionCommandKind::Rows, Some(decoder)) => RawTransactionOutput::Rows((decoder.empty)()),
+            _ => RawTransactionOutput::Affected(0),
+        }
+    }
+}
+
 impl TransactionCommand {
     pub fn find_many<M>(query: FindQuery) -> Self
     where
         M: DinocoRowModel,
     {
-        Self::rows::<M, Vec<M>, _>(TransactionStatement::Find(query), Ok)
+        Self::rows::<M>(TransactionStatement::Find(query))
     }
 
     /// Loads relation rows for `includes(...)`; `params` are the parent keys
@@ -151,7 +209,7 @@ impl TransactionCommand {
     where
         M: DinocoRowModel,
     {
-        Self::rows::<M, Vec<M>, _>(TransactionStatement::RelationOccurrences(query, params), Ok)
+        Self::rows::<M>(TransactionStatement::RelationOccurrences(query, params))
     }
 
     #[doc(hidden)]
@@ -159,7 +217,7 @@ impl TransactionCommand {
     where
         M: DinocoRowModel,
     {
-        Self::rows::<M, Vec<M>, _>(TransactionStatement::ManyToManyRelation(query, params), Ok)
+        Self::rows::<M>(TransactionStatement::ManyToManyRelation(query, params))
     }
 
     pub fn insert(query: InsertQuery) -> Self {
@@ -170,7 +228,7 @@ impl TransactionCommand {
     where
         M: DinocoRowModel,
     {
-        Self::rows::<M, Vec<M>, _>(TransactionStatement::Insert(query), Ok)
+        Self::rows::<M>(TransactionStatement::Insert(query))
     }
 
     pub fn update(query: UpdateQuery) -> Self {
@@ -181,7 +239,7 @@ impl TransactionCommand {
     where
         M: DinocoRowModel,
     {
-        Self::rows::<M, Vec<M>, _>(TransactionStatement::Update(query), Ok)
+        Self::rows::<M>(TransactionStatement::Update(query))
     }
 
     pub fn delete(query: DeleteQuery) -> Self {
@@ -192,69 +250,58 @@ impl TransactionCommand {
     where
         M: DinocoRowModel,
     {
-        Self::rows::<M, Vec<M>, _>(TransactionStatement::Delete(query), Ok)
+        Self::rows::<M>(TransactionStatement::Delete(query))
     }
 
-    pub(crate) fn compile<C>(self, compiler: &C) -> anyhow::Result<CompiledTransactionCommand>
+    pub fn atomic_update_returning<M>(query: UpdateQuery) -> Self
     where
-        C: DinocoSqlCompiler,
+        M: DinocoRowModel,
     {
+        let mut command = Self::update_returning::<M>(query);
+        command.output.atomic_update_returning = true;
+        command
+    }
+
+    pub(crate) fn compile(self, dialect: Dialect) -> anyhow::Result<CompiledTransactionCommand> {
+        let output = self.output;
+        #[cfg(feature = "mysql")]
+        if output.atomic_update_returning && dialect == Dialect::Mysql {
+            return self.compile_mysql_atomic_update();
+        }
+
         let (sql, params) = match self.statement {
-            TransactionStatement::Find(query) => compiler.compile_find_query(query),
-            TransactionStatement::RelationOccurrences(query, mut params) => {
-                let (sql, extra_params) = compiler.compile_relation_occurrence_query(query);
-                params.extend(extra_params);
-                (sql, params)
+            TransactionStatement::Find(query) => sql::find(dialect, query),
+            TransactionStatement::RelationOccurrences(query, keys) => {
+                sql::relation_occurrence_with_keys(dialect, query, keys)
             }
-            TransactionStatement::ManyToManyRelation(query, mut params) => {
-                let (sql, extra_params) = compiler.compile_many_to_many_relation_query(query);
-                params.extend(extra_params);
-                (sql, params)
+            TransactionStatement::ManyToManyRelation(query, keys) => {
+                sql::many_to_many_relation_with_keys(dialect, query, keys)
             }
-            TransactionStatement::Insert(query) => compiler.compile_insert_query(query),
-            TransactionStatement::Update(query) => compiler.compile_update_query(query),
-            TransactionStatement::Delete(query) => compiler.compile_delete_query(query),
+            TransactionStatement::Insert(query) => sql::insert(dialect, query),
+            TransactionStatement::Update(query) => sql::update(dialect, query),
+            TransactionStatement::Delete(query) => sql::delete(dialect, query),
         };
 
         Ok(CompiledTransactionCommand {
             statements: vec![CompiledTransactionStatement {
                 sql,
                 params,
-                kind: self.output.kind,
-                decoder: self.output.decoder,
+                kind: output.kind,
+                decoder: output.decoder,
                 output: true,
             }],
-            finish: self.output.finish,
-            type_name: self.output.type_name,
-            atomic_update_returning: self.output.atomic_update_returning,
+            kind: output.kind,
+            type_name: output.type_name,
+            atomic_update_returning: output.atomic_update_returning,
         })
     }
 
-    pub(crate) fn compile_mysql(self, compiler: &crate::MySqlAdapter) -> anyhow::Result<CompiledTransactionCommand> {
-        if !self.output.atomic_update_returning {
-            return self.compile(compiler);
-        }
-
-        let TransactionStatement::Update(mut update) = self.statement else {
+    #[cfg(feature = "mysql")]
+    fn compile_mysql_atomic_update(self) -> anyhow::Result<CompiledTransactionCommand> {
+        let TransactionStatement::Update(update) = self.statement else {
             anyhow::bail!("MySQL atomic update returning received a non-update statement");
         };
-        let returning =
-            update.returning.ok_or_else(|| anyhow::anyhow!("MySQL atomic update returning requires a projection"))?;
-        if update.sets.iter().any(|set| set.field == "id") {
-            anyhow::bail!("MySQL atomic find_and_update cannot change the `id` field");
-        }
-        let find_conditions = update.post_update_reload_conditions();
-        let table = update.table;
-        update.returning = None;
-        let (update_sql, update_params) = compiler.compile_update_query(update);
-        let (find_sql, find_params) = compiler.compile_find_query(FindQuery {
-            fields: returning,
-            from: table,
-            conditions: find_conditions,
-            limit: 1,
-            skip: -1,
-            order_by: None,
-        });
+        let ((update_sql, update_params), (find_sql, find_params)) = mysql_atomic_update_statements(update)?;
 
         Ok(CompiledTransactionCommand {
             statements: vec![
@@ -273,104 +320,122 @@ impl TransactionCommand {
                     output: true,
                 },
             ],
-            finish: self.output.finish,
+            kind: self.output.kind,
             type_name: self.output.type_name,
             atomic_update_returning: true,
         })
     }
 
     fn unit(statement: TransactionStatement) -> Self {
-        let finish = Box::new(|raw| {
-            let RawTransactionOutput::Affected(affected) = raw else {
-                anyhow::bail!("Dinoco transaction write received an unexpected database result.");
-            };
-
-            Ok(Box::new(affected) as TransactionAny)
-        });
-
         Self {
             statement,
-            output: TransactionOutputAdapter {
+            output: TransactionOutput {
                 kind: TransactionCommandKind::Execute,
                 decoder: None,
-                finish,
                 type_name: type_name::<usize>(),
                 atomic_update_returning: false,
             },
         }
     }
 
-    fn rows<M, T, F>(statement: TransactionStatement, mapper: F) -> Self
+    fn rows<M>(statement: TransactionStatement) -> Self
     where
         M: DinocoRowModel,
-        T: Send + 'static,
-        F: FnOnce(Vec<M>) -> anyhow::Result<T> + Send + Sync + 'static,
     {
-        let finish = Box::new(move |raw| {
-            let RawTransactionOutput::Rows(rows) = raw else {
-                anyhow::bail!("Dinoco transaction query received an unexpected database result.");
-            };
-            let rows = rows
-                .into_iter()
-                .map(|row| {
-                    row.downcast::<M>().map(|row| *row).map_err(|_| {
-                        anyhow::anyhow!("Dinoco could not decode a transaction row as `{}`.", type_name::<M>())
-                    })
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?;
-
-            Ok(Box::new(mapper(rows)?) as TransactionAny)
-        });
-
         Self {
             statement,
-            output: TransactionOutputAdapter {
+            output: TransactionOutput {
                 kind: TransactionCommandKind::Rows,
                 decoder: Some(TransactionRowDecoder {
-                    sqlite: decode_sqlite_row::<M>,
-                    postgres: decode_postgres_row::<M>,
-                    mysql: decode_mysql_row::<M>,
+                    #[cfg(feature = "sqlite")]
+                    sqlite: crate::backends::decode_sqlite_transaction_rows::<M>,
+                    #[cfg(feature = "postgres")]
+                    postgres: decode_postgres_rows::<M>,
+                    #[cfg(feature = "mysql")]
+                    mysql: decode_mysql_rows::<M>,
+                    empty: empty_rows::<M>,
                 }),
-                finish,
-                type_name: type_name::<T>(),
+                type_name: type_name::<Vec<M>>(),
                 atomic_update_returning: false,
             },
         }
     }
+}
 
-    pub fn atomic_update_returning<M>(query: UpdateQuery) -> Self
-    where
-        M: DinocoRowModel,
-    {
-        let mut command = Self::update_returning::<M>(query);
-        command.output.atomic_update_returning = true;
-        command
+#[cfg(feature = "mysql")]
+/// The `UPDATE` and the read-back `SELECT` of an atomic update on MySQL, which
+/// has no `RETURNING`. The row is found again by its `id` or by the values
+/// the update set (see [`UpdateQuery::post_update_reload_conditions`]).
+pub(crate) fn mysql_atomic_update_statements(mut update: UpdateQuery) -> anyhow::Result<(Compiled, Compiled)> {
+    let returning =
+        update.returning.ok_or_else(|| anyhow::anyhow!("MySQL atomic update returning requires a projection"))?;
+    if update.sets.iter().any(|set| set.field == "id") {
+        anyhow::bail!("MySQL atomic find_and_update cannot change the `id` field");
     }
+    let find_conditions = update.post_update_reload_conditions();
+    let table = update.table;
+    update.returning = None;
+
+    Ok((
+        sql::update(Dialect::Mysql, update),
+        sql::find(
+            Dialect::Mysql,
+            FindQuery {
+                fields: returning,
+                from: table,
+                conditions: find_conditions,
+                limit: 1,
+                skip: -1,
+                order_by: None,
+            },
+        ),
+    ))
 }
 
 impl CompiledTransactionCommand {
     pub(crate) fn finish(self, raw: RawTransactionOutput) -> anyhow::Result<TransactionValue> {
-        Ok(TransactionValue { value: (self.finish)(raw)?, type_name: self.type_name })
+        let value = match (self.kind, raw) {
+            (TransactionCommandKind::Rows, RawTransactionOutput::Rows(decoded)) => decoded.rows,
+            (TransactionCommandKind::Execute, RawTransactionOutput::Affected(affected)) => Box::new(affected),
+            (TransactionCommandKind::Rows, _) => {
+                anyhow::bail!("Dinoco transaction query received an unexpected database result.")
+            }
+            (TransactionCommandKind::Execute, _) => {
+                anyhow::bail!("Dinoco transaction write received an unexpected database result.")
+            }
+        };
+
+        Ok(TransactionValue { value, type_name: self.type_name })
     }
 }
 
-fn decode_sqlite_row<M>(row: &SqliteRow<'_>) -> Option<TransactionAny>
+fn empty_rows<M>() -> DecodedRows
 where
-    M: DinocoSqlite,
+    M: Send + 'static,
 {
-    M::from_sqlite_row(row).map(|row| Box::new(row) as TransactionAny)
+    DecodedRows::new(Vec::<M>::new())
 }
 
-fn decode_postgres_row<M>(row: &PostgresRow) -> Option<TransactionAny>
+#[cfg(feature = "postgres")]
+fn decode_postgres_rows<M>(rows: &[PostgresRow]) -> anyhow::Result<DecodedRows>
 where
     M: DinocoPostgres,
 {
-    M::from_postgres_row(row).map(|row| Box::new(row) as TransactionAny)
+    let rows = rows
+        .iter()
+        .map(|row| M::from_postgres_row(row).ok_or_else(|| RowDecodeError::new(type_name::<M>())))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(DecodedRows::new(rows))
 }
 
-fn decode_mysql_row<M>(row: &MysqlRow) -> Option<TransactionAny>
+#[cfg(feature = "mysql")]
+fn decode_mysql_rows<M>(rows: Vec<MysqlRow>) -> anyhow::Result<DecodedRows>
 where
     M: DinocoMysql,
 {
-    M::from_mysql_row(row).map(|row| Box::new(row) as TransactionAny)
+    let rows = rows
+        .into_iter()
+        .map(|row| M::from_mysql_row_owned(row).ok_or_else(|| RowDecodeError::new(type_name::<M>())))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(DecodedRows::new(rows))
 }

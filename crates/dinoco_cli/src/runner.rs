@@ -31,7 +31,7 @@ pub fn has_transform() -> bool {
 /// `dinoco/migrations/<workspace>/schema/`.
 pub fn generate_models(schema: &Schema, workspace: Option<&str>) -> anyhow::Result<()> {
     if has_transform() {
-        crate::ui::info("Applying dinoco/transform.rs (building the Dinoco runner)");
+        crate::ui::progress("Applying dinoco/transform.rs (building the Dinoco runner)...");
         run(workspace)?;
     } else {
         dinoco_codegen::generate_models_for_workspace(schema, workspace)?;
@@ -40,10 +40,9 @@ pub fn generate_models(schema: &Schema, workspace: Option<&str>) -> anyhow::Resu
     if let Some(workspace) = workspace {
         let saved = crate::schema::save_workspace_schema(workspace)?;
         crate::ui::info(format!(
-            "Schema saved to {} ({} file{})",
+            "Schema saved to {} ({})",
             crate::schema::workspace_schema_dir(workspace).display(),
-            saved.len(),
-            if saved.len() == 1 { "" } else { "s" }
+            crate::ui::plural(saved.len(), "file", "files")
         ));
     }
 
@@ -137,8 +136,8 @@ fn models(workspace: Option<&str>) -> ::anyhow::Result<()> {
         None => schema,
     };
 
+    // The CLI reports the result.
     ::dinoco_codegen::generate_models_with(&schema, workspace, &transform::transformer())?;
-    println!("Rust models generated at dinoco/models/ (dinoco/transform.rs applied)");
     Ok(())
 }
 "#,

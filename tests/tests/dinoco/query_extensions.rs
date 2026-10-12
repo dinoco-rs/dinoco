@@ -296,7 +296,7 @@ async fn pluck_and_transform_work_on_delete_and_delete_many_returning() -> anyho
 
     let deleted_ids = delete_many::<User>().where_(|x| x.age.gte(0)).pluck(|x| x.id).execute(&client).await?;
     assert_eq!(deleted_ids, vec!["user-3".to_string()]);
-    assert_eq!(exists::<User>().execute(&client).await?, false);
+    assert!(!exists::<User>().execute(&client).await?);
 
     let _ = std::fs::remove_file(path);
     Ok(())

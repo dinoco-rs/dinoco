@@ -1,13 +1,19 @@
 use async_trait::async_trait;
 
+#[cfg(feature = "mysql")]
+use crate::MysqlRow;
+#[cfg(feature = "sqlite")]
+use crate::SqliteRow;
 use crate::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
-    CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeadpoolPostgresRow, DeleteQuery, DinocoValue,
-    DropColumnMigration, DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration,
-    ExistsQuery, FindQuery, InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, MysqlRow, PostgresRow,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration,
-    RenameTableMigration, SqliteRow, UpdateQuery, UpdatedAtField,
+    CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoValue, DropColumnMigration,
+    DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, ExistsQuery, FindQuery,
+    InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery,
+    RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration, RenameTableMigration, UpdateQuery,
+    UpdatedAtField,
 };
+#[cfg(feature = "postgres")]
+use crate::{DeadpoolPostgresRow, PostgresRow};
 
 #[async_trait]
 pub trait DinocoEntity: Sized + Send + Sync + 'static {
@@ -79,10 +85,19 @@ pub trait DinocoSqlCompiler {
     fn compile_alter_enum_migration(&self, migration: AlterEnumMigration) -> Vec<String>;
 }
 
+#[cfg(feature = "sqlite")]
 pub trait DinocoSqlite: Sized + Send + Sync + 'static {
     fn from_sqlite_row(row: &SqliteRow<'_>) -> Option<Self>;
 }
 
+/// SQLite is disabled: every type is trivially a SQLite row model.
+#[cfg(not(feature = "sqlite"))]
+pub trait DinocoSqlite: Sized + Send + Sync + 'static {}
+
+#[cfg(not(feature = "sqlite"))]
+impl<T: Send + Sync + 'static> DinocoSqlite for T {}
+
+#[cfg(feature = "postgres")]
 pub trait DinocoPostgres: Sized + Send + Sync + 'static {
     fn from_deadpool_posgres_row(row: &DeadpoolPostgresRow) -> Option<Self>;
     fn from_deadpool_postgres_row(row: &DeadpoolPostgresRow) -> Option<Self> {
@@ -91,9 +106,31 @@ pub trait DinocoPostgres: Sized + Send + Sync + 'static {
     fn from_postgres_row(row: &PostgresRow) -> Option<Self>;
 }
 
+/// PostgreSQL is disabled: every type is trivially a PostgreSQL row model.
+#[cfg(not(feature = "postgres"))]
+pub trait DinocoPostgres: Sized + Send + Sync + 'static {}
+
+#[cfg(not(feature = "postgres"))]
+impl<T: Send + Sync + 'static> DinocoPostgres for T {}
+
+#[cfg(feature = "mysql")]
 pub trait DinocoMysql: Sized + Send + Sync + 'static {
     fn from_mysql_row(row: &MysqlRow) -> Option<Self>;
+
+    /// Decodes a row Dinoco owns, moving the column values out of it instead
+    /// of copying them. Adapters call this for every fetched row; the default
+    /// falls back to [`from_mysql_row`](Self::from_mysql_row).
+    fn from_mysql_row_owned(row: MysqlRow) -> Option<Self> {
+        Self::from_mysql_row(&row)
+    }
 }
+
+/// MySQL is disabled: every type is trivially a MySQL row model.
+#[cfg(not(feature = "mysql"))]
+pub trait DinocoMysql: Sized + Send + Sync + 'static {}
+
+#[cfg(not(feature = "mysql"))]
+impl<T: Send + Sync + 'static> DinocoMysql for T {}
 
 pub trait DinocoRowModel: DinocoSqlite + DinocoPostgres + DinocoMysql {}
 

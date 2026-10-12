@@ -35,7 +35,7 @@ fn init_creates_english_colored_schema() {
     assert!(stdout.contains("Dinoco project initialized"));
     assert!(stdout.contains("Created dinoco/schema.dinoco"));
     assert!(stdout.contains("Created dinoco/migrations/"));
-    assert!(stdout.contains("Next steps:"));
+    assert!(stdout.contains("Next steps"));
     assert!(stdout.contains("DATABASE_URL"));
     assert!(stdout.contains("https://dinoco.io"));
     assert!(schema.contains("database"));
@@ -124,25 +124,23 @@ fn migrate_generate_sqlite_creates_migration_and_models() {
     fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("schema");
 
     let db_path = project.join("dev.sqlite");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
-        .args(["migrate", "generate"])
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["migrate", "generate", "--yes"])
         .env("DATABASE_URL", db_path.to_string_lossy().as_ref())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdin(Stdio::null())
         .current_dir(&project)
-        .spawn()
+        .output()
         .expect("cli should run");
-    child.stdin.take().expect("migration confirmation stdin").write_all(b"Y\n").expect("confirm migration");
-    let output = child.wait_with_output().expect("cli output");
 
     assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Detected"));
-    assert!(stdout.contains("Generate and apply this migration"));
-    assert!(stdout.contains("Migration generated and applied"));
-    assert!(stdout.contains("Rust models generated"));
+    assert!(stdout.contains("Migration Plan"), "{stdout}");
+    assert!(stdout.contains("+ Create table `user`"), "{stdout}");
+    assert!(stdout.contains("Detected 1 schema change: 1 addition."), "{stdout}");
+    assert!(stdout.contains("Migration generated and applied"), "{stdout}");
+    assert!(stdout.contains("Rust models generated"), "{stdout}");
+    assert!(!stdout.contains('\u{1b}'), "redirected output must not contain ANSI escapes: {stdout}");
     assert!(project.join("dinoco/mod.rs").exists());
     assert!(project.join("dinoco/models/mod.rs").exists());
     assert!(project.join("dinoco/models/user.rs").exists());
@@ -157,9 +155,12 @@ fn migrate_generate_sqlite_creates_migration_and_models() {
     assert!(migration_dirs[0].join("down.sql").exists());
 }
 
+/// Without a terminal, `migrate generate` never waits for an answer: a plan
+/// that was not approved with an option stops with exit code 2, before
+/// anything is written.
 #[test]
-fn migrate_generate_cancels_before_writing_when_not_confirmed() {
-    let project = temp_project("migrate-cancelled");
+fn migrate_generate_requires_approval_without_a_terminal() {
+    let project = temp_project("migrate-unapproved");
     fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
     fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("schema");
 
@@ -173,13 +174,16 @@ fn migrate_generate_cancels_before_writing_when_not_confirmed() {
         .current_dir(&project)
         .spawn()
         .expect("cli should run");
-    child.stdin.take().expect("migration confirmation stdin").write_all(b"n\n").expect("cancel migration");
+    // Answers on a pipe are not read: only options approve a plan.
+    child.stdin.take().expect("stdin").write_all(b"y\n").expect("write stdin");
     let output = child.wait_with_output().expect("cli output");
 
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(output.status.code(), Some(2), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Detected"));
-    assert!(stdout.contains("Migration generation cancelled"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout.contains("Detected"), "{stdout}");
+    assert!(stderr.contains("error: This migration needs approval."), "{stderr}");
+    assert!(stderr.contains("--yes"), "{stderr}");
     assert!(!project.join("dinoco/models").exists());
     let migrations = fs::read_dir(project.join("dinoco/migrations")).expect("empty migrations directory");
     assert_eq!(migrations.count(), 0);

@@ -6,34 +6,64 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
-use inquire::Confirm;
 use sha2::{Digest, Sha256};
 
+pub use super::review::GenerateOptions;
+use super::review::{Decisions, change_kind, render_plan};
 use crate::db::CliDatabase;
+use crate::error::{CliError, WithCliError};
+use crate::prompt;
 use crate::schema::{Database, RuntimeConfig, read_schema_for_workspace, runtime_config};
 use crate::sql::{
-    MigrationPlan, MigrationStep, SqliteForeignKeyCheck, SqliteTableRebuild, desired_database_schema,
-    plan_database_migration, plan_sqlite_database_migration,
+    EnumValueReplacement, MigrationPlan, MigrationStep, PlanOptions, SqliteForeignKeyCheck, SqliteTableRebuild,
+    desired_database_schema, plan_database_migration, plan_database_migration_with, plan_sqlite_database_migration,
+    plan_sqlite_database_migration_with,
 };
-use crate::ui;
+use crate::ui::{self, Change};
 
 const MIGRATION_CHECKSUM_MARKER: &str = "-- dinoco-checksum: ";
 const MIGRATION_CHECKSUM_PLACEHOLDER: &str = "__DINOCO_INTERNAL_SHA256_PLACEHOLDER_7F43A9C2__";
 const SQLITE_REBUILD_MARKER: &str = "dinoco-sqlite-table-rebuild";
 
+/// `dinoco migrate generate` with default options: decisions are asked for
+/// interactively, or taken from the `DINOCO_CLI_CONFIRM_*` environment
+/// variables.
 pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
-    let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
+    generate_with(GenerateOptions { workspace, ..GenerateOptions::default() }).await
+}
+
+/// How the migration being generated relates to the migration history.
+enum Mode {
+    /// The database matches its history: the migration is the schema change.
+    Normal,
+    /// The database has tables but no history: they are adopted as the
+    /// first migration.
+    Baseline,
+    /// The database was changed outside migrations: this database is
+    /// repaired, and only the schema change is recorded for the others.
+    RepairDrift(MigrationPlan),
+}
+
+pub async fn generate_with(options: GenerateOptions) -> anyhow::Result<()> {
+    let mut decisions = Decisions::new(&options)?;
+    let (_, schema, workspace) = read_schema_for_workspace(options.workspace.as_deref())?;
+    let workspace = workspace.as_deref();
     let config = runtime_config(&schema)?;
+    let migrations_root = migrations_root(workspace);
+    print_target(&config, workspace, &migrations_root);
+
     let db = CliDatabase::connect(&config).await?;
     db.adopt_legacy_migration_history().await?;
-    let migrations_root = migrations_root(workspace.as_deref());
     let mut migrations = migration_dirs(&migrations_root)?;
     migrations.sort();
 
     fs::create_dir_all(&migrations_root)?;
     let upgraded = upgrade_legacy_migration_artifacts(&migrations)?;
     if upgraded > 0 {
-        ui::info(format!("Upgraded {upgraded} legacy migration(s) to the current artifact layout."));
+        ui::info(format!(
+            "Upgraded {} to the current artifact layout.",
+            ui::plural(upgraded, "legacy migration", "legacy migrations")
+        ));
     }
 
     let current = db.inspect_schema().await?;
@@ -43,10 +73,7 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
     if let Some(server_history) = &server_history {
         let pending = server_history.pending_names(&migrations)?;
         if !pending.is_empty() {
-            anyhow::bail!(
-                "Cannot generate a migration while local migrations are pending: {}. Run `dinoco migrate run` first.",
-                pending.join(", ")
-            );
+            return Err(pending_migrations_error(&pending, workspace).into());
         }
     }
     if let Some(history) = &history {
@@ -54,48 +81,51 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
         if !pending.is_empty() {
             let drift = plan_migration(&db, &history.expected, &current);
             if drift.steps.is_empty() {
-                anyhow::bail!(
-                    "Cannot generate a migration while local migrations are pending: {}. Run `dinoco migrate run` first.",
-                    pending.join(", ")
-                );
+                return Err(pending_migrations_error(&pending, workspace).into());
             }
             if history.applied.is_empty() && (!current.tables.is_empty() || !current.enums.is_empty()) {
-                anyhow::bail!(
-                    "Cannot adopt an untracked SQLite baseline while local migrations are pending: {}. Back up the database and reconcile whether those migrations are already represented before continuing.",
-                    pending.join(", ")
-                );
+                return Err(CliError::failure(
+                    "Cannot adopt an untracked SQLite baseline while local migrations are pending.",
+                )
+                .detail("Pending", pending.join(", "))
+                .reason("Dinoco cannot tell whether the existing tables already contain those migrations.")
+                .hint("Back up the database and reconcile it with the pending migrations, then run the command again.")
+                .into());
             }
+            ensure_not_create_only(&decisions, "The database has schema drift that has to be repaired first.")?;
 
-            repair_pending_history_drift(&db, history, drift).await?;
-            ui::success(format!(
-                "SQLite schema drift repaired against applied history. No migration was generated; run `dinoco migrate run` to apply: {}.",
+            repair_pending_history_drift(&db, history, drift, &decisions).await?;
+            ui::success("SQLite schema drift repaired against applied history. No migration was generated.");
+            ui::text(format!(
+                "Run `{}` to apply the pending migrations: {}.",
+                super::command_line("migrate run", workspace),
                 pending.join(", ")
             ));
             return Ok(());
         }
     }
-    let mut live_plan = plan_migration(&db, &desired, &current);
-    mark_unvalidated_legacy_foreign_keys(&db, &mut live_plan);
+
+    let initial_plan = plan_migration_with(&db, &desired, &current, &decisions.plan_options());
     if let Some(server_history) =
         server_history.as_ref().filter(|history| !history.applied.is_empty() && history.expected.is_none())
     {
-        if live_plan.steps.is_empty() {
-            if !confirm_untracked_baseline()? {
-                ui::warning("Migration history snapshot adoption cancelled.");
-                return Ok(());
-            }
+        ensure_not_create_only(
+            &decisions,
+            "The migration history was written by an earlier release and has to be adopted first.",
+        )?;
+        if initial_plan.steps.is_empty() {
+            decisions.approve_history_adoption()?;
             let latest = server_history.applied.last().expect("legacy history is not empty");
             db.record_server_schema_snapshot(latest, &current).await?;
             persist_legacy_checksums(&db, history.as_ref(), Some(server_history)).await?;
-            crate::runner::generate_models(&schema, workspace.as_deref())?;
+            crate::runner::generate_models(&schema, workspace)?;
             ui::success("Legacy migration history adopted with a canonical schema snapshot.");
             ui::success("Rust models generated at dinoco/models/");
             return Ok(());
         }
         ui::info("Legacy migration history will be normalized through a new data-preserving migration.");
     }
-    let mut migration_plan = live_plan.clone();
-    let mut repairing_drift = false;
+
     let history_expected = history
         .as_ref()
         .map(|history| &history.expected)
@@ -113,70 +143,87 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
             plan_migration(&db, expected, &current)
         }
     });
-    let untracked_sqlite_schema = history
-        .as_ref()
-        .map(|history| history.applied.is_empty() && (!current.tables.is_empty() || !current.enums.is_empty()))
-        .unwrap_or(false);
-    let untracked_server_schema = server_history
-        .as_ref()
-        .map(|history| history.applied.is_empty() && (!current.tables.is_empty() || !current.enums.is_empty()))
-        .unwrap_or(false);
-    if untracked_sqlite_schema || untracked_server_schema {
+    let has_schema = !current.tables.is_empty() || !current.enums.is_empty();
+    let untracked_sqlite_schema = history.as_ref().is_some_and(|history| history.applied.is_empty() && has_schema);
+    let untracked_server_schema =
+        server_history.as_ref().is_some_and(|history| history.applied.is_empty() && has_schema);
+    let mode = if untracked_sqlite_schema || untracked_server_schema {
         print_untracked_schema(&current);
-        if !live_plan.steps.is_empty() {
-            ui::warning("The untracked database schema does not match the Dinoco schema.");
-            print_plan_summary(&live_plan);
-            anyhow::bail!(
-                "Dinoco will not modify an existing untracked database while creating its baseline. No schema changes were applied. Back up and reconcile the listed differences manually, then run `dinoco migrate generate` again."
-            );
+        if !initial_plan.steps.is_empty() {
+            render_plan("Differences", &initial_plan, describe_step);
+            return Err(CliError::failure(
+                "Dinoco will not modify an existing untracked database while creating its baseline.",
+            )
+            .reason("The existing tables do not match the Dinoco schema. No schema changes were applied.")
+            .hint("Back up the database and reconcile the differences above manually, then run `dinoco migrate generate` again.")
+            .into());
         }
-        if !confirm_untracked_baseline()? {
-            ui::warning("Migration generation cancelled.");
-            return Ok(());
-        }
+        ensure_not_create_only(&decisions, "The existing tables have to be adopted as the migration baseline first.")?;
+        decisions.approve_baseline()?;
+        Mode::Baseline
+    } else if let Some(drift) = history_drift.filter(|drift| !drift.steps.is_empty()) {
+        print_schema_drift(&drift);
+        ensure_drift_is_repairable(&drift)?;
+        ensure_not_create_only(&decisions, "The database has schema drift that has to be repaired first.")?;
+        decisions.approve_drift_repair()?;
+        Mode::RepairDrift(drift)
+    } else {
+        Mode::Normal
+    };
 
-        migration_plan = plan_database_migration(&desired, &crate::db::DatabaseSchema::default());
-        for step in &mut migration_plan.steps {
-            if let MigrationStep::CreateTable(item) = step {
-                item.if_not_exists = true;
+    // Planning repeats whenever an inferred rename is rejected, because the
+    // rejected rename becomes a removal plus an addition.
+    let (mut live_plan, mut migration_plan) = loop {
+        let plan_options = decisions.plan_options();
+        let mut live_plan = plan_migration_with(&db, &desired, &current, &plan_options);
+        mark_unvalidated_legacy_foreign_keys(&db, &mut live_plan);
+        let migration_plan = match &mode {
+            Mode::Normal => live_plan.clone(),
+            Mode::Baseline => {
+                let mut plan = plan_database_migration(&desired, &crate::db::DatabaseSchema::default());
+                for step in &mut plan.steps {
+                    if let MigrationStep::CreateTable(item) = step {
+                        item.if_not_exists = true;
+                    }
+                }
+                plan
             }
+            Mode::RepairDrift(drift) => {
+                let expected = history_expected.expect("drift requires canonical migration history");
+                let mut plan = plan_migration_with(&db, &desired, expected, &plan_options);
+                make_table_drift_steps_idempotent(&mut live_plan, drift);
+                make_table_drift_steps_idempotent(&mut plan, drift);
+                plan
+            }
+        };
+        let ambiguous = !live_plan.errors.is_empty() || !migration_plan.errors.is_empty();
+        if !ambiguous && !prompt::is_interactive() {
+            // Without prompts the inferred renames cannot change any more,
+            // so a mistyped --rename is reported before what it was meant
+            // to answer.
+            decisions.check_rename_options(&[&live_plan, &migration_plan])?;
         }
-    } else if let Some(drift) = history_drift.as_ref().filter(|drift| !drift.steps.is_empty()) {
-        print_schema_drift(drift);
-        ensure_drift_is_repairable(drift)?;
-        if !confirm_schema_drift(drift)? {
-            ui::warning("Migration generation cancelled.");
-            return Ok(());
+        if ambiguous || !decisions.resolve_renames(&[&live_plan, &migration_plan], &current)? {
+            break (live_plan, migration_plan);
         }
-        repairing_drift = true;
-        migration_plan =
-            plan_migration(&db, &desired, history_expected.expect("drift requires canonical migration history"));
-        make_table_drift_steps_idempotent(&mut live_plan, drift);
-        make_table_drift_steps_idempotent(&mut migration_plan, drift);
-    }
-
-    if repairing_drift {
-        if !live_plan.steps.is_empty() {
-            ui::info("Changes required to reconcile the live SQLite database:");
-            print_plan_summary(&live_plan);
-            ensure_plan_is_supported(&db, &live_plan)?;
-        }
-        if !migration_plan.steps.is_empty() {
-            ui::info("Schema evolution that will be recorded for other databases:");
-            print_plan_summary(&migration_plan);
-            ensure_plan_is_supported(&db, &migration_plan)?;
-        }
-    }
+    };
+    let repairing_drift = matches!(mode, Mode::RepairDrift(_));
 
     if migration_plan.steps.is_empty() && !repairing_drift {
+        if decisions.create_only {
+            ui::info("No schema changes were found. Nothing was written.");
+            return Ok(());
+        }
         persist_legacy_checksums(&db, history.as_ref(), server_history.as_ref()).await?;
         ui::info("No schema changes were found.");
-        crate::runner::generate_models(&schema, workspace.as_deref())?;
+        crate::runner::generate_models(&schema, workspace)?;
         ui::success("Rust models generated at dinoco/models/");
         return Ok(());
     }
 
     if migration_plan.steps.is_empty() {
+        render_plan("Drift Repair", &live_plan, describe_step);
+        ensure_plan_is_supported(&db, &live_plan)?;
         let mut repair_statements = Vec::new();
         append_checksum_statements(
             &db,
@@ -184,73 +231,173 @@ pub async fn generate(workspace: Option<String>) -> anyhow::Result<()> {
             history.as_ref().map(|history| history.legacy_checksums.as_slice()).unwrap_or_default(),
         );
         repair_statements.extend(compile_plan(&db, live_plan));
-        apply_statements(&db, &repair_statements)
-            .await
-            .context("failed to repair SQLite schema drift; all changes were rolled back")?;
+        apply_statements(&db, &repair_statements).await.cli_error(|| {
+            CliError::failure("The schema drift repair could not be applied.")
+                .reason("The repair failed and all changes were rolled back.")
+        })?;
         ensure_live_schema_matches(&db, &desired).await?;
-        crate::runner::generate_models(&schema, workspace.as_deref())?;
-        ui::success(
-            "SQLite schema drift repaired; no new migration was needed because the Dinoco schema did not change.",
-        );
+        crate::runner::generate_models(&schema, workspace)?;
+        ui::success("Schema drift repaired; no new migration was needed because the Dinoco schema did not change.");
         ui::success("Rust models generated at dinoco/models/");
         return Ok(());
     }
 
-    if !repairing_drift {
-        print_plan_summary(&migration_plan);
-        ensure_plan_is_supported(&db, &migration_plan)?;
+    if repairing_drift && !live_plan.steps.is_empty() {
+        render_plan("Drift Repair (this database only)", &live_plan, describe_step);
+        ensure_plan_is_supported(&db, &live_plan)?;
     }
+    let plan_title = match mode {
+        Mode::Baseline => "Baseline Migration",
+        _ => "Migration Plan",
+    };
+    render_plan(plan_title, &migration_plan, describe_step);
+    ensure_plan_is_supported(&db, &migration_plan)?;
+    decisions.check_rename_options(&[&live_plan, &migration_plan])?;
 
-    let plans = if repairing_drift { vec![&live_plan, &migration_plan] } else { vec![&migration_plan] };
-    if !confirm_migration_generation(&plans)? {
-        ui::warning("Migration generation cancelled. No migration was created or applied.");
-        return Ok(());
+    let replacements = decisions.resolve_enum_replacements(&db, &current, &desired_database_schema(&schema)).await?;
+    if !replacements.is_empty() {
+        render_replacements(&replacements);
+        for plan in [&mut live_plan, &mut migration_plan] {
+            plan.steps.splice(0..0, replacements.iter().cloned().map(MigrationStep::ReplaceEnumValue));
+        }
     }
 
     let migration_name = migration_name("generated");
     let preserved_tables = preexisting_created_tables(&migration_plan, &current);
     let down_statements = compile_down_plan(&db, &migration_plan, &migration_name, &preserved_tables);
-    let migration_statements = compile_plan(&db, migration_plan);
+    let migration_statements = compile_plan(&db, migration_plan.clone());
     let (up_sql, checksum) = compile_up_artifact(
         &db,
         &migration_name,
         &migration_statements,
         history.as_ref().map(|history| history.legacy_checksums.as_slice()).unwrap_or_default(),
     );
-    let live_statements = compile_plan(&db, live_plan);
+    let live_statements = compile_plan(&db, live_plan.clone());
+    let live_sql = statements_sql(&live_statements);
+
+    let migration_dir = migrations_root.join(&migration_name);
+    ui::heading("Actions");
+    ui::line(format!("1. Write {}/up.sql and down.sql", migration_dir.display()));
+    if decisions.create_only {
+        ui::line("The migration is not applied and the Rust models are not regenerated.");
+    } else {
+        if repairing_drift {
+            ui::line(format!("2. Repair and migrate the {} database", config.database_label()));
+        } else {
+            ui::line(format!("2. Apply the migration to the {} database", config.database_label()));
+        }
+        ui::line("3. Regenerate the Rust models in dinoco/models/");
+    }
+    ui::blank();
+
+    let plans = if repairing_drift { vec![&live_plan, &migration_plan] } else { vec![&migration_plan] };
+    let action = if decisions.create_only { "Write the migration files" } else { "Generate and apply this migration" };
+    decisions.approve_plan(&plans, action, || {
+        ui::heading(format!("{}/up.sql", migration_dir.display()));
+        ui::text(up_sql.trim_end());
+        if repairing_drift {
+            ui::heading("SQL applied to this database");
+            ui::text(live_sql.trim_end());
+        }
+        ui::blank();
+    })?;
 
     let migration_dir = publish_migration_artifacts(
         &migrations_root,
-        workspace.as_deref(),
+        workspace,
         &migration_name,
         &up_sql,
         &down_statements.join("\n\n"),
     )?;
+    if decisions.create_only {
+        ui::success(format!("Migration created: {}", migration_dir.display()));
+        ui::info("It was not applied to the database.");
+        ui::heading("Next steps");
+        ui::line(format!("1. Review {}", migration_dir.join("up.sql").display()));
+        ui::line(format!("2. Run `{}` to apply it", super::command_line("migrate run", workspace)));
+        ui::line(format!(
+            "3. Run `{}` to regenerate the Rust models",
+            super::command_line("models generate", workspace)
+        ));
+        return Ok(());
+    }
 
     persist_legacy_checksums(&db, history.as_ref(), server_history.as_ref()).await?;
-    let live_sql = statements_sql(&live_statements);
     let checksum = checksum.context("generated migration did not produce an integrity checksum")?;
     if let Err(error) = apply_migration_sql(&db, &migration_name, &live_sql, &checksum, true).await {
         if db.is_sqlite() {
             fs::remove_dir_all(&migration_dir)
                 .with_context(|| format!("failed to remove incomplete migration {}", migration_dir.display()))?;
-            return Err(error.context("failed to apply generated migration; all SQLite changes were rolled back"));
+            return Err(error.context(
+                CliError::failure("The generated migration could not be applied.")
+                    .detail("Migration", &migration_name)
+                    .reason("The migration failed, all changes were rolled back, and its files were removed.")
+                    .hint("Fix the cause below, then run `dinoco migrate generate` again."),
+            ));
         }
-        return Err(error.context(format!(
-            "failed to apply generated migration; the migration files were preserved at {} because the database may be partially changed",
-            migration_dir.display()
-        )));
+        return Err(error.context(
+            CliError::failure("The generated migration could not be applied.")
+                .detail("Migration", &migration_name)
+                .detail("Files", migration_dir.display().to_string())
+                .reason("The migration files were kept because the database may be partially changed.")
+                .hint("Inspect the database, fix the cause below, then apply the migration with `dinoco migrate run`."),
+        ));
     }
     ensure_live_schema_matches(&db, &desired).await?;
     if !db.is_sqlite() {
         db.record_server_schema_snapshot(&migration_name, &desired).await?;
     }
-    crate::runner::generate_models(&schema, workspace.as_deref())?;
+    crate::runner::generate_models(&schema, workspace)?;
 
     ui::success(format!("Migration generated and applied: {}", migration_dir.display()));
     ui::success("Rust models generated at dinoco/models/");
 
     Ok(())
+}
+
+fn print_target(config: &RuntimeConfig, workspace: Option<&str>, migrations_root: &Path) {
+    ui::heading("Target");
+    let mut fields = Vec::new();
+    if let Some(workspace) = workspace {
+        fields.push(("Workspace", workspace.to_string()));
+    }
+    fields.push(("Database", config.database_label().to_string()));
+    fields.push(("Location", crate::db::redact_database_url(&config.database_url)));
+    fields.push(("Migrations", format!("{}/", migrations_root.display())));
+    ui::fields(&fields);
+}
+
+fn pending_migrations_error(pending: &[String], workspace: Option<&str>) -> CliError {
+    CliError::failure("Cannot generate a migration while local migrations are pending.")
+        .detail("Pending", pending.join(", "))
+        .reason("A new migration has to be planned against a database that has every existing migration applied.")
+        .hint(format!("Run `{}` first, then generate again.", super::command_line("migrate run", workspace)))
+}
+
+fn ensure_not_create_only(decisions: &Decisions, reason: &str) -> Result<(), CliError> {
+    if !decisions.create_only {
+        return Ok(());
+    }
+    Err(CliError::usage("--create-only cannot be used for this database right now.")
+        .reason(format!("{reason} That changes the database, which --create-only never does."))
+        .hint("Run the command without --create-only."))
+}
+
+fn render_replacements(replacements: &[EnumValueReplacement]) {
+    ui::heading("Data Changes");
+    for item in replacements {
+        ui::change(
+            Change::Modify,
+            format!(
+                "Replace `{}` with `{}` in `{}.{}` ({})",
+                item.from,
+                item.to,
+                item.table,
+                item.column,
+                ui::plural(item.rows as usize, "row", "rows")
+            ),
+        );
+    }
 }
 
 async fn inspect_shadow_schema(
@@ -269,6 +416,9 @@ async fn inspect_shadow_schema(
                     name.clear();
                 }
             }
+            // For the same reason MySQL has no standalone enum types to create
+            // or to find when the database is inspected.
+            desired.enums.clear();
         }
         return Ok(desired);
     }
@@ -673,19 +823,23 @@ pub fn upgrade_legacy_migration_artifacts(migrations: &[PathBuf]) -> anyhow::Res
 }
 
 fn print_schema_drift(drift: &MigrationPlan) {
-    ui::warning("Database schema drift detected: the live schema differs from applied migration history.");
+    ui::warning("Database schema drift detected: the live schema differs from the applied migration history.");
+    ui::heading("Schema Drift");
     for step in &drift.steps {
-        ui::warning(format!("  {}", describe_drift_step(step)));
+        ui::change(change_kind(step), describe_drift_step(step));
     }
-    ui::warning("A repair can recreate structure, but it cannot recover rows or column values deleted manually.");
+    ui::blank();
+    ui::line("A repair can recreate structure, but it cannot recover rows or column values deleted manually.");
 }
 
 fn print_untracked_schema(schema: &crate::db::DatabaseSchema) {
     ui::warning("The database already contains schema that is not tracked by Dinoco migrations.");
+    ui::heading("Existing Tables");
     for table in &schema.tables {
-        ui::warning(format!("  Existing table `{}` with {} row(s)", table.name, table.row_count));
+        ui::line(format!("{} ({})", table.name, ui::plural(table.row_count as usize, "row", "rows")));
     }
-    ui::warning("Dinoco can record a baseline only when the existing structure exactly matches the Dinoco schema.");
+    ui::blank();
+    ui::line("Dinoco can record a baseline only when the existing structure exactly matches the Dinoco schema.");
 }
 
 fn describe_drift_step(step: &MigrationStep) -> String {
@@ -709,6 +863,9 @@ fn describe_drift_step(step: &MigrationStep) -> String {
         MigrationStep::CreateIndex(item) => format!("Missing index `{}.{}`", item.table, item.index.name),
         MigrationStep::DropIndex(item) => format!("Unexpected index `{}.{}`", item.table, item.index.name),
         MigrationStep::RebuildTable(item) => format!("Changed table `{}`", item.desired.name),
+        MigrationStep::ReplaceEnumValue(item) => {
+            format!("Rows of `{}.{}` use removed enum value `{}`", item.table, item.column, item.from)
+        }
     }
 }
 
@@ -728,10 +885,12 @@ fn ensure_drift_is_repairable(drift: &MigrationPlan) -> anyhow::Result<()> {
         .map(describe_drift_step)
         .collect::<Vec<_>>();
     if !unsupported.is_empty() {
-        anyhow::bail!(
-            "Dinoco will not automatically repair this drift because doing so could overwrite data: {}. Restore the database from a backup or reconcile these objects manually, then run the command again.",
-            unsupported.join("; ")
-        );
+        return Err(CliError::failure(
+            "Dinoco will not automatically repair this drift because doing so could overwrite data.",
+        )
+        .detail("Unsupported", unsupported.join("; "))
+        .hint("Restore the database from a backup or reconcile these objects manually, then run the command again.")
+        .into());
     }
     Ok(())
 }
@@ -759,67 +918,42 @@ fn make_table_drift_steps_idempotent(plan: &mut MigrationPlan, drift: &Migration
     }
 }
 
-fn confirm_schema_drift(_drift: &MigrationPlan) -> anyhow::Result<bool> {
-    if std::env::var("DINOCO_CLI_CONFIRM_DRIFT").ok().as_deref() == Some("true") {
-        return Ok(true);
-    }
-
-    Confirm::new(
-        "The database was changed outside Dinoco migrations. Continue by recording and applying a schema repair?",
-    )
-    .with_default(false)
-    .prompt()
-    .map_err(Into::into)
-}
-
-fn confirm_untracked_baseline() -> anyhow::Result<bool> {
-    if std::env::var("DINOCO_CLI_CONFIRM_DRIFT").ok().as_deref() == Some("true") {
-        return Ok(true);
-    }
-
-    Confirm::new(
-        "The existing tables match the Dinoco schema and will be adopted without being recreated. Record this baseline?",
-    )
-    .with_default(false)
-    .prompt()
-    .map_err(Into::into)
-}
-
 async fn repair_pending_history_drift(
     db: &CliDatabase,
     history: &SqliteMigrationHistory,
     mut drift: MigrationPlan,
+    decisions: &Decisions,
 ) -> anyhow::Result<()> {
     print_schema_drift(&drift);
     ensure_drift_is_repairable(&drift)?;
-    if !confirm_schema_drift(&drift)? {
-        anyhow::bail!("Migration generation cancelled before repairing SQLite schema drift.");
-    }
+    decisions.approve_drift_repair()?;
 
     let drift_snapshot = drift.clone();
     make_table_drift_steps_idempotent(&mut drift, &drift_snapshot);
-    print_plan_summary(&drift);
+    render_plan("Drift Repair", &drift, describe_step);
     ensure_plan_is_supported(db, &drift)?;
-    if drift.warnings.iter().any(|warning| warning.destructive) && !confirm_destructive_plan(&drift)? {
-        anyhow::bail!("Migration generation cancelled before applying destructive SQLite drift repair.");
+    if drift.warnings.iter().any(|warning| warning.destructive) {
+        decisions.approve_destructive_repair(&drift)?;
     }
 
     let mut statements = Vec::new();
     append_checksum_statements(db, &mut statements, &history.legacy_checksums);
     statements.extend(compile_plan(db, drift));
-    apply_statements(db, &statements)
-        .await
-        .context("failed to repair SQLite schema drift; all changes were rolled back")?;
+    apply_statements(db, &statements).await.cli_error(|| {
+        CliError::failure("The SQLite schema drift repair could not be applied.")
+            .reason("The repair failed and all changes were rolled back.")
+    })?;
     ensure_live_schema_matches(db, &history.expected).await
 }
 
 pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
     let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
     let config = runtime_config(&schema)?;
+    let migrations_root = migrations_root(workspace.as_deref());
+    print_target(&config, workspace.as_deref(), &migrations_root);
     let db = CliDatabase::connect(&config).await?;
     db.adopt_legacy_migration_history().await?;
 
-    let migrations_root = migrations_root(workspace.as_deref());
     let mut migrations = migration_dirs(&migrations_root)?;
     migrations.sort();
     let mut history = inspect_sqlite_migration_history(&db, &config, &migrations).await?;
@@ -828,9 +962,12 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
         && db.database_has_user_tables().await?
         && !migrations.is_empty()
     {
-        anyhow::bail!(
-            "Refusing to run migrations against a populated database without a `dinoco_migrations` table. Generate a baseline migration or back up and reconcile the database first."
-        );
+        return Err(CliError::failure(
+            "Refusing to run migrations against a populated database without a `dinoco_migrations` table.",
+        )
+        .reason("The database already has tables, but no migration history records how they were created.")
+        .hint("Run `dinoco migrate generate` to adopt the existing tables as a baseline, or back up and reconcile the database first.")
+        .into());
     }
 
     while let Some(snapshot) = &history {
@@ -849,9 +986,9 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
         }
 
         print_schema_drift(&drift);
-        anyhow::bail!(
-            "Refusing to run pending migrations while SQLite schema drift exists. Restore the expected schema or use `dinoco migrate generate` to review a supported table-level repair."
-        );
+        return Err(CliError::failure("Refusing to run pending migrations while SQLite schema drift exists.")
+            .hint("Restore the expected schema, or run `dinoco migrate generate` to review a supported table-level repair.")
+            .into());
     }
     if let Some(server_history) = &server_history {
         if let Some(expected) = &server_history.expected {
@@ -859,9 +996,9 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
             let drift = plan_database_migration(expected, &current);
             if !drift.steps.is_empty() {
                 print_schema_drift(&drift);
-                anyhow::bail!(
-                    "Refusing to run pending migrations while server schema drift exists. Restore the expected schema or use `dinoco migrate generate` to review a supported repair."
-                );
+                return Err(CliError::failure("Refusing to run pending migrations while server schema drift exists.")
+                    .hint("Restore the expected schema, or run `dinoco migrate generate` to review a supported repair.")
+                    .into());
             }
         } else if !server_history.applied.is_empty() {
             let pending = server_history.pending_names(&migrations)?;
@@ -871,9 +1008,11 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
                         server_history.validated.get(name).is_some_and(is_generated_legacy_normalization_migration)
                     });
                 if !recoverable {
-                    anyhow::bail!(
-                        "Refusing to run pending migrations because this legacy server history has no canonical schema snapshot. Reconcile schema.dinoco with the live database and run `dinoco migrate generate` to adopt the history first."
-                    );
+                    return Err(CliError::failure(
+                        "Refusing to run pending migrations because this legacy server history has no canonical schema snapshot.",
+                    )
+                    .hint("Reconcile schema.dinoco with the live database, then run `dinoco migrate generate` to adopt the history first.")
+                    .into());
                 }
                 ui::info(
                     "Recovering a pending generated legacy normalization; PostgreSQL foreign keys will preserve unvalidated historical rows.",
@@ -884,9 +1023,11 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
     persist_legacy_checksums(&db, history.as_ref(), server_history.as_ref()).await?;
 
     if migrations.is_empty() {
-        ui::info("No migrations were found.");
+        ui::info(format!("No migrations were found in {}/.", migrations_root.display()));
         return Ok(());
     }
+
+    let mut applied_count = 0usize;
 
     for migration in &migrations {
         let name = migration_directory_name(migration)?;
@@ -939,6 +1080,7 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
             }
         })?;
         if applied {
+            applied_count += 1;
             ui::success(format!("Migration applied: {}", migration.display()));
         } else {
             ui::info(format!("Skipping migration applied concurrently: {name}"));
@@ -957,10 +1099,18 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
         let drift = plan_database_migration(&history.expected, &current);
         if !drift.steps.is_empty() {
             print_schema_drift(&drift);
-            anyhow::bail!("Migrations finished but the resulting SQLite schema does not match their recorded history.");
+            return Err(CliError::failure(
+                "Migrations finished, but the resulting SQLite schema does not match their recorded history.",
+            )
+            .hint("Review the drift above and the migration SQL that produced it.")
+            .into());
         }
     }
-    ui::success("All pending migrations were applied.");
+    if applied_count == 0 {
+        ui::info("The database is up to date. No pending migrations were found.");
+    } else {
+        ui::success(format!("Applied {}.", ui::plural(applied_count, "migration", "migrations")));
+    }
 
     Ok(())
 }
@@ -1013,10 +1163,19 @@ fn plan_migration(
     desired: &crate::db::DatabaseSchema,
     current: &crate::db::DatabaseSchema,
 ) -> MigrationPlan {
+    plan_migration_with(db, desired, current, &PlanOptions::default())
+}
+
+fn plan_migration_with(
+    db: &CliDatabase,
+    desired: &crate::db::DatabaseSchema,
+    current: &crate::db::DatabaseSchema,
+    options: &PlanOptions,
+) -> MigrationPlan {
     if db.is_sqlite() {
-        plan_sqlite_database_migration(desired, current)
+        plan_sqlite_database_migration_with(desired, current, options)
     } else {
-        plan_database_migration(desired, current)
+        plan_database_migration_with(desired, current, options)
     }
 }
 
@@ -1025,7 +1184,11 @@ async fn ensure_live_schema_matches(db: &CliDatabase, desired: &crate::db::Datab
     let remaining = plan_database_migration(desired, &current);
     if !remaining.steps.is_empty() {
         print_schema_drift(&remaining);
-        anyhow::bail!("The migration finished, but the live database still does not match the Dinoco schema.");
+        return Err(CliError::failure(
+            "The migration finished, but the live database still does not match the Dinoco schema.",
+        )
+        .hint("Review the drift above. Run `dinoco migrate generate` again to plan the remaining changes.")
+        .into());
     }
     Ok(())
 }
@@ -1481,10 +1644,15 @@ fn push_normalized_newline(bytes: &[u8], output: &mut Vec<u8>, index: &mut usize
 
 fn ensure_plan_is_supported(db: &CliDatabase, plan: &MigrationPlan) -> anyhow::Result<()> {
     if !plan.errors.is_empty() {
-        anyhow::bail!(
-            "Dinoco found ambiguous schema changes and stopped before writing or recording migration history: {}",
-            plan.errors.join(" ")
+        let mut error = CliError::failure(
+            "Dinoco found ambiguous schema changes and stopped before writing or recording migration history.",
         );
+        for message in &plan.errors {
+            error = error.detail("Ambiguous", message);
+        }
+        return Err(error
+            .hint("Change the schema in smaller steps, so each renamed table or field has a single candidate.")
+            .into());
     }
 
     let primary_key_changes = plan
@@ -1634,7 +1802,10 @@ fn mark_unvalidated_legacy_foreign_keys(db: &CliDatabase, plan: &mut MigrationPl
 
 /// Every statement that builds `schema` from an empty SQLite database, as
 /// the automatic engine would plan it. Used by `dinoco::create_test_ambient`.
-pub fn sqlite_schema_statements(schema: &dinoco_compiler::Schema, adapter: dinoco_engine::SqliteAdapter) -> Vec<String> {
+pub fn sqlite_schema_statements(
+    schema: &dinoco_compiler::Schema,
+    adapter: dinoco_engine::SqliteAdapter,
+) -> Vec<String> {
     let db = CliDatabase::Sqlite(adapter);
     let plan = plan_sqlite_database_migration(&desired_database_schema(schema), &crate::db::DatabaseSchema::default());
 
@@ -1657,9 +1828,12 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
     let mut create_indexes = Vec::new();
     let mut rebuild_tables = Vec::new();
     let mut drop_tables = Vec::new();
+    // Rows move off removed enum values before any column stops accepting them.
+    let mut statements = Vec::new();
 
     for step in plan.steps {
         match step {
+            MigrationStep::ReplaceEnumValue(item) => statements.push(db.compile_replace_enum_value(&item)),
             MigrationStep::CreateEnum(item) => create_enums.push(item),
             MigrationStep::AlterEnum(item) => alter_enums.push(item),
             MigrationStep::DropEnum(item) => drop_enums.push(item),
@@ -1686,7 +1860,6 @@ fn compile_plan(db: &CliDatabase, plan: MigrationPlan) -> Vec<String> {
         }
     }
 
-    let mut statements = Vec::new();
     let renamed_tables = rename_tables.iter().map(|item| item.to.clone()).collect::<BTreeSet<_>>();
     for item in rename_tables {
         statements.extend(db.compile_rename_table_migration(item));
@@ -2113,6 +2286,10 @@ fn compile_down_plan(
             MigrationStep::RebuildTable(item) => {
                 Some(format!("table `{}` was rebuilt with a changed schema", item.desired.name))
             }
+            MigrationStep::ReplaceEnumValue(item) => Some(format!(
+                "rows of `{}.{}` were changed from `{}` to `{}`",
+                item.table, item.column, item.from, item.to
+            )),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -2231,7 +2408,8 @@ fn compile_down_plan(
                     index: migration.index.clone(),
                 }));
             }
-            MigrationStep::RebuildTable(_) => {}
+            // Both make the migration irreversible, so no down SQL is generated.
+            MigrationStep::RebuildTable(_) | MigrationStep::ReplaceEnumValue(_) => {}
         }
     }
 
@@ -2299,60 +2477,6 @@ fn created_table_drop_order(plan: &MigrationPlan) -> Vec<String> {
     ordered
 }
 
-fn print_plan_summary(plan: &MigrationPlan) {
-    ui::info(format!("Detected {} schema change(s).", plan.steps.len()));
-    for step in &plan.steps {
-        ui::info(format!("  {}", describe_step(step)));
-    }
-
-    for warning in &plan.warnings {
-        if warning.destructive {
-            ui::warning(format!("Destructive change: {}", warning.message));
-        } else {
-            ui::warning(format!("Potentially unsafe change: {}", warning.message));
-        }
-    }
-}
-
-fn confirm_migration_generation(plans: &[&MigrationPlan]) -> anyhow::Result<bool> {
-    if std::env::var("DINOCO_CLI_CONFIRM_MIGRATION").ok().as_deref() == Some("true") {
-        return Ok(true);
-    }
-
-    let destructive_count = plans.iter().flat_map(|plan| &plan.warnings).filter(|warning| warning.destructive).count();
-    if destructive_count > 0 && std::env::var("DINOCO_CLI_CONFIRM_DESTRUCTIVE").ok().as_deref() == Some("true") {
-        return Ok(true);
-    }
-
-    let message = if destructive_count > 0 {
-        format!(
-            "This migration contains {destructive_count} destructive change(s) that may permanently delete data. Make sure you have a backup. Generate and apply it now?"
-        )
-    } else {
-        "Generate and apply this migration, then generate the Rust models?".to_string()
-    };
-
-    print!("? {message} [y/N] ");
-    std::io::stdout().flush()?;
-    let mut answer = String::new();
-    std::io::stdin().read_line(&mut answer)?;
-    Ok(answer.trim().eq_ignore_ascii_case("y"))
-}
-
-fn confirm_destructive_plan(plan: &MigrationPlan) -> anyhow::Result<bool> {
-    if std::env::var("DINOCO_CLI_CONFIRM_DESTRUCTIVE").ok().as_deref() == Some("true") {
-        return Ok(true);
-    }
-
-    let destructive_count = plan.warnings.iter().filter(|warning| warning.destructive).count();
-    Confirm::new(&format!(
-        "This repair contains {destructive_count} destructive change(s) that may permanently delete data. Make sure you have a backup. Continue?"
-    ))
-    .with_default(false)
-    .prompt()
-    .map_err(Into::into)
-}
-
 fn describe_step(step: &MigrationStep) -> String {
     match step {
         MigrationStep::CreateEnum(item) => format!("Create enum `{}`", item.name),
@@ -2369,6 +2493,14 @@ fn describe_step(step: &MigrationStep) -> String {
         MigrationStep::DropForeignKey(item) => format!("Drop foreign key `{}.{}`", item.table, item.name),
         MigrationStep::CreateIndex(item) => format!("Create index `{}.{}`", item.table, item.index.name),
         MigrationStep::DropIndex(item) => format!("Drop index `{}.{}`", item.table, item.index.name),
+        MigrationStep::ReplaceEnumValue(item) => format!(
+            "Replace `{}` with `{}` in `{}.{}` ({})",
+            item.from,
+            item.to,
+            item.table,
+            item.column,
+            ui::plural(item.rows as usize, "row", "rows")
+        ),
         MigrationStep::RebuildTable(item) => {
             let changes = item.changes.iter().map(describe_step).collect::<Vec<_>>().join("; ");
             if changes.is_empty() {
@@ -2397,9 +2529,9 @@ fn migration_dirs(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
         // the migrations but aren't migrations.
         .filter(|entry: &anyhow::Result<PathBuf>| {
             entry.as_ref().map_or(true, |path| {
-                path.file_name().and_then(|name| name.to_str()).is_none_or(|name| {
-                    name != crate::schema::WORKSPACE_SCHEMA_DIR && !name.starts_with('.')
-                })
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_none_or(|name| name != crate::schema::WORKSPACE_SCHEMA_DIR && !name.starts_with('.'))
             })
         })
         .collect()

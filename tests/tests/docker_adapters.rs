@@ -150,6 +150,108 @@ pub struct UserSelect {
     email: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Entity)]
+#[dinoco(table_name = "adapter_regression_event")]
+pub struct RegressionEvent {
+    #[dinoco(primary_key)]
+    id: i64,
+    label: String,
+    happened_at: dinoco::chrono::DateTime<dinoco::chrono::Utc>,
+    note: Option<String>,
+}
+
+#[derive(Debug, PartialEq, EntityExtend)]
+#[extend(RegressionEvent)]
+pub struct RegressionEventTime {
+    id: i64,
+    happened_at: dinoco::chrono::DateTime<dinoco::chrono::Utc>,
+}
+
+fn regression_event(id: i64) -> RegressionEvent {
+    RegressionEvent {
+        id,
+        label: format!("event {id}"),
+        happened_at: dinoco::chrono::DateTime::from_timestamp(1_700_000_000 + id * 3_600, 0).expect("valid timestamp"),
+        note: (id % 2 == 0).then(|| format!("note {id}")),
+    }
+}
+
+/// Integer keys, `TIMESTAMP` columns read as `DateTime<Utc>` through every
+/// read path, and rows of hand-written statements.
+async fn run_runtime_regressions<A>(adapter: A, backend: Backend) -> anyhow::Result<()>
+where
+    A: DinocoAdapter + DinocoSqlCompiler,
+{
+    drop_table(&adapter, "adapter_regression_event").await?;
+    create_table(
+        &adapter,
+        "adapter_regression_event",
+        vec![
+            primary(column("id", MigrationColumnType::Integer)),
+            column("label", MigrationColumnType::String),
+            column("happened_at", MigrationColumnType::DateTime),
+            nullable(column("note", MigrationColumnType::String)),
+        ],
+    )
+    .await?;
+    let client = DinocoClient::new(backend);
+    let events = (1..=3).map(regression_event).collect::<Vec<_>>();
+    insert_many::<RegressionEvent>().values(events.clone()).execute(&client).await?;
+
+    let found = find_many::<RegressionEvent>().order_by(|x| x.id.asc()).execute(&client).await?;
+    assert_eq!(found, events);
+
+    let times =
+        find_many::<RegressionEvent>().order_by(|x| x.id.asc()).pluck(|x| x.happened_at).execute(&client).await?;
+    assert_eq!(times, events.iter().map(|event| event.happened_at).collect::<Vec<_>>());
+
+    let projected = find_many::<RegressionEvent>()
+        .order_by(|x| x.id.asc())
+        .select::<RegressionEventTime>()
+        .execute(&client)
+        .await?;
+    assert_eq!(projected[2], RegressionEventTime { id: 3, happened_at: events[2].happened_at });
+
+    let hand_written: Vec<RegressionEvent> =
+        adapter.query("SELECT note, happened_at, label, id FROM adapter_regression_event ORDER BY id", &[]).await?;
+    assert_eq!(hand_written, events);
+
+    let mut updated = update::<RegressionEvent>()
+        .where_(|x| x.id.gte(2))
+        .update(|x| x.label.set("renamed".to_string()))
+        .returning::<RegressionEvent>()
+        .execute(&client)
+        .await?;
+    updated.sort_by_key(|event| event.id);
+    assert_eq!(
+        updated.iter().map(|event| (event.id, event.label.as_str())).collect::<Vec<_>>(),
+        [(2, "renamed"), (3, "renamed")]
+    );
+
+    drop_table(&adapter, "adapter_regression_event").await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_runtime_regressions() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::memory().await?;
+    run_runtime_regressions(adapter.clone(), Backend::Sqlite(adapter)).await
+}
+
+#[tokio::test]
+async fn postgres_runtime_regressions() -> anyhow::Result<()> {
+    let _guard = POSTGRES_TEST_LOCK.lock().await;
+    let adapter = PostgresAdapter::direct(POSTGRES_URL).await?;
+    run_runtime_regressions(adapter.clone(), Backend::Postgres(adapter)).await
+}
+
+#[tokio::test]
+async fn mysql_runtime_regressions() -> anyhow::Result<()> {
+    let _guard = MYSQL_TEST_LOCK.lock().await;
+    let adapter = MySqlAdapter::new(MYSQL_URL);
+    run_runtime_regressions(adapter.clone(), Backend::Mysql(adapter)).await
+}
+
 #[tokio::test]
 async fn sqlite_adapter_runs_all_dinoco_methods() -> anyhow::Result<()> {
     let path = format!("/private/tmp/dinoco-all-methods-{}-{}.sqlite", std::process::id(), monotonic());
@@ -403,9 +505,8 @@ async fn run_updated_at(client: DinocoClient) -> anyhow::Result<()> {
         touched_on: past.date_naive(),
     };
     insert_many::<UpdatedAtArticle>().values(vec![seed("a"), seed("b"), seed("c"), seed("d")]).execute(&client).await?;
-    let reload = |id: &'static str| {
-        find_first::<UpdatedAtArticle>().where_(move |article| article.id.eq(id)).execute(&client)
-    };
+    let reload =
+        |id: &'static str| find_first::<UpdatedAtArticle>().where_(move |article| article.id.eq(id)).execute(&client);
     let fresh = |article: &UpdatedAtArticle| {
         let now = Utc::now();
         article.updated_at > now - tolerance
@@ -413,7 +514,11 @@ async fn run_updated_at(client: DinocoClient) -> anyhow::Result<()> {
             && article.touched_on >= (now - tolerance).date_naive()
     };
 
-    update::<UpdatedAtArticle>().where_(|article| article.id.eq("a")).update(|article| article.title.set("A")).execute(&client).await?;
+    update::<UpdatedAtArticle>()
+        .where_(|article| article.id.eq("a"))
+        .update(|article| article.title.set("A"))
+        .execute(&client)
+        .await?;
     let a = reload("a").await?.expect("a");
     assert!(fresh(&a), "update: {a:?}");
 

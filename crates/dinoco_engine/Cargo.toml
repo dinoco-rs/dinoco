@@ -1,7 +1,8 @@
 [package]
 name = "dinoco_engine"
-version = "2.0.9"
+version = "2.1.0"
 edition = "2024"
+rust-version = "1.95"
 license = "Apache-2.0"
 description = "Database adapters, query execution, and migration engine components for Dinoco."
 homepage = "https://dinoco.io"
@@ -9,27 +10,32 @@ repository = "https://github.com/dinoco-rs/dinoco"
 readme = "../../crates.md"
 keywords = ["orm", "database", "sql", "adapters", "migrations"]
 
+[features]
+default = ["sqlite", "postgres", "mysql"]
+sqlite = ["dep:rusqlite", "dep:deadpool-sqlite"]
+postgres = ["dep:tokio-postgres", "dep:deadpool-postgres", "dep:futures-util"]
+mysql = ["dep:mysql_async", "dep:mysql_common"]
+
 [dependencies]
-tokio = { version = "1.50.0", features = ["full", "rt-multi-thread"] }
+tokio = { version = "1.53", features = ["rt", "sync"] }
 
 async-trait = "0.1.89"
-async-stream = "0.3.6"
-futures = "0.3.32"
+futures-util = { version = "0.3.31", default-features = false, features = ["std"], optional = true }
 
-deadpool-sqlite = "0.13"
-rusqlite = { version = "0.38", features = [
+deadpool-sqlite = { version = "0.14", optional = true }
+rusqlite = { version = "0.40.2", optional = true, features = [
 	"bundled",
 	"chrono",
 	"hooks",
 	"serde_json",
 ] }
-deadpool-postgres = "0.14"
-tokio-postgres = { version = "0.7", features = [
+deadpool-postgres = { version = "0.14.2", optional = true }
+tokio-postgres = { version = "0.7", optional = true, features = [
 	"with-chrono-0_4",
 	"with-serde_json-1",
 ] }
-mysql_async = { version = "0.36", features = ["chrono"] }
-mysql_common = { version = "0.35", features = ["chrono"] }
+mysql_async = { version = "0.37.1", optional = true, features = ["chrono"] }
+mysql_common = { version = "0.37", optional = true, features = ["chrono"] }
 anyhow = "1.0.103"
 chrono = { version = "0.4", features = ["serde"] }
 serde_json = "1.0"

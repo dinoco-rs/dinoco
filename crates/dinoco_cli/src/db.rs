@@ -17,6 +17,7 @@ use rusqlite::{
     hooks::{AuthAction, AuthContext, Authorization},
 };
 
+use crate::error::CliError;
 use crate::schema::{Database, PostgresConnection, RuntimeConfig};
 
 pub enum CliDatabase {
@@ -60,8 +61,16 @@ pub struct MigrationMetadata {
 pub type SqliteMigrationMetadata = MigrationMetadata;
 
 const POSTGRES_MIGRATION_LOCK_ID: i64 = 0x4449_4E4F_434F;
-const MYSQL_MIGRATION_LOCK_SQL: &str = "SELECT GET_LOCK(CONCAT('dinoco:migrations:', DATABASE()), 30)";
-const MYSQL_MIGRATION_UNLOCK_SQL: &str = "SELECT RELEASE_LOCK(CONCAT('dinoco:migrations:', DATABASE()))";
+// MySQL limits lock names to 64 characters. Database names that fit after
+// the 18-character prefix keep the name earlier releases used; longer ones,
+// which those releases could not lock, use a prefix of their SHA-256.
+macro_rules! mysql_migration_lock_name {
+    () => {
+        "CONCAT('dinoco:migrations:', IF(CHAR_LENGTH(DATABASE()) <= 46, DATABASE(), LEFT(SHA2(DATABASE(), 256), 46)))"
+    };
+}
+const MYSQL_MIGRATION_LOCK_SQL: &str = concat!("SELECT GET_LOCK(", mysql_migration_lock_name!(), ", 30)");
+const MYSQL_MIGRATION_UNLOCK_SQL: &str = concat!("SELECT RELEASE_LOCK(", mysql_migration_lock_name!(), ")");
 const POSTGRES_CHECKSUMS_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS dinoco_migration_checksums (name VARCHAR(255) PRIMARY KEY, checksum VARCHAR(64) NOT NULL)";
 const POSTGRES_CHECKSUM_GUARD_SQL: &str =
     "CREATE INDEX IF NOT EXISTS dinoco_migrations_checksum_required ON dinoco_migrations(name)";
@@ -72,30 +81,135 @@ const POSTGRES_SCHEMA_SNAPSHOT_GUARD_SQL: &str =
     "CREATE INDEX IF NOT EXISTS dinoco_migrations_schema_snapshots_required ON dinoco_migrations(name)";
 const MYSQL_SCHEMA_SNAPSHOTS_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS dinoco_migration_schemas (name VARCHAR(255) PRIMARY KEY, schema_json LONGTEXT NOT NULL)";
 
-fn database_connection_error_context(config: &RuntimeConfig) -> String {
-    format!(
-        "Unable to connect to the database.\n\nDatabase:\n{}\n\nCheck that:\n  \u{2022} the database is reachable from this machine\n  \u{2022} the connection URL is correct\n  \u{2022} your credentials are valid",
-        redact_database_url(&config.database_url)
-    )
+fn connection_error(config: &RuntimeConfig) -> CliError {
+    CliError::failure("Unable to connect to the database.")
+        .detail("Database", config.database_label())
+        .detail("Location", redact_database_url(&config.database_url))
+        .hint("Check that the database is running and reachable from this machine.")
+        .hint("Check that the connection URL and its credentials are correct.")
 }
 
-/// Hides the userinfo (`user:password@`) segment of a connection URL so
-/// credentials never end up in terminal output, logs, or bug reports.
+/// Query parameters whose values are credentials.
+const SECRET_PARAMETERS: [&str; 6] = ["password", "pass", "pwd", "sslpassword", "token", "secret"];
+
+fn is_secret_parameter(name: &str) -> bool {
+    SECRET_PARAMETERS.iter().any(|secret| name.eq_ignore_ascii_case(secret))
+}
+
+/// Hides credentials in a connection URL, so they never end up in terminal
+/// output, logs or bug reports: the userinfo (`user:password@`) of a URL,
+/// and password-like parameters of its query or of a `key=value` connection
+/// string. Hosts, ports and database names are kept.
 #[doc(hidden)]
 pub fn redact_database_url(url: &str) -> String {
     let Some(scheme_end) = url.find("://") else {
-        return url.to_string();
+        return redact_key_value_pairs(url);
     };
     let (scheme, rest) = url.split_at(scheme_end + 3);
-    match rest.find('@') {
-        Some(at) => format!("{scheme}***@{}", &rest[at + 1..]),
-        None => url.to_string(),
+    let (rest, query) = match rest.split_once('?') {
+        Some((rest, query)) => (rest, Some(query)),
+        None => (rest, None),
+    };
+    // The userinfo ends at the last `@` before the path.
+    let authority_end = rest.find('/').unwrap_or(rest.len());
+    let rest = match rest[..authority_end].rfind('@') {
+        Some(at) => format!("***@{}", &rest[at + 1..]),
+        None => rest.to_string(),
+    };
+    let query = query.map(|query| {
+        query
+            .split('&')
+            .map(|pair| match pair.split_once('=') {
+                Some((name, _)) if is_secret_parameter(name) => format!("{name}=***"),
+                _ => pair.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("&")
+    });
+    match query {
+        Some(query) => format!("{scheme}{rest}?{query}"),
+        None => format!("{scheme}{rest}"),
     }
+}
+
+/// `host=db password=secret` connection strings.
+fn redact_key_value_pairs(value: &str) -> String {
+    value
+        .split(' ')
+        .map(|pair| match pair.split_once('=') {
+            Some((name, _)) if is_secret_parameter(name) => format!("{name}=***"),
+            _ => pair.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The credentials in `url`, to scrub from driver error messages.
+fn url_secrets(url: &str) -> Vec<String> {
+    let mut secrets = Vec::new();
+    let mut push = |secret: &str| {
+        if !secret.is_empty() {
+            secrets.push(secret.to_string());
+            if let Ok(decoded) = urlencoding_decode(secret)
+                && decoded != secret
+                && !decoded.is_empty()
+            {
+                secrets.push(decoded);
+            }
+        }
+    };
+    if let Some(scheme_end) = url.find("://") {
+        let rest = &url[scheme_end + 3..];
+        let authority = &rest[..rest.find(['/', '?']).unwrap_or(rest.len())];
+        if let Some(at) = authority.rfind('@')
+            && let Some((_, password)) = authority[..at].split_once(':')
+        {
+            push(password);
+        }
+    }
+    for pair in url.split(['?', '&', ' ']) {
+        if let Some((name, value)) = pair.split_once('=')
+            && is_secret_parameter(name)
+        {
+            push(value);
+        }
+    }
+    secrets
+}
+
+fn urlencoding_decode(value: &str) -> Result<String, ()> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = value.get(index + 1..index + 3).ok_or(())?;
+            decoded.push(u8::from_str_radix(hex, 16).map_err(|_| ())?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).map_err(|_| ())
 }
 
 impl CliDatabase {
     pub async fn connect(config: &RuntimeConfig) -> anyhow::Result<Self> {
-        Self::connect_inner(config).await.with_context(|| database_connection_error_context(config))
+        Self::connect_inner(config).await.map_err(|error| {
+            // Driver messages can quote the URL they were given; rebuild the
+            // chain without its credentials.
+            let secrets = url_secrets(&config.database_url);
+            let scrub = |message: String| {
+                secrets.iter().fold(message, |message, secret| message.replace(secret.as_str(), "***"))
+            };
+            let mut messages = error.chain().map(|cause| scrub(cause.to_string())).collect::<Vec<_>>();
+            let mut scrubbed = anyhow::Error::msg(messages.pop().unwrap_or_default());
+            while let Some(message) = messages.pop() {
+                scrubbed = scrubbed.context(message);
+            }
+            scrubbed.context(connection_error(config))
+        })
     }
 
     async fn connect_inner(config: &RuntimeConfig) -> anyhow::Result<Self> {
@@ -264,6 +378,64 @@ impl CliDatabase {
             Self::PgBouncer(adapter) => adapter.query_count(sql, &[]).await,
             Self::Mysql(adapter) => adapter.query_count(sql, &[]).await,
             Self::Sqlite(adapter) => adapter.query_count(sql, &[]).await,
+        }
+    }
+
+    /// Rows of `table` whose `column` holds `value`.
+    pub async fn count_rows_with_value(&self, table: &str, column: &str, value: &str) -> anyhow::Result<i64> {
+        let params = [dinoco_engine::DinocoValue::String(value.to_string())];
+        let count = match self {
+            Self::Postgres(adapter) => {
+                let sql = postgres_value_count_sql(table, column);
+                adapter.query_count(&sql, &params).await
+            }
+            Self::PgBouncer(adapter) => {
+                let sql = postgres_value_count_sql(table, column);
+                adapter.query_count(&sql, &params).await
+            }
+            Self::Mysql(adapter) => {
+                let sql =
+                    format!("SELECT COUNT(*) FROM {} WHERE {} = ?", mysql_identifier(table), mysql_identifier(column));
+                adapter.query_count(&sql, &params).await
+            }
+            Self::Sqlite(adapter) => {
+                let sql = format!(
+                    "SELECT COUNT(*) FROM {} WHERE {} = ?1",
+                    sqlite_identifier(table),
+                    sqlite_identifier(column)
+                );
+                adapter.query_count(&sql, &params).await
+            }
+        };
+        count.with_context(|| format!("failed to count the rows of `{table}.{column}` that use `{value}`"))
+    }
+
+    /// `UPDATE` moving the rows of a column from a removed enum value to its
+    /// replacement. It is written into the migration file, so the values
+    /// are SQL literals.
+    pub fn compile_replace_enum_value(&self, item: &crate::sql::EnumValueReplacement) -> String {
+        match self {
+            Self::Postgres(_) | Self::PgBouncer(_) => format!(
+                "UPDATE {table} SET {column} = '{to}' WHERE {column} = '{from}';",
+                table = postgres_identifier(&item.table),
+                column = postgres_identifier(&item.column),
+                to = escape_sql_literal(&item.to),
+                from = escape_sql_literal(&item.from),
+            ),
+            Self::Mysql(_) => format!(
+                "UPDATE {table} SET {column} = '{to}' WHERE {column} = '{from}';",
+                table = mysql_identifier(&item.table),
+                column = mysql_identifier(&item.column),
+                to = escape_mysql_literal(&item.to),
+                from = escape_mysql_literal(&item.from),
+            ),
+            Self::Sqlite(_) => format!(
+                "UPDATE {table} SET {column} = '{to}' WHERE {column} = '{from}';",
+                table = sqlite_identifier(&item.table),
+                column = sqlite_identifier(&item.column),
+                to = escape_sql_literal(&item.to),
+                from = escape_sql_literal(&item.from),
+            ),
         }
     }
 
@@ -1999,6 +2171,17 @@ fn ensure_sqlite_migration_checksum_guard(transaction: &rusqlite::Transaction<'_
 
 fn escape_sql_literal(value: &str) -> String {
     value.replace('\'', "''")
+}
+
+/// MySQL also treats backslashes in string literals as escapes, unless the
+/// `NO_BACKSLASH_ESCAPES` SQL mode is set.
+fn escape_mysql_literal(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('\'', "''")
+}
+
+fn postgres_value_count_sql(table: &str, column: &str) -> String {
+    // Comparing as text accepts the parameter whatever the column's enum type.
+    format!("SELECT COUNT(*) FROM {} WHERE {}::text = $1", postgres_identifier(table), postgres_identifier(column))
 }
 
 fn generated_fk_name(table: &str, columns: &[String]) -> String {

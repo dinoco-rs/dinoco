@@ -3,9 +3,9 @@ use std::marker::PhantomData;
 use dinoco_engine::{DinocoProjection, DinocoRowModel, PluckValue};
 
 use crate::{
-    CreateError, DinocoInsertable, Field, InsertPayload, MutationExecutor, execute_insert_models_returning,
-    execute_insert_models_returning_field, execute_insert_payloads, execute_insert_payloads_returning,
-    reload_inserted, reload_inserted_field,
+    CreateError, DinocoInsertable, Field, InsertPayload, MutationExecutor, execute_insert_owned,
+    execute_insert_owned_returning, execute_insert_owned_returning_field, execute_insert_payloads,
+    execute_insert_payloads_returning, reload_inserted, reload_inserted_field,
 };
 
 pub struct InsertMany<M, V = M> {
@@ -67,7 +67,11 @@ where
     where
         C: MutationExecutor,
     {
-        execute_insert_payloads::<M, V, V, C>(&self.items, &client).await.map_err(CreateError::from_database)?;
+        if V::HAS_NESTED {
+            execute_insert_payloads::<M, V, V, C>(&self.items, &client).await.map_err(CreateError::from_database)?;
+        } else {
+            execute_insert_owned::<M, V, C>(self.items, &client).await.map_err(CreateError::from_database)?;
+        }
 
         Ok(())
     }
@@ -95,9 +99,7 @@ where
         C: MutationExecutor,
     {
         if !V::HAS_NESTED {
-            let models = self.items.iter().map(InsertPayload::dinoco_insert_model).collect::<Vec<_>>();
-
-            return execute_insert_models_returning::<M, S, C>(&models, &client)
+            return execute_insert_owned_returning::<M, V, S, C>(self.items, &client)
                 .await
                 .map_err(CreateError::from_database);
         }
@@ -120,9 +122,7 @@ where
         C: MutationExecutor,
     {
         if !V::HAS_NESTED {
-            let models = self.items.iter().map(InsertPayload::dinoco_insert_model).collect::<Vec<_>>();
-
-            return execute_insert_models_returning_field::<M, T, C>(&models, self.field, &client)
+            return execute_insert_owned_returning_field::<M, V, T, C>(self.items, self.field, &client)
                 .await
                 .map_err(CreateError::from_database);
         }
@@ -130,9 +130,7 @@ where
         let inserted = execute_insert_payloads_returning::<M, V, V, C>(&self.items, &client)
             .await
             .map_err(CreateError::from_database)?;
-        reload_inserted_field::<M, T, C>(&inserted, self.field, &client)
-            .await
-            .map_err(CreateError::from_database)
+        reload_inserted_field::<M, T, C>(&inserted, self.field, &client).await.map_err(CreateError::from_database)
     }
 }
 
@@ -155,6 +153,6 @@ where
         let rows = self.inner.execute(client).await?;
         let mut transform = self.transform;
 
-        Ok(rows.into_iter().map(|row| transform(row)).collect())
+        Ok(rows.into_iter().map(&mut transform).collect())
     }
 }

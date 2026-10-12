@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use dinoco_compiler::{
     Attribute, AttributeArgument, AttributeValue, ConfigEntry, ConfigValue, Model, ModelField, Schema,
 };
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use tower_lsp_server::ls_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 
 use crate::document::{BlockInfo, BlockKind, DocumentIndex, FieldInfo, scalar_types};
 

@@ -3,14 +3,17 @@ use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
 use deadpool_postgres::{ManagerConfig, Pool, RecyclingMethod, Runtime};
-use tokio_postgres::types::{IsNull, Json, Kind, ToSql, Type};
-use tokio_postgres::{Config, NoTls};
+use futures_util::TryStreamExt;
+use tokio_postgres::types::{IsNull, Json, Kind, ToSql, Type, WrongType};
+use tokio_postgres::{Config, NoTls, RowStream};
 
 mod compiler;
 
+use super::Decode;
+use super::sql::Dialect;
 use crate::{
-    CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoRowModel, DinocoValue,
-    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
+    CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoPostgres, DinocoRowModel,
+    DinocoValue, LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -45,55 +48,18 @@ impl DinocoAdapter for PostgresAdapter {
     where
         M: DinocoRowModel,
     {
-        let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
-        let params = postgres_params(params);
-        let params = postgres_param_refs(&params);
-        let rows = match self.mode {
-            PostgresMode::Direct => {
-                let stmt = conn.prepare_cached(query).await?;
-                conn.query(&stmt, &params).await?
-            }
-            PostgresMode::PgBouncer => conn.query(query, &params).await?,
-        };
-
-        rows.into_iter()
-            .map(|row| {
-                M::from_deadpool_posgres_row(&row).ok_or_else(|| RowDecodeError::new(std::any::type_name::<M>()).into())
-            })
-            .collect()
+        self.fetch(query.to_owned(), params.to_vec(), Decode::Strict).await
     }
 
     async fn query_optional<M>(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
     {
-        let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
-        let params = postgres_params(params);
-        let params = postgres_param_refs(&params);
-        let rows = match self.mode {
-            PostgresMode::Direct => {
-                let stmt = conn.prepare_cached(query).await?;
-                conn.query(&stmt, &params).await?
-            }
-            PostgresMode::PgBouncer => conn.query(query, &params).await?,
-        };
-
-        Ok(rows.into_iter().filter_map(|row| M::from_deadpool_posgres_row(&row)).collect())
+        self.fetch(query.to_owned(), params.to_vec(), Decode::Lenient).await
     }
 
     async fn execute(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<usize> {
-        let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
-        let params = postgres_params(params);
-        let params = postgres_param_refs(&params);
-        let affected = match self.mode {
-            PostgresMode::Direct => {
-                let stmt = conn.prepare_cached(query).await?;
-                conn.execute(&stmt, &params).await?
-            }
-            PostgresMode::PgBouncer => conn.execute(query, &params).await?,
-        };
-
-        Ok(affected as usize)
+        self.run(query.to_owned(), params.to_vec()).await
     }
 }
 
@@ -128,12 +94,8 @@ impl PostgresAdapter {
 
     async fn from_url(url: String, mode: PostgresMode, pool_limits: Option<(usize, usize)>) -> anyhow::Result<Self> {
         let pg_config = Config::from_str(&url).context("Invalid postgres url")?;
-        let manager_config = ManagerConfig {
-            recycling_method: match mode {
-                PostgresMode::Direct => RecyclingMethod::Fast,
-                PostgresMode::PgBouncer => RecyclingMethod::Fast,
-            },
-        };
+        // `Fast` recycling keeps each connection's prepared statements.
+        let manager_config = ManagerConfig { recycling_method: RecyclingMethod::Fast };
         let manager = deadpool_postgres::Manager::from_config(pg_config, NoTls, manager_config);
         let mut builder = Pool::builder(manager).runtime(Runtime::Tokio1);
         if let Some((_, max_connections)) = pool_limits {
@@ -160,11 +122,73 @@ impl PostgresAdapter {
         self.with_logger
     }
 
+    async fn connection(&self) -> anyhow::Result<deadpool_postgres::Object> {
+        self.pool.get().await.context("Failed to get postgres connection from pool")
+    }
+
+    /// The statement to run `sql` with: prepared once per connection and
+    /// cached, except behind PgBouncer where named statements cannot be kept.
+    async fn statement(
+        &self,
+        connection: &deadpool_postgres::Object,
+        sql: &str,
+    ) -> anyhow::Result<Option<tokio_postgres::Statement>> {
+        Ok(match self.mode {
+            PostgresMode::Direct => Some(connection.prepare_cached(sql).await?),
+            PostgresMode::PgBouncer => None,
+        })
+    }
+
+    pub(crate) async fn fetch<M>(&self, sql: String, params: Vec<DinocoValue>, decode: Decode) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoPostgres,
+    {
+        let connection = self.connection().await?;
+        let rows = match self.statement(&connection, &sql).await? {
+            Some(statement) => connection.query_raw(&statement, params.iter()).await?,
+            None => connection.query_raw(sql.as_str(), params.iter()).await?,
+        };
+
+        decode_stream(rows, decode, M::from_deadpool_posgres_row, std::any::type_name::<M>()).await
+    }
+
+    pub(crate) async fn run(&self, sql: String, params: Vec<DinocoValue>) -> anyhow::Result<usize> {
+        let connection = self.connection().await?;
+        let affected = match self.statement(&connection, &sql).await? {
+            Some(statement) => connection.execute_raw(&statement, params.iter()).await?,
+            None => connection.execute_raw(sql.as_str(), params.iter()).await?,
+        };
+
+        Ok(affected as usize)
+    }
+
+    pub(crate) async fn fetch_count(&self, sql: String, params: Vec<DinocoValue>) -> anyhow::Result<i64> {
+        self.fetch_scalar(sql, params).await
+    }
+
+    pub(crate) async fn fetch_exists(&self, sql: String, params: Vec<DinocoValue>) -> anyhow::Result<bool> {
+        self.fetch_scalar(sql, params).await
+    }
+
+    async fn fetch_scalar<T>(&self, sql: String, params: Vec<DinocoValue>) -> anyhow::Result<T>
+    where
+        T: for<'a> tokio_postgres::types::FromSql<'a>,
+    {
+        let connection = self.connection().await?;
+        let params = param_refs(&params);
+        let row = match self.statement(&connection, &sql).await? {
+            Some(statement) => connection.query_one(&statement, &params).await?,
+            None => connection.query_one(sql.as_str(), &params).await?,
+        };
+
+        Ok(row.try_get(0)?)
+    }
+
     pub(crate) async fn begin_live_transaction(
         &self,
     ) -> anyhow::Result<tokio::sync::mpsc::Sender<LiveTransactionMessage>> {
         let pool = self.pool.clone();
-        let compiler = self.clone();
+        let mode = self.mode;
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
         let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
 
@@ -188,8 +212,8 @@ impl PostgresAdapter {
             while let Some(message) = receiver.recv().await {
                 match message {
                     LiveTransactionMessage::Execute { command, reply } => {
-                        let result = match command.compile(&compiler) {
-                            Ok(command) => execute_transaction_command(&transaction, &command)
+                        let result = match (*command).compile(Dialect::Postgres) {
+                            Ok(command) => execute_transaction_command(&transaction, mode, &command)
                                 .await
                                 .and_then(|raw| command.finish(raw)),
                             Err(error) => Err(error),
@@ -215,43 +239,44 @@ impl PostgresAdapter {
     }
 
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
-        let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
-        let params = postgres_params(params);
-        let params = postgres_param_refs(&params);
-        let row = match self.mode {
-            PostgresMode::Direct => {
-                let stmt = conn.prepare_cached(query).await?;
-                conn.query_one(&stmt, &params).await?
-            }
-            PostgresMode::PgBouncer => conn.query_one(query, &params).await?,
-        };
-
-        Ok(row.try_get(0)?)
+        self.fetch_count(query.to_owned(), params.to_vec()).await
     }
 
     pub async fn query_exists(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<bool> {
-        let conn = self.pool.get().await.context("Failed to get postgres connection from pool")?;
-        let params = postgres_params(params);
-        let params = postgres_param_refs(&params);
-        let row = match self.mode {
-            PostgresMode::Direct => {
-                let stmt = conn.prepare_cached(query).await?;
-                conn.query_one(&stmt, &params).await?
-            }
-            PostgresMode::PgBouncer => conn.query_one(query, &params).await?,
-        };
-
-        Ok(row.try_get(0)?)
+        self.fetch_exists(query.to_owned(), params.to_vec()).await
     }
 }
 
+/// Decodes rows as the server streams them, so the raw rows are never all
+/// held at once next to the decoded models.
+async fn decode_stream<M>(
+    rows: RowStream,
+    decode: Decode,
+    from_row: fn(&tokio_postgres::Row) -> Option<M>,
+    model: &'static str,
+) -> anyhow::Result<Vec<M>> {
+    let mut rows = std::pin::pin!(rows);
+    let mut items = Vec::new();
+
+    while let Some(row) = rows.try_next().await? {
+        match from_row(&row) {
+            Some(item) => items.push(item),
+            None if decode == Decode::Strict => return Err(RowDecodeError::new(model).into()),
+            None => {}
+        }
+    }
+
+    Ok(items)
+}
+
 async fn execute_transaction_command(
-    transaction: &tokio_postgres::Transaction<'_>,
+    transaction: &deadpool_postgres::Transaction<'_>,
+    mode: PostgresMode,
     command: &CompiledTransactionCommand,
 ) -> anyhow::Result<RawTransactionOutput> {
     let mut output = None;
     for statement in &command.statements {
-        let raw = execute_transaction_statement(transaction, statement).await?;
+        let raw = execute_transaction_statement(transaction, mode, statement).await?;
         if statement.output {
             output = Some(raw);
         }
@@ -261,33 +286,36 @@ async fn execute_transaction_command(
 }
 
 async fn execute_transaction_statement(
-    transaction: &tokio_postgres::Transaction<'_>,
+    transaction: &deadpool_postgres::Transaction<'_>,
+    mode: PostgresMode,
     command: &CompiledTransactionStatement,
 ) -> anyhow::Result<RawTransactionOutput> {
     if command.sql.is_empty() {
-        return match command.kind {
-            TransactionCommandKind::Rows => Ok(RawTransactionOutput::Rows(Vec::new())),
-            TransactionCommandKind::Execute => Ok(RawTransactionOutput::Affected(0)),
-        };
+        return Ok(command.empty_output());
     }
 
-    let params = postgres_params(&command.params);
-    let params = postgres_param_refs(&params);
+    let params = param_refs(&command.params);
+    let statement = match mode {
+        PostgresMode::Direct => Some(transaction.prepare_cached(&command.sql).await?),
+        PostgresMode::PgBouncer => None,
+    };
 
     match command.kind {
         TransactionCommandKind::Rows => {
             let decoder = command
                 .decoder
                 .ok_or_else(|| anyhow!("Dinoco transaction query is missing its postgres row decoder."))?;
-            let rows = transaction.query(command.sql.as_str(), &params).await?;
-            let values = rows
-                .iter()
-                .map(|row| (decoder.postgres)(row).ok_or_else(|| RowDecodeError::new("transaction result").into()))
-                .collect::<anyhow::Result<Vec<_>>>()?;
-            Ok(RawTransactionOutput::Rows(values))
+            let rows = match &statement {
+                Some(statement) => transaction.query(statement, &params).await?,
+                None => transaction.query(command.sql.as_str(), &params).await?,
+            };
+            Ok(RawTransactionOutput::Rows((decoder.postgres)(&rows)?))
         }
         TransactionCommandKind::Execute => {
-            let affected = transaction.execute(command.sql.as_str(), &params).await?;
+            let affected = match &statement {
+                Some(statement) => transaction.execute(statement, &params).await?,
+                None => transaction.execute(command.sql.as_str(), &params).await?,
+            };
             Ok(RawTransactionOutput::Affected(affected as usize))
         }
     }
@@ -331,10 +359,6 @@ impl PgBouncerAdapter {
         self.inner.set_logger(enabled);
     }
 
-    pub(crate) fn logger_enabled(&self) -> bool {
-        self.inner.logger_enabled()
-    }
-
     pub async fn query_count(&self, query: &str, params: &[DinocoValue]) -> anyhow::Result<i64> {
         self.inner.query_count(query, params).await
     }
@@ -344,121 +368,67 @@ impl PgBouncerAdapter {
     }
 }
 
-fn postgres_params(params: &[DinocoValue]) -> Vec<Box<dyn ToSql + Sync + Send>> {
-    params
-        .iter()
-        .map(|param| match param {
-            DinocoValue::Null => Box::new(PostgresNull) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::Integer(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::Float(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::String(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::Enum(name, value) => {
-                Box::new(PostgresEnumValue { name: name.clone(), value: value.clone() }) as Box<dyn ToSql + Sync + Send>
-            }
-            DinocoValue::Boolean(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::Bytes(value) => Box::new(value.clone()) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::Json(value) => Box::new(Json(value.clone())) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::DateTime(value) => Box::new(PostgresDateTimeValue(*value)) as Box<dyn ToSql + Sync + Send>,
-            DinocoValue::Date(value) => Box::new(*value) as Box<dyn ToSql + Sync + Send>,
-        })
-        .collect()
+fn param_refs(params: &[DinocoValue]) -> Vec<&(dyn ToSql + Sync)> {
+    params.iter().map(|param| param as &(dyn ToSql + Sync)).collect()
 }
 
-#[derive(Debug)]
-struct PostgresNull;
+type ToSqlResult = Result<IsNull, Box<dyn std::error::Error + Sync + Send>>;
 
-impl ToSql for PostgresNull {
-    fn to_sql(
-        &self,
-        _ty: &Type,
-        _out: &mut tokio_postgres::types::private::BytesMut,
-    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
-        Ok(IsNull::Yes)
+/// Binds every value as the Rust type it holds, checked against the
+/// parameter's PostgreSQL type the same way that type's own `ToSql` checks it,
+/// so parameters are bound in place instead of boxed copies.
+/// `NULL` binds to any type. An enum binds to a native enum of the same name
+/// or to a text column; a `DateTime` binds to `TIMESTAMP` (as its UTC wall
+/// clock time) and `TIMESTAMPTZ`.
+impl ToSql for DinocoValue {
+    fn to_sql(&self, ty: &Type, out: &mut tokio_postgres::types::private::BytesMut) -> ToSqlResult {
+        match self {
+            DinocoValue::Null => Ok(IsNull::Yes),
+            DinocoValue::Integer(value) => value.to_sql(ty, out),
+            DinocoValue::Float(value) => value.to_sql(ty, out),
+            DinocoValue::String(value) => value.to_sql(ty, out),
+            DinocoValue::Enum(name, value) => {
+                if matches!(ty.kind(), Kind::Enum(_)) && !ty.name().eq_ignore_ascii_case(name) {
+                    return Err(format!("enum `{name}` cannot be written to PostgreSQL enum `{}`", ty.name()).into());
+                }
+                value.as_str().to_sql(ty, out)
+            }
+            DinocoValue::Boolean(value) => value.to_sql(ty, out),
+            DinocoValue::Bytes(value) => value.to_sql(ty, out),
+            DinocoValue::Json(value) => Json(value).to_sql(ty, out),
+            DinocoValue::DateTime(value) if *ty == Type::TIMESTAMP => value.naive_utc().to_sql(ty, out),
+            DinocoValue::DateTime(value) if *ty == Type::TIMESTAMPTZ => value.to_sql(ty, out),
+            DinocoValue::DateTime(_) => {
+                Err(format!("DateTime<Utc> cannot be written to PostgreSQL type `{}`", ty.name()).into())
+            }
+            DinocoValue::Date(value) => value.to_sql(ty, out),
+        }
     }
 
     fn accepts(_ty: &Type) -> bool {
         true
     }
 
-    tokio_postgres::types::to_sql_checked!();
-}
+    fn to_sql_checked(&self, ty: &Type, out: &mut tokio_postgres::types::private::BytesMut) -> ToSqlResult {
+        let accepted = match self {
+            DinocoValue::Null => true,
+            DinocoValue::Integer(_) => <i64 as ToSql>::accepts(ty),
+            DinocoValue::Float(_) => <f64 as ToSql>::accepts(ty),
+            DinocoValue::String(_) => <String as ToSql>::accepts(ty),
+            DinocoValue::Enum(..) => matches!(ty.kind(), Kind::Enum(_)) || <String as ToSql>::accepts(ty),
+            DinocoValue::Boolean(_) => <bool as ToSql>::accepts(ty),
+            DinocoValue::Bytes(_) => <Vec<u8> as ToSql>::accepts(ty),
+            DinocoValue::Json(_) => <Json<&serde_json::Value> as ToSql>::accepts(ty),
+            DinocoValue::DateTime(_) => *ty == Type::TIMESTAMP || *ty == Type::TIMESTAMPTZ,
+            DinocoValue::Date(_) => <chrono::NaiveDate as ToSql>::accepts(ty),
+        };
 
-#[derive(Debug)]
-struct PostgresEnumValue {
-    name: String,
-    value: String,
-}
-
-#[derive(Debug)]
-struct PostgresDateTimeValue(chrono::DateTime<chrono::Utc>);
-
-impl ToSql for PostgresDateTimeValue {
-    fn to_sql(
-        &self,
-        ty: &Type,
-        out: &mut tokio_postgres::types::private::BytesMut,
-    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
-        if *ty == Type::TIMESTAMP {
-            return <chrono::NaiveDateTime as ToSql>::to_sql(&self.0.naive_utc(), ty, out);
-        }
-        if *ty == Type::TIMESTAMPTZ {
-            return <chrono::DateTime<chrono::Utc> as ToSql>::to_sql(&self.0, ty, out);
+        if !accepted {
+            return Err(Box::new(WrongType::new::<DinocoValue>(ty.clone())));
         }
 
-        Err(format!("DateTime<Utc> cannot be written to PostgreSQL type `{}`", ty.name()).into())
+        self.to_sql(ty, out)
     }
-
-    fn accepts(ty: &Type) -> bool {
-        *ty == Type::TIMESTAMP || *ty == Type::TIMESTAMPTZ
-    }
-
-    tokio_postgres::types::to_sql_checked!();
-}
-
-impl ToSql for PostgresEnumValue {
-    fn to_sql(
-        &self,
-        ty: &Type,
-        out: &mut tokio_postgres::types::private::BytesMut,
-    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
-        if matches!(ty.kind(), Kind::Enum(_)) && !ty.name().eq_ignore_ascii_case(&self.name) {
-            return Err(format!("enum `{}` cannot be written to PostgreSQL enum `{}`", self.name, ty.name()).into());
-        }
-        <&str as ToSql>::to_sql(&self.value.as_str(), ty, out)
-    }
-
-    fn accepts(ty: &Type) -> bool {
-        matches!(ty.kind(), Kind::Enum(_)) || <String as ToSql>::accepts(ty)
-    }
-
-    tokio_postgres::types::to_sql_checked!();
-}
-
-fn postgres_param_refs(params: &[Box<dyn ToSql + Sync + Send>]) -> Vec<&(dyn ToSql + Sync)> {
-    params.iter().map(|param| param.as_ref() as &(dyn ToSql + Sync)).collect()
-}
-
-#[doc(hidden)]
-pub fn postgres_datetime_from_row(row: &tokio_postgres::Row, field: &str) -> Option<chrono::DateTime<chrono::Utc>> {
-    row.try_get::<_, chrono::DateTime<chrono::Utc>>(field)
-        .or_else(|_| {
-            row.try_get::<_, chrono::NaiveDateTime>(field)
-                .map(|value| chrono::DateTime::from_naive_utc_and_offset(value, chrono::Utc))
-        })
-        .ok()
-}
-
-#[doc(hidden)]
-pub fn postgres_optional_datetime_from_row(
-    row: &tokio_postgres::Row,
-    field: &str,
-) -> Option<Option<chrono::DateTime<chrono::Utc>>> {
-    row.try_get::<_, Option<chrono::DateTime<chrono::Utc>>>(field)
-        .or_else(|_| {
-            row.try_get::<_, Option<chrono::NaiveDateTime>>(field)
-                .map(|value| value.map(|value| chrono::DateTime::from_naive_utc_and_offset(value, chrono::Utc)))
-        })
-        .ok()
 }
 
 impl<'a> tokio_postgres::types::FromSql<'a> for DinocoValue {

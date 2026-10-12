@@ -1,5 +1,5 @@
 use dinoco_vscode::server::DinocoLanguageServer;
-use dinoco_vscode::tower_lsp::{LspService, Server};
+use dinoco_vscode::tower_lsp_server::{LspService, Server};
 
 #[tokio::main]
 async fn main() {

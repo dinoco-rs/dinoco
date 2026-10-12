@@ -7,21 +7,21 @@ use dinoco_vscode::server::{
     compile_error_diagnostic, edit_distance, encode_semantic_tokens, format_document_source, import_diagnostics,
     is_main_schema, semantic_token_spans, unknown_type_fix,
 };
-use dinoco_vscode::tower_lsp::lsp_types::{Diagnostic, NumberOrString, Position, Range, Url};
+use dinoco_vscode::tower_lsp_server::ls_types::{Diagnostic, NumberOrString, Position, Range, Uri};
 use dinoco_vscode::workspace::{WorkspaceCache, canonical_path};
 use tempfile::tempdir;
 
 #[test]
 fn only_schema_dinoco_is_treated_as_the_database_entrypoint() {
-    assert!(is_main_schema(&Url::parse("file:///project/dinoco/schema.dinoco").unwrap()));
-    assert!(!is_main_schema(&Url::parse("file:///project/dinoco/models/account.dinoco").unwrap()));
-    assert!(!is_main_schema(&Url::parse("file:///project/dinoco/enums.dinoco").unwrap()));
-    assert!(!is_main_schema(&Url::parse("file:///project/dinoco/models/schema.dinoco").unwrap()));
+    assert!(is_main_schema(&"file:///project/dinoco/schema.dinoco".parse::<Uri>().unwrap()));
+    assert!(!is_main_schema(&"file:///project/dinoco/models/account.dinoco".parse::<Uri>().unwrap()));
+    assert!(!is_main_schema(&"file:///project/dinoco/enums.dinoco".parse::<Uri>().unwrap()));
+    assert!(!is_main_schema(&"file:///project/dinoco/models/schema.dinoco".parse::<Uri>().unwrap()));
 }
 
 #[test]
 fn formatting_imported_snowflake_models_does_not_require_project_config() {
-    let uri = Url::parse("file:///project/dinoco/models/account.dinoco").unwrap();
+    let uri = "file:///project/dinoco/models/account.dinoco".parse::<Uri>().unwrap();
     let source = "model Account{id Integer @id @default(snowflake())}";
 
     let formatted = format_document_source(&uri, source, &dinoco_formatter::FormatterConfig::default())
@@ -32,7 +32,7 @@ fn formatting_imported_snowflake_models_does_not_require_project_config() {
 
 #[test]
 fn formatting_main_snowflake_models_still_requires_project_config() {
-    let uri = Url::parse("file:///project/dinoco/schema.dinoco").unwrap();
+    let uri = "file:///project/dinoco/schema.dinoco".parse::<Uri>().unwrap();
     let source = "model Account{id Integer @id @default(snowflake())}";
 
     let error = format_document_source(&uri, source, &dinoco_formatter::FormatterConfig::default())

@@ -280,7 +280,9 @@ macro_rules! impl_update_integer {
     };
 }
 
-impl_update_integer!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
+// `u64`, `usize`, `u128` and `i128` are left out: they do not always fit an
+// `Integer`, so they convert explicitly with `DinocoValue::try_from`.
+impl_update_integer!(i8, i16, i32, i64, isize, u8, u16, u32);
 
 impl IntoUpdateValue<f64> for f64 {
     fn into_update_value(self) -> DinocoValue {
@@ -494,10 +496,8 @@ where
 
     for disconnect in disconnects {
         let UpdateOperation::DisconnectManyToMany(relation) = disconnect.operation else {
-            for condition_group in disconnect_conditions(conditions, disconnect.field, disconnect.value)? {
-                let query = DeleteQuery { table, conditions: condition_group, returning: None };
-                client.delete(query).await?;
-            }
+            let conditions = disconnect_conditions(conditions, disconnect.field, disconnect.value)?;
+            client.delete(DeleteQuery { table, conditions, returning: None }).await?;
             continue;
         };
 
@@ -507,18 +507,20 @@ where
         }
     }
 
+    // One `DELETE` per relation, whatever the number of matched parents.
     for (relation, children) in many_to_many_disconnects {
-        for source in many_to_many_source_values(parents, relation.parent_field) {
-            let query = DeleteQuery {
-                table: relation.join_table,
-                conditions: vec![
-                    FindWhere::Eq(relation.join_parent_field, source),
-                    FindWhere::Batch(relation.join_child_field, children.clone()),
-                ],
-                returning: None,
-            };
-            client.delete(query).await?;
-        }
+        let mut sources = many_to_many_source_values(parents, relation.parent_field);
+        let source_condition = match sources.len() {
+            0 => continue,
+            1 => FindWhere::Eq(relation.join_parent_field, sources.remove(0)),
+            _ => FindWhere::Batch(relation.join_parent_field, sources),
+        };
+        let query = DeleteQuery {
+            table: relation.join_table,
+            conditions: vec![source_condition, FindWhere::Batch(relation.join_child_field, children)],
+            returning: None,
+        };
+        client.delete(query).await?;
     }
 
     Ok(())
@@ -587,27 +589,32 @@ fn connect_rows(
     Ok(rows)
 }
 
+/// The `WHERE` of a disconnect: the pivot-key filters, which match exactly the
+/// rows of every `eq`/`batch` combination at once, and the disconnected value.
 fn disconnect_conditions(
     conditions: &[FindWhere],
     disconnect_field: &'static str,
     disconnect_value: DinocoValue,
-) -> anyhow::Result<Vec<Vec<FindWhere>>> {
-    let sources = expand_conditions(conditions)?;
+) -> anyhow::Result<Vec<FindWhere>> {
+    let mut matches_rows = true;
+    for condition in conditions {
+        match condition {
+            FindWhere::Eq(..) => {}
+            FindWhere::Batch(_, values) => matches_rows &= !values.is_empty(),
+            _ => anyhow::bail!("connect/disconnect only supports eq(...) and batch(...) filters for pivot keys."),
+        }
+    }
 
-    if sources.is_empty() {
+    if !matches_rows {
         anyhow::bail!(
             "disconnect on '{}' requires at least one .where_(|x| x.some_id.eq(...)) or .batch(...).",
             disconnect_field
         );
     }
 
-    Ok(sources
-        .into_iter()
-        .map(|mut condition_group| {
-            condition_group.push(FindWhere::Eq(disconnect_field, disconnect_value.clone()));
-            condition_group
-        })
-        .collect())
+    let mut conditions = conditions.to_vec();
+    conditions.push(FindWhere::Eq(disconnect_field, disconnect_value));
+    Ok(conditions)
 }
 
 fn connect_source_fields(conditions: &[FindWhere]) -> anyhow::Result<Vec<&'static str>> {

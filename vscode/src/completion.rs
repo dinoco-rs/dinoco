@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use tower_lsp::lsp_types::{
+use tower_lsp_server::ls_types::{
     CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit, Documentation, InsertTextFormat,
     MarkupContent, MarkupKind, ParameterInformation, ParameterLabel, Position, Range, SignatureHelp,
     SignatureInformation, TextEdit,

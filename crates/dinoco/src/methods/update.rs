@@ -1,8 +1,12 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, PluckValue, UpdateQuery, UpdateSet};
+use dinoco_engine::{
+    DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, PluckValue, UpdateQuery, UpdateSet,
+};
 
-use crate::{DinocoRelationValue, Field, IntoUpdateSets, has_many_to_many_update_sets, load_update_matches};
+use crate::{
+    DinocoRelationValue, Field, IntoUpdateSets, has_many_to_many_update_sets, load_update_matches, single_field,
+};
 use crate::{
     MutationExecutor, UpdateError, duplicate_update_field, execute_relation_update_sets, split_update_sets,
     touch_updated_at,
@@ -48,22 +52,31 @@ where
         .into());
     }
     if let Some(field) = duplicate_update_field(&sets) {
-        return Err(
-            UpdateError::InvalidOperation(format!("field `{field}` is updated more than once in one statement")).into()
-        );
+        return Err(UpdateError::InvalidOperation(format!(
+            "field `{field}` is updated more than once in one statement"
+        ))
+        .into());
     }
 
     let has_many_to_many = has_many_to_many_update_sets(&sets);
     let (scalar_sets, connects, disconnects) = split_update_sets(sets);
-    let parents = if has_many_to_many {
-        load_update_matches::<M, M, C>(conditions, client).await.map_err(UpdateError::from_database)?
-    } else {
-        Vec::new()
-    };
 
-    execute_relation_update_sets(M::TABLE_NAME, conditions, connects, disconnects, &parents, client)
-        .await
-        .map_err(UpdateError::from_database)?;
+    // Relation updates are rare; awaiting them boxed keeps their state out of
+    // every update's future.
+    if !connects.is_empty() || !disconnects.is_empty() {
+        Box::pin(async move {
+            let parents = if has_many_to_many {
+                load_update_matches::<M, M, C>(conditions, client).await.map_err(UpdateError::from_database)?
+            } else {
+                Vec::new()
+            };
+
+            execute_relation_update_sets(M::TABLE_NAME, conditions, connects, disconnects, &parents, client)
+                .await
+                .map_err(UpdateError::from_database)
+        })
+        .await?;
+    }
 
     Ok(touch_updated_at::<M>(scalar_sets))
 }
@@ -176,7 +189,7 @@ where
     where
         C: MutationExecutor,
     {
-        let fields: &'static [&'static str] = Box::leak(vec![self.field].into_boxed_slice());
+        let fields = single_field(self.field, <M as DinocoEntity>::FIELDS);
         let sets = prepare_scalar_update::<M, C>(&self.conditions, self.sets, &client).await?;
 
         let rows = if sets.is_empty() {
@@ -185,7 +198,8 @@ where
 
             client.query::<PluckValue<T>>(query).await.map_err(UpdateError::from_database)?
         } else {
-            let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: Some(fields) };
+            let query =
+                UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: Some(fields) };
 
             client.update_returning::<PluckValue<T>>(query).await.map_err(UpdateError::from_database)?
         };
@@ -212,6 +226,6 @@ where
         let rows = self.inner.execute(client).await?;
         let mut transform = self.transform;
 
-        Ok(rows.into_iter().map(|row| transform(row)).collect())
+        Ok(rows.into_iter().map(&mut transform).collect())
     }
 }

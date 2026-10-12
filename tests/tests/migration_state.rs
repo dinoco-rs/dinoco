@@ -307,7 +307,7 @@ fn legacy_migration_layout_and_history_are_adopted() {
     let generate = run_cli(&project, &db_path, &["migrate", "generate"], &[]);
     assert_success(&generate);
     let output = combined_output(&generate);
-    assert!(output.contains("Upgraded 1 legacy migration(s)"), "{output}");
+    assert!(output.contains("Upgraded 1 legacy migration to the current artifact layout."), "{output}");
     assert!(output.contains("No schema changes were found"), "{output}");
     assert_eq!(
         fs::read_to_string(migration.join("up.sql")).expect("upgraded up.sql"),

@@ -42,8 +42,31 @@ Add Dinoco to your `Cargo.toml` dependencies:
 
 ```toml
 [dependencies]
-dinoco = "2.0.9"
+dinoco = "2.1.0"
 ```
+
+Dinoco requires Rust 1.95 or newer.
+
+### Cargo features
+
+Every feature is enabled by default. An application that talks to a single
+database can turn the others off to skip compiling their drivers:
+
+```toml
+[dependencies]
+dinoco = { version = "2.1.0", default-features = false, features = ["postgres"] }
+```
+
+| Feature | Enables |
+|---|---|
+| `sqlite` | The SQLite adapter (bundled SQLite through `rusqlite`). |
+| `postgres` | The PostgreSQL and PgBouncer adapters (`tokio-postgres`). |
+| `mysql` | The MySQL adapter (`mysql_async`). |
+| `cli` | The `dinoco` command line tool, `TestAmbient` and `dinoco::codegen`. Enables every database. |
+
+Without `cli`, `TestAmbient::create` returns an error instead of building the
+in-memory test database, so generated `connect_test()` code still compiles.
+If you also depend on `dinoco_engine`, disable its default features too.
 
 ## 📄 License
 

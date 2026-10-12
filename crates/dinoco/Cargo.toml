@@ -1,7 +1,8 @@
 [package]
 name = "dinoco"
-version = "2.0.9"
+version = "2.1.0"
 edition = "2024"
+rust-version = "1.95"
 license = "Apache-2.0"
 description = "A modern Rust ORM for schema-driven queries, migrations, and database operations."
 homepage = "https://dinoco.io"
@@ -9,20 +10,45 @@ repository = "https://github.com/dinoco-rs/dinoco"
 readme = "../../crates.md"
 keywords = ["orm", "database", "sql", "migrations", "rust"]
 
+[features]
+default = ["sqlite", "postgres", "mysql", "cli"]
+sqlite = ["dinoco_engine/sqlite"]
+postgres = ["dinoco_engine/postgres"]
+mysql = ["dinoco_engine/mysql"]
+# The `dinoco` command line tool (`cargo install dinoco`), `TestAmbient` and
+# `dinoco::codegen`. The tool works with every database, so it enables all of
+# them.
+cli = [
+	"sqlite",
+	"postgres",
+	"mysql",
+	"dep:dinoco_cli",
+	"dep:dinoco_compiler",
+	"dep:dinoco_codegen",
+	"tokio/macros",
+	"tokio/rt-multi-thread",
+]
+
+[[bin]]
+name = "dinoco"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [dependencies]
-dinoco_engine = { path = "../dinoco_engine", version = "2.0.9" }
-dinoco_derives = { path = "../dinoco_derives", version = "2.0.9" }
-dinoco_cli = { path = "../dinoco_cli", version = "2.0.9" }
-dinoco_compiler = { path = "../dinoco_compiler", version = "2.0.9" }
-dinoco_codegen = { path = "../dinoco_codegen", version = "2.0.9" }
+dinoco_engine = { path = "../dinoco_engine", version = "2.1.0", default-features = false }
+# Exact: generated code calls into this exact version of the runtime.
+dinoco_derives = { path = "../dinoco_derives", version = "=2.1.0" }
+dinoco_cli = { path = "../dinoco_cli", version = "2.1.0", optional = true }
+dinoco_compiler = { path = "../dinoco_compiler", version = "2.1.0", optional = true }
+dinoco_codegen = { path = "../dinoco_codegen", version = "2.1.0", optional = true }
 
 uuid = { version = "1.18.1", features = ["v7"] }
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
-tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1.53", features = ["rt", "sync"] }
 async-trait = "0.1.89"
 anyhow = "1.0.103"
-futures = "0.3.31"
+futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
 thiserror = "2"

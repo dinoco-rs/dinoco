@@ -111,4 +111,13 @@ fn redact_database_url_hides_credentials_but_keeps_host_and_database() {
     );
     assert_eq!(redact_database_url("file:./dinoco/dev.sqlite"), "file:./dinoco/dev.sqlite");
     assert_eq!(redact_database_url("not a url"), "not a url");
+    assert_eq!(
+        redact_database_url("mysql://root:p@ss@db:3306/app?ssl-mode=required&password=other&Pass=x"),
+        "mysql://***@db:3306/app?ssl-mode=required&password=***&Pass=***"
+    );
+    assert_eq!(redact_database_url("postgres://db/app?sslmode=disable"), "postgres://db/app?sslmode=disable");
+    assert_eq!(
+        redact_database_url("host=db user=app password=s3cret dbname=app"),
+        "host=db user=app password=*** dbname=app"
+    );
 }

@@ -415,7 +415,7 @@ async fn transaction_reads_see_uncommitted_writes_and_load_includes() -> anyhow:
         let lengths = find_many::<Post>().transform(|post| post.title.len()).execute(tx).await?;
         assert_eq!(lengths.iter().sum::<usize>(), "Engines".len() + "Analytical".len());
 
-        Ok(find_many::<Post>().order_by(|post| post.title.asc()).pluck(|post| post.title).execute(tx).await?)
+        find_many::<Post>().order_by(|post| post.title.asc()).pluck(|post| post.title).execute(tx).await
     })
     .await?;
     assert_eq!(titles, ["Analytical", "Engines"]);

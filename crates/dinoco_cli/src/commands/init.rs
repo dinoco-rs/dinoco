@@ -1,23 +1,55 @@
 use std::fs;
 use std::path::Path;
 
-use inquire::Select;
-
+use crate::error::CliError;
+use crate::prompt::{self, Choice};
 use crate::ui;
 
-pub fn run() -> anyhow::Result<()> {
-    let database = env_or_select(
-        "DINOCO_CLI_INIT_DATABASE",
-        "Which database do you want to use?",
-        vec!["postgresql", "mysql", "sqlite"],
-    )?;
+/// Answers to `dinoco init`'s questions given on the command line.
+#[derive(Debug, Default, Clone)]
+pub struct InitOptions {
+    pub database: Option<&'static str>,
+    pub connection: Option<&'static str>,
+}
+
+const DATABASES: [(&str, &str); 3] =
+    [("postgresql", "PostgreSQL"), ("mysql", "MySQL"), ("sqlite", "SQLite (a local database file)")];
+
+const CONNECTIONS: [(&str, &str); 2] = [
+    ("direct", "Direct: connect to PostgreSQL itself"),
+    ("pgbouncer", "PgBouncer: connect through a transaction-pooling proxy"),
+];
+
+pub fn run(options: InitOptions) -> anyhow::Result<()> {
+    let database = match options.database.or_else(|| env_choice("DINOCO_CLI_INIT_DATABASE", &DATABASES)) {
+        Some(database) => database,
+        None if prompt::is_interactive() => {
+            prompt::select("Which database will this project use?", choices(&DATABASES), 0)?
+        }
+        None => {
+            return Err(CliError::decision_required("A database must be selected to initialize the project.")
+                .detail("Options", "postgresql, mysql, sqlite")
+                .hint("Pass --database <postgresql|mysql|sqlite>.")
+                .into());
+        }
+    };
+
     let connection = if database == "postgresql" {
-        Some(env_or_select(
-            "DINOCO_CLI_INIT_POSTGRES_CONNECTION",
-            "How should Dinoco connect to Postgres?",
-            vec!["direct", "pgbouncer"],
-        )?)
+        Some(match options.connection.or_else(|| env_choice("DINOCO_CLI_INIT_POSTGRES_CONNECTION", &CONNECTIONS)) {
+            Some(connection) => connection,
+            None if prompt::is_interactive() => {
+                prompt::select("How should Dinoco connect to PostgreSQL?", choices(&CONNECTIONS), 0)?
+            }
+            // `direct` is what a schema without `connection` uses.
+            None => "direct",
+        })
     } else {
+        if options.connection.is_some() {
+            return Err(CliError::usage("--connection only applies to PostgreSQL projects.")
+                .detail("Database", database)
+                .hint("Remove --connection, or pass --database postgresql.")
+                .into());
+        }
         None
     };
 
@@ -40,35 +72,48 @@ pub fn run() -> anyhow::Result<()> {
     let schema_created = !schema_path.exists();
     if schema_created {
         fs::write(schema_path, schema)?;
-        ui::success("Dinoco project initialized");
-    } else {
-        ui::warning("dinoco/schema.dinoco already exists; keeping the current file");
     }
 
-    println!();
+    ui::heading("Project Setup");
+    let mut fields = vec![("Database", database_label(database).to_string())];
+    if let Some(connection) = connection {
+        fields.push(("Connection", connection.to_string()));
+    }
+    ui::fields(&fields);
+    ui::blank();
     if schema_created {
-        ui::info("Created dinoco/schema.dinoco");
+        ui::success("Dinoco project initialized");
+        ui::success("Created dinoco/schema.dinoco");
+    } else {
+        ui::info("dinoco/schema.dinoco already exists and was left unchanged.");
     }
     if migrations_dir_created {
-        ui::info("Created dinoco/migrations/");
+        ui::success("Created dinoco/migrations/");
     }
 
-    println!("\nNext steps:");
-    println!("  1. Set DATABASE_URL in your environment");
-    println!("  2. Define your models in dinoco/schema.dinoco");
-    println!("  3. Run `dinoco migrate generate` to create your first migration");
+    ui::heading("Next steps");
+    ui::line("1. Set DATABASE_URL in your environment or in a .env file");
+    ui::line("2. Define your models in dinoco/schema.dinoco");
+    ui::line("3. Run `dinoco migrate generate` to create your first migration");
 
     ui::docs("/getting-started");
 
     Ok(())
 }
 
-fn env_or_select(key: &str, prompt: &str, options: Vec<&'static str>) -> anyhow::Result<&'static str> {
-    if let Ok(value) = std::env::var(key)
-        && let Some(option) = options.iter().copied().find(|option| *option == value)
-    {
-        return Ok(option);
-    }
+fn choices(options: &[(&'static str, &'static str)]) -> Vec<Choice<&'static str>> {
+    options.iter().map(|(value, label)| Choice::new(*label, *value)).collect()
+}
 
-    Ok(Select::new(prompt, options).prompt()?)
+fn env_choice(key: &str, options: &[(&'static str, &'static str)]) -> Option<&'static str> {
+    let value = std::env::var(key).ok()?;
+    options.iter().map(|(option, _)| *option).find(|option| *option == value)
+}
+
+fn database_label(database: &str) -> &'static str {
+    match database {
+        "postgresql" => "PostgreSQL",
+        "mysql" => "MySQL",
+        _ => "SQLite",
+    }
 }

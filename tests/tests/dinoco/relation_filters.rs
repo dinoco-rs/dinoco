@@ -560,11 +560,11 @@ async fn transactions(client: DinocoClient) -> anyhow::Result<()> {
             .execute(tx)
             .await?;
 
-        Ok(find_many::<Transaction>()
+        find_many::<Transaction>()
             .where_(|t| t.payout.where_(|payout| payout.method.eq(PayoutMethod::Pix)))
             .where_(|t| t.amount.gt(1000))
             .execute(tx)
-            .await?)
+            .await
     })
     .await?;
     assert_eq!(ids(&pix, |transaction| &transaction.id), ["t1"]);

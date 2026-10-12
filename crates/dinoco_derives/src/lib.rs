@@ -81,7 +81,8 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
         quote! { #value => ::core::result::Result::Ok(Self::#variant), }
     });
     let mysql_arms = variants.iter().map(|(variant, value)| {
-        quote! { #value => ::core::result::Result::Ok(Self::#variant), }
+        let value = syn::LitByteStr::new(value.as_bytes(), variant.span());
+        quote! { #value => return ::core::result::Result::Ok(Self::#variant), }
     });
 
     Ok(quote! {
@@ -168,65 +169,70 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
             }
         }
 
-        impl ::dinoco::rusqlite::types::FromSql for #name {
-            fn column_result(
-                value: ::dinoco::rusqlite::types::ValueRef<'_>,
-            ) -> ::dinoco::rusqlite::types::FromSqlResult<Self> {
-                let value =
-                    <::std::string::String as ::dinoco::rusqlite::types::FromSql>::column_result(value)?;
-                match value.as_str() {
-                    #(#sqlite_arms)*
-                    _ => ::core::result::Result::Err(
-                        ::dinoco::rusqlite::types::FromSqlError::InvalidType,
-                    ),
+        ::dinoco::__dinoco_sqlite! {
+            impl ::dinoco::rusqlite::types::FromSql for #name {
+                fn column_result(
+                    value: ::dinoco::rusqlite::types::ValueRef<'_>,
+                ) -> ::dinoco::rusqlite::types::FromSqlResult<Self> {
+                    match value.as_str()? {
+                        #(#sqlite_arms)*
+                        _ => ::core::result::Result::Err(
+                            ::dinoco::rusqlite::types::FromSqlError::InvalidType,
+                        ),
+                    }
                 }
             }
         }
 
-        impl<'a> ::dinoco::tokio_postgres::types::FromSql<'a> for #name {
-            fn from_sql(
-                _ty: &::dinoco::tokio_postgres::types::Type,
-                raw: &'a [u8],
-            ) -> ::core::result::Result<
-                Self,
-                ::std::boxed::Box<dyn ::std::error::Error + Sync + Send>,
-            > {
-                let value = ::core::str::from_utf8(raw)?;
-                match value {
-                    #(#postgres_arms)*
-                    _ => ::core::result::Result::Err(
-                        ::std::format!("unknown enum value `{}`", value).into(),
-                    ),
+        ::dinoco::__dinoco_postgres! {
+            impl<'a> ::dinoco::tokio_postgres::types::FromSql<'a> for #name {
+                fn from_sql(
+                    _ty: &::dinoco::tokio_postgres::types::Type,
+                    raw: &'a [u8],
+                ) -> ::core::result::Result<
+                    Self,
+                    ::std::boxed::Box<dyn ::std::error::Error + Sync + Send>,
+                > {
+                    let value = ::core::str::from_utf8(raw)?;
+                    match value {
+                        #(#postgres_arms)*
+                        _ => ::core::result::Result::Err(
+                            ::std::format!("unknown enum value `{}`", value).into(),
+                        ),
+                    }
+                }
+
+                fn accepts(ty: &::dinoco::tokio_postgres::types::Type) -> bool {
+                    matches!(ty.kind(), ::dinoco::tokio_postgres::types::Kind::Enum(_))
+                        || <::std::string::String as ::dinoco::tokio_postgres::types::FromSql>::accepts(ty)
                 }
             }
+        }
 
-            fn accepts(ty: &::dinoco::tokio_postgres::types::Type) -> bool {
-                matches!(ty.kind(), ::dinoco::tokio_postgres::types::Kind::Enum(_))
-                    || <::std::string::String as ::dinoco::tokio_postgres::types::FromSql>::accepts(ty)
+        ::dinoco::__dinoco_mysql! {
+            impl ::dinoco::mysql_common::prelude::FromValue for #name {
+                type Intermediate = Self;
             }
         }
 
-        impl ::dinoco::mysql_common::prelude::FromValue for #name {
-            type Intermediate = Self;
-        }
+        ::dinoco::__dinoco_mysql! {
+            impl ::core::convert::TryFrom<::dinoco::mysql_async::Value> for #name {
+                type Error = ::dinoco::mysql_common::value::convert::FromValueError;
 
-        impl ::core::convert::TryFrom<::dinoco::mysql_async::Value> for #name {
-            type Error = ::dinoco::mysql_common::value::convert::FromValueError;
+                fn try_from(
+                    value: ::dinoco::mysql_async::Value,
+                ) -> ::core::result::Result<
+                    Self,
+                    ::dinoco::mysql_common::value::convert::FromValueError,
+                > {
+                    if let ::dinoco::mysql_async::Value::Bytes(bytes) = &value {
+                        match bytes.as_slice() {
+                            #(#mysql_arms)*
+                            _ => {}
+                        }
+                    }
 
-            fn try_from(
-                value: ::dinoco::mysql_async::Value,
-            ) -> ::core::result::Result<
-                Self,
-                ::dinoco::mysql_common::value::convert::FromValueError,
-            > {
-                let raw = value.clone();
-                let value =
-                    <::std::string::String as ::dinoco::mysql_common::prelude::FromValue>::from_value_opt(value)?;
-                match value.as_str() {
-                    #(#mysql_arms)*
-                    _ => ::core::result::Result::Err(
-                        ::dinoco::mysql_common::value::convert::FromValueError(raw),
-                    ),
+                    ::core::result::Result::Err(::dinoco::mysql_common::value::convert::FromValueError(value))
                 }
             }
         }
@@ -485,32 +491,46 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
     };
 
+    // Columns are selected in field order, so each lookup confirms one name
+    // and only scans the row when the statement was written by hand.
     let row_initializers = scalar_fields
         .iter()
-        .map(|field| {
+        .enumerate()
+        .map(|(index, field)| {
             let ident = &field.ident;
             let name = &field.name;
-            quote! { #ident: row.get(#name).ok()? }
+            quote! { #ident: row.get(::dinoco::sqlite_column(row, #index, #name)?).ok()? }
         })
         .collect::<Vec<_>>();
 
     let postgres_row_initializers = scalar_fields
         .iter()
-        .map(|field| {
+        .enumerate()
+        .map(|(index, field)| {
             let ident = &field.ident;
             let name = &field.name;
-            let value = postgres_row_value(&field.ty, field.is_option, quote! { #name });
+            let value = postgres_row_value(
+                &field.ty,
+                field.is_option,
+                quote! { ::dinoco::postgres_column(row, #index, #name)? },
+            );
             quote! { #ident: #value }
         })
         .collect::<Vec<_>>();
 
     let mysql_row_initializers = scalar_fields
         .iter()
-        .map(|field| {
+        .enumerate()
+        .map(|(index, field)| {
             let ident = &field.ident;
             let name = &field.name;
-            let value = mysql_row_value(&field.ty, field.is_option, quote! { #name });
-            quote! { #ident: #value }
+            let value = mysql_row_value(&field.ty, field.is_option, quote! { index });
+            quote! {
+                #ident: {
+                    let index = ::dinoco::mysql_column(&row, #index, #name)?;
+                    #value
+                }
+            }
         })
         .collect::<Vec<_>>();
 
@@ -639,6 +659,72 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         } else {
             quote! { ::core::convert::Into::into(&self.#ident) }
         }
+    });
+
+    // Owned strings, bytes and JSON are moved out of the model; every other
+    // value is converted from a reference, as `dinoco_insert_values` does.
+    let into_insert_values = insert_fields.iter().map(|field| {
+        let ident = &field.ident;
+        let inner = option_inner(&field.ty).unwrap_or(&field.ty);
+
+        if !is_movable_value(inner) {
+            return if field.is_option {
+                quote! {
+                    match &self.#ident {
+                        ::core::option::Option::Some(value) => ::core::convert::Into::into(value),
+                        ::core::option::Option::None => ::dinoco::DinocoValue::Null,
+                    }
+                }
+            } else {
+                quote! { ::core::convert::Into::into(&self.#ident) }
+            };
+        }
+
+        if field.is_option {
+            quote! {
+                match ::core::mem::take(&mut self.#ident) {
+                    ::core::option::Option::Some(value) => ::dinoco::DinocoValue::from(value),
+                    ::core::option::Option::None => ::dinoco::DinocoValue::Null,
+                }
+            }
+        } else {
+            quote! { ::dinoco::DinocoValue::from(::core::mem::take(&mut self.#ident)) }
+        }
+    });
+
+    let into_insert_model_steps = scalar_fields.iter().filter_map(|field| {
+        let ident = &field.ident;
+
+        match field.auto_generate {
+            Some(AutoGenerate::Uuid) if is_string(&field.ty) => Some(quote! {
+                if self.#ident.is_empty() {
+                    self.#ident = ::dinoco::new_uuid();
+                }
+            }),
+            Some(AutoGenerate::Snowflake) => {
+                let ty = &field.ty;
+                Some(quote! {
+                    if self.#ident == <#ty as ::core::default::Default>::default() {
+                        self.#ident = ::dinoco::new_snowflake_id();
+                    }
+                })
+            }
+            Some(AutoGenerate::Uuid) => {
+                let value = default_field_value(field);
+                Some(quote! { self.#ident = #value; })
+            }
+            Some(AutoGenerate::Autoincrement) | None => None,
+        }
+    });
+
+    let reset_relations = relations.iter().map(|field| {
+        let ident = &field.ident;
+        quote! { self.#ident = ::core::default::Default::default(); }
+    });
+
+    let reset_many_to_many_keys = many_to_many_keys.iter().map(|field| {
+        let ident = &field.ident;
+        quote! { self.#ident = ::core::option::Option::None; }
     });
 
     let identity_fields = {
@@ -933,6 +1019,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
 
         impl #name {
+            #[allow(clippy::too_many_arguments)]
             pub fn new(#(#new_params),*) -> Self {
                 Self {
                     #(#new_scalar_initializers,)*
@@ -967,47 +1054,51 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             const FIELDS: &'static [&'static str] = <#name as ::dinoco::DinocoEntity>::FIELDS;
         }
 
-        impl ::dinoco::DinocoSqlite for #name {
-            fn from_sqlite_row(row: &::dinoco::SqliteRow<'_>) -> ::core::option::Option<Self> {
-                ::core::option::Option::Some(Self {
-                    #(#row_initializers,)*
-                    #(#relation_initializers,)*
-                    #(#many_to_many_key_initializers,)*
-                })
+        ::dinoco::__dinoco_sqlite! {
+            impl ::dinoco::DinocoSqlite for #name {
+                fn from_sqlite_row(row: &::dinoco::SqliteRow<'_>) -> ::core::option::Option<Self> {
+                    ::core::option::Option::Some(Self {
+                        #(#row_initializers,)*
+                        #(#relation_initializers,)*
+                        #(#many_to_many_key_initializers,)*
+                    })
+                }
             }
         }
 
-        impl ::dinoco::DinocoPostgres for #name {
-            fn from_deadpool_posgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
-                ::core::option::Option::Some(Self {
-                    #(#postgres_row_initializers,)*
-                    #(#relation_initializers,)*
-                    #(#many_to_many_key_initializers,)*
-                })
-            }
+        ::dinoco::__dinoco_postgres! {
+            impl ::dinoco::DinocoPostgres for #name {
+                fn from_deadpool_posgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
+                    <Self as ::dinoco::DinocoPostgres>::from_postgres_row(row)
+                }
 
-            fn from_deadpool_postgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
-                Self::from_deadpool_posgres_row(row)
-            }
+                fn from_deadpool_postgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
+                    <Self as ::dinoco::DinocoPostgres>::from_postgres_row(row)
+                }
 
-            fn from_postgres_row(row: &::dinoco::PostgresRow) -> ::core::option::Option<Self> {
-                ::core::option::Option::Some(Self {
-                    #(#postgres_row_initializers,)*
-                    #(#relation_initializers,)*
-                    #(#many_to_many_key_initializers,)*
-                })
+                fn from_postgres_row(row: &::dinoco::PostgresRow) -> ::core::option::Option<Self> {
+                    ::core::option::Option::Some(Self {
+                        #(#postgres_row_initializers,)*
+                        #(#relation_initializers,)*
+                        #(#many_to_many_key_initializers,)*
+                    })
+                }
             }
         }
 
-        impl ::dinoco::DinocoMysql for #name {
-            fn from_mysql_row(row: &::dinoco::MysqlRow) -> ::core::option::Option<Self> {
-                let mut row = row.clone();
+        ::dinoco::__dinoco_mysql! {
+            impl ::dinoco::DinocoMysql for #name {
+                fn from_mysql_row(row: &::dinoco::MysqlRow) -> ::core::option::Option<Self> {
+                    <Self as ::dinoco::DinocoMysql>::from_mysql_row_owned(::core::clone::Clone::clone(row))
+                }
 
-                ::core::option::Option::Some(Self {
-                    #(#mysql_row_initializers,)*
-                    #(#relation_initializers,)*
-                    #(#many_to_many_key_initializers,)*
-                })
+                fn from_mysql_row_owned(mut row: ::dinoco::MysqlRow) -> ::core::option::Option<Self> {
+                    ::core::option::Option::Some(Self {
+                        #(#mysql_row_initializers,)*
+                        #(#relation_initializers,)*
+                        #(#many_to_many_key_initializers,)*
+                    })
+                }
             }
         }
 
@@ -1030,6 +1121,10 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             fn dinoco_insert_identity(&self) -> ::std::vec::Vec<::dinoco::FindWhere> {
                 ::std::vec![#(#insert_identity_conditions),*]
             }
+
+            fn dinoco_into_insert_values(mut self) -> ::std::vec::Vec<::dinoco::DinocoValue> {
+                ::std::vec![#(#into_insert_values),*]
+            }
         }
 
         impl ::dinoco::InsertPayload<#name> for #name {
@@ -1041,6 +1136,13 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                     #(#relation_initializers,)*
                     #(#many_to_many_key_initializers,)*
                 }
+            }
+
+            fn dinoco_into_insert_model(mut self) -> #name {
+                #(#into_insert_model_steps)*
+                #(#reset_relations)*
+                #(#reset_many_to_many_keys)*
+                self
             }
 
             fn dinoco_insert_nested<'a, C>(
@@ -1143,8 +1245,9 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             let ident = &field.ident;
             let index = scalar_index;
             scalar_index += 1;
+            let value = postgres_row_value(&field.ty, field.is_option, quote! { #index });
 
-            quote! { #ident: row.try_get(#index).ok()? }
+            quote! { #ident: #value }
         })
         .collect::<Vec<_>>();
 
@@ -1302,43 +1405,48 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             const FIELDS: &'static [&'static str] = &[#(#field_names),*];
         }
 
-        impl ::dinoco::DinocoSqlite for #name {
-            fn from_sqlite_row(row: &::dinoco::SqliteRow<'_>) -> ::core::option::Option<Self> {
-                ::core::option::Option::Some(Self {
-                    #(#row_initializers,)*
-                    #(#relation_initializers,)*
-                })
+        ::dinoco::__dinoco_sqlite! {
+            impl ::dinoco::DinocoSqlite for #name {
+                fn from_sqlite_row(row: &::dinoco::SqliteRow<'_>) -> ::core::option::Option<Self> {
+                    ::core::option::Option::Some(Self {
+                        #(#row_initializers,)*
+                        #(#relation_initializers,)*
+                    })
+                }
             }
         }
 
-        impl ::dinoco::DinocoPostgres for #name {
-            fn from_deadpool_posgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
-                ::core::option::Option::Some(Self {
-                    #(#postgres_row_initializers,)*
-                    #(#relation_initializers,)*
-                })
-            }
+        ::dinoco::__dinoco_postgres! {
+            impl ::dinoco::DinocoPostgres for #name {
+                fn from_deadpool_posgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
+                    <Self as ::dinoco::DinocoPostgres>::from_postgres_row(row)
+                }
 
-            fn from_deadpool_postgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
-                Self::from_deadpool_posgres_row(row)
-            }
+                fn from_deadpool_postgres_row(row: &::dinoco::DeadpoolPostgresRow) -> ::core::option::Option<Self> {
+                    <Self as ::dinoco::DinocoPostgres>::from_postgres_row(row)
+                }
 
-            fn from_postgres_row(row: &::dinoco::PostgresRow) -> ::core::option::Option<Self> {
-                ::core::option::Option::Some(Self {
-                    #(#postgres_row_initializers,)*
-                    #(#relation_initializers,)*
-                })
+                fn from_postgres_row(row: &::dinoco::PostgresRow) -> ::core::option::Option<Self> {
+                    ::core::option::Option::Some(Self {
+                        #(#postgres_row_initializers,)*
+                        #(#relation_initializers,)*
+                    })
+                }
             }
         }
 
-        impl ::dinoco::DinocoMysql for #name {
-            fn from_mysql_row(row: &::dinoco::MysqlRow) -> ::core::option::Option<Self> {
-                let mut row = row.clone();
+        ::dinoco::__dinoco_mysql! {
+            impl ::dinoco::DinocoMysql for #name {
+                fn from_mysql_row(row: &::dinoco::MysqlRow) -> ::core::option::Option<Self> {
+                    <Self as ::dinoco::DinocoMysql>::from_mysql_row_owned(::core::clone::Clone::clone(row))
+                }
 
-                ::core::option::Option::Some(Self {
-                    #(#mysql_row_initializers,)*
-                    #(#relation_initializers,)*
-                })
+                fn from_mysql_row_owned(mut row: ::dinoco::MysqlRow) -> ::core::option::Option<Self> {
+                    ::core::option::Option::Some(Self {
+                        #(#mysql_row_initializers,)*
+                        #(#relation_initializers,)*
+                    })
+                }
             }
         }
 
@@ -2041,41 +2149,67 @@ fn box_inner(ty: &Type) -> Option<&Type> {
     Some(inner)
 }
 
+/// Moves the value at `index` out of the owned MySQL `row`. A conversion
+/// failure fails the row instead of panicking.
 fn mysql_row_value(ty: &Type, is_option: bool, index: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let ty = option_inner(ty).unwrap_or(ty);
-    let is_datetime =
-        matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "DateTime"));
 
-    if !is_datetime {
-        return quote! { row.take(#index)? };
+    if !is_datetime(ty) {
+        return quote! { ::dinoco::mysql_take(&mut row, #index)? };
     }
 
     if is_option {
         quote! {
-            row.take::<::core::option::Option<::dinoco::chrono::NaiveDateTime>, _>(#index)?
+            ::dinoco::mysql_take::<::core::option::Option<::dinoco::chrono::NaiveDateTime>>(&mut row, #index)?
                 .map(|value| value.and_utc())
         }
     } else {
         quote! {
-            row.take::<::dinoco::chrono::NaiveDateTime, _>(#index)?.and_utc()
+            ::dinoco::mysql_take::<::dinoco::chrono::NaiveDateTime>(&mut row, #index)?.and_utc()
         }
     }
 }
 
 fn postgres_row_value(ty: &Type, is_option: bool, index: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let ty = option_inner(ty).unwrap_or(ty);
-    let is_datetime =
-        matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "DateTime"));
 
-    if !is_datetime {
+    if !is_datetime(ty) {
         return quote! { row.try_get(#index).ok()? };
     }
 
     if is_option {
-        quote! { ::dinoco::postgres_optional_datetime_from_row(row, #index)? }
+        quote! { ::dinoco::postgres_optional_datetime_at(row, #index)? }
     } else {
-        quote! { ::dinoco::postgres_datetime_from_row(row, #index)? }
+        quote! { ::dinoco::postgres_datetime_at(row, #index)? }
     }
+}
+
+fn is_datetime(ty: &Type) -> bool {
+    matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "DateTime"))
+}
+
+/// Whether a value of `ty` can be moved into a `DinocoValue`, leaving its
+/// `Default` behind: `String`, `dinoco::Uuid`, `Vec<u8>` and
+/// `serde_json::Value`.
+fn is_movable_value(ty: &Type) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    if type_path.qself.is_some() {
+        return false;
+    }
+
+    let segments = &type_path.path.segments;
+    let Some(last) = segments.last() else {
+        return false;
+    };
+    let is = |name: &str| last.ident == name;
+    let has_segment = |name: &str| segments.iter().any(|segment| segment.ident == name);
+
+    (is("String") && last.arguments.is_none())
+        || (is("Uuid") && has_segment("dinoco") && last.arguments.is_none())
+        || (is("Value") && has_segment("serde_json"))
+        || (is("Vec") && vec_inner(ty).is_some_and(is_u8))
 }
 
 fn is_custom_type(ty: &Type) -> bool {

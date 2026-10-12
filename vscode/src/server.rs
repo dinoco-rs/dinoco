@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use tower_lsp::jsonrpc::{Error as LspError, Result as LspResult};
-use tower_lsp::lsp_types::*;
-use tower_lsp::{Client, LanguageServer};
+use tower_lsp_server::jsonrpc::{Error as LspError, Result as LspResult};
+use tower_lsp_server::ls_types::*;
+use tower_lsp_server::{Client, LanguageServer};
 
 use crate::completion;
 use crate::completion::ImportCompletionContext;
@@ -35,9 +35,9 @@ impl DocumentState {
 
 pub struct DinocoLanguageServer {
     client: Client,
-    documents: RwLock<HashMap<Url, DocumentState>>,
+    documents: RwLock<HashMap<Uri, DocumentState>>,
     workspace: RwLock<WorkspaceCache>,
-    project_diagnostic_files: RwLock<HashMap<PathBuf, HashSet<Url>>>,
+    project_diagnostic_files: RwLock<HashMap<PathBuf, HashSet<Uri>>>,
 }
 
 impl DinocoLanguageServer {
@@ -50,11 +50,11 @@ impl DinocoLanguageServer {
         }
     }
 
-    fn document(&self, uri: &Url) -> Option<DocumentState> {
+    fn document(&self, uri: &Uri) -> Option<DocumentState> {
         self.documents.read().ok()?.get(uri).cloned()
     }
 
-    async fn update_document(&self, uri: Url, text: String, version: i32) {
+    async fn update_document(&self, uri: Uri, text: String, version: i32) {
         let state = DocumentState::new(text, version);
         let diagnostics = if is_main_schema(&uri) {
             diagnostics::analyze(state.text(), state.index())
@@ -64,7 +64,7 @@ impl DinocoLanguageServer {
         if let Ok(mut documents) = self.documents.write() {
             documents.insert(uri.clone(), state);
         }
-        if let Ok(path) = uri.to_file_path()
+        if let Some(path) = uri.to_file_path().map(|path| path.into_owned())
             && let Ok(mut workspace) = self.workspace.write()
         {
             workspace.invalidate(&path);
@@ -97,7 +97,7 @@ impl DinocoLanguageServer {
 
     fn quick_fixes(
         &self,
-        uri: &Url,
+        uri: &Uri,
         state: &DocumentState,
         index: &DocumentIndex,
         params: &CodeActionParams,
@@ -150,7 +150,7 @@ impl DinocoLanguageServer {
                 documents
                     .iter()
                     .filter_map(|(uri, state)| {
-                        let path = uri.to_file_path().ok()?;
+                        let path = uri.to_file_path().map(|path| path.into_owned())?;
                         Some((canonical_path(&path)?, state.file.clone()))
                     })
                     .collect()
@@ -158,15 +158,15 @@ impl DinocoLanguageServer {
             .unwrap_or_default()
     }
 
-    fn import_graph(&self, uri: &Url) -> Option<(PathBuf, ImportGraph)> {
-        let path = canonical_path(&uri.to_file_path().ok()?)?;
+    fn import_graph(&self, uri: &Uri) -> Option<(PathBuf, ImportGraph)> {
+        let path = canonical_path(&uri.to_file_path().map(|path| path.into_owned())?)?;
         let overlays = self.overlays();
         let graph = self.workspace.write().ok()?.load_graph(&path, &overlays);
         Some((path, graph))
     }
 
-    fn project_import_graph(&self, uri: &Url) -> Option<(PathBuf, ImportGraph)> {
-        let path = canonical_path(&uri.to_file_path().ok()?)?;
+    fn project_import_graph(&self, uri: &Uri) -> Option<(PathBuf, ImportGraph)> {
+        let path = canonical_path(&uri.to_file_path().map(|path| path.into_owned())?)?;
         let root = self.project_root(&path)?;
         let overlays = self.overlays();
         let mut workspace = self.workspace.write().ok()?;
@@ -177,7 +177,7 @@ impl DinocoLanguageServer {
         Some((path, graph))
     }
 
-    fn semantic_index(&self, uri: &Url, state: &DocumentState) -> (DocumentIndex, Option<(PathBuf, ImportGraph)>) {
+    fn semantic_index(&self, uri: &Uri, state: &DocumentState) -> (DocumentIndex, Option<(PathBuf, ImportGraph)>) {
         let Some((path, graph)) = self.import_graph(uri) else {
             return (state.index().clone(), None);
         };
@@ -187,11 +187,11 @@ impl DinocoLanguageServer {
 
     fn import_completion(
         &self,
-        uri: &Url,
+        uri: &Uri,
         _state: &DocumentState,
         context: ImportCompletionContext,
     ) -> Option<CompletionResponse> {
-        let current = uri.to_file_path().ok()?;
+        let current = uri.to_file_path().map(|path| path.into_owned())?;
         match context {
             ImportCompletionContext::Symbols { path: Some(import_path) } => {
                 if Path::new(&import_path).extension().and_then(|extension| extension.to_str()) != Some("dinoco") {
@@ -224,8 +224,8 @@ impl DinocoLanguageServer {
         None
     }
 
-    async fn validate_project_on_save(&self, uri: &Url) {
-        let Ok(saved_path) = uri.to_file_path() else {
+    async fn validate_project_on_save(&self, uri: &Uri) {
+        let Some(saved_path) = uri.to_file_path().map(|path| path.into_owned()) else {
             return;
         };
         if let Ok(mut workspace) = self.workspace.write() {
@@ -243,8 +243,8 @@ impl DinocoLanguageServer {
         self.publish_project_diagnostics(&root, graph, compile_error).await;
     }
 
-    async fn validate_project_imports(&self, uri: &Url) {
-        let Ok(path) = uri.to_file_path() else {
+    async fn validate_project_imports(&self, uri: &Uri) {
+        let Some(path) = uri.to_file_path().map(|path| path.into_owned()) else {
             return;
         };
         let Some(root) = self.project_root(&path) else {
@@ -264,7 +264,7 @@ impl DinocoLanguageServer {
         graph: ImportGraph,
         compile_error: Option<dinoco_compiler::CompileError>,
     ) {
-        let mut files = graph.files.keys().filter_map(|path| Url::from_file_path(path).ok()).collect::<HashSet<_>>();
+        let mut files = graph.files.keys().filter_map(Uri::from_file_path).collect::<HashSet<_>>();
         let previous = self
             .project_diagnostic_files
             .read()
@@ -282,7 +282,7 @@ impl DinocoLanguageServer {
         let publish_files = files.union(&previous).cloned().collect::<Vec<_>>();
         for uri in publish_files {
             let state = self.document(&uri);
-            let canonical = uri.to_file_path().ok().and_then(|path| canonical_path(&path));
+            let canonical = uri.to_file_path().map(|path| path.into_owned()).and_then(|path| canonical_path(&path));
             let graph_file = canonical.as_ref().and_then(|path| graph.files.get(path).cloned());
             let file = state.as_ref().map(|state| state.file.clone()).or(graph_file);
             let mut diagnostics = file.as_ref().map_or_else(Vec::new, |file| {
@@ -434,16 +434,14 @@ fn import_value_range(source: &str, import_path: &str, value: &str) -> Range {
 }
 
 #[doc(hidden)]
-pub fn is_main_schema(uri: &Url) -> bool {
-    let Some(mut segments) = uri.path_segments() else {
-        return false;
-    };
-    segments.next_back() == Some("schema.dinoco") && segments.next_back() == Some("dinoco")
+pub fn is_main_schema(uri: &Uri) -> bool {
+    let mut segments = uri.path().as_str().rsplit('/');
+    segments.next() == Some("schema.dinoco") && segments.next() == Some("dinoco")
 }
 
 #[doc(hidden)]
 pub fn format_document_source(
-    uri: &Url,
+    uri: &Uri,
     source: &str,
     config: &dinoco_formatter::FormatterConfig,
 ) -> Result<String, dinoco_compiler::CompileError> {
@@ -459,9 +457,9 @@ pub fn compile_error_diagnostic(
     root: &Path,
     graph: &ImportGraph,
     error: dinoco_compiler::CompileError,
-) -> Option<(Url, Diagnostic)> {
+) -> Option<(Uri, Diagnostic)> {
     let path = diagnostic_path(root, error.file.as_deref());
-    let uri = Url::from_file_path(&path).ok()?;
+    let uri = Uri::from_file_path(&path)?;
     let source = graph
         .files
         .get(&path)
@@ -474,7 +472,7 @@ pub fn compile_error_diagnostic(
         .into_iter()
         .filter_map(|related| {
             let path = diagnostic_path(root, Some(&related.file));
-            let uri = Url::from_file_path(&path).ok()?;
+            let uri = Uri::from_file_path(&path)?;
             let source = graph
                 .files
                 .get(&path)
@@ -551,7 +549,6 @@ fn compiler_position(source: &str, line: usize, column: usize) -> Position {
     Position::new(line_index as u32, character)
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for DinocoLanguageServer {
     async fn initialize(&self, _: InitializeParams) -> LspResult<InitializeResult> {
         Ok(InitializeResult {
@@ -610,6 +607,7 @@ impl LanguageServer for DinocoLanguageServer {
                 name: "Dinoco Language Server".to_string(),
                 version: Some(env!("CARGO_PKG_VERSION").to_string()),
             }),
+            offset_encoding: None,
         })
     }
 
@@ -644,7 +642,7 @@ impl LanguageServer for DinocoLanguageServer {
         let mut roots = HashSet::new();
         if let Ok(mut workspace) = self.workspace.write() {
             for change in params.changes {
-                if let Ok(path) = change.uri.to_file_path() {
+                if let Some(path) = change.uri.to_file_path().map(|path| path.into_owned()) {
                     roots.extend(workspace.known_roots_affected_by(&path));
                     for directory in path.parent().into_iter().flat_map(Path::ancestors) {
                         let candidate = directory.join("schema.dinoco");
@@ -660,7 +658,7 @@ impl LanguageServer for DinocoLanguageServer {
             }
         }
         for root in roots {
-            if let Ok(uri) = Url::from_file_path(root) {
+            if let Some(uri) = Uri::from_file_path(root) {
                 self.validate_project_on_save(&uri).await;
             }
         }
@@ -717,7 +715,7 @@ impl LanguageServer for DinocoLanguageServer {
         };
         if let Some((path, graph)) = graph
             && let Some((definition_path, range)) = graph.definition(&path, &symbol)
-            && let Ok(definition_uri) = Url::from_file_path(definition_path)
+            && let Some(definition_uri) = Uri::from_file_path(definition_path)
         {
             return Ok(Some(GotoDefinitionResponse::Scalar(Location::new(definition_uri, range))));
         }
@@ -742,7 +740,7 @@ impl LanguageServer for DinocoLanguageServer {
             graph
                 .files
                 .iter()
-                .filter_map(|(path, file)| Some((Url::from_file_path(path).ok()?, path, file)))
+                .filter_map(|(path, file)| Some((Uri::from_file_path(path)?, path, file)))
                 .flat_map(|(item_uri, path, file)| {
                     let definition = definition.clone();
                     file.index
@@ -828,7 +826,7 @@ impl LanguageServer for DinocoLanguageServer {
                         .into_iter()
                         .map(|range| TextEdit { range, new_text: params.new_name.clone() })
                         .collect::<Vec<_>>();
-                    if edits.is_empty() { None } else { Some((Url::from_file_path(path).ok()?, edits)) }
+                    if edits.is_empty() { None } else { Some((Uri::from_file_path(path)?, edits)) }
                 })
                 .collect()
         } else {

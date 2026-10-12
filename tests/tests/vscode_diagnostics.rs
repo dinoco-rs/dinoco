@@ -5,7 +5,7 @@ use dinoco_vscode::diagnostics::{
     analyze_imported,
 };
 use dinoco_vscode::document::DocumentIndex;
-use dinoco_vscode::tower_lsp::lsp_types::NumberOrString;
+use dinoco_vscode::tower_lsp_server::ls_types::NumberOrString;
 
 #[test]
 fn imported_documents_do_not_require_a_config_block() {
