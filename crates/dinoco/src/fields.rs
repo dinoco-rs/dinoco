@@ -453,6 +453,14 @@ where
         self.matching(RelationQuantifier::None, vec![callback(C::Where::default())])
     }
 
+    /// [`none`](Self::none) with a [`WhereComplex`] tree over the related row.
+    pub fn none_complex<F>(self, callback: F) -> FindWhere
+    where
+        F: FnOnce(C::Where, WhereComplex) -> FindWhere,
+    {
+        self.matching(RelationQuantifier::None, vec![callback(C::Where::default(), WhereComplex)])
+    }
+
     /// Keeps rows whose related rows all match `callback`, including rows
     /// without any related row. A related row whose condition evaluates to
     /// `NULL` (a comparison against a `NULL` column) does not match.
@@ -461,6 +469,14 @@ where
         F: FnOnce(C::Where) -> FindWhere,
     {
         self.matching(RelationQuantifier::Every, vec![callback(C::Where::default())])
+    }
+
+    /// [`every`](Self::every) with a [`WhereComplex`] tree over the related row.
+    pub fn every_complex<F>(self, callback: F) -> FindWhere
+    where
+        F: FnOnce(C::Where, WhereComplex) -> FindWhere,
+    {
+        self.matching(RelationQuantifier::Every, vec![callback(C::Where::default(), WhereComplex)])
     }
 
     /// Keeps rows with at least one related row.

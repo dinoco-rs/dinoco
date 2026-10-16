@@ -80,7 +80,9 @@ let transaction = dinoco::find_first::<Transaction>()
 | `where_(...)` | têm pelo menos uma row relacionada que bate com a condição | `EXISTS (...)` |
 | `where_complex(...)` | o mesmo, com uma árvore de [where complex](/pt-br/docs/orm/orm/where-complex) sobre a row relacionada | `EXISTS (...)` |
 | `none(...)` | não têm nenhuma row relacionada que bate com a condição — inclusive rows sem relacionadas | `NOT EXISTS (...)` |
+| `none_complex(...)` | o mesmo que `none`, com uma árvore de where complex sobre a row relacionada | `NOT EXISTS (...)` |
 | `every(...)` | só têm rows relacionadas que batem com a condição — inclusive rows sem relacionadas | `NOT EXISTS (... AND (condição) IS NOT TRUE)` |
+| `every_complex(...)` | o mesmo que `every`, com uma árvore de where complex sobre a row relacionada | `NOT EXISTS (... AND (condição) IS NOT TRUE)` |
 | `exists()` | têm pelo menos uma row relacionada | `EXISTS (...)` |
 | `not_exists()` | não têm nenhuma row relacionada | `NOT EXISTS (...)` |
 
@@ -93,6 +95,14 @@ dinoco::find_many::<Transaction>().where_(|t| t.items.none(|item| item.refunded.
 
 // Transactions com todos os itens estornados, inclusive as que não têm itens.
 dinoco::find_many::<Transaction>().where_(|t| t.items.every(|item| item.refunded.eq(true)));
+
+// Transactions sem nenhum item que esteja, ao mesmo tempo, estornado e sem nota.
+dinoco::find_many::<Transaction>()
+    .where_(|t| t.items.none_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()])));
+
+// Transactions com todos os itens estornados ou com a nota "gift".
+dinoco::find_many::<Transaction>()
+    .where_(|t| t.items.every_complex(|item, m| m.or(item.refunded.eq(true), item.note.eq("gift"))));
 
 // Transactions com pelo menos um item / sem payout.
 dinoco::find_many::<Transaction>().where_(|t| t.items.exists());
@@ -145,6 +155,8 @@ dinoco::find_many::<Transaction>()
     .where_(|t| t.items.where_(|item| item.refunded.eq(true)))
     .where_(|t| t.items.where_(|item| item.note.eq("gift")));
 ```
+
+O mesmo vale para `none_complex` e `every_complex`. `t.items.none_complex(|item, m| m.and([a, b]))` só descarta uma transaction quando um mesmo item bate com `a` e com `b`. Dois filtros separados, `.where_(|t| t.items.none(a)).where_(|t| t.items.none(b))`, descartam a transaction quando algum item bate com `a` ou algum item bate com `b`.
 
 ## Aninhe filtros de relação
 

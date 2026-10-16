@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_formatter"
-version = "2.1.0"
+version = "2.1.1"
 edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
@@ -11,4 +11,4 @@ readme = "../../crates.md"
 keywords = ["orm", "formatter", "schema", "database", "tooling"]
 
 [dependencies]
-dinoco_compiler = { path = "../dinoco_compiler", version = "2.1.0" }
+dinoco_compiler = { path = "../dinoco_compiler", version = "2.1.1" }

@@ -88,7 +88,7 @@ let transactions = dinoco::find_many::<Transaction>()
     .await?;
 ```
 
-Besides `where_`, every relation field offers `where_complex`, `none`, `every`, `exists`, and `not_exists`, and the callbacks nest through further relations. See [Relation filters](/en-us/docs/orm/orm/relation-filters).
+Besides `where_`, every relation field offers `where_complex`, `none`, `none_complex`, `every`, `every_complex`, `exists`, and `not_exists`, and the callbacks nest through further relations. See [Relation filters](/en-us/docs/orm/orm/relation-filters).
 
 ## Combine conditions
 

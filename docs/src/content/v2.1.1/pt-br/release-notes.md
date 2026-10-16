@@ -1,6 +1,10 @@
-# Dinoco v2.1.0
+# Dinoco v2.1.1
 
 Esta página acompanha o que mudou release a release. Cada item linka para a página que documenta a funcionalidade em profundidade — trate isto como um changelog, não como a referência principal.
+
+## v2.1.1
+
+- **`none_complex` e `every_complex` nos fields de relação.** São o `none` e o `every` com uma árvore de [where complex](/pt-br/docs/orm/orm/where-complex) sobre a row relacionada, do mesmo jeito que o `where_complex` estende o `where_`. A árvore inteira é avaliada sobre uma mesma row relacionada: `t.items.none_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()]))` mantém as transactions sem nenhum item que esteja, ao mesmo tempo, estornado e sem nota. Antes isso exigia `WhereComplex.and(...)` dentro do `none`, ou `m.not(...)` no `where_complex` do próprio builder, que também descarta todo `where_` comum desse builder. Veja [Methods de filtro](/pt-br/docs/orm/orm/relation-filters#methods-de-filtro).
 
 ## v2.1.0
 

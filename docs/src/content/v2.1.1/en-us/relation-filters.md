@@ -80,7 +80,9 @@ let transaction = dinoco::find_first::<Transaction>()
 | `where_(...)` | have at least one related row matching the condition | `EXISTS (...)` |
 | `where_complex(...)` | same, with a [where complex](/en-us/docs/orm/orm/where-complex) tree over the related row | `EXISTS (...)` |
 | `none(...)` | have no related row matching the condition — rows without related rows included | `NOT EXISTS (...)` |
+| `none_complex(...)` | same as `none`, with a where complex tree over the related row | `NOT EXISTS (...)` |
 | `every(...)` | have only related rows matching the condition — rows without related rows included | `NOT EXISTS (... AND (condition) IS NOT TRUE)` |
+| `every_complex(...)` | same as `every`, with a where complex tree over the related row | `NOT EXISTS (... AND (condition) IS NOT TRUE)` |
 | `exists()` | have at least one related row | `EXISTS (...)` |
 | `not_exists()` | have no related row | `NOT EXISTS (...)` |
 
@@ -93,6 +95,14 @@ dinoco::find_many::<Transaction>().where_(|t| t.items.none(|item| item.refunded.
 
 // Transactions whose items were all refunded, including transactions with no items.
 dinoco::find_many::<Transaction>().where_(|t| t.items.every(|item| item.refunded.eq(true)));
+
+// Transactions without any item that is both refunded and missing a note.
+dinoco::find_many::<Transaction>()
+    .where_(|t| t.items.none_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()])));
+
+// Transactions whose items are all refunded or noted "gift".
+dinoco::find_many::<Transaction>()
+    .where_(|t| t.items.every_complex(|item, m| m.or(item.refunded.eq(true), item.note.eq("gift"))));
 
 // Transactions with at least one item / without a payout.
 dinoco::find_many::<Transaction>().where_(|t| t.items.exists());
@@ -145,6 +155,8 @@ dinoco::find_many::<Transaction>()
     .where_(|t| t.items.where_(|item| item.refunded.eq(true)))
     .where_(|t| t.items.where_(|item| item.note.eq("gift")));
 ```
+
+The same goes for `none_complex` and `every_complex`. `t.items.none_complex(|item, m| m.and([a, b]))` drops a transaction only when one item matches both `a` and `b`. Two separate filters, `.where_(|t| t.items.none(a)).where_(|t| t.items.none(b))`, drop it when any item matches `a` or any item matches `b`.
 
 ## Nest relation filters
 

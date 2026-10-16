@@ -1,7 +1,8 @@
 //! Relation filters: `where_(...)` on a relation field narrows the parent rows
 //! by their related rows without loading them. Covers every relation shape
 //! (many-to-one, one-to-many, both sides of a one-to-one, many-to-many, self
-//! relations), the `where_`/`none`/`every`/`exists`/`not_exists` quantifiers,
+//! relations), the `where_`/`none`/`every`/`exists`/`not_exists` quantifiers
+//! and their `_complex` forms,
 //! nesting, `where_complex`, and every builder that accepts a `where_`.
 //!
 //! Every scenario runs on SQLite, PostgreSQL and MySQL (the same local servers
@@ -268,6 +269,24 @@ async fn one_to_many(client: DinocoClient) -> anyhow::Result<()> {
         .execute(&client)
         .await?;
     assert_eq!(ids(&transactions, |transaction| &transaction.id), ["t5"]);
+
+    // `none_complex` rejects a parent only when one item matches the whole
+    // tree: t2's refunded item has a note, so t2 stays, unlike with
+    // `none(|item| item.refunded.eq(true))`.
+    assert_eq!(
+        transaction_ids(&client, |t| t.items.none_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()])))
+            .await?,
+        ["t1", "t2", "t3", "t4"]
+    );
+    // `every_complex` keeps the NULL rule of `every`: t1's item i2 is neither
+    // refunded nor noted, so `false OR NULL` does not count as matching.
+    assert_eq!(
+        transaction_ids(&client, |t| {
+            t.items.every_complex(|item, m| m.or(item.refunded.eq(true), item.note.eq("gift")))
+        })
+        .await?,
+        ["t2", "t3", "t4", "t5"]
+    );
 
     Ok(())
 }

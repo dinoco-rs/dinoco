@@ -103,7 +103,7 @@ Every adapter is behind a Cargo feature of `dinoco`, and all of them are enabled
 
 ```toml
 [dependencies]
-dinoco = { version = "2.1.0", default-features = false, features = ["postgres"] }
+dinoco = { version = "2.1.1", default-features = false, features = ["postgres"] }
 ```
 
 | Feature | Enables |
