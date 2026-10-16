@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_tests"
-version = "2.1.1"
+version = "2.1.2"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
@@ -8,13 +8,13 @@ description = "Integration and compile-time test suite covering Dinoco crates an
 anyhow = "1.0"
 tokio = { version = "1.50", features = ["full"] }
 tempfile = "3"
-dinoco = { path = "../crates/dinoco", version = "2.1.1" }
-dinoco_cli = { path = "../crates/dinoco_cli", version = "2.1.1" }
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.1.1" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.1.1" }
-dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.1.1" }
-dinoco_engine = { path = "../crates/dinoco_engine", version = "2.1.1" }
-dinoco_vscode = { path = "../vscode", version = "2.1.1" }
+dinoco = { path = "../crates/dinoco", version = "2.1.2" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "2.1.2" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.1.2" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.1.2" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.1.2" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "2.1.2" }
+dinoco_vscode = { path = "../vscode", version = "2.1.2" }
 
 [[bin]]
 name = "dinoco_cli"

@@ -147,7 +147,7 @@ cd docs && sed 's/v2\.0\.0/v<X>/g' scripts/check-anchors.mjs > scripts/.check-an
   && node scripts/.check-anchors.mjs; rm scripts/.check-anchors.mjs
 ```
 
-- New links must not add anchor errors. Nine broken anchors already exist, in old release notes and `update.md`.
+- New links must not add anchor errors. Two broken anchors already exist, both in `update.md`.
 - MySQL timings are noisy. Compare MySQL numbers only with interleaved A/B runs.
 
 ## Conventions

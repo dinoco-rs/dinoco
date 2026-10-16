@@ -484,9 +484,28 @@ where
         self.matching(RelationQuantifier::Some, Vec::new())
     }
 
+    /// [`exists`](Self::exists) counting only the related rows that match a
+    /// [`WhereComplex`] tree. Same filter as [`where_complex`](Self::where_complex).
+    pub fn exists_complex<F>(self, callback: F) -> FindWhere
+    where
+        F: FnOnce(C::Where, WhereComplex) -> FindWhere,
+    {
+        self.where_complex(callback)
+    }
+
     /// Keeps rows without any related row.
     pub fn not_exists(self) -> FindWhere {
         self.matching(RelationQuantifier::None, Vec::new())
+    }
+
+    /// [`not_exists`](Self::not_exists) counting only the related rows that
+    /// match a [`WhereComplex`] tree. Same filter as
+    /// [`none_complex`](Self::none_complex).
+    pub fn not_exists_complex<F>(self, callback: F) -> FindWhere
+    where
+        F: FnOnce(C::Where, WhereComplex) -> FindWhere,
+    {
+        self.none_complex(callback)
     }
 }
 

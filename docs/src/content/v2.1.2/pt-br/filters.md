@@ -88,7 +88,7 @@ let transactions = dinoco::find_many::<Transaction>()
     .await?;
 ```
 
-Além de `where_`, todo field de relação oferece `where_complex`, `none`, `none_complex`, `every`, `every_complex`, `exists` e `not_exists`, e os callbacks se aninham por outras relações. Veja [Filtros de relação](/pt-br/docs/orm/orm/relation-filters).
+Além de `where_`, todo field de relação oferece `where_complex`, `none`, `none_complex`, `every`, `every_complex`, `exists`, `exists_complex`, `not_exists` e `not_exists_complex`, e os callbacks se aninham por outras relações. Veja [Filtros de relação](/pt-br/docs/orm/orm/relation-filters).
 
 ## Combine condições
 

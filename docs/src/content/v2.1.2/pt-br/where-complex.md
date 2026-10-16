@@ -113,7 +113,7 @@ let transactions = dinoco::find_many::<Transaction>()
     .await?;
 ```
 
-Um field de relação também aceita uma árvore própria, sobre a row relacionada: `t.items.where_complex(|item, m| m.or(item.refunded.eq(true), item.note.null()))`. O `none_complex` e o `every_complex` aceitam uma do mesmo jeito.
+Um field de relação também aceita uma árvore própria, sobre a row relacionada: `t.items.where_complex(|item, m| m.or(item.refunded.eq(true), item.note.null()))`. O `none_complex`, o `every_complex`, o `exists_complex` e o `not_exists_complex` aceitam uma do mesmo jeito.
 
 ## Grupos vazios
 

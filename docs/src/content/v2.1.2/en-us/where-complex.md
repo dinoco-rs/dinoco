@@ -113,7 +113,7 @@ let transactions = dinoco::find_many::<Transaction>()
     .await?;
 ```
 
-A relation field also takes a tree of its own, over the related row: `t.items.where_complex(|item, m| m.or(item.refunded.eq(true), item.note.null()))`. `none_complex` and `every_complex` take one the same way.
+A relation field also takes a tree of its own, over the related row: `t.items.where_complex(|item, m| m.or(item.refunded.eq(true), item.note.null()))`. `none_complex`, `every_complex`, `exists_complex` and `not_exists_complex` take one the same way.
 
 ## Empty groups
 

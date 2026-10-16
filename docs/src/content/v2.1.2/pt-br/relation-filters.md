@@ -84,7 +84,9 @@ let transaction = dinoco::find_first::<Transaction>()
 | `every(...)` | só têm rows relacionadas que batem com a condição — inclusive rows sem relacionadas | `NOT EXISTS (... AND (condição) IS NOT TRUE)` |
 | `every_complex(...)` | o mesmo que `every`, com uma árvore de where complex sobre a row relacionada | `NOT EXISTS (... AND (condição) IS NOT TRUE)` |
 | `exists()` | têm pelo menos uma row relacionada | `EXISTS (...)` |
+| `exists_complex(...)` | têm pelo menos uma row relacionada que bate com uma árvore de where complex — o mesmo filtro que `where_complex` | `EXISTS (...)` |
 | `not_exists()` | não têm nenhuma row relacionada | `NOT EXISTS (...)` |
+| `not_exists_complex(...)` | não têm nenhuma row relacionada que bate com uma árvore de where complex — o mesmo filtro que `none_complex` | `NOT EXISTS (...)` |
 
 ```rust
 // Transactions com algum item estornado.
@@ -107,7 +109,17 @@ dinoco::find_many::<Transaction>()
 // Transactions com pelo menos um item / sem payout.
 dinoco::find_many::<Transaction>().where_(|t| t.items.exists());
 dinoco::find_many::<Transaction>().where_(|t| t.payout.not_exists());
+
+// Transactions com / sem um payout Ted ou Boleto.
+dinoco::find_many::<Transaction>().where_(|t| {
+    t.payout.exists_complex(|payout, m| m.or(payout.method.eq(PayoutMethod::Ted), payout.method.eq(PayoutMethod::Boleto)))
+});
+dinoco::find_many::<Transaction>().where_(|t| {
+    t.payout.not_exists_complex(|payout, m| m.or(payout.method.eq(PayoutMethod::Ted), payout.method.eq(PayoutMethod::Boleto)))
+});
 ```
+
+O `exists_complex` e o `not_exists_complex` geram exatamente o mesmo SQL que o `where_complex` e o `none_complex`. Use o nome que fica mais claro ao lado do `exists()` e do `not_exists()`.
 
 > [!NOTE]
 > `every` e `none` são verdadeiros para uma row sem nenhuma relacionada. Adicione `.exists()` quando "todos os itens foram estornados" também precisar de pelo menos um item: `.where_(|t| t.items.every(...)).where_(|t| t.items.exists())`.

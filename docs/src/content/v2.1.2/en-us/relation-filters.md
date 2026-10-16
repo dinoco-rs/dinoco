@@ -84,7 +84,9 @@ let transaction = dinoco::find_first::<Transaction>()
 | `every(...)` | have only related rows matching the condition — rows without related rows included | `NOT EXISTS (... AND (condition) IS NOT TRUE)` |
 | `every_complex(...)` | same as `every`, with a where complex tree over the related row | `NOT EXISTS (... AND (condition) IS NOT TRUE)` |
 | `exists()` | have at least one related row | `EXISTS (...)` |
+| `exists_complex(...)` | have at least one related row matching a where complex tree — the same filter as `where_complex` | `EXISTS (...)` |
 | `not_exists()` | have no related row | `NOT EXISTS (...)` |
+| `not_exists_complex(...)` | have no related row matching a where complex tree — the same filter as `none_complex` | `NOT EXISTS (...)` |
 
 ```rust
 // Transactions with a refunded item.
@@ -107,7 +109,17 @@ dinoco::find_many::<Transaction>()
 // Transactions with at least one item / without a payout.
 dinoco::find_many::<Transaction>().where_(|t| t.items.exists());
 dinoco::find_many::<Transaction>().where_(|t| t.payout.not_exists());
+
+// Transactions with / without a payout that is Ted or Boleto.
+dinoco::find_many::<Transaction>().where_(|t| {
+    t.payout.exists_complex(|payout, m| m.or(payout.method.eq(PayoutMethod::Ted), payout.method.eq(PayoutMethod::Boleto)))
+});
+dinoco::find_many::<Transaction>().where_(|t| {
+    t.payout.not_exists_complex(|payout, m| m.or(payout.method.eq(PayoutMethod::Ted), payout.method.eq(PayoutMethod::Boleto)))
+});
 ```
+
+`exists_complex` and `not_exists_complex` compile to exactly the same SQL as `where_complex` and `none_complex`. Use whichever name reads better next to `exists()` and `not_exists()`.
 
 > [!NOTE]
 > `every` and `none` are true for a row with no related rows at all. Add `.exists()` when "every item was refunded" should also require at least one item: `.where_(|t| t.items.every(...)).where_(|t| t.items.exists())`.

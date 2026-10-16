@@ -71,6 +71,11 @@ on_every_backend!(
     writes,
     includes_and_relation_counts,
     transactions,
+    exists_complex_shapes,
+    exists_complex_edges,
+    exists_complex_reads,
+    exists_complex_writes,
+    exists_complex_transactions,
 );
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, DinocoEnum)]
@@ -602,6 +607,441 @@ async fn transactions(client: DinocoClient) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn existence_complex_filters_match_their_quantifier_counterparts() {
+    let tree = |item: ItemWhere, m: WhereComplex| m.and([item.refunded.eq(true), item.note.null()]);
+
+    assert_eq!(
+        format!("{:?}", TransactionWhere::default().items.exists_complex(tree)),
+        format!("{:?}", TransactionWhere::default().items.where_complex(tree))
+    );
+    assert_eq!(
+        format!("{:?}", TransactionWhere::default().items.not_exists_complex(tree)),
+        format!("{:?}", TransactionWhere::default().items.none_complex(tree))
+    );
+}
+
+async fn exists_complex_shapes(client: DinocoClient) -> anyhow::Result<()> {
+    // Many-to-one.
+    assert_eq!(
+        transaction_ids(&client, |t| {
+            t.payout.exists_complex(|payout, m| {
+                m.or(payout.method.eq(PayoutMethod::Ted), payout.method.eq(PayoutMethod::Boleto))
+            })
+        })
+        .await?,
+        ["t3", "t5"]
+    );
+    assert_eq!(
+        transaction_ids(&client, |t| {
+            t.payout.not_exists_complex(|payout, m| {
+                m.or(payout.method.eq(PayoutMethod::Ted), payout.method.eq(PayoutMethod::Boleto))
+            })
+        })
+        .await?,
+        ["t1", "t2", "t4"],
+        "a transaction without a payout has no matching payout"
+    );
+
+    // One-to-many: the whole tree must hold on one item.
+    assert_eq!(
+        transaction_ids(&client, |t| {
+            t.items.exists_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()]))
+        })
+        .await?,
+        ["t5"]
+    );
+    assert_eq!(
+        transaction_ids(&client, |t| {
+            t.items.not_exists_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()]))
+        })
+        .await?,
+        ["t1", "t2", "t3", "t4"]
+    );
+
+    // One-to-one, both sides.
+    assert_eq!(
+        transaction_ids(&client, |t| {
+            t.receipt
+                .exists_complex(|receipt, m| m.and([receipt.number.starts_with("X-"), receipt.number.ends_with("003")]))
+        })
+        .await?,
+        ["t3"]
+    );
+    assert_eq!(
+        transaction_ids(&client, |t| {
+            t.receipt.not_exists_complex(|receipt, m| {
+                m.and([receipt.number.starts_with("X-"), receipt.number.ends_with("003")])
+            })
+        })
+        .await?,
+        ["t1", "t2", "t4", "t5"]
+    );
+    let receipts = find_many::<Receipt>()
+        .where_(|receipt| receipt.transaction.exists_complex(|t, m| m.and([t.amount.gt(200), t.payout.exists()])))
+        .order_by(|receipt| receipt.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&receipts, |receipt| &receipt.id), ["r3"]);
+    let receipts = find_many::<Receipt>()
+        .where_(|receipt| receipt.transaction.not_exists_complex(|t, m| m.and([t.amount.gt(200), t.payout.exists()])))
+        .order_by(|receipt| receipt.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&receipts, |receipt| &receipt.id), ["r1"]);
+
+    // Many-to-many, both sides.
+    assert_eq!(
+        transaction_ids(&client, |t| t.tags.exists_complex(|tag, m| m.or(tag.name.eq("vip"), tag.name.eq("promo"))))
+            .await?,
+        ["t1", "t2", "t5"]
+    );
+    assert_eq!(
+        transaction_ids(&client, |t| {
+            t.tags.not_exists_complex(|tag, m| m.and([tag.name.eq("promo"), tag.id.eq("promo")]))
+        })
+        .await?,
+        ["t3", "t4", "t5"]
+    );
+    let tags = find_many::<Tag>()
+        .where_(|tag| tag.transactions.exists_complex(|t, m| m.and([t.amount.lt(100), t.payout.exists()])))
+        .order_by(|tag| tag.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&tags, |tag| &tag.id), ["vip"]);
+    let tags = find_many::<Tag>()
+        .where_(|tag| tag.transactions.not_exists_complex(|t, m| m.and([t.amount.lt(100), t.payout.exists()])))
+        .order_by(|tag| tag.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&tags, |tag| &tag.id), ["promo"]);
+
+    // Self relation, both directions.
+    assert_eq!(
+        employee_ids(&client, |e| {
+            e.manager.exists_complex(|manager, m| m.or(manager.name.eq("Ana"), manager.name.eq("Bia")))
+        })
+        .await?,
+        ["bia", "caio", "duda"]
+    );
+    assert_eq!(
+        employee_ids(&client, |e| {
+            e.reports.not_exists_complex(|report, m| m.and([report.name.starts_with("C"), report.reports.not_exists()]))
+        })
+        .await?,
+        ["ana", "caio", "duda", "eva"]
+    );
+
+    Ok(())
+}
+
+async fn exists_complex_edges(client: DinocoClient) -> anyhow::Result<()> {
+    // An empty AND matches every related row, an empty OR none of them.
+    assert_eq!(transaction_ids(&client, |t| t.items.exists_complex(|_, m| m.and([]))).await?, ["t1", "t2", "t3", "t5"]);
+    assert_eq!(transaction_ids(&client, |t| t.items.not_exists_complex(|_, m| m.and([]))).await?, ["t4"]);
+    assert_eq!(transaction_ids(&client, |t| t.items.exists_complex(|_, m| m.or_many([]))).await?, Vec::<String>::new());
+    assert_eq!(
+        transaction_ids(&client, |t| t.items.not_exists_complex(|_, m| m.or_many([]))).await?,
+        ["t1", "t2", "t3", "t4", "t5"]
+    );
+
+    // A related row whose tree evaluates to NULL does not match: i2 and i5
+    // have no note, so `NOT (note = 'gift')` is NULL for them, and only t2's
+    // "damaged" item matches.
+    assert_eq!(
+        transaction_ids(&client, |t| t.items.exists_complex(|item, m| m.not(item.note.eq("gift")))).await?,
+        ["t2"]
+    );
+    assert_eq!(
+        transaction_ids(&client, |t| t.items.not_exists_complex(|item, m| m.not(item.note.eq("gift")))).await?,
+        ["t1", "t3", "t4", "t5"]
+    );
+
+    // Nested trees, each one checked against its own related row.
+    assert_eq!(
+        payout_ids(&client, |payout| {
+            payout.transactions.exists_complex(|t, m| {
+                m.and([
+                    t.amount.gt(200),
+                    t.items.exists_complex(|item, m| m.or(item.refunded.eq(true), item.note.eq("damaged"))),
+                ])
+            })
+        })
+        .await?,
+        ["p-pix"]
+    );
+    assert_eq!(
+        payout_ids(&client, |payout| {
+            payout.transactions.not_exists_complex(|t, m| {
+                m.and([
+                    t.amount.lt(300),
+                    t.items.not_exists_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()])),
+                ])
+            })
+        })
+        .await?,
+        ["p-boleto", "p-ted"]
+    );
+
+    // Inside the builder's own where_complex tree.
+    assert_eq!(
+        transaction_ids_complex(&client, |t, m| {
+            m.and([
+                t.amount.lt(300),
+                m.not(t.receipt.exists_complex(|receipt, m| m.and([receipt.number.starts_with("R-")]))),
+            ])
+        })
+        .await?,
+        ["t2", "t4", "t5"]
+    );
+    assert_eq!(
+        transaction_ids_complex(&client, |t, m| {
+            m.or(
+                t.items.exists_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()])),
+                t.payout.not_exists_complex(|payout, m| {
+                    m.or(payout.method.eq(PayoutMethod::Pix), payout.method.eq(PayoutMethod::Ted))
+                }),
+            )
+        })
+        .await?,
+        ["t4", "t5"]
+    );
+
+    // Unlike the builder's where_complex, a relation tree keeps the plain
+    // where_ calls around it.
+    let transactions = find_many::<Transaction>()
+        .where_(|t| t.items.not_exists_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()])))
+        .where_(|t| t.amount.gt(60))
+        .order_by(|t| t.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&transactions, |transaction| &transaction.id), ["t1", "t2", "t3"]);
+
+    // Same rows as their quantifier counterparts.
+    assert_eq!(
+        transaction_ids(&client, |t| t.tags.exists_complex(|tag, m| m.or(tag.name.eq("vip"), tag.id.eq("promo"))))
+            .await?,
+        transaction_ids(&client, |t| t.tags.where_complex(|tag, m| m.or(tag.name.eq("vip"), tag.id.eq("promo"))))
+            .await?
+    );
+    assert_eq!(
+        transaction_ids(&client, |t| t.tags.not_exists_complex(|tag, m| m.or(tag.name.eq("vip"), tag.id.eq("promo"))))
+            .await?,
+        transaction_ids(&client, |t| t.tags.none_complex(|tag, m| m.or(tag.name.eq("vip"), tag.id.eq("promo"))))
+            .await?
+    );
+
+    Ok(())
+}
+
+async fn exists_complex_reads(client: DinocoClient) -> anyhow::Result<()> {
+    let refunded_or_damaged = |item: ItemWhere, m: WhereComplex| m.or(item.refunded.eq(true), item.note.eq("damaged"));
+    let total =
+        count::<Transaction>().where_(|t| t.items.exists_complex(refunded_or_damaged)).execute(&client).await?.total;
+    assert_eq!(total, 2);
+    let total = count::<Transaction>()
+        .where_(|t| t.items.not_exists_complex(refunded_or_damaged))
+        .execute(&client)
+        .await?
+        .total;
+    assert_eq!(total, 3);
+
+    assert!(
+        exists::<Transaction>()
+            .where_(|t| {
+                t.receipt.not_exists_complex(|receipt, m| {
+                    m.or(receipt.number.starts_with("R-"), receipt.number.starts_with("X-"))
+                })
+            })
+            .execute(&client)
+            .await?
+    );
+    assert!(
+        !exists::<Transaction>()
+            .where_(|t| t.tags.exists_complex(|tag, m| m.and([tag.name.eq("vip"), tag.name.eq("promo")])))
+            .execute(&client)
+            .await?,
+        "no single tag is both vip and promo"
+    );
+
+    let first = find_first::<Transaction>()
+        .where_(|t| t.tags.exists_complex(|tag, m| m.and([tag.name.eq("promo")])))
+        .where_(|t| t.amount.gt(200))
+        .execute(&client)
+        .await?
+        .expect("a promo transaction above 200");
+    assert_eq!(first.id, "t2");
+
+    let loaded = |payouts: &[Payout]| {
+        payouts
+            .iter()
+            .map(|payout| (payout.id.clone(), ids(&payout.transactions, |transaction| &transaction.id)))
+            .collect::<Vec<_>>()
+    };
+    let payouts = find_many::<Payout>()
+        .includes(|payout| {
+            payout
+                .transactions()
+                .where_(|t| t.items.exists_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()])))
+                .order_by(|t| t.id.asc())
+        })
+        .order_by(|payout| payout.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        loaded(&payouts),
+        [
+            ("p-boleto".to_string(), vec!["t5".to_string()]),
+            ("p-pix".to_string(), vec![]),
+            ("p-ted".to_string(), vec![])
+        ]
+    );
+
+    // `take` switches the include to its partitioned query.
+    let payouts = find_many::<Payout>()
+        .includes(|payout| {
+            payout
+                .transactions()
+                .where_(|t| t.items.not_exists_complex(|item, m| m.and([item.refunded.eq(true), item.note.null()])))
+                .order_by(|t| t.amount.desc())
+                .take(1)
+        })
+        .order_by(|payout| payout.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        loaded(&payouts),
+        [
+            ("p-boleto".to_string(), vec![]),
+            ("p-pix".to_string(), vec!["t2".to_string()]),
+            ("p-ted".to_string(), vec!["t3".to_string()])
+        ]
+    );
+
+    let transactions = find_many::<Transaction>()
+        .includes(|t| {
+            t.payout().where_(|payout| {
+                payout.bank.not_exists_complex(|bank, m| m.or(bank.name.eq("Nubank"), bank.name.eq("Itau")))
+            })
+        })
+        .order_by(|t| t.id.asc())
+        .execute(&client)
+        .await?;
+    let loaded = transactions
+        .iter()
+        .map(|transaction| (transaction.id.as_str(), transaction.payout.as_ref().map(|payout| payout.id.as_str())))
+        .collect::<Vec<_>>();
+    assert_eq!(loaded, [("t1", None), ("t2", None), ("t3", None), ("t4", None), ("t5", Some("p-boleto"))]);
+
+    let counted = count::<Payout>()
+        .where_(|payout| payout.id.eq("p-pix"))
+        .includes(|payout| {
+            payout
+                .transactions()
+                .where_(|t| t.tags.exists_complex(|tag, m| m.or(tag.name.eq("vip"), tag.name.eq("promo"))))
+        })
+        .execute(&client)
+        .await?;
+    assert_eq!(counted.transactions, Some(2));
+    let counted = count::<Payout>()
+        .where_(|payout| payout.id.eq("p-pix"))
+        .includes(|payout| {
+            payout.transactions().where_(|t| t.tags.not_exists_complex(|tag, m| m.and([tag.name.eq("vip")])))
+        })
+        .execute(&client)
+        .await?;
+    assert_eq!(counted.transactions, Some(1));
+
+    Ok(())
+}
+
+async fn exists_complex_writes(client: DinocoClient) -> anyhow::Result<()> {
+    let updated = update_many::<Transaction>()
+        .where_(|t| {
+            t.payout.exists_complex(|payout, m| m.and([payout.method.eq(PayoutMethod::Pix), payout.bank.exists()]))
+        })
+        .update(|t| t.amount.increment(1))
+        .returning::<Transaction>()
+        .execute(&client)
+        .await?;
+    let mut updated =
+        updated.iter().map(|transaction| (transaction.id.as_str(), transaction.amount)).collect::<Vec<_>>();
+    updated.sort();
+    assert_eq!(updated, [("t1", 101), ("t2", 251)]);
+
+    // t2's only item is refunded and has a note, so it is the one transaction
+    // with items and no item that is unrefunded or missing a note.
+    update::<Transaction>()
+        .where_(|t| t.items.not_exists_complex(|item, m| m.or(item.refunded.eq(false), item.note.null())))
+        .where_(|t| t.items.exists())
+        .update(|t| t.amount.set(0))
+        .execute(&client)
+        .await?;
+    assert_eq!(amount_of(&client, "t2").await?, 0);
+    assert_eq!(amount_of(&client, "t1").await?, 101);
+
+    let bumped = find_and_update::<Transaction>()
+        .where_(|t| t.receipt.exists_complex(|receipt, m| m.and([receipt.number.eq("X-003")])))
+        .update(|t| t.amount.increment(1))
+        .execute(&client)
+        .await?;
+    assert_eq!((bumped.id.as_str(), bumped.amount), ("t3", 401));
+
+    // Amounts are now t1 101, t2 0, t3 401, t4 50, t5 75: only t3 is above
+    // 200 and only t4 has no payout, so the items of every other transaction go.
+    delete_many::<Item>()
+        .where_(|item| item.transaction.not_exists_complex(|t, m| m.or(t.amount.gt(200), t.payout.not_exists())))
+        .execute(&client)
+        .await?;
+    let remaining = find_many::<Item>().order_by(|item| item.id.asc()).execute(&client).await?;
+    assert_eq!(ids(&remaining, |item| &item.id), ["i4"]);
+
+    delete::<Transaction>()
+        .where_(|t| t.items.not_exists_complex(|item, m| m.or(item.refunded.eq(true), item.refunded.eq(false))))
+        .execute(&client)
+        .await?;
+    assert_eq!(transaction_ids(&client, |t| t.id.not_null()).await?, ["t3"]);
+
+    // Writes whose filter reads the table being written.
+    update_many::<Employee>()
+        .where_(|e| {
+            e.reports.exists_complex(|report, m| m.and([report.name.starts_with("C"), report.reports.not_exists()]))
+        })
+        .update(|e| e.name.set("Lead"))
+        .execute(&client)
+        .await?;
+    assert_eq!(employee_ids(&client, |e| e.name.eq("Lead")).await?, ["bia"]);
+    delete_many::<Employee>()
+        .where_(|e| e.manager.not_exists_complex(|manager, m| m.or(manager.name.eq("Ana"), manager.name.eq("Lead"))))
+        .execute(&client)
+        .await?;
+    assert_eq!(employee_ids(&client, |e| e.id.not_null()).await?, ["bia", "caio", "duda"]);
+
+    Ok(())
+}
+
+async fn exists_complex_transactions(client: DinocoClient) -> anyhow::Result<()> {
+    let untagged = transaction(&client, |tx| async move {
+        update_many::<Transaction>()
+            .where_(|t| t.tags.exists_complex(|tag, m| m.and([tag.name.eq("vip")])))
+            .update(|t| t.amount.increment(1000))
+            .execute(tx)
+            .await?;
+
+        find_many::<Transaction>()
+            .where_(|t| t.tags.not_exists_complex(|tag, m| m.or(tag.name.eq("vip"), tag.name.eq("promo"))))
+            .order_by(|t| t.id.asc())
+            .execute(tx)
+            .await
+    })
+    .await?;
+    assert_eq!(ids(&untagged, |transaction| &transaction.id), ["t3", "t4"]);
+    assert_eq!(amount_of(&client, "t1").await?, 1100);
+    assert_eq!(amount_of(&client, "t5").await?, 1075);
+
+    Ok(())
+}
+
 fn ids<T>(rows: &[T], id: impl Fn(&T) -> &String) -> Vec<String> {
     rows.iter().map(|row| id(row).clone()).collect()
 }
@@ -628,6 +1068,14 @@ async fn employee_ids(
 ) -> anyhow::Result<Vec<String>> {
     let rows = find_many::<Employee>().where_(filter).order_by(|e| e.id.asc()).execute(client).await?;
     Ok(ids(&rows, |employee| &employee.id))
+}
+
+async fn payout_ids(
+    client: &DinocoClient,
+    filter: impl FnOnce(PayoutWhere) -> FindWhere,
+) -> anyhow::Result<Vec<String>> {
+    let rows = find_many::<Payout>().where_(filter).order_by(|payout| payout.id.asc()).execute(client).await?;
+    Ok(ids(&rows, |payout| &payout.id))
 }
 
 async fn amount_of(client: &DinocoClient, id: &str) -> anyhow::Result<i64> {
