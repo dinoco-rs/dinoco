@@ -126,6 +126,34 @@ dinoco migrate run
 
 O planner emite `CREATE INDEX`, `DROP INDEX`, ou a variante full-text específica do adapter ativo, conforme necessário. A introspecção compara nome, colunas, ordem e tipo de cada índice contra o que o schema descreve atualmente, então um índice alterado fora do Dinoco ainda é detectado como drift.
 
+## Nomes de índice longos
+
+O PostgreSQL guarda no máximo 63 bytes de um nome e corta o resto sem avisar; o MySQL recusa nomes com mais de 64 caracteres. Os nomes gerados crescem com os nomes da tabela e dos fields, então podem passar desses limites:
+
+```dinoco
+model BusinessReceivableTransaction {
+    id          Integer   @id @default(autoincrement())
+    business_id Integer
+    executed_at DateTime?
+    unlock_at   DateTime
+
+    @@indexes([business_id, executed_at, unlock_at])
+}
+```
+
+O nome completo, `idx_business_receivable_transaction_business_id_executed_at_unlock_at`, tem 71 caracteres. O Dinoco corta todo nome gerado de índice, unique, full-text e foreign key no limite do banco, do mesmo jeito que o PostgreSQL, então a migration cria o nome que o banco guarda e a introspecção o encontra de novo:
+
+| Banco      | Limite         | Nome do índice                                                      |
+| ---------- | -------------- | ------------------------------------------------------------------- |
+| PostgreSQL | 63 bytes       | `idx_business_receivable_transaction_business_id_executed_at_unl`  |
+| MySQL      | 64 caracteres  | `idx_business_receivable_transaction_business_id_executed_at_unlo` |
+| SQLite     | nenhum         | `idx_business_receivable_transaction_business_id_executed_at_unlock_at` |
+
+Quando dois nomes da mesma tabela ficam iguais depois do corte, o segundo ganha um sufixo `_2` (depois `_3`, ...) que ainda cabe no limite. Um nome passado com `map` é cortado do mesmo jeito. As tabelas pivô implícitas de many-to-many e suas colunas seguem a mesma regra.
+
+> [!NOTE]
+> Antes da v2.1.5, o PostgreSQL cortava esses nomes por conta própria enquanto o Dinoco continuava comparando com o nome completo, então todo `dinoco migrate` reportava `Missing index` e `Unexpected index` para o mesmo índice. Os nomes cortados batem com o que o PostgreSQL já guardou, então atualizar não precisa de migration.
+
 ## Regras de validação
 
 - `@index` aceita somente o argumento opcional `map: "nome"`.

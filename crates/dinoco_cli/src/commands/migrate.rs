@@ -16,8 +16,8 @@ use crate::prompt;
 use crate::schema::{Database, RuntimeConfig, read_schema_for_workspace, runtime_config};
 use crate::sql::{
     EnumValueReplacement, MigrationPlan, MigrationStep, PlanOptions, SqliteForeignKeyCheck, SqliteTableRebuild,
-    desired_database_schema, plan_database_migration, plan_database_migration_with, plan_sqlite_database_migration,
-    plan_sqlite_database_migration_with,
+    desired_database_schema, fit_schema_identifiers, plan_database_migration, plan_database_migration_with,
+    plan_sqlite_database_migration, plan_sqlite_database_migration_with,
 };
 use crate::ui::{self, Change};
 
@@ -542,10 +542,12 @@ async fn inspect_server_migration_history(
                 let snapshot_value: serde_json::Value = serde_json::from_str(snapshot)
                     .with_context(|| format!("canonical schema snapshot for migration `{latest}` is invalid"))?;
                 tracks_indexes = snapshot_tracks_indexes(&snapshot_value);
-                Some(
-                    serde_json::from_value(snapshot_value)
-                        .with_context(|| format!("canonical schema snapshot for migration `{latest}` is invalid"))?,
-                )
+                let mut expected = serde_json::from_value(snapshot_value)
+                    .with_context(|| format!("canonical schema snapshot for migration `{latest}` is invalid"))?;
+                // Snapshots recorded before 2.1.5 keep generated names longer than the
+                // database stores (PostgreSQL truncated them on creation).
+                fit_schema_identifiers(&mut expected, config.database.identifier_limit());
+                Some(expected)
             }
             None => None,
         }

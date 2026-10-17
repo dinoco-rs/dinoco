@@ -1,6 +1,11 @@
-# Dinoco v2.1.4
+# Dinoco v2.1.5
 
 This page tracks what changed release over release. Each entry links to the page that documents the feature in depth — treat this as a changelog, not the primary reference.
+
+## v2.1.5
+
+- **Long generated names match the database.** PostgreSQL keeps at most 63 bytes of an identifier and cut longer index names on its own, so a name such as `idx_business_receivable_transaction_business_id_executed_at_unlock_at` was stored as `..._unl` while Dinoco expected the full name, and every `dinoco migrate` reported `Missing index` and `Unexpected index` for it. MySQL refused those names outright. Generated index, unique, full-text and foreign key names, and the names of implicit many-to-many pivot tables and their columns, are now cut to the database's limit (63 bytes on PostgreSQL, 64 characters on MySQL) the same way PostgreSQL does, with a `_2`, `_3`, ... suffix when two names of a table would become equal. SQLite names don't change. See [Long index names](/en-us/docs/orm/guide/indexes#long-index-names).
+- Upgrading: no migration is needed. The cut names are the ones PostgreSQL already stored, and the schema snapshots recorded by earlier versions are cut the same way when they are read.
 
 ## v2.1.4
 

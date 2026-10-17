@@ -172,7 +172,7 @@ _business_to_system
 └── system_id    -> system.id
 ```
 
-`(business_id, system_id)` is its composite primary key, and both columns get their own foreign key and index through the migration planner — all of this is managed for you, but it's real SQL you could inspect directly if you needed to.
+`(business_id, system_id)` is its composite primary key, and both columns get their own foreign key and index through the migration planner — all of this is managed for you, but it's real SQL you could inspect directly if you needed to. On PostgreSQL and MySQL, a pivot table or column name longer than the database allows is cut to its limit (see [Long index names](/en-us/docs/orm/guide/indexes#long-index-names)).
 
 On the Rust side, each endpoint conceptually looks like this:
 

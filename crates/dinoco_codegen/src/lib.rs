@@ -312,7 +312,9 @@ pub fn render_dinoco_mod_with(schema: &Schema, workspace: Option<&str>, transfor
          /// instead, so code under test never reaches the real database.\n",
     );
     out.push_str("pub async fn connect() -> ::dinoco::anyhow::Result<::dinoco::DinocoClient> {\n");
-    out.push_str("    if cfg!(test) {\n        return connect_test().await;\n    }\n\n    connect_database().await\n}\n\n");
+    out.push_str(
+        "    if cfg!(test) {\n        return connect_test().await;\n    }\n\n    connect_database().await\n}\n\n",
+    );
     let workspace_call = workspace
         .map(|workspace| format!("\n        .workspace(\"{}\")", escape_rust_string(workspace)))
         .unwrap_or_default();
@@ -953,9 +955,9 @@ fn implicit_many_to_many_field(model: &Model, field: &ModelField, schema: &Schem
 
     let mut names = [model.name.as_str(), target.name.as_str()];
     names.sort();
-    let join_table = many_to_many_table_name(names[0], names[1], relation_label.as_deref());
+    let join_table = many_to_many_table_name(schema, names[0], names[1], relation_label.as_deref());
     let (join_parent_field, join_child_field) = if model.name != target.name {
-        (format!("{}_id", to_snake_case(&model.name)), format!("{}_id", to_snake_case(&target.name)))
+        (many_to_many_column_name(schema, &model.name), many_to_many_column_name(schema, &target.name))
     } else if field.name.as_str() <= opposite.name.as_str() {
         ("a_id".to_string(), "b_id".to_string())
     } else {
@@ -1016,7 +1018,7 @@ fn implicit_many_to_many_joins(schema: &Schema) -> Vec<ManyToManyJoin> {
                 continue;
             }
 
-            let table_name = many_to_many_table_name(names[0], names[1], relation_label.as_deref());
+            let table_name = many_to_many_table_name(schema, names[0], names[1], relation_label.as_deref());
             let mut rust_name = format!("{}{}", names[0], names[1]);
             if let Some(label) = relation_label.as_deref() {
                 rust_name.push_str(&to_pascal_case(label));
@@ -1033,12 +1035,12 @@ fn implicit_many_to_many_joins(schema: &Schema) -> Vec<ManyToManyJoin> {
                 left_column: if names[0] == names[1] {
                     "a_id".to_string()
                 } else {
-                    format!("{}_id", to_snake_case(names[0]))
+                    many_to_many_column_name(schema, names[0])
                 },
                 right_column: if names[0] == names[1] {
                     "b_id".to_string()
                 } else {
-                    format!("{}_id", to_snake_case(names[1]))
+                    many_to_many_column_name(schema, names[1])
                 },
             });
         }
@@ -1047,9 +1049,23 @@ fn implicit_many_to_many_joins(schema: &Schema) -> Vec<ManyToManyJoin> {
     joins
 }
 
-fn many_to_many_table_name(left: &str, right: &str, relation_name: Option<&str>) -> String {
+/// Names are cut to the database's identifier limit, matching the join
+/// tables `dinoco migrate` creates.
+fn many_to_many_table_name(schema: &Schema, left: &str, right: &str, relation_name: Option<&str>) -> String {
     let base = format!("_{}_to_{}", to_snake_case(left), to_snake_case(right));
-    relation_name.map(|name| format!("{base}_{}", to_snake_case(name))).unwrap_or(base)
+    let name = relation_name.map(|name| format!("{base}_{}", to_snake_case(name))).unwrap_or(base);
+    fit_identifier(schema, name)
+}
+
+fn many_to_many_column_name(schema: &Schema, model: &str) -> String {
+    fit_identifier(schema, format!("{}_id", to_snake_case(model)))
+}
+
+fn fit_identifier(schema: &Schema, name: String) -> String {
+    match schema.identifier_limit() {
+        Some(limit) => limit.fit(name),
+        None => name,
+    }
 }
 
 #[allow(dead_code)]

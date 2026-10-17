@@ -126,6 +126,34 @@ dinoco migrate run
 
 The planner emits `CREATE INDEX`, `DROP INDEX`, or the active adapter's full-text-specific variant as needed. Introspection compares each index's name, columns, order, and kind against what the schema currently describes, so an index changed outside Dinoco is still detected as drift.
 
+## Long index names
+
+PostgreSQL keeps at most 63 bytes of a name and silently cuts the rest; MySQL refuses names over 64 characters. Generated names grow with the table and field names, so they can pass those limits:
+
+```dinoco
+model BusinessReceivableTransaction {
+    id          Integer   @id @default(autoincrement())
+    business_id Integer
+    executed_at DateTime?
+    unlock_at   DateTime
+
+    @@indexes([business_id, executed_at, unlock_at])
+}
+```
+
+The full name, `idx_business_receivable_transaction_business_id_executed_at_unlock_at`, has 71 characters. Dinoco cuts every generated index, unique, full-text and foreign key name to the database's limit, the same way PostgreSQL does, so the migration creates the name the database stores and introspection finds it again:
+
+| Database   | Limit          | Index name                                                          |
+| ---------- | -------------- | ------------------------------------------------------------------- |
+| PostgreSQL | 63 bytes       | `idx_business_receivable_transaction_business_id_executed_at_unl`  |
+| MySQL      | 64 characters  | `idx_business_receivable_transaction_business_id_executed_at_unlo` |
+| SQLite     | none           | `idx_business_receivable_transaction_business_id_executed_at_unlock_at` |
+
+When two names of the same table become equal once cut, the second one gets a `_2` suffix (then `_3`, ...) that still fits the limit. A name passed with `map` is cut the same way. Implicit many-to-many pivot tables and their columns follow the same rule.
+
+> [!NOTE]
+> Before v2.1.5, PostgreSQL cut these names on its own while Dinoco kept comparing against the full name, so every `dinoco migrate` reported `Missing index` and `Unexpected index` for the same index. The cut names match what PostgreSQL already stored, so upgrading needs no migration.
+
 ## Validation rules
 
 - `@index` accepts only the optional `map: "name"` argument.

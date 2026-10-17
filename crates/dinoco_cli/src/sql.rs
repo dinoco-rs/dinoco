@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use dinoco_compiler::{AttributeArgument, AttributeValue, ConfigValue, Model, ModelField, Schema};
+use dinoco_compiler::{AttributeArgument, AttributeValue, ConfigValue, IdentifierLimit, Model, ModelField, Schema};
 use dinoco_engine::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CreateEnumMigration,
     CreateIndexMigration, CreateTableMigration, DropColumnMigration, DropEnumMigration, DropForeignKeyMigration,
@@ -120,6 +120,7 @@ pub struct MigrationWarning {
 }
 
 pub fn generate_create_table_migrations(schema: &Schema) -> Vec<CreateTableMigration> {
+    let limit = schema.identifier_limit();
     let mut migrations = schema
         .models()
         .map(|model| {
@@ -145,6 +146,16 @@ pub fn generate_create_table_migrations(schema: &Schema) -> Vec<CreateTableMigra
         .collect::<Vec<_>>();
 
     migrations.extend(generate_many_to_many_join_migrations(schema));
+    if limit.is_some() {
+        for migration in &mut migrations {
+            let mut seen_names = BTreeSet::new();
+            for foreign_key in &mut migration.foreign_keys {
+                let name = fit_identifier(std::mem::take(&mut foreign_key.name), limit);
+                foreign_key.name = unique_identifier(name, &seen_names, limit);
+                seen_names.insert(foreign_key.name.clone());
+            }
+        }
+    }
     migrations
 }
 
@@ -1045,6 +1056,7 @@ fn relation_foreign_keys(model_name: &str, schema: &Schema) -> Vec<MigrationFore
 fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<MigrationIndex> {
     let mut indexes = Vec::new();
     let mut seen_names = BTreeSet::new();
+    let limit = schema.identifier_limit();
 
     if let Some(model) = schema.models().find(|model| model_table_name(model) == migration.table) {
         for field in &model.fields {
@@ -1054,7 +1066,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                     .argument("map")
                     .and_then(string_or_ident)
                     .unwrap_or_else(|| index_name(&migration.table, &[field.name.as_str()]));
-                push_index(&mut indexes, &mut seen_names, name, columns, false, MigrationIndexKind::Standard);
+                push_index(&mut indexes, &mut seen_names, name, columns, false, MigrationIndexKind::Standard, limit);
             }
 
             if fulltext_indexes_supported(schema)
@@ -1067,6 +1079,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                     vec![field.name.clone()],
                     false,
                     MigrationIndexKind::FullText,
+                    limit,
                 );
             }
         }
@@ -1082,6 +1095,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                 columns,
                 false,
                 MigrationIndexKind::Standard,
+                limit,
             );
         }
 
@@ -1099,6 +1113,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                 columns,
                 false,
                 MigrationIndexKind::Unique,
+                limit,
             );
         }
 
@@ -1114,6 +1129,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                     columns,
                     false,
                     MigrationIndexKind::FullText,
+                    limit,
                 );
             }
         }
@@ -1128,14 +1144,14 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
     if !primary_key_columns.is_empty() {
         let column_refs = primary_key_columns.iter().map(String::as_str).collect::<Vec<_>>();
         let name = index_name(&migration.table, &column_refs);
-        push_index(&mut indexes, &mut seen_names, name, primary_key_columns, true, MigrationIndexKind::Standard);
+        push_index(&mut indexes, &mut seen_names, name, primary_key_columns, true, MigrationIndexKind::Standard, limit);
     }
 
     for foreign_key in &migration.foreign_keys {
         let columns = foreign_key.columns.clone();
         let column_refs = columns.iter().map(String::as_str).collect::<Vec<_>>();
         let name = index_name(&migration.table, &column_refs);
-        push_index(&mut indexes, &mut seen_names, name, columns, true, MigrationIndexKind::Standard);
+        push_index(&mut indexes, &mut seen_names, name, columns, true, MigrationIndexKind::Standard, limit);
     }
 
     indexes
@@ -1144,38 +1160,86 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
 fn push_index(
     indexes: &mut Vec<MigrationIndex>,
     seen_names: &mut BTreeSet<String>,
-    mut name: String,
+    name: String,
     columns: Vec<String>,
     automatic: bool,
     kind: MigrationIndexKind,
+    limit: Option<IdentifierLimit>,
 ) {
+    let name = fit_identifier(name, limit);
     if let Some(existing) =
         indexes.iter_mut().find(|index| index.name == name && index.columns == columns && index.kind == kind)
     {
         existing.automatic |= automatic;
         return;
     }
-    if seen_names.contains(&name) {
-        let base = name.clone();
-        let mut suffix = 2;
-        while seen_names.contains(&name) {
-            name = format!("{base}_{suffix}");
-            suffix += 1;
-        }
-    }
+    let name = unique_identifier(name, seen_names, limit);
     seen_names.insert(name.clone());
     indexes.push(MigrationIndex { name, columns, automatic, kind });
 }
 
+/// Returns `name`, or the first `<name>_<n>` (n >= 2) not in `taken`, cutting
+/// `name` so the suffix still fits within `limit`.
+fn unique_identifier(name: String, taken: &BTreeSet<String>, limit: Option<IdentifierLimit>) -> String {
+    if !taken.contains(&name) {
+        return name;
+    }
+    let mut suffix = 2;
+    loop {
+        let suffix_text = format!("_{suffix}");
+        let base_limit = limit.map(|limit| limit.reserve(suffix_text.len()));
+        let candidate = fit_identifier(name.clone(), base_limit) + &suffix_text;
+        if !taken.contains(&candidate) {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+/// Cuts `name` to `limit`, when there is one. See [`IdentifierLimit::fit`].
+pub fn fit_identifier(name: String, limit: Option<IdentifierLimit>) -> String {
+    match limit {
+        Some(limit) => limit.fit(name),
+        None => name,
+    }
+}
+
+/// Truncates the names in a schema snapshot recorded before generated names
+/// were fitted to the database's identifier limit, matching what PostgreSQL
+/// stored when it ran the migration.
+pub fn fit_schema_identifiers(schema: &mut DatabaseSchema, limit: Option<IdentifierLimit>) {
+    let Some(limit) = limit else {
+        return;
+    };
+    let fit = |name: &mut String| *name = limit.fit(std::mem::take(name));
+    for table in &mut schema.tables {
+        fit(&mut table.name);
+        for column in &mut table.columns {
+            fit(&mut column.name);
+        }
+        for foreign_key in &mut table.foreign_keys {
+            fit(&mut foreign_key.name);
+            fit(&mut foreign_key.references_table);
+            foreign_key.columns.iter_mut().chain(&mut foreign_key.references_columns).for_each(fit);
+        }
+        for index in &mut table.indexes {
+            fit(&mut index.name);
+            index.columns.iter_mut().for_each(fit);
+        }
+    }
+}
+
 fn fulltext_indexes_supported(schema: &Schema) -> bool {
-    schema
-        .config()
-        .and_then(|config| config.entries.iter().find(|entry| entry.key == "database"))
-        .and_then(|entry| match &entry.value {
+    configured_database(schema).is_none_or(|database| database != "sqlite")
+}
+
+fn configured_database(schema: &Schema) -> Option<&str> {
+    schema.config().and_then(|config| config.entries.iter().find(|entry| entry.key == "database")).and_then(|entry| {
+        match &entry.value {
             ConfigValue::String(value) | ConfigValue::Ident(value) => Some(value.as_str()),
             _ => None,
-        })
-        .is_none_or(|database| database != "sqlite")
+        }
+    })
 }
 
 fn is_primary_key_field(model: &Model, field: &ModelField) -> bool {
@@ -1238,9 +1302,12 @@ fn generate_many_to_many_join_migrations(schema: &Schema) -> Vec<CreateTableMigr
                 continue;
             }
 
+            let limit = schema.identifier_limit();
             let left_column = if left == right { "a_id".to_string() } else { format!("{}_id", table_name(left)) };
             let right_column = if left == right { "b_id".to_string() } else { format!("{}_id", table_name(right)) };
-            let join_table = many_to_many_table_name(left, right, relation_label.as_deref());
+            let left_column = fit_identifier(left_column, limit);
+            let right_column = fit_identifier(right_column, limit);
+            let join_table = fit_identifier(many_to_many_table_name(left, right, relation_label.as_deref()), limit);
 
             migrations.push(CreateTableMigration {
                 table: join_table.clone(),

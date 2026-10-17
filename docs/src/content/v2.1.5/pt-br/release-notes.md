@@ -1,6 +1,11 @@
-# Dinoco v2.1.4
+# Dinoco v2.1.5
 
 Esta página acompanha o que mudou release a release. Cada item linka para a página que documenta a funcionalidade em profundidade — trate isto como um changelog, não como a referência principal.
+
+## v2.1.5
+
+- **Nomes gerados longos batem com o banco.** O PostgreSQL guarda no máximo 63 bytes de um identificador e cortava por conta própria os nomes de índice maiores, então um nome como `idx_business_receivable_transaction_business_id_executed_at_unlock_at` era gravado como `..._unl` enquanto o Dinoco esperava o nome completo, e todo `dinoco migrate` reportava `Missing index` e `Unexpected index` para ele. O MySQL recusava esses nomes de vez. Os nomes gerados de índice, unique, full-text e foreign key, e os nomes das tabelas pivô implícitas de many-to-many e de suas colunas, agora são cortados no limite do banco (63 bytes no PostgreSQL, 64 caracteres no MySQL) do mesmo jeito que o PostgreSQL faz, com um sufixo `_2`, `_3`, ... quando dois nomes de uma tabela ficariam iguais. Os nomes no SQLite não mudam. Veja [Nomes de índice longos](/pt-br/docs/orm/guide/indexes#nomes-de-indice-longos).
+- Ao atualizar: nenhuma migration é necessária. Os nomes cortados são os que o PostgreSQL já tinha gravado, e os snapshots de schema gravados por versões anteriores são cortados do mesmo jeito quando são lidos.
 
 ## v2.1.4
 

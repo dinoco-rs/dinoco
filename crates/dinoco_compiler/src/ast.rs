@@ -17,6 +17,48 @@ impl Default for SourceOrigin {
     }
 }
 
+/// Longest identifier a database keeps. PostgreSQL silently truncates longer
+/// names to 63 bytes (NAMEDATALEN - 1); MySQL rejects names over 64 characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentifierLimit {
+    Bytes(usize),
+    Chars(usize),
+}
+
+impl IdentifierLimit {
+    pub const POSTGRES: Self = Self::Bytes(63);
+    pub const MYSQL: Self = Self::Chars(64);
+
+    /// Cuts `name` to the limit on a character boundary, the way PostgreSQL
+    /// truncates identifiers, so a generated name matches the stored one.
+    pub fn fit(self, mut name: String) -> String {
+        let end = match self {
+            Self::Bytes(max) if name.len() > max => {
+                let mut end = max;
+                while !name.is_char_boundary(end) {
+                    end -= 1;
+                }
+                end
+            }
+            Self::Chars(max) => match name.char_indices().nth(max) {
+                Some((end, _)) => end,
+                None => return name,
+            },
+            Self::Bytes(_) => return name,
+        };
+        name.truncate(end);
+        name
+    }
+
+    /// The limit left after reserving `len` ASCII bytes for a suffix.
+    pub fn reserve(self, len: usize) -> Self {
+        match self {
+            Self::Bytes(max) => Self::Bytes(max.saturating_sub(len)),
+            Self::Chars(max) => Self::Chars(max.saturating_sub(len)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schema {
     pub items: Vec<SchemaItem>,
@@ -49,6 +91,20 @@ impl Schema {
             SchemaItem::Import(import) => Some(import),
             _ => None,
         })
+    }
+
+    /// Longest identifier the configured database keeps, or `None` when it
+    /// has no limit (SQLite) or no database is configured.
+    pub fn identifier_limit(&self) -> Option<IdentifierLimit> {
+        let database = self.config()?.entries.iter().find(|entry| entry.key == "database")?;
+        match &database.value {
+            ConfigValue::String(value) | ConfigValue::Ident(value) => match value.as_str() {
+                "postgresql" | "postgres" => Some(IdentifierLimit::POSTGRES),
+                "mysql" => Some(IdentifierLimit::MYSQL),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     pub fn config_imports(&self) -> impl Iterator<Item = &ConfigImport> {

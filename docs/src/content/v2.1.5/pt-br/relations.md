@@ -172,7 +172,7 @@ _business_to_system
 └── system_id    -> system.id
 ```
 
-`(business_id, system_id)` é sua primary key composta, e as duas colunas ganham sua própria foreign key e índice através do planner de migrations — tudo isso é gerenciado para você, mas é SQL de verdade que você poderia inspecionar diretamente se precisasse.
+`(business_id, system_id)` é sua primary key composta, e as duas colunas ganham sua própria foreign key e índice através do planner de migrations — tudo isso é gerenciado para você, mas é SQL de verdade que você poderia inspecionar diretamente se precisasse. No PostgreSQL e no MySQL, um nome de tabela pivô ou de coluna maior do que o banco permite é cortado no limite dele (veja [Nomes de índice longos](/pt-br/docs/orm/guide/indexes#nomes-de-indice-longos)).
 
 Do lado Rust, cada endpoint fica conceitualmente assim:
 

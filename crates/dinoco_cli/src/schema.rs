@@ -24,6 +24,15 @@ impl Database {
             Database::Sqlite => "SQLite",
         }
     }
+
+    /// Longest index or constraint name the database keeps.
+    pub fn identifier_limit(self) -> Option<dinoco_compiler::IdentifierLimit> {
+        match self {
+            Database::Postgresql => Some(dinoco_compiler::IdentifierLimit::POSTGRES),
+            Database::Mysql => Some(dinoco_compiler::IdentifierLimit::MYSQL),
+            Database::Sqlite => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
