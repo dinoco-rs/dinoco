@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_engine"
-version = "2.1.3"
+version = "2.1.4"
 edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
@@ -13,7 +13,14 @@ keywords = ["orm", "database", "sql", "adapters", "migrations"]
 [features]
 default = ["sqlite", "postgres", "mysql"]
 sqlite = ["dep:rusqlite", "dep:deadpool-sqlite"]
-postgres = ["dep:tokio-postgres", "dep:deadpool-postgres", "dep:futures-util"]
+postgres = [
+	"dep:tokio-postgres",
+	"dep:deadpool-postgres",
+	"dep:futures-util",
+	"dep:tokio-postgres-rustls",
+	"dep:rustls",
+	"dep:webpki-roots",
+]
 mysql = ["dep:mysql_async", "dep:mysql_common"]
 
 [dependencies]
@@ -34,6 +41,9 @@ tokio-postgres = { version = "0.7", optional = true, features = [
 	"with-chrono-0_4",
 	"with-serde_json-1",
 ] }
+tokio-postgres-rustls = { version = "0.14", optional = true }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = { version = "1.0", optional = true }
 mysql_async = { version = "0.37.1", optional = true, features = ["chrono"] }
 mysql_common = { version = "0.37", optional = true, features = ["chrono"] }
 anyhow = "1.0.103"

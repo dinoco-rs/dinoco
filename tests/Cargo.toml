@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_tests"
-version = "2.1.3"
+version = "2.1.4"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
@@ -8,13 +8,13 @@ description = "Integration and compile-time test suite covering Dinoco crates an
 anyhow = "1.0"
 tokio = { version = "1.50", features = ["full"] }
 tempfile = "3"
-dinoco = { path = "../crates/dinoco", version = "2.1.3" }
-dinoco_cli = { path = "../crates/dinoco_cli", version = "2.1.3" }
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.1.3" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.1.3" }
-dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.1.3" }
-dinoco_engine = { path = "../crates/dinoco_engine", version = "2.1.3" }
-dinoco_vscode = { path = "../vscode", version = "2.1.3" }
+dinoco = { path = "../crates/dinoco", version = "2.1.4" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "2.1.4" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.1.4" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.1.4" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.1.4" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "2.1.4" }
+dinoco_vscode = { path = "../vscode", version = "2.1.4" }
 
 [[bin]]
 name = "dinoco_cli"
@@ -127,6 +127,10 @@ path = "tests/dinoco_engine/constraint_details.rs"
 [[test]]
 name = "dinoco_engine_migrations"
 path = "tests/dinoco_engine/migrations.rs"
+
+[[test]]
+name = "dinoco_engine_postgres_tls"
+path = "tests/dinoco_engine/postgres_tls.rs"
 
 [[test]]
 name = "dinoco_engine_query_builder"

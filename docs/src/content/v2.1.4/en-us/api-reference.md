@@ -144,6 +144,8 @@ SqliteAdapter::new(path).await.map_err(anyhow::Error::msg)?
 
 Wrap one in `Backend::{Postgres, PgBouncer, Mysql, Sqlite}` and pass it to `DinocoClient::new`. Attach replicas with `.with_read_replicas(vec![...])`, and opt into SQL query logging with `.with_logger(true)`. See [Clients and adapters](/en-us/docs/orm/orm/clients-adapters).
 
+PostgreSQL URLs take `sslmode=disable|prefer|require|verify-ca|verify-full`, with libpq's meaning and `prefer` as the default. See [PostgreSQL TLS](/en-us/docs/orm/orm/clients-adapters#postgresql-tls).
+
 ## Value types
 
 The runtime's parameter layer, `DinocoValue`, supports null, integer, float, string, enum, boolean, bytes, JSON, UTC date-time, and naive-date values.

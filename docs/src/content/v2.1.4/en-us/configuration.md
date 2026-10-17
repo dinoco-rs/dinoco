@@ -146,6 +146,8 @@ config {
 
 Both modes share the same SQL compiler and the same generated query API — the difference is entirely in connection and statement handling, never in schema syntax or the shape of generated code.
 
+Encryption follows the URL's `sslmode` (`disable`, `prefer` by default, `require`, `verify-ca`, or `verify-full`), in the CLI and in the generated `connect()` alike. See [PostgreSQL TLS](/en-us/docs/orm/orm/clients-adapters#postgresql-tls).
+
 ## Query logging and Direct pool
 
 `with_logger` makes the generated client print the SQL and bound parameters for every query it runs. It defaults to `false`, and can be set either at the top level or inside an individual workspace:

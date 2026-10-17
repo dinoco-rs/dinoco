@@ -1,13 +1,13 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
 use deadpool_postgres::{ManagerConfig, Pool, RecyclingMethod, Runtime};
 use futures_util::TryStreamExt;
 use tokio_postgres::types::{IsNull, Json, Kind, ToSql, Type, WrongType};
-use tokio_postgres::{Config, NoTls, RowStream};
+use tokio_postgres::{NoTls, RowStream};
 
 mod compiler;
+mod tls;
 
 use super::Decode;
 use super::sql::Dialect;
@@ -93,10 +93,13 @@ impl PostgresAdapter {
     }
 
     async fn from_url(url: String, mode: PostgresMode, pool_limits: Option<(usize, usize)>) -> anyhow::Result<Self> {
-        let pg_config = Config::from_str(&url).context("Invalid postgres url")?;
+        let (pg_config, tls_mode) = tls::parse_url(&url)?;
         // `Fast` recycling keeps each connection's prepared statements.
         let manager_config = ManagerConfig { recycling_method: RecyclingMethod::Fast };
-        let manager = deadpool_postgres::Manager::from_config(pg_config, NoTls, manager_config);
+        let manager = match tls::connector(tls_mode)? {
+            Some(tls) => deadpool_postgres::Manager::from_config(pg_config, tls, manager_config),
+            None => deadpool_postgres::Manager::from_config(pg_config, NoTls, manager_config),
+        };
         let mut builder = Pool::builder(manager).runtime(Runtime::Tokio1);
         if let Some((_, max_connections)) = pool_limits {
             builder = builder.max_size(max_connections);

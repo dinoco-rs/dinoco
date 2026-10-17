@@ -51,6 +51,33 @@ let client = DinocoClient::new(Backend::PgBouncer(adapter));
 
 Direct e PgBouncer compartilham exatamente o mesmo `SqlCompiler` PostgreSQL, então a semântica de queries e os tipos de migration gerados são idênticos entre os dois — só o tratamento de conexão muda.
 
+## TLS no PostgreSQL
+
+Os dois adapters PostgreSQL criptografam a conexão de acordo com o `sslmode` da URL, com o significado que o libpq e o `psql` dão a ele:
+
+| `sslmode` | Criptografada | Certificado do servidor |
+| --- | --- | --- |
+| `disable` | Nunca. | Não é verificado. |
+| `prefer` (padrão) | Quando o servidor suporta TLS; sem TLS caso contrário. | Não é verificado. |
+| `require` | Sempre. Falha quando o servidor não tem TLS. | Não é verificado. |
+| `verify-ca` | Sempre. | Precisa ser assinado por uma raiz confiável. |
+| `verify-full` | Sempre. | Precisa ser assinado por uma raiz confiável e emitido para o host. |
+
+```rust
+use dinoco_engine::PostgresAdapter;
+
+let adapter = PostgresAdapter::direct(
+    "postgres://app:secret@ep-example.us-east-2.aws.neon.tech/app?sslmode=verify-full&channel_binding=require"
+).await?;
+```
+
+Bancos hospedados que só aceitam TLS, como o Neon, conectam com qualquer modo exceto `disable`. As raízes confiáveis são as da Mozilla, compiladas no binário via `webpki-roots`, então o mesmo build conecta no macOS, no Linux e em containers mínimos sem um repositório de certificados do sistema. Um servidor cujo certificado vem de uma CA privada, como Amazon RDS, Supabase ou um servidor local autoassinado, falha em `verify-ca` e `verify-full`: conecte nele com `require`. `sslrootcert` e certificados de cliente não são suportados.
+
+A CLI conecta pelo mesmo adapter, então o `dinoco migrate` também segue o `sslmode` do `database_url`. O TLS roda sobre o `rustls`, com o provider de criptografia que a aplicação instalou como padrão do processo, ou o `ring` quando não há nenhum. `sslnegotiation=direct` (PostgreSQL 17+) também funciona.
+
+> [!WARNING]
+> `prefer` e `require` impedem que alguém leia o tráfego, mas não que um servidor se passe pelo seu. Use `verify-full` quando o certificado do servidor vem de uma CA pública. Caso contrário, adicione `channel_binding=require` com autenticação por senha (SCRAM): ele amarra o login à sessão TLS, então um servidor impostor não consegue completá-lo.
+
 ## MySQL
 
 ```rust
@@ -103,7 +130,7 @@ Cada adapter fica atrás de uma feature do Cargo do `dinoco`, e todas vêm habil
 
 ```toml
 [dependencies]
-dinoco = { version = "2.1.3", default-features = false, features = ["postgres"] }
+dinoco = { version = "2.1.4", default-features = false, features = ["postgres"] }
 ```
 
 | Feature | Habilita |

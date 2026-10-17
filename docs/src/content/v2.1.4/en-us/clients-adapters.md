@@ -51,6 +51,33 @@ let client = DinocoClient::new(Backend::PgBouncer(adapter));
 
 Direct and PgBouncer share the exact same PostgreSQL `SqlCompiler`, so query semantics and generated migration types are identical between them — only connection handling differs.
 
+## PostgreSQL TLS
+
+Both PostgreSQL adapters encrypt the connection according to the URL's `sslmode`, with the meaning libpq and `psql` give it:
+
+| `sslmode` | Encrypted | Server certificate |
+| --- | --- | --- |
+| `disable` | Never. | Not checked. |
+| `prefer` (default) | When the server supports TLS, plaintext otherwise. | Not checked. |
+| `require` | Always. Fails when the server has no TLS. | Not checked. |
+| `verify-ca` | Always. | Must chain to a trusted root. |
+| `verify-full` | Always. | Must chain to a trusted root and be issued for the host. |
+
+```rust
+use dinoco_engine::PostgresAdapter;
+
+let adapter = PostgresAdapter::direct(
+    "postgres://app:secret@ep-example.us-east-2.aws.neon.tech/app?sslmode=verify-full&channel_binding=require"
+).await?;
+```
+
+Hosted databases that only accept TLS, such as Neon, connect with any mode but `disable`. The trusted roots are Mozilla's, compiled into the binary through `webpki-roots`, so the same build connects from macOS, Linux, and minimal containers without a system certificate store. A server whose certificate comes from a private CA, such as Amazon RDS, Supabase, or a self-signed local server, fails `verify-ca` and `verify-full`: connect to it with `require`. `sslrootcert` and client certificates aren't supported.
+
+The CLI connects through the same adapter, so `dinoco migrate` follows the `sslmode` in `database_url` too. TLS runs on `rustls`, with the crypto provider the application installed as the process default, or `ring` when there is none. `sslnegotiation=direct` (PostgreSQL 17+) also works.
+
+> [!WARNING]
+> `prefer` and `require` stop eavesdropping, but not a server impersonating yours. Use `verify-full` when the server's certificate comes from a public CA. Otherwise, add `channel_binding=require` with password (SCRAM) authentication: it ties the login to the TLS session, so an impersonating server can't complete it.
+
 ## MySQL
 
 ```rust
@@ -103,7 +130,7 @@ Every adapter is behind a Cargo feature of `dinoco`, and all of them are enabled
 
 ```toml
 [dependencies]
-dinoco = { version = "2.1.3", default-features = false, features = ["postgres"] }
+dinoco = { version = "2.1.4", default-features = false, features = ["postgres"] }
 ```
 
 | Feature | Enables |

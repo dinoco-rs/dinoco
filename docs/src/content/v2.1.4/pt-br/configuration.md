@@ -146,6 +146,8 @@ config {
 
 Os dois modos compartilham o mesmo compiler SQL e a mesma API de queries gerada — a diferença está inteiramente na conexão e no tratamento de statements, nunca na sintaxe do schema ou no formato do código gerado.
 
+A criptografia segue o `sslmode` da URL (`disable`, `prefer` por padrão, `require`, `verify-ca` ou `verify-full`), tanto na CLI quanto no `connect()` gerado. Veja [TLS no PostgreSQL](/pt-br/docs/orm/orm/clients-adapters#tls-no-postgresql).
+
 ## Logger de queries e pool Direct
 
 `with_logger` faz o client gerado imprimir o SQL e os parâmetros de cada query que executa. O default é `false`, e pode ser definido tanto no nível principal quanto dentro de um workspace individual:

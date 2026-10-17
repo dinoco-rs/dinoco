@@ -1,6 +1,11 @@
-# Dinoco v2.1.3
+# Dinoco v2.1.4
 
 Esta página acompanha o que mudou release a release. Cada item linka para a página que documenta a funcionalidade em profundidade — trate isto como um changelog, não como a referência principal.
+
+## v2.1.4
+
+- **O PostgreSQL conecta via TLS.** Os adapters PostgreSQL sempre conectavam sem criptografia, independentemente do que a URL dizia, então servidores que só aceitam TLS, como o Neon, recusavam a conexão com `no TLS implementation configured`. Agora eles seguem o `sslmode` da URL com o significado do libpq: `disable` continua sem TLS, o padrão `prefer` usa TLS quando o servidor suporta, `require` exige TLS, e `verify-ca` e `verify-full` também verificam o certificado do servidor contra as raízes da Mozilla, compiladas no binário. A CLI segue a mesma configuração. Veja [TLS no PostgreSQL](/pt-br/docs/orm/orm/clients-adapters#tls-no-postgresql).
+- Ao atualizar: um servidor com TLS habilitado passa a receber uma conexão criptografada sem nenhuma mudança na URL. Adicione `sslmode=disable` para manter o comportamento anterior, sem TLS. `sslmode=verify-ca` e `sslmode=verify-full`, que antes eram rejeitados como URL inválida, agora são aceitos.
 
 ## v2.1.3
 
