@@ -130,7 +130,7 @@ Cada adapter fica atrás de uma feature do Cargo do `dinoco`, e todas vêm habil
 
 ```toml
 [dependencies]
-dinoco = { version = "2.1.6", default-features = false, features = ["postgres"] }
+dinoco = { version = "2.1.7", default-features = false, features = ["postgres"] }
 ```
 
 | Feature | Habilita |

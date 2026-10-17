@@ -135,6 +135,14 @@ fn bench_compile(c: &mut Criterion, rt: &Runtime) {
                 BatchSize::SmallInput,
             )
         });
+        // As includes run it: 100 integer parent keys bound in front.
+        group.bench_function(BenchmarkId::new("relation_occurrence_100_int_keys", name), |b| {
+            b.iter_batched(
+                || (occurrence_query(100), (1..=100).map(DinocoValue::Integer).collect::<Vec<_>>()),
+                |(query, keys)| compiler.compile_relation_occurrence_query_with_keys(query, keys),
+                BatchSize::SmallInput,
+            )
+        });
         group.bench_function(BenchmarkId::new("update_returning_complex", name), |b| {
             b.iter_batched(update_query, |query| compiler.compile_update_query(query), BatchSize::SmallInput)
         });

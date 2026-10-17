@@ -261,6 +261,23 @@ fn foreign_key() -> MigrationForeignKey {
     }
 }
 
+/// Integer and text parent keys, the types a relation key usually has.
+fn parent_keys(key_count: usize) -> [(&'static str, Vec<DinocoValue>); 2] {
+    [
+        ("integer", (1..=key_count as i64).map(DinocoValue::Integer).collect()),
+        ("text", (0..key_count).map(|key| DinocoValue::String(format!("key-{key}"))).collect()),
+    ]
+}
+
+/// A relation occurrence query as it runs: the parent keys bound in front.
+fn occurrence_with_keys<C: DinocoSqlCompiler>(
+    compiler: &C,
+    query: RelationOccurrenceQuery,
+    keys: Vec<DinocoValue>,
+) -> (String, Vec<DinocoValue>) {
+    compiler.compile_relation_occurrence_query_with_keys(query, keys)
+}
+
 fn corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
     for (case, conditions) in conditions() {
         for (index, page) in pages().into_iter().enumerate() {
@@ -306,6 +323,21 @@ fn corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
                         key_count,
                     }),
                 );
+                for (kind, keys) in parent_keys(key_count) {
+                    print(
+                        dialect,
+                        &format!("relation_occurrence {case} page{index} keys{key_count} bound {kind}"),
+                        occurrence_with_keys(
+                            compiler,
+                            RelationOccurrenceQuery {
+                                query: find(&["id", "title"], "post", conditions.clone(), page.clone()),
+                                child_field: "account_id",
+                                key_count,
+                            },
+                            keys,
+                        ),
+                    );
+                }
                 print(
                     dialect,
                     &format!("many_to_many {case} page{index} keys{key_count}"),

@@ -302,6 +302,12 @@ async fn print_compile() {
             || occurrence_query(100),
             |query| compiler.compile_relation_occurrence_query(query),
         );
+        // As includes run it, with the parent keys bound.
+        compile_row(
+            &format!("{name} relation occurrence 100 integer keys bound"),
+            || (occurrence_query(100), (1..=100).map(DinocoValue::Integer).collect::<Vec<_>>()),
+            |(query, keys)| compiler.compile_relation_occurrence_query_with_keys(query, keys),
+        );
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "dinoco_tests"
-version = "2.1.6"
+version = "2.1.7"
 edition = "2024"
 description = "Integration and compile-time test suite covering Dinoco crates and workflows."
 
@@ -9,13 +9,13 @@ anyhow = "1.0"
 tokio = { version = "1.50", features = ["full"] }
 tempfile = "3"
 serde_json = "1.0"
-dinoco = { path = "../crates/dinoco", version = "2.1.6" }
-dinoco_cli = { path = "../crates/dinoco_cli", version = "2.1.6" }
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.1.6" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.1.6" }
-dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.1.6" }
-dinoco_engine = { path = "../crates/dinoco_engine", version = "2.1.6" }
-dinoco_vscode = { path = "../vscode", version = "2.1.6" }
+dinoco = { path = "../crates/dinoco", version = "2.1.7" }
+dinoco_cli = { path = "../crates/dinoco_cli", version = "2.1.7" }
+dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.1.7" }
+dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.1.7" }
+dinoco_codegen = { path = "../crates/dinoco_codegen", version = "2.1.7" }
+dinoco_engine = { path = "../crates/dinoco_engine", version = "2.1.7" }
+dinoco_vscode = { path = "../vscode", version = "2.1.7" }
 
 [[bin]]
 name = "dinoco_cli"
@@ -56,6 +56,10 @@ path = "tests/dinoco/relation_counts.rs"
 [[test]]
 name = "dinoco_relation_filters"
 path = "tests/dinoco/relation_filters.rs"
+
+[[test]]
+name = "dinoco_relation_key_types"
+path = "tests/dinoco/relation_key_types.rs"
 
 [[test]]
 name = "dinoco_reserved_identifiers"

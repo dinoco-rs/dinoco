@@ -1,5 +1,5 @@
 use dinoco_engine::{
-    DinocoAdapter, DinocoSqlCompiler, FindQuery, ManyToManyRelationQuery, MySqlAdapter, PostgresAdapter,
+    DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindQuery, ManyToManyRelationQuery, MySqlAdapter, PostgresAdapter,
     RelationBatchQuery, RelationJoinQuery, RelationOccurrenceQuery, SqliteAdapter,
 };
 
@@ -92,5 +92,64 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     assert!(postgres_sql.contains("_business_to_system.business_id = $2"));
     assert_eq!(postgres_params.len(), 2);
 
+    Ok(())
+}
+
+/// PostgreSQL types an unannotated parameter in `VALUES` as `text`, so each
+/// parent key is cast to the type of the value it holds. SQLite and MySQL keep
+/// plain placeholders.
+#[tokio::test]
+async fn postgres_parent_keys_are_cast_to_the_type_of_their_value() -> anyhow::Result<()> {
+    let query = |key_count| RelationOccurrenceQuery {
+        query: FindQuery::new(&["id", "group_id"], "fee", -1, -1),
+        child_field: "group_id",
+        key_count,
+    };
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+
+    let keys = vec![DinocoValue::Integer(7_300_000_000_000_000_001), DinocoValue::Integer(2)];
+    let (sql, params) = postgres.compile_relation_occurrence_query_with_keys(query(2), keys);
+    assert!(sql.contains("AS (VALUES (0, $1::bigint), (1, $2::bigint))"), "{sql}");
+    assert!(sql.contains("INNER JOIN fee ON __dinoco_parent_keys.__dinoco_relation_key = fee.group_id"), "{sql}");
+    assert_eq!(params.len(), 2);
+
+    let cases = [
+        (DinocoValue::String("alpha".to_string()), "$1::text"),
+        (DinocoValue::Float(1.5), "$1::double precision"),
+        (DinocoValue::Boolean(true), "$1::boolean"),
+        (DinocoValue::Enum("PayoutMethod".to_string(), "pix".to_string()), "$1::\"PayoutMethod\""),
+        (DinocoValue::Date(dinoco_engine::chrono::NaiveDate::from_ymd_opt(2026, 10, 17).expect("date")), "$1::date"),
+        (DinocoValue::Bytes(vec![1]), "$1::bytea"),
+    ];
+    for (key, cast) in cases {
+        let (sql, _) = postgres.compile_relation_occurrence_query_with_keys(query(1), vec![key]);
+        assert!(sql.contains(&format!("AS (VALUES (0, {cast}))")), "{sql}");
+    }
+
+    // A NULL key takes the type of the others.
+    let keys = vec![DinocoValue::Null, DinocoValue::Integer(1)];
+    let (sql, _) = postgres.compile_relation_occurrence_query_with_keys(query(2), keys);
+    assert!(sql.contains("AS (VALUES (0, $1), (1, $2::bigint))"), "{sql}");
+
+    // The keys come first; the window's own values follow them uncast.
+    let partitioned = RelationOccurrenceQuery {
+        query: FindQuery::new(&["id", "group_id"], "fee", 1, 1),
+        child_field: "group_id",
+        key_count: 3,
+    };
+    let keys = (1..=3).map(DinocoValue::Integer).collect();
+    let (sql, params) = postgres.compile_relation_occurrence_query_with_keys(partitioned, keys);
+    assert!(sql.contains("(0, $1::bigint), (1, $2::bigint), (2, $3::bigint)"), "{sql}");
+    assert!(sql.contains("__dinoco_row_num > $4") && sql.contains("__dinoco_row_num <= $5"), "{sql}");
+    assert_eq!(params.len(), 5);
+
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let (sql, _) = sqlite
+        .compile_relation_occurrence_query_with_keys(query(2), vec![DinocoValue::Integer(1), DinocoValue::Integer(2)]);
+    assert!(sql.contains("AS (VALUES (0, ?), (1, ?))"), "{sql}");
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let (sql, _) = mysql
+        .compile_relation_occurrence_query_with_keys(query(2), vec![DinocoValue::Integer(1), DinocoValue::Integer(2)]);
+    assert!(sql.contains("SELECT 0 AS __dinoco_relation_ordinal, ? AS __dinoco_relation_key UNION ALL SELECT 1, ?)"));
     Ok(())
 }

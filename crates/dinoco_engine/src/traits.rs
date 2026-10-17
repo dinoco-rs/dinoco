@@ -59,6 +59,19 @@ pub trait DinocoSqlCompiler {
     fn compile_relation_occurrence_query(&self, _query: RelationOccurrenceQuery) -> (String, Vec<DinocoValue>) {
         panic!("relation occurrence queries are not supported by this SQL compiler")
     }
+    /// [`compile_relation_occurrence_query`](Self::compile_relation_occurrence_query)
+    /// with the parent `keys` bound in front of the query's own values, as the
+    /// query runs: PostgreSQL casts each key to the type of its value.
+    #[doc(hidden)]
+    fn compile_relation_occurrence_query_with_keys(
+        &self,
+        query: RelationOccurrenceQuery,
+        mut keys: Vec<DinocoValue>,
+    ) -> (String, Vec<DinocoValue>) {
+        let (sql, params) = self.compile_relation_occurrence_query(query);
+        keys.extend(params);
+        (sql, keys)
+    }
     fn compile_many_to_many_relation_query(&self, query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>);
     fn compile_many_to_many_relation_count_query(
         &self,

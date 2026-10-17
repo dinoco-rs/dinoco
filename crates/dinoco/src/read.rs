@@ -86,11 +86,7 @@ impl ReadTarget<'_> {
             RowCountKind::Find,
             query.query.from,
             (query, keys),
-            |compiler, (query, mut keys)| {
-                let (sql, params) = compiler.compile_relation_occurrence_query(query);
-                keys.extend(params);
-                (sql, keys)
-            },
+            |compiler, (query, keys)| compiler.compile_relation_occurrence_query_with_keys(query, keys),
             |(query, keys)| async move {
                 match &self.source.0 {
                     ReadConnection::Client { client, read_primary } => {

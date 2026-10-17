@@ -1,6 +1,10 @@
-# Dinoco v2.1.6
+# Dinoco v2.1.7
 
 Esta página acompanha o que mudou release a release. Cada item linka para a página que documenta a funcionalidade em profundidade — trate isto como um changelog, não como a referência principal.
+
+## v2.1.7
+
+- **fix(postgres): typed parent keys in relation CTE (text = bigint on includes).** No PostgreSQL, os `includes` falhavam com `operator does not exist: text = bigint` sempre que a chave da relação não era texto, por exemplo ids snowflake `BIGINT`: `find_many::<FeeGroup>().includes(|x| x.fees().includes(|x| x.parts()))`. Desde a 2.1.0, um include envia as chaves dos pais numa lista `VALUES`, e o PostgreSQL tipa um parâmetro ali como `text`, então a comparação com a coluna `bigint` falhava. Agora cada chave recebe um cast para o tipo do valor que guarda (`$1::bigint`, `$1::text`, o tipo enum nativo, ...). Isso cobre includes has-many, belongs-to e aninhados, com e sem `take`/`skip`. Includes many-to-many e contagens de relações não eram afetados: eles comparam os parâmetros direto com uma coluna. SQLite e MySQL enviam o mesmo SQL de antes, e os hooks de query e o logger agora também mostram os casts. Veja [Includes](/pt-br/docs/orm/orm/includes).
 
 ## v2.1.6
 

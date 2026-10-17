@@ -718,12 +718,42 @@ impl SqlWriter {
                     if with_keys {
                         self.push(", ");
                         self.placeholder();
+                        if self.dialect == Dialect::Postgres {
+                            self.postgres_key_cast(self.placeholders - 1);
+                        }
                     }
                     self.sql.push(')');
                 }
             }
         }
         self.sql.push(')');
+    }
+
+    /// PostgreSQL types a parameter it can't infer from its context as
+    /// `text`, and nothing in a `VALUES` list gives a parent key a context:
+    /// comparing it with a `bigint` column would then fail with `operator
+    /// does not exist: text = bigint`. Casts the key bound at `index` to the
+    /// type of the value it holds. A `NULL` key keeps no cast and takes the
+    /// type of the other keys; without bound keys nothing is written.
+    fn postgres_key_cast(&mut self, index: usize) {
+        let cast = match self.params.get(index) {
+            Some(DinocoValue::Integer(_)) => "::bigint",
+            Some(DinocoValue::Float(_)) => "::double precision",
+            Some(DinocoValue::String(_)) => "::text",
+            Some(DinocoValue::Boolean(_)) => "::boolean",
+            Some(DinocoValue::Bytes(_)) => "::bytea",
+            Some(DinocoValue::Json(_)) => "::jsonb",
+            Some(DinocoValue::DateTime(_)) => "::timestamp",
+            Some(DinocoValue::Date(_)) => "::date",
+            Some(DinocoValue::Enum(name, _)) => {
+                // The native enum type, created under its quoted name.
+                self.sql.push_str("::");
+                write_quoted(&mut self.sql, '"', name);
+                return;
+            }
+            Some(DinocoValue::Null) | None => return,
+        };
+        self.sql.push_str(cast);
     }
 }
 
@@ -1083,7 +1113,9 @@ pub(crate) fn relation_occurrence_with_keys(
     let values = keys.len() + bound_values(&conditions) + 2;
     let mut params = keys;
     params.reserve(values - params.len());
-    let mut sql = SqlWriter::new(dialect, sql_capacity(fields.len() + 6, values) + key_count * 12, params);
+    // `(0, $1::bigint), ` per bound key on PostgreSQL, `(0, ?), ` elsewhere.
+    let per_key = if dialect == Dialect::Postgres && !params.is_empty() { 20 } else { 12 };
+    let mut sql = SqlWriter::new(dialect, sql_capacity(fields.len() + 6, values) + key_count * per_key, params);
 
     if partitioned {
         sql.open_row_window();
@@ -1300,6 +1332,14 @@ macro_rules! query_compiler_methods {
             query: $crate::RelationOccurrenceQuery,
         ) -> (String, Vec<$crate::DinocoValue>) {
             $crate::backends::sql::relation_occurrence($dialect, query)
+        }
+
+        fn compile_relation_occurrence_query_with_keys(
+            &self,
+            query: $crate::RelationOccurrenceQuery,
+            keys: Vec<$crate::DinocoValue>,
+        ) -> (String, Vec<$crate::DinocoValue>) {
+            $crate::backends::sql::relation_occurrence_with_keys($dialect, query, keys)
         }
 
         fn compile_many_to_many_relation_query(
