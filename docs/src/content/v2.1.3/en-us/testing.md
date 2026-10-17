@@ -500,7 +500,7 @@ assert_eq!(count::<Project>().execute(&*client).await?.total, 0);
 
 ## Limits
 
-- `count` and `exists` don't trigger `on_find`.
+- `count` and `exists` don't trigger `on_find`, on the client or inside a transaction.
 - The pivot table of an implicit many-to-many relation has no model, so its inserts and deletes (`connect`, `disconnect`) can't be observed. The endpoints' own operations can.
 - The ambient builds the schema's final shape directly. It doesn't replay files in `dinoco/migrations/`, so anything written by hand in a migration (seed rows, triggers, extra SQL) isn't there. Insert what a test needs in the test itself.
 - SQLite isn't your production database. Features specific to PostgreSQL or MySQL, such as their full-text ranking, collations, and exact type limits, behave the SQLite way. Keep a few tests against the real database for those.

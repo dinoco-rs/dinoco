@@ -63,7 +63,7 @@ let has_active_admin = dinoco::exists::<Account>()
     .await?;
 ```
 
-Ele suporta `where_`, `where_complex` e `read_in_primary()`, assim como `find_first`/`find_many`.
+Ele suporta `where_`, `where_complex` e `read_in_primary()`, assim como `find_first`/`find_many`. Como eles, roda contra `&client` ou contra o `tx` de uma closure de [transaction](/pt-br/docs/orm/orm/transactions#leia-dentro-de-uma-transaction), onde enxerga as rows que a closure escreveu antes dele.
 
 ## Próximos passos
 

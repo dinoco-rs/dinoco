@@ -2,9 +2,9 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 
-use dinoco_engine::{
-    CountQuery, DinocoClient, DinocoEntity, FindWhere, ManyToManyRelationCountQuery, RelationCountQuery,
-};
+use dinoco_engine::{CountQuery, DinocoEntity, FindWhere, ManyToManyRelationCountQuery, RelationCountQuery};
+
+use crate::{ReadExecutor, ReadSource};
 
 pub trait DinocoCountModel<M>: Default {
     fn dinoco_set_total(&mut self, total: i64);
@@ -22,7 +22,7 @@ pub trait CountLoader<S>: Send + Sync {
         parent_table: &'static str,
         _parent_field: &'static str,
         parent_conditions: &'a [FindWhere],
-        client: &'a DinocoClient,
+        source: &'a ReadSource<'a>,
         target: &'a mut S,
     ) -> CountLoaderFuture<'a>;
 }
@@ -112,13 +112,13 @@ where
         parent_table: &'static str,
         _parent_field: &'static str,
         parent_conditions: &'a [FindWhere],
-        client: &'a DinocoClient,
+        source: &'a ReadSource<'a>,
         target: &'a mut S,
     ) -> CountLoaderFuture<'a> {
         Box::pin(async move {
             let total = if let Some(many_to_many) = self.many_to_many {
-                client
-                    .read_backend(false)
+                source
+                    .clone()
                     .count_many_to_many_relation(ManyToManyRelationCountQuery {
                         parent_table,
                         child_table: C::TABLE_NAME,
@@ -132,8 +132,8 @@ where
                     })
                     .await?
             } else {
-                client
-                    .read_backend(false)
+                source
+                    .clone()
                     .count_relation(RelationCountQuery {
                         parent_table,
                         child_table: C::TABLE_NAME,
@@ -151,22 +151,30 @@ where
     }
 }
 
+/// Runs `count::<M>()` against `&client` or the `tx` of a transaction
+/// closure, then each requested relation count on the same connection.
 pub async fn execute_count<M>(
-    conditions: Vec<FindWhere>,
+    mut conditions: Vec<FindWhere>,
     loaders: Vec<Box<dyn CountLoader<M::Count>>>,
-    client: &DinocoClient,
+    client: impl ReadExecutor,
 ) -> anyhow::Result<M::Count>
 where
     M: DinocoEntity,
     M::Count: DinocoCountModel<M>,
 {
+    // Relation counts reuse the parent conditions; without any, they move
+    // into the query instead of being cloned.
+    let query_conditions = if loaders.is_empty() { std::mem::take(&mut conditions) } else { conditions.clone() };
     let total =
-        client.read_backend(false).count(CountQuery { table: M::TABLE_NAME, conditions: conditions.clone() }).await?;
+        client.read_source(false)?.count(CountQuery { table: M::TABLE_NAME, conditions: query_conditions }).await?;
     let mut count = M::Count::default();
     count.dinoco_set_total(total);
 
-    for loader in loaders {
-        loader.load_count(M::TABLE_NAME, "id", &conditions, client, &mut count).await?;
+    if !loaders.is_empty() {
+        let source = client.read_source(false)?;
+        for loader in loaders {
+            loader.load_count(M::TABLE_NAME, "id", &conditions, &source, &mut count).await?;
+        }
     }
 
     Ok(count)

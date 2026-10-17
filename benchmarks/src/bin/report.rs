@@ -8,7 +8,7 @@
 use std::future::Future;
 use std::mem::{align_of, size_of};
 
-use dinoco::{count, find_first, find_many, insert_into, insert_many, transaction, update};
+use dinoco::{TransactionContext, count, exists, find_first, find_many, insert_into, insert_many, transaction, update};
 use dinoco_benchmarks::*;
 use dinoco_engine::*;
 
@@ -123,6 +123,13 @@ fn print_future_sizes(client: &DinocoClient) {
     );
     future_size("count::<User>().execute", count::<BenchUser>().execute(client));
     future_size(
+        "count::<User>().includes(posts).execute",
+        count::<BenchUser>().includes(|user| user.posts()).execute(client),
+    );
+    future_size("exists::<User>().execute", exists::<BenchUser>().execute(client));
+    future_size("count::<User>().execute(tx)", count::<BenchUser>().execute(TransactionContext));
+    future_size("exists::<User>().execute(tx)", exists::<BenchUser>().execute(TransactionContext));
+    future_size(
         "transaction(client, find_first)",
         transaction(client, |tx| async move { find_first::<BenchUser>().execute(tx).await }),
     );
@@ -189,6 +196,19 @@ async fn print_operations(fixture: &Fixture) {
         count::<BenchUser>().where_(|user| user.active.eq(true)).execute(client).await.unwrap()
     })
     .await;
+    measure("count where includes has_many", || async move {
+        count::<BenchUser>()
+            .where_(|user| user.active.eq(true))
+            .includes(|user| user.posts().where_(|post| post.published.eq(true)))
+            .execute(client)
+            .await
+            .unwrap()
+    })
+    .await;
+    measure("exists by id", || async move {
+        exists::<BenchUser>().where_(|user| user.id.eq("u-000042")).execute(client).await.unwrap()
+    })
+    .await;
     measure("update by id", || async move {
         update::<BenchUser>()
             .where_(|user| user.id.eq("u-000007"))
@@ -208,6 +228,21 @@ async fn print_operations(fixture: &Fixture) {
                 .await?;
             let posts = find_many::<BenchPost>().where_(|post| post.user_id.eq("u-000011")).execute(tx).await?;
             Ok((user, posts))
+        })
+        .await
+        .unwrap()
+    })
+    .await;
+
+    measure("transaction (count includes, exists)", || async move {
+        transaction(client, |tx| async move {
+            let users = count::<BenchUser>()
+                .where_(|user| user.active.eq(true))
+                .includes(|user| user.posts())
+                .execute(tx)
+                .await?;
+            let found = exists::<BenchUser>().where_(|user| user.id.eq("u-000042")).execute(tx).await?;
+            Ok((users, found))
         })
         .await
         .unwrap()

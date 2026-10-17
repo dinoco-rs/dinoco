@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use dinoco::{count, find_first, find_many, insert_into, insert_many, transaction, update};
+use dinoco::{count, exists, find_first, find_many, insert_into, insert_many, transaction, update};
 use dinoco_benchmarks::{BenchEvent, BenchPost, BenchUser, Dialect, Fixture, event, fixtures, raw_users};
 use dinoco_engine::{
     DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery, MySqlAdapter, PostgresAdapter,
@@ -234,6 +234,23 @@ fn bench_backend(c: &mut Criterion, rt: &Runtime, fixture: &Fixture) {
         })
     });
 
+    group.bench_function("count_includes_has_many", |b| {
+        b.to_async(rt).iter(|| async move {
+            count::<BenchUser>()
+                .where_(|user| user.active.eq(true))
+                .includes(|user| user.posts().where_(|post| post.published.eq(true)))
+                .execute(client)
+                .await
+                .expect("count includes")
+        })
+    });
+
+    group.bench_function("exists", |b| {
+        b.to_async(rt).iter(|| async move {
+            exists::<BenchUser>().where_(|user| user.id.eq("u-000042")).execute(client).await.expect("exists")
+        })
+    });
+
     group.bench_function("update_by_id", |b| {
         b.to_async(rt).iter(|| async move {
             update::<BenchUser>()
@@ -289,6 +306,22 @@ fn bench_backend(c: &mut Criterion, rt: &Runtime, fixture: &Fixture) {
                     .await?;
                 let posts = find_many::<BenchPost>().where_(|post| post.user_id.eq("u-000011")).execute(tx).await?;
                 Ok((user, posts))
+            })
+            .await
+            .expect("transaction")
+        })
+    });
+
+    group.bench_function("transaction_count_exists", |b| {
+        b.to_async(rt).iter(|| async move {
+            transaction(client, |tx| async move {
+                let users = count::<BenchUser>()
+                    .where_(|user| user.active.eq(true))
+                    .includes(|user| user.posts())
+                    .execute(tx)
+                    .await?;
+                let found = exists::<BenchUser>().where_(|user| user.id.eq("u-000042")).execute(tx).await?;
+                Ok((users, found))
             })
             .await
             .expect("transaction")

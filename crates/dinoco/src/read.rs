@@ -1,30 +1,47 @@
 use std::sync::Arc;
 
 use dinoco_engine::{
-    DinocoClient, DinocoRowModel, DinocoValue, FindQuery, ManyToManyRelationQuery, RelationOccurrenceQuery,
-    TransactionCommand, TransactionExecutor,
+    CountQuery, DinocoClient, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery, ManyToManyRelationCountQuery,
+    ManyToManyRelationQuery, RelationCountQuery, RelationOccurrenceQuery, TransactionCommand, TransactionExecutor,
 };
+use futures_util::future::Either;
 
-use crate::{Observer, RowCountKind, TransactionContext, active_transaction, observe_rows};
+use crate::{Observer, RowCountKind, TransactionContext, active_executor, active_transaction, observe_rows};
 
-/// Where a read builder (`find_first`, `find_many`) runs: `&client`, which
-/// may route to a read replica, or the `tx` handed to a transaction closure,
-/// which reads on the transaction's own connection and sees its writes.
+/// Where a read builder (`find_first`, `find_many`, `count`, `exists`) runs:
+/// `&client`, which may route to a read replica, or the `tx` handed to a
+/// transaction closure, which reads on the transaction's own connection and
+/// sees its writes.
 ///
 /// Transaction reads are awaited boxed, so the far more common client reads
 /// do not carry the transaction channel's state in their futures.
 pub trait ReadExecutor: Send + Sync {
     #[doc(hidden)]
     fn read_target(&self, read_primary: bool) -> anyhow::Result<ReadTarget<'_>>;
+
+    /// The connection alone, for the reads that report to no hook.
+    #[doc(hidden)]
+    fn read_source(&self, read_primary: bool) -> anyhow::Result<ReadSource<'_>> {
+        self.read_target(read_primary).map(|target| target.source)
+    }
 }
 
 #[doc(hidden)]
 pub struct ReadTarget<'a> {
-    inner: ReadTargetInner<'a>,
+    source: ReadSource<'a>,
     observer: Option<Observer>,
 }
 
-enum ReadTargetInner<'a> {
+/// The connection a read runs on. `count` and `exists` report to no hook, so
+/// they read through this alone, which keeps the observer out of their
+/// futures and skips building it. Cloning it copies a reference or the
+/// transaction's channel handle.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ReadSource<'a>(ReadConnection<'a>);
+
+#[derive(Clone)]
+enum ReadConnection<'a> {
     Client { client: &'a DinocoClient, read_primary: bool },
     Transaction(TransactionExecutor),
 }
@@ -41,11 +58,11 @@ impl ReadTarget<'_> {
             query,
             |compiler, query| compiler.compile_find_query(query),
             |query| async move {
-                match &self.inner {
-                    ReadTargetInner::Client { client, read_primary } => {
+                match &self.source.0 {
+                    ReadConnection::Client { client, read_primary } => {
                         client.read_backend(*read_primary).query::<M>(query).await
                     }
-                    ReadTargetInner::Transaction(executor) => {
+                    ReadConnection::Transaction(executor) => {
                         Box::pin(executor.execute(TransactionCommand::find_many::<M>(query))).await
                     }
                 }
@@ -75,11 +92,11 @@ impl ReadTarget<'_> {
                 (sql, keys)
             },
             |(query, keys)| async move {
-                match &self.inner {
-                    ReadTargetInner::Client { client, read_primary } => {
+                match &self.source.0 {
+                    ReadConnection::Client { client, read_primary } => {
                         client.read_backend(*read_primary).query_relation_occurrences_with_keys::<M>(query, keys).await
                     }
-                    ReadTargetInner::Transaction(executor) => {
+                    ReadConnection::Transaction(executor) => {
                         Box::pin(executor.execute(TransactionCommand::relation_occurrences::<M>(query, keys))).await
                     }
                 }
@@ -109,11 +126,11 @@ impl ReadTarget<'_> {
                 (sql, keys)
             },
             |(query, keys)| async move {
-                match &self.inner {
-                    ReadTargetInner::Client { client, read_primary } => {
+                match &self.source.0 {
+                    ReadConnection::Client { client, read_primary } => {
                         client.read_backend(*read_primary).query_many_to_many_relation_with_keys::<M>(query, keys).await
                     }
-                    ReadTargetInner::Transaction(executor) => {
+                    ReadConnection::Transaction(executor) => {
                         Box::pin(executor.execute(TransactionCommand::many_to_many_relation::<M>(query, keys))).await
                     }
                 }
@@ -124,12 +141,71 @@ impl ReadTarget<'_> {
     }
 }
 
+// Each read consumes the source and returns the backend's future instead of
+// awaiting it, so the builder's future holds that one directly: no source
+// kept alive across the await, and no state machine (with another copy of
+// the query) around it.
+impl<'a> ReadSource<'a> {
+    pub(crate) fn count(self, query: CountQuery) -> impl Future<Output = anyhow::Result<i64>> + Send + 'a {
+        match self.0 {
+            ReadConnection::Client { client, read_primary } => {
+                Either::Left(client.read_backend(read_primary).count(query))
+            }
+            ReadConnection::Transaction(executor) => {
+                Either::Right(Box::pin(async move { executor.execute(TransactionCommand::count(query)).await }))
+            }
+        }
+    }
+
+    pub(crate) fn exists(self, query: ExistsQuery) -> impl Future<Output = anyhow::Result<bool>> + Send + 'a {
+        match self.0 {
+            ReadConnection::Client { client, read_primary } => {
+                Either::Left(client.read_backend(read_primary).exists(query))
+            }
+            ReadConnection::Transaction(executor) => {
+                Either::Right(Box::pin(async move { executor.execute(TransactionCommand::exists(query)).await }))
+            }
+        }
+    }
+
+    pub(crate) fn count_relation(
+        self,
+        query: RelationCountQuery,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send + 'a {
+        match self.0 {
+            ReadConnection::Client { client, read_primary } => {
+                Either::Left(client.read_backend(read_primary).count_relation(query))
+            }
+            ReadConnection::Transaction(executor) => {
+                Either::Right(Box::pin(
+                    async move { executor.execute(TransactionCommand::relation_count(query)).await },
+                ))
+            }
+        }
+    }
+
+    pub(crate) fn count_many_to_many_relation(
+        self,
+        query: ManyToManyRelationCountQuery,
+    ) -> impl Future<Output = anyhow::Result<i64>> + Send + 'a {
+        match self.0 {
+            ReadConnection::Client { client, read_primary } => {
+                Either::Left(client.read_backend(read_primary).count_many_to_many_relation(query))
+            }
+            ReadConnection::Transaction(executor) => Either::Right(Box::pin(async move {
+                executor.execute(TransactionCommand::many_to_many_relation_count(query)).await
+            })),
+        }
+    }
+}
+
 impl ReadExecutor for DinocoClient {
     fn read_target(&self, read_primary: bool) -> anyhow::Result<ReadTarget<'_>> {
-        Ok(ReadTarget {
-            inner: ReadTargetInner::Client { client: self, read_primary },
-            observer: Observer::for_client(self),
-        })
+        Ok(ReadTarget { source: self.read_source(read_primary)?, observer: Observer::for_client(self) })
+    }
+
+    fn read_source(&self, read_primary: bool) -> anyhow::Result<ReadSource<'_>> {
+        Ok(ReadSource(ReadConnection::Client { client: self, read_primary }))
     }
 }
 
@@ -138,7 +214,11 @@ impl ReadExecutor for DinocoClient {
 impl ReadExecutor for TransactionContext {
     fn read_target(&self, _read_primary: bool) -> anyhow::Result<ReadTarget<'_>> {
         let active = active_transaction()?;
-        Ok(ReadTarget { inner: ReadTargetInner::Transaction(active.executor), observer: active.observer })
+        Ok(ReadTarget { source: ReadSource(ReadConnection::Transaction(active.executor)), observer: active.observer })
+    }
+
+    fn read_source(&self, _read_primary: bool) -> anyhow::Result<ReadSource<'_>> {
+        Ok(ReadSource(ReadConnection::Transaction(active_executor()?)))
     }
 }
 
@@ -149,6 +229,10 @@ where
     fn read_target(&self, read_primary: bool) -> anyhow::Result<ReadTarget<'_>> {
         (**self).read_target(read_primary)
     }
+
+    fn read_source(&self, read_primary: bool) -> anyhow::Result<ReadSource<'_>> {
+        (**self).read_source(read_primary)
+    }
 }
 
 impl<T> ReadExecutor for Arc<T>
@@ -157,5 +241,9 @@ where
 {
     fn read_target(&self, read_primary: bool) -> anyhow::Result<ReadTarget<'_>> {
         (**self).read_target(read_primary)
+    }
+
+    fn read_source(&self, read_primary: bool) -> anyhow::Result<ReadSource<'_>> {
+        (**self).read_source(read_primary)
     }
 }

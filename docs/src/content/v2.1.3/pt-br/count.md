@@ -60,6 +60,27 @@ println!("active tokens: {}", result.tokens.unwrap());
 > [!NOTE]
 > Sem `.includes(|x| x.tokens())`, `result.tokens` permanece `None` — o Dinoco nunca conta uma relação implicitamente só porque ela existe no model. Você sempre opta explicitamente, uma relação de cada vez.
 
+## Conte dentro de uma transaction
+
+Passe o `tx` de uma closure de [transaction](/pt-br/docs/orm/orm/transactions) no lugar de `&client`. O count então roda na conexão da transaction, então o `total` e todo count de relação incluem as rows que a closure escreveu antes dele, mesmo ainda não commitadas:
+
+```rust
+let tokens = dinoco::transaction(&client, |tx| async move {
+    dinoco::insert_into::<Token>().value(&token).execute(tx).await?;
+
+    let count = dinoco::count::<User>()
+        .where_(|x| x.id.eq(&user_id))
+        .includes(|x| x.tokens().where_(|token| token.is_expired.eq(false)))
+        .execute(tx)
+        .await?;
+
+    Ok(count.tokens) // inclui o token inserido acima
+})
+.await?;
+```
+
+O `.execute(...)` aceita os mesmos executores que o `find_many`: `&client`, um `Arc` do client ou o `tx`.
+
 ## Tipos de count gerados
 
 Para uma entity com fields de relação, o derive gera uma struct conceitualmente parecida com esta:

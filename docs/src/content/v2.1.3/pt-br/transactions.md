@@ -1,6 +1,6 @@
 # Transactions
 
-`transaction` executa uma closure assíncrona contra uma transaction nativa do banco, presa a uma única conexão física com a primary durante toda sua duração. Toda operação que você roda pelo handle `tx` que ela te dá — writes, e leituras com `find_first`/`find_many` — enxerga todo write anterior daquela mesma closure — leituras dentro da transaction nunca ficam desatualizadas em relação a writes que já aconteceram nela. O Dinoco só faz commit quando a closure retorna `Ok`; qualquer `Err`, de qualquer origem, dispara um rollback. Para fazer rollback com um tipo de erro seu, use [`transaction_with_error`](#erros-customizados).
+`transaction` executa uma closure assíncrona contra uma transaction nativa do banco, presa a uma única conexão física com a primary durante toda sua duração. Toda operação que você roda pelo handle `tx` que ela te dá — writes, e leituras com `find_first`/`find_many`/`count`/`exists` — enxerga todo write anterior daquela mesma closure — leituras dentro da transaction nunca ficam desatualizadas em relação a writes que já aconteceram nela. O Dinoco só faz commit quando a closure retorna `Ok`; qualquer `Err`, de qualquer origem, dispara um rollback. Para fazer rollback com um tipo de erro seu, use [`transaction_with_error`](#erros-customizados).
 
 ## Crie uma transaction
 
@@ -108,7 +108,7 @@ match result {
 
 ## Leia dentro de uma transaction
 
-`find_first` e `find_many` aceitam o mesmo handle `tx`. A leitura roda na conexão da transaction, então enxerga todo write ainda não commitado feito antes na closure — incluindo relações carregadas com `.includes(...)`:
+`find_first`, `find_many`, `count` e `exists` aceitam o mesmo handle `tx`. A leitura roda na conexão da transaction, então enxerga todo write ainda não commitado feito antes na closure — incluindo relações carregadas com `.includes(...)`:
 
 ```rust
 use dinoco::{find_first, find_many, insert_into, transaction};
@@ -135,7 +135,37 @@ let result = transaction(&client, |tx| async move {
 .await;
 ```
 
-Se a closure falhar depois, essas leituras só viram dados que nunca chegam a ser commitados — nada fora da transaction os observa. Leituras pelo `tx` sempre vão para a conexão primary da transaction, nunca para uma réplica, então `read_in_primary()` não faz diferença ali. `count` e `exists` ainda aceitam apenas `&client`.
+Se a closure falhar depois, essas leituras só viram dados que nunca chegam a ser commitados — nada fora da transaction os observa. Leituras pelo `tx` sempre vão para a conexão primary da transaction, nunca para uma réplica, então `read_in_primary()` não faz diferença ali.
+
+`count` e `exists` também enxergam esses writes, o que permite que uma regra checada dentro da transaction conte as rows que a closure acabou de escrever. Counts de relação pedidos com `.includes(...)` também rodam na conexão da transaction:
+
+```rust
+use dinoco::{count, exists, insert_into, transaction};
+
+let result = transaction(&client, |tx| async move {
+    insert_into::<Office>().value(&office).execute(tx).await?;
+
+    // Inclui o office inserido acima, que ainda não foi commitado.
+    let offices = count::<Office>()
+        .where_(|x| x.business_id.eq(&business_id))
+        .execute(tx)
+        .await?;
+    if offices.total > MAX_OFFICES {
+        anyhow::bail!("um business pode ter no máximo {MAX_OFFICES} offices");
+    }
+
+    let has_headquarters = exists::<Office>()
+        .where_(|x| x.business_id.eq(&business_id))
+        .where_(|x| x.headquarters.eq(true))
+        .execute(tx)
+        .await?;
+
+    Ok(has_headquarters)
+})
+.await;
+```
+
+O `bail!` desfaz o insert. Um count rodado com `&client` dentro da mesma closure vai para outra conexão e enxerga apenas rows commitadas.
 
 ## Rollback automático
 
@@ -185,7 +215,4 @@ Um erro vindo do próprio `COMMIT` volta como `TransactionError::Commit(Database
 
 ## Builders suportados
 
-A API por closure suporta `find_first`, `find_many`, `insert_into`, `insert_many`, `update`, `update_many`, `delete`, `delete_many`, `find_and_update`, e os helpers gerados para mutations aninhadas ou many-to-many. Writes com returning (`.returning::<S>()`) usam o suporte nativo de cada banco no SQLite e PostgreSQL; o `find_and_update` do MySQL usa um fallback dedicado — ele roda o `UPDATE` condicional primeiro, depois recarrega a linha por `id` ou pelas condições originais, e nunca faz uma checagem de existência separada antes de tentar o update.
-
-> [!NOTE]
-> `count` e `exists` ainda não aceitam o contexto de transaction — continue usando `&client` para eles. Eles leem apenas dados commitados, então não enxergam writes que a closure ainda não commitou.
+A API por closure suporta `find_first`, `find_many`, `count`, `exists`, `insert_into`, `insert_many`, `update`, `update_many`, `delete`, `delete_many`, `find_and_update`, e os helpers gerados para mutations aninhadas ou many-to-many. Writes com returning (`.returning::<S>()`) usam o suporte nativo de cada banco no SQLite e PostgreSQL; o `find_and_update` do MySQL usa um fallback dedicado — ele roda o `UPDATE` condicional primeiro, depois recarrega a linha por `id` ou pelas condições originais, e nunca faz uma checagem de existência separada antes de tentar o update.

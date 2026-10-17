@@ -1,6 +1,12 @@
-# Dinoco v2.1.2
+# Dinoco v2.1.3
 
 This page tracks what changed release over release. Each entry links to the page that documents the feature in depth — treat this as a changelog, not the primary reference.
+
+## v2.1.3
+
+- **`count` and `exists` run inside transactions.** `count::<M>()` and `exists::<M>()` now accept the `tx` of a `transaction` or `transaction_with_error` closure, so `.execute(tx)` works on every builder. They run on the transaction's connection and see the rows the closure wrote before them, committed or not, and the relation counts requested with `.includes(...)` run there too. Before, both took `&client` only and saw committed rows only. They also accept the other executors `find_many` does, such as an `Arc` of the client. See [Read inside a transaction](/en-us/docs/orm/orm/transactions#read-inside-a-transaction) and [Count inside a transaction](/en-us/docs/orm/orm/count#count-inside-a-transaction).
+- `count::<M>()` without relation counts no longer copies its filters, which saves one allocation per call on every database.
+- `CountLoader::load_count`, which generated code calls for relation counts, receives the connection to read from (`&ReadSource`) instead of `&DinocoClient`. Only a hand-written `CountLoader` implementation needs to change.
 
 ## v2.1.2
 

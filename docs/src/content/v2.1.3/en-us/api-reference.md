@@ -61,9 +61,10 @@ pub struct UserSummary {
 | --- | --- | --- |
 | `find_first::<M>()` | `where_`, `where_complex`, `select`, `includes`, `order_by`, `read_in_primary` | `Option<M>` or `Option<S>` |
 | `find_many::<M>()` | `where_`, `where_complex`, `select`, `includes`, `order_by`, `take`, `skip`, `read_in_primary` | `Vec<M>` or `Vec<S>` |
-| `count::<M>()` | `where_`, `includes` | `M::Count` |
+| `count::<M>()` | `where_`, `where_complex`, `includes` | `M::Count` |
+| `exists::<M>()` | `where_`, `where_complex`, `read_in_primary` | `bool` |
 
-`find_first` and `find_many` execute against `&client` or against the `tx` of a transaction closure; the other read builders take `&client` only.
+Every read builder executes against `&client` or against the `tx` of a transaction closure. Through `tx` it reads on the transaction's connection and sees its uncommitted writes, relation counts and includes included.
 
 Include builders support `where_`, `where_complex`, `select`, `includes`, `order_by`, `take`, and `skip`. Count relation builders support typed `where_` filters and populate `Option<i64>` fields on `M::Count`.
 
@@ -111,7 +112,7 @@ For endpoints that already exist, use `.connect(value)`/`.disconnect(value)` fro
 
 ## Transactions
 
-`transaction(&client, |tx| async move { ... }).await` opens one native transaction pinned to one physical primary connection. Run every mutation inside with `.execute(tx)`. An `Ok(value)` returned by the closure commits and yields that value; any error rolls back everything. `TransactionError` distinguishes create, update, delete, atomic-update, commit, and rollback failures while still preserving the original driver error underneath. `transaction_with_error::<E, _>(&client, |tx| async move { ... })` works the same way with a custom error type: its closure returns `Result<T, TransactionError<E>>`, and `Err(TransactionError::Custom(error))` rolls back and reaches the caller typed. See [Transactions](/en-us/docs/orm/orm/transactions) and [Custom errors](/en-us/docs/orm/orm/transactions#custom-errors).
+`transaction(&client, |tx| async move { ... }).await` opens one native transaction pinned to one physical primary connection. Run every mutation and read inside with `.execute(tx)`. An `Ok(value)` returned by the closure commits and yields that value; any error rolls back everything. `TransactionError` distinguishes create, update, delete, atomic-update, commit, and rollback failures while still preserving the original driver error underneath. `transaction_with_error::<E, _>(&client, |tx| async move { ... })` works the same way with a custom error type: its closure returns `Result<T, TransactionError<E>>`, and `Err(TransactionError::Custom(error))` rolls back and reaches the caller typed. See [Transactions](/en-us/docs/orm/orm/transactions) and [Custom errors](/en-us/docs/orm/orm/transactions#custom-errors).
 
 ## Filter methods
 

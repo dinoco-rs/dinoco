@@ -10,7 +10,7 @@ use super::Decode;
 use super::sql::Dialect;
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoSqlite, DinocoValue,
-    LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
+    LiveTransactionMessage, PluckValue, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
 };
 
 #[derive(Clone)]
@@ -255,6 +255,18 @@ where
     M: DinocoSqlite,
 {
     Ok(crate::DecodedRows::new(decode_rows::<M>(rows, Decode::Strict, std::any::type_name::<M>())?))
+}
+
+/// Decodes the first column of a transaction aggregate's single row.
+pub(crate) fn decode_sqlite_transaction_scalar<T>(rows: &mut rusqlite::Rows<'_>) -> anyhow::Result<crate::DecodedRows>
+where
+    T: Send + 'static,
+    PluckValue<T>: DinocoSqlite,
+{
+    let row = rows.next()?.ok_or_else(crate::missing_scalar_row)?;
+    let PluckValue(value) =
+        PluckValue::<T>::from_sqlite_row(row).ok_or_else(|| RowDecodeError::new(std::any::type_name::<T>()))?;
+    Ok(crate::DecodedRows::scalar(value))
 }
 
 fn execute_transaction_command(

@@ -1,6 +1,12 @@
-# Dinoco v2.1.2
+# Dinoco v2.1.3
 
 Esta página acompanha o que mudou release a release. Cada item linka para a página que documenta a funcionalidade em profundidade — trate isto como um changelog, não como a referência principal.
+
+## v2.1.3
+
+- **`count` e `exists` rodam dentro de transactions.** `count::<M>()` e `exists::<M>()` agora aceitam o `tx` de uma closure de `transaction` ou `transaction_with_error`, então o `.execute(tx)` funciona em todo builder. Eles rodam na conexão da transaction e enxergam as rows que a closure escreveu antes deles, commitadas ou não, e os counts de relação pedidos com `.includes(...)` também rodam ali. Antes, os dois aceitavam apenas `&client` e só enxergavam rows commitadas. Eles também aceitam os outros executores que o `find_many` aceita, como um `Arc` do client. Veja [Leia dentro de uma transaction](/pt-br/docs/orm/orm/transactions#leia-dentro-de-uma-transaction) e [Conte dentro de uma transaction](/pt-br/docs/orm/orm/count#conte-dentro-de-uma-transaction).
+- `count::<M>()` sem counts de relação não copia mais seus filtros, o que economiza uma alocação por chamada em todo banco.
+- `CountLoader::load_count`, que o código gerado chama para os counts de relação, recebe a conexão de onde ler (`&ReadSource`) no lugar de `&DinocoClient`. Só uma implementação de `CountLoader` escrita à mão precisa mudar.
 
 ## v2.1.2
 

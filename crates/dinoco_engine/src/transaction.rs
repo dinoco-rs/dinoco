@@ -6,7 +6,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::RowDecodeError;
 use crate::backends::sql::{self, Dialect};
 use crate::{
-    DeleteQuery, DinocoRowModel, DinocoValue, FindQuery, InsertQuery, ManyToManyRelationQuery, RelationOccurrenceQuery,
+    CountQuery, DeleteQuery, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery, InsertQuery,
+    ManyToManyRelationCountQuery, ManyToManyRelationQuery, PluckValue, RelationCountQuery, RelationOccurrenceQuery,
     UpdateQuery,
 };
 #[cfg(feature = "mysql")]
@@ -116,6 +117,10 @@ enum TransactionStatement {
     Insert(InsertQuery),
     Update(UpdateQuery),
     Delete(DeleteQuery),
+    Count(CountQuery),
+    Exists(ExistsQuery),
+    RelationCount(RelationCountQuery),
+    ManyToManyRelationCount(ManyToManyRelationCountQuery),
 }
 
 #[derive(Clone, Copy)]
@@ -126,7 +131,9 @@ struct TransactionOutput {
     atomic_update_returning: bool,
 }
 
-/// Decodes every row of a statement's result into one boxed `Vec<M>`.
+/// Decodes a statement's result into the boxed value its command returns:
+/// every row into one `Vec<M>`, or the first column of the first row for a
+/// scalar such as a count.
 #[derive(Clone, Copy)]
 pub(crate) struct TransactionRowDecoder {
     #[cfg(feature = "sqlite")]
@@ -138,7 +145,8 @@ pub(crate) struct TransactionRowDecoder {
     pub empty: fn() -> DecodedRows,
 }
 
-/// The rows of one statement, as the boxed `Vec<M>` the command returns.
+/// The rows of one statement, as the boxed `Vec<M>` (or scalar) the command
+/// returns.
 pub(crate) struct DecodedRows {
     pub rows: TransactionAny,
     /// Read by the MySQL atomic update, which fails on an empty read-back.
@@ -153,6 +161,13 @@ impl DecodedRows {
     {
         let len = rows.len();
         Self { rows: Box::new(rows), len }
+    }
+
+    pub(crate) fn scalar<T>(value: T) -> Self
+    where
+        T: Send + 'static,
+    {
+        Self { rows: Box::new(value), len: 1 }
     }
 }
 
@@ -262,6 +277,27 @@ impl TransactionCommand {
         command
     }
 
+    /// Counts the matching rows; executes to an `i64`.
+    pub fn count(query: CountQuery) -> Self {
+        Self::scalar::<i64>(TransactionStatement::Count(query))
+    }
+
+    /// Checks whether any row matches; executes to a `bool`.
+    pub fn exists(query: ExistsQuery) -> Self {
+        Self::scalar::<bool>(TransactionStatement::Exists(query))
+    }
+
+    /// Counts the related rows of `count(...).includes(...)`; executes to an
+    /// `i64`.
+    pub fn relation_count(query: RelationCountQuery) -> Self {
+        Self::scalar::<i64>(TransactionStatement::RelationCount(query))
+    }
+
+    /// [`relation_count`](Self::relation_count) through a join table.
+    pub fn many_to_many_relation_count(query: ManyToManyRelationCountQuery) -> Self {
+        Self::scalar::<i64>(TransactionStatement::ManyToManyRelationCount(query))
+    }
+
     pub(crate) fn compile(self, dialect: Dialect) -> anyhow::Result<CompiledTransactionCommand> {
         let output = self.output;
         #[cfg(feature = "mysql")]
@@ -280,6 +316,10 @@ impl TransactionCommand {
             TransactionStatement::Insert(query) => sql::insert(dialect, query),
             TransactionStatement::Update(query) => sql::update(dialect, query),
             TransactionStatement::Delete(query) => sql::delete(dialect, query),
+            TransactionStatement::Count(query) => sql::count(dialect, query),
+            TransactionStatement::Exists(query) => sql::exists(dialect, query),
+            TransactionStatement::RelationCount(query) => sql::relation_count(dialect, query),
+            TransactionStatement::ManyToManyRelationCount(query) => sql::many_to_many_relation_count(dialect, query),
         };
 
         Ok(CompiledTransactionCommand {
@@ -360,6 +400,32 @@ impl TransactionCommand {
             },
         }
     }
+
+    /// A single-row, single-column statement whose command returns that
+    /// column as a `T`, without a `Vec` around it.
+    fn scalar<T>(statement: TransactionStatement) -> Self
+    where
+        T: Default + Send + 'static,
+        PluckValue<T>: DinocoRowModel,
+    {
+        Self {
+            statement,
+            output: TransactionOutput {
+                kind: TransactionCommandKind::Rows,
+                decoder: Some(TransactionRowDecoder {
+                    #[cfg(feature = "sqlite")]
+                    sqlite: crate::backends::decode_sqlite_transaction_scalar::<T>,
+                    #[cfg(feature = "postgres")]
+                    postgres: decode_postgres_scalar::<T>,
+                    #[cfg(feature = "mysql")]
+                    mysql: decode_mysql_scalar::<T>,
+                    empty: empty_scalar::<T>,
+                }),
+                type_name: type_name::<T>(),
+                atomic_update_returning: false,
+            },
+        }
+    }
 }
 
 #[cfg(feature = "mysql")]
@@ -416,6 +482,18 @@ where
     DecodedRows::new(Vec::<M>::new())
 }
 
+fn empty_scalar<T>() -> DecodedRows
+where
+    T: Default + Send + 'static,
+{
+    DecodedRows::scalar(T::default())
+}
+
+/// The error of a scalar statement whose result has no row to read.
+pub(crate) fn missing_scalar_row() -> anyhow::Error {
+    anyhow::anyhow!("Dinoco transaction aggregate returned no row.")
+}
+
 #[cfg(feature = "postgres")]
 fn decode_postgres_rows<M>(rows: &[PostgresRow]) -> anyhow::Result<DecodedRows>
 where
@@ -438,4 +516,28 @@ where
         .map(|row| M::from_mysql_row_owned(row).ok_or_else(|| RowDecodeError::new(type_name::<M>())))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(DecodedRows::new(rows))
+}
+
+#[cfg(feature = "postgres")]
+fn decode_postgres_scalar<T>(rows: &[PostgresRow]) -> anyhow::Result<DecodedRows>
+where
+    T: Send + 'static,
+    PluckValue<T>: DinocoPostgres,
+{
+    let row = rows.first().ok_or_else(missing_scalar_row)?;
+    let PluckValue(value) =
+        PluckValue::<T>::from_postgres_row(row).ok_or_else(|| RowDecodeError::new(type_name::<T>()))?;
+    Ok(DecodedRows::scalar(value))
+}
+
+#[cfg(feature = "mysql")]
+fn decode_mysql_scalar<T>(rows: Vec<MysqlRow>) -> anyhow::Result<DecodedRows>
+where
+    T: Send + 'static,
+    PluckValue<T>: DinocoMysql,
+{
+    let row = rows.into_iter().next().ok_or_else(missing_scalar_row)?;
+    let PluckValue(value) =
+        PluckValue::<T>::from_mysql_row_owned(row).ok_or_else(|| RowDecodeError::new(type_name::<T>()))?;
+    Ok(DecodedRows::scalar(value))
 }

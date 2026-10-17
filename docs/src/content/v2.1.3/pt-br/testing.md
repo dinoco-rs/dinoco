@@ -500,7 +500,7 @@ assert_eq!(count::<Project>().execute(&*client).await?.total, 0);
 
 ## Limites
 
-- `count` e `exists` não disparam `on_find`.
+- `count` e `exists` não disparam `on_find`, no client ou dentro de uma transaction.
 - A tabela pivô de uma relação many-to-many implícita não tem model, então seus inserts e deletes (`connect`, `disconnect`) não podem ser observados. As operações das próprias pontas podem.
 - O ambiente monta direto a forma final do schema. Ele não reexecuta os arquivos de `dinoco/migrations/`, então nada escrito à mão numa migration (rows de seed, triggers, SQL extra) está lá. Insira o que o teste precisa no próprio teste.
 - SQLite não é o seu banco de produção. Recursos específicos de PostgreSQL ou MySQL, como o ranking de full-text, collations e limites exatos de tipo, se comportam do jeito do SQLite. Mantenha alguns testes contra o banco real para esses casos.

@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoClient, DinocoEntity, ExistsQuery, FindWhere, WhereComplex};
+use dinoco_engine::{DinocoEntity, ExistsQuery, FindWhere, WhereComplex};
+
+use crate::ReadExecutor;
 
 pub struct Exists<M> {
     conditions: Vec<FindWhere>,
@@ -40,8 +42,13 @@ where
         self
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<bool> {
-        client.read_backend(self.read_primary).exists(ExistsQuery { table: M::TABLE_NAME, conditions: self.conditions }).await
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<bool>
+    where
+        C: ReadExecutor,
+    {
+        let query = ExistsQuery { table: M::TABLE_NAME, conditions: self.conditions };
+
+        client.read_source(self.read_primary)?.exists(query).await
     }
 }
 

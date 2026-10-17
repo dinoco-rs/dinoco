@@ -1,6 +1,6 @@
 # Transactions
 
-`transaction` runs an async closure against one native database transaction, pinned to one physical primary connection for its whole duration. Every operation you run through the `tx` handle it hands you — writes, and `find_first`/`find_many` reads — sees every earlier write from that same closure — reads inside the transaction are never stale relative to writes that already happened in it. Dinoco commits only when the closure returns `Ok`; any `Err`, from any source, triggers a rollback. To roll back with an error type of your own, use [`transaction_with_error`](#custom-errors).
+`transaction` runs an async closure against one native database transaction, pinned to one physical primary connection for its whole duration. Every operation you run through the `tx` handle it hands you — writes, and `find_first`/`find_many`/`count`/`exists` reads — sees every earlier write from that same closure — reads inside the transaction are never stale relative to writes that already happened in it. Dinoco commits only when the closure returns `Ok`; any `Err`, from any source, triggers a rollback. To roll back with an error type of your own, use [`transaction_with_error`](#custom-errors).
 
 ## Create a transaction
 
@@ -108,7 +108,7 @@ match result {
 
 ## Read inside a transaction
 
-`find_first` and `find_many` accept the same `tx` handle. The read runs on the transaction's connection, so it sees every uncommitted write made earlier in the closure — including relations loaded with `.includes(...)`:
+`find_first`, `find_many`, `count`, and `exists` accept the same `tx` handle. The read runs on the transaction's connection, so it sees every uncommitted write made earlier in the closure — including relations loaded with `.includes(...)`:
 
 ```rust
 use dinoco::{find_first, find_many, insert_into, transaction};
@@ -135,7 +135,37 @@ let result = transaction(&client, |tx| async move {
 .await;
 ```
 
-If the closure later fails, those reads simply saw data that never gets committed — nothing outside the transaction ever observes it. Reads through `tx` always go to the transaction's primary connection, never to a replica, so `read_in_primary()` makes no difference there. `count` and `exists` still take `&client` only.
+If the closure later fails, those reads simply saw data that never gets committed — nothing outside the transaction ever observes it. Reads through `tx` always go to the transaction's primary connection, never to a replica, so `read_in_primary()` makes no difference there.
+
+`count` and `exists` see those writes too, which lets a rule checked inside the transaction count the rows the closure just wrote. Relation counts requested with `.includes(...)` run on the transaction's connection as well:
+
+```rust
+use dinoco::{count, exists, insert_into, transaction};
+
+let result = transaction(&client, |tx| async move {
+    insert_into::<Office>().value(&office).execute(tx).await?;
+
+    // Includes the office inserted above, which isn't committed yet.
+    let offices = count::<Office>()
+        .where_(|x| x.business_id.eq(&business_id))
+        .execute(tx)
+        .await?;
+    if offices.total > MAX_OFFICES {
+        anyhow::bail!("a business can have at most {MAX_OFFICES} offices");
+    }
+
+    let has_headquarters = exists::<Office>()
+        .where_(|x| x.business_id.eq(&business_id))
+        .where_(|x| x.headquarters.eq(true))
+        .execute(tx)
+        .await?;
+
+    Ok(has_headquarters)
+})
+.await;
+```
+
+The `bail!` rolls the insert back. A count run with `&client` inside the same closure goes to another connection and sees only committed rows.
 
 ## Automatic rollback
 
@@ -185,7 +215,4 @@ An error from `COMMIT` itself comes back as `TransactionError::Commit(DatabaseEr
 
 ## Supported builders
 
-The closure API supports `find_first`, `find_many`, `insert_into`, `insert_many`, `update`, `update_many`, `delete`, `delete_many`, `find_and_update`, and the generated helpers for nested or many-to-many mutations. Returning writes (`.returning::<S>()`) use each database's native support on SQLite and PostgreSQL; MySQL's `find_and_update` uses a dedicated fallback instead — it runs the conditional `UPDATE` first, then reloads the row by `id` or by the original conditions, and never performs a separate existence check before attempting the update.
-
-> [!NOTE]
-> `count` and `exists` don't accept the transaction context yet — keep using `&client` for them. They read committed data only, so they won't see writes the closure hasn't committed.
+The closure API supports `find_first`, `find_many`, `count`, `exists`, `insert_into`, `insert_many`, `update`, `update_many`, `delete`, `delete_many`, `find_and_update`, and the generated helpers for nested or many-to-many mutations. Returning writes (`.returning::<S>()`) use each database's native support on SQLite and PostgreSQL; MySQL's `find_and_update` uses a dedicated fallback instead — it runs the conditional `UPDATE` first, then reloads the row by `id` or by the original conditions, and never performs a separate existence check before attempting the update.

@@ -453,9 +453,16 @@ impl MutationExecutor for TransactionContext {
 }
 
 pub(crate) fn active_transaction() -> anyhow::Result<ActiveTransaction> {
-    ACTIVE_TRANSACTION
-        .try_with(Clone::clone)
-        .map_err(|_| anyhow::anyhow!("transaction context used outside its transaction closure"))
+    ACTIVE_TRANSACTION.try_with(Clone::clone).map_err(|_| outside_closure())
+}
+
+/// The executor of the running transaction, without cloning its hooks.
+pub(crate) fn active_executor() -> anyhow::Result<TransactionExecutor> {
+    ACTIVE_TRANSACTION.try_with(|active| active.executor.clone()).map_err(|_| outside_closure())
+}
+
+fn outside_closure() -> anyhow::Error {
+    anyhow::anyhow!("transaction context used outside its transaction closure")
 }
 
 /// Runs `callback` inside a database transaction, committing when it returns

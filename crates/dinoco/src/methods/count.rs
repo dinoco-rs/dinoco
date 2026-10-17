@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use dinoco_engine::{DinocoClient, DinocoEntity, FindWhere, WhereComplex};
+use dinoco_engine::{DinocoEntity, FindWhere, WhereComplex};
 
-use crate::{CountLoader, IntoCountLoader, execute_count};
+use crate::{CountLoader, IntoCountLoader, ReadExecutor, execute_count};
 
 pub struct Count<M>
 where
@@ -57,8 +57,9 @@ where
         self
     }
 
-    pub async fn execute(self, client: &DinocoClient) -> anyhow::Result<M::Count>
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<M::Count>
     where
+        C: ReadExecutor,
         M::Count: crate::DinocoCountModel<M>,
     {
         execute_count::<M>(self.conditions, self.counts, client).await
