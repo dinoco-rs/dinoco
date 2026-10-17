@@ -279,6 +279,71 @@ model BusinessReceivableTransaction {{
     assert_eq!(format!("{unchanged:?}"), format!("{legacy:?}"));
 }
 
+/// User-chosen names are not shortened: the CLI stops before connecting, since
+/// PostgreSQL would truncate them (so the database never matches the schema)
+/// and MySQL would reject the migration halfway.
+#[test]
+fn table_column_and_enum_names_over_the_limit_are_rejected_before_connecting() {
+    let long_model = "BusinessReceivableTransactionSettlementAdjustmentHistoryEntryArchive";
+    let long_field = "the_amount_that_was_adjusted_for_the_settlement_of_the_business_receivable";
+    let long_enum = "BusinessReceivableTransactionSettlementAdjustmentHistoryEntryKind";
+    for backend in [Backend::Sqlite, Backend::Postgres, Backend::Mysql] {
+        let project = std::env::temp_dir().join(format!(
+            "dinoco-identifier-limits-names-{}-{}-{}",
+            std::process::id(),
+            monotonic(),
+            NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(project.join("dinoco")).expect("project");
+        let enum_values = "{\n    OPEN\n}";
+        fs::write(
+            project.join("dinoco/schema.dinoco"),
+            format!(
+                "config {{\n    database = \"{}\"\n    database_url = env(\"DATABASE_URL\")\n}}\n\nenum {long_enum} {enum_values}\n\nmodel {long_model} {{\n    id Integer @id @default(autoincrement())\n    {long_field} Integer\n    kind {long_enum}\n}}\n\nmodel Short {{\n    id Integer @id @default(autoincrement())\n}}\n",
+                backend.provider()
+            ),
+        )
+        .expect("schema");
+        // Nothing listens there: the check must come first.
+        let url = match backend {
+            Backend::Sqlite => project.join("dev.sqlite").to_string_lossy().to_string(),
+            Backend::Postgres => "postgres://postgres:postgres@127.0.0.1:1/none".to_string(),
+            Backend::Mysql => "mysql://root:root@127.0.0.1:1/none".to_string(),
+        };
+
+        let output = run_cli(&project, &url, &["migrate", "generate", "--yes"]);
+        let text = combined_output(&output);
+        if backend == Backend::Sqlite {
+            assert_success(&output);
+        } else {
+            assert!(!output.status.success(), "{text}");
+            let limit = if backend == Backend::Postgres {
+                "PostgreSQL allows (63 bytes)"
+            } else {
+                "MySQL allows (64 characters)"
+            };
+            assert!(text.contains(&format!("These names are longer than {limit}.")), "{text}");
+            assert!(
+                text.contains("table `business_receivable_transaction_settlement_adjustment_history_entry_archive`"),
+                "{text}"
+            );
+            assert!(
+                text.contains(&format!(
+                    "column `business_receivable_transaction_settlement_adjustment_history_entry_archive.{long_field}`"
+                )),
+                "{text}"
+            );
+            assert!(!text.contains("`short`"), "{text}");
+            if backend == Backend::Postgres {
+                assert!(text.contains(&format!("enum `{long_enum}`")), "{text}");
+            }
+            assert!(!text.contains("could not connect") && !text.contains("Could not connect"), "{text}");
+            assert!(!project.join("dinoco/migrations").exists(), "nothing is written");
+        }
+        let _ = fs::remove_dir_all(&project);
+    }
+}
+
 #[tokio::test]
 async fn sqlite_migrations_keep_long_names_and_stay_stable() -> anyhow::Result<()> {
     exercise_migrations(Backend::Sqlite).await

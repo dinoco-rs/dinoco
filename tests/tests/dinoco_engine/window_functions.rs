@@ -26,7 +26,7 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
         key_count: 2,
     });
 
-    assert!(join_sql.contains("LEFT JOIN user"));
+    assert!(join_sql.contains("LEFT JOIN \"user\""));
     assert!(join_sql.contains("ROW_NUMBER() OVER (PARTITION BY user_token.user_id"));
     assert!(join_sql.contains("__dinoco_row_num <= ?"));
     assert_eq!(join_params.len(), 1);
@@ -56,7 +56,7 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     };
     let (many_to_many_sql, many_to_many_params) = adapter.compile_many_to_many_relation_query(many_to_many_query());
 
-    assert!(many_to_many_sql.contains("INNER JOIN system ON _business_to_system.system_id = system.id"));
+    assert!(many_to_many_sql.contains("INNER JOIN \"system\" ON _business_to_system.system_id = \"system\".id"));
     assert!(many_to_many_sql.contains("PARTITION BY __dinoco_parent_keys.__dinoco_relation_ordinal"));
     assert!(many_to_many_sql.contains("__dinoco_parent_keys(__dinoco_relation_ordinal) AS (VALUES (0), (1))"));
     assert!(many_to_many_sql.contains("_business_to_system.business_id = ?"));

@@ -60,6 +60,11 @@ pub struct MigrationMetadata {
 
 pub type SqliteMigrationMetadata = MigrationMetadata;
 
+/// Marks server schema snapshots recorded since 2.1.6. Earlier releases read
+/// PostgreSQL and MySQL string, enum and negative number defaults as no
+/// default, so snapshots they took from the live database lack them.
+pub const SNAPSHOT_LITERAL_DEFAULTS_KEY: &str = "literal_defaults";
+
 const POSTGRES_MIGRATION_LOCK_ID: i64 = 0x4449_4E4F_434F;
 // MySQL limits lock names to 64 characters. Database names that fit after
 // the 18-character prefix keep the name earlier releases used; longer ones,
@@ -313,7 +318,11 @@ impl CliDatabase {
     }
 
     pub async fn record_server_schema_snapshot(&self, name: &str, schema: &DatabaseSchema) -> anyhow::Result<()> {
-        let schema_json = serde_json::to_string(schema).context("failed to serialize migration schema snapshot")?;
+        let mut snapshot = serde_json::to_value(schema).context("failed to serialize migration schema snapshot")?;
+        if let Some(object) = snapshot.as_object_mut() {
+            object.insert(SNAPSHOT_LITERAL_DEFAULTS_KEY.to_string(), serde_json::Value::Bool(true));
+        }
+        let schema_json = snapshot.to_string();
         match self {
             Self::Postgres(adapter) => record_postgres_schema_snapshot(adapter, name, &schema_json).await,
             Self::PgBouncer(adapter) => record_postgres_schema_snapshot(adapter.inner(), name, &schema_json).await,
@@ -379,6 +388,26 @@ impl CliDatabase {
             Self::Mysql(adapter) => adapter.query_count(sql, &[]).await,
             Self::Sqlite(adapter) => adapter.query_count(sql, &[]).await,
         }
+    }
+
+    /// Rows of `table` whose `column` is NULL.
+    pub async fn count_null_rows(&self, table: &str, column: &str) -> anyhow::Result<i64> {
+        let sql = match self {
+            Self::Postgres(_) | Self::PgBouncer(_) => {
+                format!(
+                    "SELECT COUNT(*) FROM {} WHERE {} IS NULL",
+                    postgres_identifier(table),
+                    postgres_identifier(column)
+                )
+            }
+            Self::Mysql(_) => {
+                format!("SELECT COUNT(*) FROM {} WHERE {} IS NULL", mysql_identifier(table), mysql_identifier(column))
+            }
+            Self::Sqlite(_) => {
+                format!("SELECT COUNT(*) FROM {} WHERE {} IS NULL", sqlite_identifier(table), sqlite_identifier(column))
+            }
+        };
+        self.count(&sql).await.with_context(|| format!("failed to count the NULL values of `{table}.{column}`"))
     }
 
     /// Rows of `table` whose `column` holds `value`.
@@ -1371,9 +1400,11 @@ fn parse_sql_string_list(values: &str) -> Option<Vec<String>> {
 }
 
 fn sqlite_foreign_keys(conn: &rusqlite::Connection, table_name: &str) -> rusqlite::Result<Vec<MigrationForeignKey>> {
-    let mut stmt = conn.prepare(&format!("PRAGMA foreign_key_list({table_name})"))?;
+    let mut stmt = conn.prepare(
+        "SELECT id, seq, \"table\", \"from\", \"to\", on_update, on_delete FROM pragma_foreign_key_list(?1) ORDER BY id, seq",
+    )?;
     let rows = stmt
-        .query_map([], |row| {
+        .query_map([table_name], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, i64>(1)?,
@@ -1552,7 +1583,7 @@ async fn inspect_postgres(adapter: &PostgresAdapter) -> anyhow::Result<DatabaseS
                     default: if is_identity == "YES" {
                         Some(dinoco_engine::MigrationDefault::AutoIncrement)
                     } else {
-                        default.and_then(|value| parse_default_for_type(&value, &ty))
+                        default.and_then(|value| parse_default_for_type(strip_postgres_default_cast(&value), &ty))
                     },
                     ty,
                     primary_key: row.try_get(4)?,
@@ -1782,7 +1813,7 @@ async fn inspect_mysql(adapter: &MySqlAdapter) -> anyhow::Result<DatabaseSchema>
                     default: if extra.to_ascii_lowercase().contains("auto_increment") {
                         Some(dinoco_engine::MigrationDefault::AutoIncrement)
                     } else {
-                        default.and_then(|value| parse_default_for_type(&value, &ty))
+                        default.and_then(|value| parse_mysql_default(&value, &extra, &ty))
                     },
                     ty,
                     primary_key: key == "PRI",
@@ -1940,12 +1971,60 @@ fn parse_default_for_type(raw: &str, ty: &MigrationColumnType) -> Option<dinoco_
             _ => None,
         }
     } else if matches!(ty, MigrationColumnType::Integer) {
-        value.parse::<i64>().ok().map(MigrationDefault::Integer)
+        // PostgreSQL quotes negative numbers: `'-3'::integer`.
+        unquote_number(value).parse::<i64>().ok().map(MigrationDefault::Integer)
     } else if matches!(ty, MigrationColumnType::Float) {
-        value.parse::<f64>().ok().map(MigrationDefault::Float)
+        unquote_number(value).parse::<f64>().ok().map(MigrationDefault::Float)
     } else {
         parse_sql_string_literal(value).map(MigrationDefault::String)
     }
+}
+
+/// PostgreSQL reports a literal default with the cast it applies, such as
+/// `'USER'::"Role"`, `'anon'::text` or `'-3'::integer`. Returns the literal
+/// alone; any other expression is returned unchanged.
+fn strip_postgres_default_cast(raw: &str) -> &str {
+    let value = strip_wrapping_parentheses(raw.trim());
+    let literal_end = if value.starts_with('\'') {
+        let bytes = value.as_bytes();
+        let mut index = 1;
+        loop {
+            match bytes.get(index) {
+                Some(b'\'') if bytes.get(index + 1) == Some(&b'\'') => index += 2,
+                Some(b'\'') => break Some(index + 1),
+                Some(_) => index += 1,
+                None => break None,
+            }
+        }
+    } else {
+        // An unquoted number or keyword cast to a type: `1::bigint`.
+        value
+            .find("::")
+            .filter(|&end| value[..end].bytes().all(|byte| byte.is_ascii_alphanumeric() || b"-+._".contains(&byte)))
+    };
+
+    match literal_end {
+        Some(end) if value[end..].trim_start().is_empty() || value[end..].trim_start().starts_with("::") => {
+            strip_wrapping_parentheses(&value[..end])
+        }
+        _ => value,
+    }
+}
+
+/// MySQL 8 reports literal defaults without quotes (`USER`, `it's`) and marks
+/// expression defaults such as `CURRENT_TIMESTAMP` as `DEFAULT_GENERATED` in
+/// `extra`.
+fn parse_mysql_default(raw: &str, extra: &str, ty: &MigrationColumnType) -> Option<dinoco_engine::MigrationDefault> {
+    let textual =
+        matches!(ty, MigrationColumnType::String | MigrationColumnType::Text | MigrationColumnType::Enum { .. });
+    if textual && !extra.to_ascii_lowercase().contains("default_generated") {
+        return Some(dinoco_engine::MigrationDefault::String(raw.to_string()));
+    }
+    parse_default_for_type(raw, ty)
+}
+
+fn unquote_number(value: &str) -> &str {
+    value.strip_prefix('\'').and_then(|value| value.strip_suffix('\'')).unwrap_or(value)
 }
 
 fn strip_wrapping_parentheses(mut value: &str) -> &str {

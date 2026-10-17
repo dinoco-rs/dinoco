@@ -156,6 +156,7 @@ cd docs && sed 's/v2\.0\.0/v<X>/g' scripts/check-anchors.mjs > scripts/.check-an
 - Code, comments, doc comments and CLI output are in English. Docs are bilingual (`en-us` and `pt-br`).
 - Match the surrounding code: naming, comment density, and doc comments on public API.
 - Using `where_complex` on a builder discards every plain `where_` on that builder. This is documented behavior and must be kept.
+- Write every table and column name through `SqlWriter::identifier`/`raw_field` (or the dialect's `identifier`), never with `push`: it quotes the keywords any of the three databases reserves (`RESERVED_IDENTIFIERS` in `backends/sql.rs`, sorted for binary search).
 - Don't commit unless asked.
 
 ## Releasing a version

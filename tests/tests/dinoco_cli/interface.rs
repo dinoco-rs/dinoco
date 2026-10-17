@@ -18,6 +18,7 @@ fn migrate_generate_help_lists_every_decision_option() {
     let help = stdout(&output);
     for option in [
         "--workspace <NAME>",
+        "--schema-from <NAME>",
         "--yes",
         "--allow-destructive",
         "--create-only",

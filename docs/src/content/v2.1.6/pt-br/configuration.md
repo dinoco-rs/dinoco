@@ -111,6 +111,21 @@ dinoco/
 - Os arquivos mantêm os caminhos relativos a `dinoco/`, então a cópia compila sozinha. Um arquivo importado de fora de `dinoco/` (por exemplo `../shared/common.dinoco`) é salvo em `schema/_external/`, com cada `..` escrito como `_up`: `schema/_external/_up/shared/common.dinoco`.
 - A pasta `schema/` nunca é lida como migration. Projetos sem `workspace` não recebem cópia, porque o `dinoco/` já guarda o único schema deles.
 
+### Aplicar o schema de outro workspace
+
+Uma cópia salva pode ser aplicada em outro workspace. Digamos que o `dev` foi gerado, você continuou editando o `schema.dinoco`, e agora o `prod` deve receber exatamente o que o `dev` tem, sem o trabalho em andamento:
+
+```bash
+dinoco migrate generate --workspace prod --schema-from dev
+```
+
+Num terminal a opção não é necessária: com mais de um workspace, o `migrate generate` pergunta em qual workspace aplicar as migrations e depois qual schema aplicar, o `dinoco/schema.dinoco` ou a cópia salva para outro workspace.
+
+- Os models e enums vêm de `migrations/dev/schema/`. As configurações do banco vêm do workspace `prod` no `dinoco/schema.dinoco`, então a migration vai para o banco do prod mesmo quando a cópia do dev é anterior a uma mudança nas configurações do prod.
+- Depois que a migration é aplicada, `migrations/prod/schema/` é substituída pela cópia do dev, e passa a registrar o que o prod tem agora. O `dinoco/schema.dinoco` não é alterado.
+- O `models generate` também aceita `--schema-from`, e o `dinoco/transform.rs` é aplicado normalmente.
+- Uma cópia que importa arquivos de fora do `dinoco/` precisa ter esses imports apontados para `_external/` antes de compilar sozinha.
+
 ## Variáveis de ambiente
 
 `database_url`, cada item de `read_replicas` e `snowflake_node_id` aceitam **somente** `env("NOME")` — uma string literal em qualquer uma dessas posições é erro de compilação, não um aviso. Isso não é só estilo: é o que mantém um schema seguro para versionar.

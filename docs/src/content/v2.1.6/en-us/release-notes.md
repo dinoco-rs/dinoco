@@ -1,6 +1,15 @@
-# Dinoco v2.1.5
+# Dinoco v2.1.6
 
 This page tracks what changed release over release. Each entry links to the page that documents the feature in depth — treat this as a changelog, not the primary reference.
+
+## v2.1.6
+
+- **A freshly migrated PostgreSQL or MySQL database no longer reports drift.** Dinoco read string, enum and negative number defaults back wrong: PostgreSQL reports them with a cast (`'USER'::"Role"`, `'anon'::text`, `'-3'::integer`) and MySQL 8 without quotes (`USER`), and both were taken as no default. Any `@default("...")`, enum `@default(VALUE)` or negative `@default(-1)` made `migrate generate` fail right after applying the migration with `The migration finished, but the live database still does not match the Dinoco schema`, even on an empty database. They are now read as the schema declares them. Schema snapshots that `migrate run` recorded before 2.1.6 lack those defaults, so they are taken from the live columns when such a snapshot is read.
+- **Table and column names that are SQL keywords work everywhere.** Only 15 keywords were quoted, so a model `User` (table `user`) failed on PostgreSQL with `syntax error at or near "user"`, and names such as `key`, `desc`, `end`, `range`, `rank`, `values`, `to` or `system` failed on MySQL. Every keyword PostgreSQL, MySQL 8.4 or SQLite reserves is now quoted, in migrations and in every query, including relation includes and relation counts, which wrote table names unquoted. SQLite schema inspection no longer fails on such a table either. See [Model attributes](/en-us/docs/orm/guide/models#model-attributes).
+- **Apply one workspace's schema to another.** With more than one workspace, `migrate generate` asks which workspace to apply the migrations to, then which schema to apply: `dinoco/schema.dinoco` or the copy saved for another workspace. `--schema-from dev` answers without a terminal, and `models generate` accepts it too. The picked schema becomes the target workspace's saved copy. See [Apply another workspace's schema](/en-us/docs/orm/guide/configuration#apply-another-workspace-s-schema).
+- **Rows that can't take a change stop the command before anything is written.** A column made required while rows hold `NULL` in it, or a required column without a default added to a table with rows, is reported with its table and row count, instead of failing halfway through the migration (MySQL commits each DDL statement on its own). See [Dangerous changes](/en-us/docs/orm/tooling/migrations#dangerous-changes).
+- **Table, column and enum names longer than the database keeps are rejected.** PostgreSQL silently cut them to 63 bytes, so the database never matched the schema, and MySQL refused them over 64 characters halfway through a migration. `migrate generate` now lists them before connecting. See [Long index names](/en-us/docs/orm/guide/indexes#long-index-names).
+- Upgrading: no migration is needed. A database where 2.1.5 applied the migration and then failed has the migration recorded without its schema snapshot: run `dinoco migrate generate` once more and approve adopting the history (`--adopt-baseline` without a terminal). Queries now quote reserved names, which changes the SQL text only for those names.
 
 ## v2.1.5
 

@@ -14,6 +14,8 @@ use std::process::Command;
 use anyhow::{Context, bail};
 use dinoco_compiler::Schema;
 
+use crate::schema::SchemaSource;
+
 const RUNNER_DIR: &str = "dinoco/.runner";
 
 /// `dinoco/transform.rs`, when the project customizes generated code.
@@ -27,23 +29,26 @@ pub fn has_transform() -> bool {
 
 /// Generates `dinoco/models/`, applying `dinoco/transform.rs` when it exists.
 ///
-/// With a workspace, it also saves the schema it generated from into
-/// `dinoco/migrations/<workspace>/schema/`.
-pub fn generate_models(schema: &Schema, workspace: Option<&str>) -> anyhow::Result<()> {
+/// With a workspace, it also saves the schema it generated from, `source`,
+/// into `dinoco/migrations/<workspace>/schema/`.
+pub fn generate_models(schema: &Schema, workspace: Option<&str>, source: &SchemaSource) -> anyhow::Result<()> {
     if has_transform() {
         crate::ui::progress("Applying dinoco/transform.rs (building the Dinoco runner)...");
-        run(workspace)?;
+        run(workspace, source)?;
     } else {
         dinoco_codegen::generate_models_for_workspace(schema, workspace)?;
     }
 
     if let Some(workspace) = workspace {
-        let saved = crate::schema::save_workspace_schema(workspace)?;
-        crate::ui::info(format!(
-            "Schema saved to {} ({})",
-            crate::schema::workspace_schema_dir(workspace).display(),
-            crate::ui::plural(saved.len(), "file", "files")
-        ));
+        let saved = crate::schema::save_workspace_schema(workspace, source)?;
+        let files = crate::ui::plural(saved.len(), "file", "files");
+        let target = crate::schema::workspace_schema_dir(workspace);
+        match source {
+            SchemaSource::Saved(from) if from != workspace => {
+                crate::ui::info(format!("Schema of `{from}` saved to {} ({files})", target.display()))
+            }
+            _ => crate::ui::info(format!("Schema saved to {} ({files})", target.display())),
+        }
     }
 
     Ok(())
@@ -51,15 +56,22 @@ pub fn generate_models(schema: &Schema, workspace: Option<&str>) -> anyhow::Resu
 
 /// Builds and runs the runner, which generates the models with
 /// `dinoco/transform.rs` applied.
-fn run(workspace: Option<&str>) -> anyhow::Result<()> {
+fn run(workspace: Option<&str>, source: &SchemaSource) -> anyhow::Result<()> {
     write_project()?;
 
+    let schema = match source {
+        SchemaSource::Current => String::new(),
+        SchemaSource::Saved(from) => {
+            crate::schema::workspace_schema_dir(from).join("schema.dinoco").to_string_lossy().into_owned()
+        }
+    };
     let status = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()))
         .args(["run", "--quiet", "--manifest-path"])
         .arg(format!("{RUNNER_DIR}/Cargo.toml"))
         .arg("--")
         .arg("models")
         .env("DINOCO_RUNNER_WORKSPACE", workspace.unwrap_or(""))
+        .env("DINOCO_RUNNER_SCHEMA", schema)
         .status()
         .context("failed to launch `cargo`; dinoco/transform.rs needs a Rust toolchain")?;
     if !status.success() {
@@ -129,12 +141,24 @@ fn main() -> ::anyhow::Result<()> {
 }
 
 fn models(workspace: Option<&str>) -> ::anyhow::Result<()> {
-    let schema = ::dinoco_compiler::compile_file(std::path::Path::new("dinoco/schema.dinoco"))
-        .map_err(|error| ::anyhow::anyhow!(error.to_string()))?;
-    let schema = match workspace {
+    let compile = |path: &str| {
+        ::dinoco_compiler::compile_file(std::path::Path::new(path)).map_err(|error| ::anyhow::anyhow!(error.to_string()))
+    };
+    let schema = compile("dinoco/schema.dinoco")?;
+    let mut schema = match workspace {
         Some(name) => schema.for_workspace(name).ok_or_else(|| ::anyhow::anyhow!("workspace `{name}` was not found"))?,
         None => schema,
     };
+
+    // Another workspace's saved schema: its models and enums, with the config
+    // of dinoco/schema.dinoco.
+    if let Some(path) = std::env::var("DINOCO_RUNNER_SCHEMA").ok().filter(|value| !value.is_empty()) {
+        let is_config = |item: &::dinoco_compiler::SchemaItem| matches!(item, ::dinoco_compiler::SchemaItem::Config(_));
+        let config = schema.items.into_iter().find(is_config);
+        schema = compile(&path)?;
+        schema.items.retain(|item| !is_config(item));
+        schema.items.splice(0..0, config);
+    }
 
     // The CLI reports the result.
     ::dinoco_codegen::generate_models_with(&schema, workspace, &transform::transformer())?;

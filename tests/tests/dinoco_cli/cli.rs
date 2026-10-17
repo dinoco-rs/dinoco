@@ -291,6 +291,104 @@ fn workspace_commands_use_separate_migrations_and_replace_generated_models() {
 }
 
 #[test]
+fn a_workspace_applies_the_schema_saved_for_another_workspace() {
+    let project = temp_project("workspace-schema-from");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
+    fs::write(project.join("dinoco/schema.dinoco"), WORKSPACE_SCHEMA).expect("workspace schema");
+    let dev_db = project.join("dev.sqlite");
+    let prod_db = project.join("prod.sqlite");
+    let cli = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+            .args(args)
+            .env("DEV_DATABASE_URL", &dev_db)
+            .env("PROD_DATABASE_URL", &prod_db)
+            .env("DINOCO_CLI_CONFIRM_MIGRATION", "true")
+            .current_dir(&project)
+            .output()
+            .expect("dinoco cli")
+    };
+    let stdout = |output: &std::process::Output| String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = |output: &std::process::Output| String::from_utf8_lossy(&output.stderr).into_owned();
+
+    let dev = cli(&["migrate", "generate", "-w", "dev"]);
+    assert!(dev.status.success(), "stderr: {}", stderr(&dev));
+    assert!(stdout(&dev).contains("Schema      dinoco/schema.dinoco"), "{}", stdout(&dev));
+
+    // Work in progress that dev has not been generated with yet.
+    fs::write(project.join("dinoco/schema.dinoco"), WORKSPACE_ACCOUNT_SCHEMA).expect("updated schema");
+    let prod = cli(&["migrate", "generate", "-w", "prod", "--schema-from", "dev"]);
+    assert!(prod.status.success(), "stderr: {}", stderr(&prod));
+    let text = stdout(&prod);
+    assert!(text.contains("Schema      dinoco/migrations/dev/schema/ (saved for dev)"), "{text}");
+    assert!(text.contains("Schema of `dev` saved to dinoco/migrations/prod/schema (1 file)"), "{text}");
+    let prod_connection = Connection::open(&prod_db).expect("prod primary");
+    assert!(table_exists(&prod_connection, "user"), "prod gets dev's schema");
+    assert!(!table_exists(&prod_connection, "account"), "the work in progress stays out of prod");
+    drop(prod_connection);
+    assert_eq!(saved_schema(&project, "prod"), WORKSPACE_SCHEMA, "prod's copy is now dev's schema");
+    assert_eq!(saved_schema(&project, "dev"), WORKSPACE_SCHEMA);
+    assert_eq!(
+        fs::read_to_string(project.join("dinoco/schema.dinoco")).expect("schema"),
+        WORKSPACE_ACCOUNT_SCHEMA,
+        "the schema you edit is never changed"
+    );
+    // The models come from dev's schema, the connection from prod's config.
+    assert!(project.join("dinoco/models/user.rs").exists());
+    assert!(!project.join("dinoco/models/account.rs").exists());
+    let generated = fs::read_to_string(project.join("dinoco/mod.rs")).expect("generated mod");
+    assert!(generated.contains("PROD_DATABASE_URL"), "{generated}");
+    assert!(!generated.contains("DEV_DATABASE_URL"), "{generated}");
+
+    // A workspace's own saved schema is what it already has.
+    let again = cli(&["migrate", "generate", "-w", "prod", "--schema-from", "prod"]);
+    assert!(again.status.success(), "stderr: {}", stderr(&again));
+    assert!(stdout(&again).contains("No schema changes were found."), "{}", stdout(&again));
+
+    let models = cli(&["models", "generate", "-w", "dev", "--schema-from", "prod"]);
+    assert!(models.status.success(), "stderr: {}", stderr(&models));
+    assert!(stdout(&models).contains("Schema of `prod` saved to dinoco/migrations/dev/schema (1 file)"));
+    assert!(project.join("dinoco/models/user.rs").exists());
+
+    // Without --schema-from and without a terminal, dinoco/schema.dinoco is used.
+    let current = cli(&["migrate", "generate", "-w", "prod"]);
+    assert!(current.status.success(), "stderr: {}", stderr(&current));
+    let prod_connection = Connection::open(&prod_db).expect("prod primary");
+    assert!(table_exists(&prod_connection, "account"));
+    drop(prod_connection);
+    assert_eq!(saved_schema(&project, "prod"), WORKSPACE_ACCOUNT_SCHEMA);
+
+    let unknown = cli(&["migrate", "generate", "-w", "prod", "--schema-from", "staging"]);
+    assert_eq!(unknown.status.code(), Some(2), "{}", stderr(&unknown));
+    assert!(stderr(&unknown).contains("Workspace `staging` is not defined in dinoco/schema.dinoco."));
+    assert!(stderr(&unknown).contains("--schema-from"), "{}", stderr(&unknown));
+
+    fs::remove_dir_all(project.join("dinoco/migrations/dev/schema")).expect("remove dev copy");
+    let missing = cli(&["models", "generate", "-w", "prod", "--schema-from", "dev"]);
+    assert_eq!(missing.status.code(), Some(2), "{}", stderr(&missing));
+    assert!(stderr(&missing).contains("Workspace `dev` has no saved schema yet."), "{}", stderr(&missing));
+    assert!(stderr(&missing).contains("dinoco migrate generate --workspace dev"), "{}", stderr(&missing));
+}
+
+#[test]
+fn schema_from_needs_workspaces() {
+    let project = temp_project("schema-from-without-workspaces");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco directory");
+    fs::write(project.join("dinoco/schema.dinoco"), "model User {\n    id String @id\n}\n").expect("schema");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+        .args(["models", "generate", "--schema-from", "dev"])
+        .current_dir(&project)
+        .output()
+        .expect("models generation should run");
+    assert_eq!(output.status.code(), Some(2), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("--schema-from was passed, but dinoco/schema.dinoco does not define workspaces.")
+    );
+    assert!(!project.join("dinoco/models").exists());
+}
+
+#[test]
 fn workspace_generation_saves_every_file_of_a_multi_file_schema() {
     let project = temp_project("workspace-multi-file-schema");
     fs::create_dir_all(project.join("dinoco/domain")).expect("dinoco directories");

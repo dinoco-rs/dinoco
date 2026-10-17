@@ -51,7 +51,7 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
         skip: 2,
         order_by: Some(FindOrderBy::Desc("id")),
     });
-    assert_eq!(sql, "SELECT id, email FROM user WHERE email = ? ORDER BY id DESC LIMIT ? OFFSET ?");
+    assert_eq!(sql, "SELECT id, email FROM \"user\" WHERE email = ? ORDER BY id DESC LIMIT ? OFFSET ?");
     assert_eq!(params.len(), 3);
 
     let (sql, params) = adapter.compile_insert_query(InsertQuery {
@@ -60,7 +60,7 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
         rows: vec![vec![DinocoValue::String("1".to_string()), DinocoValue::String("a@dinoco.rs".to_string())]],
         returning: Some(&["id"]),
     });
-    assert_eq!(sql, "INSERT INTO user (id, email) VALUES (?, ?) RETURNING id");
+    assert_eq!(sql, "INSERT INTO \"user\" (id, email) VALUES (?, ?) RETURNING id");
     assert_eq!(params.len(), 2);
 
     let (sql, params) = adapter.compile_update_query(UpdateQuery {
@@ -90,7 +90,7 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
         conditions: vec![FindWhere::Eq("id", DinocoValue::String("1".to_string()))],
         returning: Some(&["id", "email"]),
     });
-    assert_eq!(sql, "UPDATE user SET email = ? WHERE id = ? RETURNING id, email");
+    assert_eq!(sql, "UPDATE \"user\" SET email = ? WHERE id = ? RETURNING id, email");
     assert_eq!(params.len(), 2);
 
     let (sql, params) = adapter.compile_delete_query(DeleteQuery {
@@ -98,7 +98,7 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
         conditions: vec![FindWhere::Eq("id", DinocoValue::String("1".to_string()))],
         returning: None,
     });
-    assert_eq!(sql, "DELETE FROM user WHERE id = ?");
+    assert_eq!(sql, "DELETE FROM \"user\" WHERE id = ?");
     assert_eq!(params.len(), 1);
 
     Ok(())

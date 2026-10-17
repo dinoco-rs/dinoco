@@ -91,6 +91,8 @@ Where field attributes describe one column, model attributes describe an ordered
 | `@@fulltexts([title, body])` | Composite full-text index across several fields |
 | `@@table_name("audit_users")` | Overrides the generated physical table name |
 
+Table and column names may be SQL keywords, such as a `User` model (table `user`), an `Order` model, or fields named `key`, `desc`, `end` or `values`. Dinoco quotes a name in every query and migration whenever PostgreSQL, MySQL or SQLite reserves it, so the same schema works on all three.
+
 `@@ids`, `@@uniques`, `@@indexes`, and `@@fulltexts` each take one non-empty array of existing scalar or enum field names, with no duplicates. Every field listed in `@@fulltexts` must be `String` or `String?`.
 
 > [!TIP]

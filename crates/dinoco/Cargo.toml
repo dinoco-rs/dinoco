@@ -1,6 +1,6 @@
 [package]
 name = "dinoco"
-version = "2.1.5"
+version = "2.1.6"
 edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
@@ -35,12 +35,12 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [dependencies]
-dinoco_engine = { path = "../dinoco_engine", version = "2.1.5", default-features = false }
+dinoco_engine = { path = "../dinoco_engine", version = "2.1.6", default-features = false }
 # Exact: generated code calls into this exact version of the runtime.
-dinoco_derives = { path = "../dinoco_derives", version = "=2.1.5" }
-dinoco_cli = { path = "../dinoco_cli", version = "2.1.5", optional = true }
-dinoco_compiler = { path = "../dinoco_compiler", version = "2.1.5", optional = true }
-dinoco_codegen = { path = "../dinoco_codegen", version = "2.1.5", optional = true }
+dinoco_derives = { path = "../dinoco_derives", version = "=2.1.6" }
+dinoco_cli = { path = "../dinoco_cli", version = "2.1.6", optional = true }
+dinoco_compiler = { path = "../dinoco_compiler", version = "2.1.6", optional = true }
+dinoco_codegen = { path = "../dinoco_codegen", version = "2.1.6", optional = true }
 
 uuid = { version = "1.18.1", features = ["v7"] }
 

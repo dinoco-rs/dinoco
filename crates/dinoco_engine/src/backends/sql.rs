@@ -20,22 +20,47 @@ const JOIN_ALIAS_PREFIX: &str = "__dinoco_relation_join_";
 const KEYS_ALIAS_PREFIX: &str = "__dinoco_relation_keys_";
 const PARENT_KEYS_ORDINAL: &str = "__dinoco_parent_keys.__dinoco_relation_ordinal";
 
-const RESERVED_IDENTIFIERS: [&str; 15] = [
-    "group",
-    "order",
-    "select",
-    "table",
-    "where",
-    "from",
-    "limit",
-    "offset",
-    "primary",
-    "references",
-    "constraint",
-    "index",
-    "unique",
-    "default",
-    "check",
+/// Keywords reserved by PostgreSQL, MySQL 8.4 or SQLite, lowercase and
+/// sorted for binary search. An identifier that is one of them is quoted in
+/// every dialect: a lowercase name means the same quoted or not, so quoting a
+/// word only another database reserves is harmless.
+#[rustfmt::skip]
+const RESERVED_IDENTIFIERS: [&str; 345] = [
+    "abort", "accessible", "action", "add", "after", "all", "alter", "always", "analyse", "analyze", "and", "any",
+    "array", "as", "asc", "asensitive", "asymmetric", "attach", "authorization", "autoincrement", "before", "begin",
+    "between", "bigint", "binary", "blob", "both", "by", "call", "cascade", "case", "cast", "change", "char",
+    "character", "check", "collate", "collation", "column", "commit", "concurrently", "condition", "conflict",
+    "constraint", "continue", "convert", "create", "cross", "cube", "cume_dist", "current", "current_catalog",
+    "current_date", "current_role", "current_schema", "current_time", "current_timestamp", "current_user", "cursor",
+    "database", "databases", "day_hour", "day_microsecond", "day_minute", "day_second", "dec", "decimal", "declare",
+    "default", "deferrable", "deferred", "delayed", "delete", "dense_rank", "desc", "describe", "detach",
+    "deterministic", "distinct", "distinctrow", "div", "do", "double", "drop", "dual", "each", "else", "elseif",
+    "empty", "enclosed", "end", "escape", "escaped", "except", "exclude", "exclusive", "exists", "exit", "explain",
+    "fail", "false", "fetch", "filter", "first", "first_value", "float", "float4", "float8", "following", "for",
+    "force", "foreign", "freeze", "from", "full", "fulltext", "function", "generated", "get", "glob", "grant",
+    "group", "grouping", "groups", "having", "high_priority", "hour_microsecond", "hour_minute", "hour_second", "if",
+    "ignore", "ilike", "immediate", "in", "index", "indexed", "infile", "initially", "inner", "inout", "insensitive",
+    "insert", "instead", "int", "int1", "int2", "int3", "int4", "int8", "integer", "intersect", "interval", "into",
+    "io_after_gtids", "io_before_gtids", "is", "isnull", "iterate", "join", "json_table", "key", "keys", "kill",
+    "lag", "last", "last_value", "lateral", "lead", "leading", "leave", "left", "library", "like", "limit", "linear",
+    "lines", "load", "localtime", "localtimestamp", "lock", "long", "longblob", "longtext", "loop", "low_priority",
+    "manual", "master_bind", "master_ssl_verify_server_cert", "match", "materialized", "maxvalue", "mediumblob",
+    "mediumint", "mediumtext", "middleint", "minute_microsecond", "minute_second", "mod", "modifies", "natural", "no",
+    "no_write_to_binlog", "not", "nothing", "notnull", "nth_value", "ntile", "null", "nulls", "numeric", "of",
+    "offset", "on", "only", "optimize", "optimizer_costs", "option", "optionally", "or", "order", "others", "out",
+    "outer", "outfile", "over", "overlaps", "parallel", "partition", "percent_rank", "placing", "plan", "pragma",
+    "preceding", "precision", "primary", "procedure", "purge", "qualify", "query", "raise", "range", "rank", "read",
+    "read_write", "reads", "real", "recursive", "references", "regexp", "reindex", "release", "rename", "repeat",
+    "replace", "require", "resignal", "restrict", "return", "returning", "revoke", "right", "rlike", "rollback",
+    "row", "row_number", "rows", "savepoint", "schema", "schemas", "second_microsecond", "select", "sensitive",
+    "separator", "session_user", "set", "show", "signal", "similar", "smallint", "some", "spatial", "specific", "sql",
+    "sql_big_result", "sql_calc_found_rows", "sql_small_result", "sqlexception", "sqlstate", "sqlwarning", "ssl",
+    "starting", "stored", "straight_join", "symmetric", "system", "system_user", "table", "tablesample", "temp",
+    "temporary", "terminated", "then", "ties", "tinyblob", "tinyint", "tinytext", "to", "trailing", "transaction",
+    "trigger", "true", "unbounded", "undo", "union", "unique", "unlock", "unsigned", "update", "usage", "use", "user",
+    "using", "utc_date", "utc_time", "utc_timestamp", "vacuum", "values", "varbinary", "varchar", "varcharacter",
+    "variadic", "varying", "verbose", "view", "virtual", "when", "where", "while", "window", "with", "without",
+    "write", "xor", "year_month", "zerofill",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,11 +246,12 @@ impl SqlWriter {
         }
     }
 
-    /// `<table>.<field>` written verbatim.
+    /// `<table>.<field>`, each part quoted when needed. Unlike [`Self::field`],
+    /// `field` is never split on dots.
     fn raw_field(&mut self, table: &str, field: &str) {
-        self.push(table);
+        self.identifier(table);
         self.sql.push('.');
-        self.push(field);
+        self.identifier(field);
     }
 
     fn returning(&mut self, returning: Option<&[&str]>) {
@@ -298,7 +324,7 @@ impl SqlWriter {
     }
 
     /// The `ORDER BY` of a `ROW_NUMBER()` window: the requested order, or
-    /// `<table>.<fallback>` written verbatim.
+    /// `<table>.<fallback>`.
     fn partition_order(&mut self, table: &str, order_by: Option<FindOrderBy>, fallback: &str) {
         match order_by {
             Some(order_by) => {
@@ -724,7 +750,7 @@ fn write_number(sql: &mut String, mut number: usize) {
 }
 
 fn write_identifier(sql: &mut String, dialect: Dialect, identifier: &str) {
-    if identifier == "*" || !(is_reserved_identifier(identifier) || identifier_requires_quotes(identifier)) {
+    if identifier == "*" || !(identifier_requires_quotes(identifier) || is_reserved_identifier(identifier)) {
         sql.push_str(identifier);
     } else {
         write_quoted(sql, dialect.quote(), identifier);
@@ -752,8 +778,10 @@ fn identifier_requires_quotes(identifier: &str) -> bool {
         || bytes.any(|byte| !(byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'))
 }
 
+/// Only called for identifiers that are already lowercase: any other one is
+/// quoted by [`identifier_requires_quotes`].
 fn is_reserved_identifier(identifier: &str) -> bool {
-    RESERVED_IDENTIFIERS.iter().any(|reserved| reserved.eq_ignore_ascii_case(identifier))
+    RESERVED_IDENTIFIERS.binary_search(&identifier).is_ok()
 }
 
 /// Upper bound of the values `conditions` bind, used to size buffers.
@@ -922,13 +950,13 @@ pub(crate) fn relation_count(dialect: Dialect, query: RelationCountQuery) -> (St
     let mut sql = writer(dialect, 4, &parent_conditions, bound_values(&child_conditions));
 
     sql.push("SELECT COUNT(*) FROM ");
-    sql.push(child_table);
+    sql.identifier(child_table);
     sql.push(" WHERE ");
-    sql.push(child_field);
+    sql.identifier(child_field);
     sql.push(" IN (SELECT ");
-    sql.push(parent_field);
+    sql.identifier(parent_field);
     sql.push(" FROM ");
-    sql.push(parent_table);
+    sql.identifier(parent_table);
     sql.where_clause(parent_conditions, Qualifier::Table(parent_table));
     sql.sql.push(')');
     sql.and_clause(child_conditions, Qualifier::Table(child_table));
@@ -959,12 +987,12 @@ pub(crate) fn relation_batch(dialect: Dialect, query: RelationBatchQuery) -> (St
             |sql| sql.partition_order(table, order_by, relation_key_field),
         );
         sql.push(" FROM ");
-        sql.push(table);
+        sql.identifier(table);
         sql.where_clause(conditions, Qualifier::Table(table));
         sql.close_row_window(skip, limit);
     } else {
         sql.push(" FROM ");
-        sql.push(table);
+        sql.identifier(table);
         sql.find_tail(conditions, order_by, limit, skip, Qualifier::Table(table));
     }
 
@@ -1006,12 +1034,12 @@ pub(crate) fn relation_join(dialect: Dialect, query: RelationJoinQuery) -> (Stri
     }
 
     sql.push(" FROM ");
-    sql.push(parent_table);
+    sql.identifier(parent_table);
     if self_relation {
         sql.push(" AS __dinoco_parent");
     }
     sql.push(" LEFT JOIN ");
-    sql.push(child_table);
+    sql.identifier(child_table);
     if self_relation {
         sql.push(" AS __dinoco_child");
     }
@@ -1075,7 +1103,7 @@ pub(crate) fn relation_occurrence_with_keys(
         );
     }
     sql.push(" FROM __dinoco_parent_keys INNER JOIN ");
-    sql.push(from);
+    sql.identifier(from);
     sql.push(" ON __dinoco_parent_keys.__dinoco_relation_key = ");
     sql.raw_field(from, child_field);
     sql.and_clause(conditions, Qualifier::Table(from));
@@ -1137,7 +1165,7 @@ pub(crate) fn many_to_many_relation_with_keys(
     }
 
     sql.push(" FROM __dinoco_parent_keys INNER JOIN ");
-    sql.push(join_table);
+    sql.identifier(join_table);
     sql.push(" ON ");
     for ordinal in 0..key_count {
         if ordinal > 0 {
@@ -1152,7 +1180,7 @@ pub(crate) fn many_to_many_relation_with_keys(
         sql.sql.push(')');
     }
     sql.push(" INNER JOIN ");
-    sql.push(from);
+    sql.identifier(from);
     sql.push(" ON ");
     sql.raw_field(join_table, join_child_field);
     sql.push(" = ");
@@ -1186,9 +1214,9 @@ pub(crate) fn many_to_many_relation_count(
     let mut sql = writer(dialect, 8, &parent_conditions, bound_values(&child_conditions));
 
     sql.push("SELECT COUNT(*) FROM ");
-    sql.push(join_table);
+    sql.identifier(join_table);
     sql.push(" INNER JOIN ");
-    sql.push(child_table);
+    sql.identifier(child_table);
     sql.push(" ON ");
     sql.raw_field(join_table, join_child_field);
     sql.push(" = ");
@@ -1196,9 +1224,9 @@ pub(crate) fn many_to_many_relation_count(
     sql.push(" WHERE ");
     sql.raw_field(join_table, join_parent_field);
     sql.push(" IN (SELECT ");
-    sql.push(parent_field);
+    sql.identifier(parent_field);
     sql.push(" FROM ");
-    sql.push(parent_table);
+    sql.identifier(parent_table);
     sql.where_clause(parent_conditions, Qualifier::Table(parent_table));
     sql.sql.push(')');
     sql.and_clause(child_conditions, Qualifier::Table(child_table));
@@ -1291,3 +1319,26 @@ macro_rules! query_compiler_methods {
 }
 
 pub(crate) use query_compiler_methods;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserved_identifiers_are_sorted_lowercase_and_unique() {
+        assert!(RESERVED_IDENTIFIERS.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(RESERVED_IDENTIFIERS.iter().all(|word| !word.bytes().any(|byte| byte.is_ascii_uppercase())));
+    }
+
+    #[test]
+    fn reserved_words_of_every_dialect_are_quoted() {
+        for (dialect, quote) in [(Dialect::Postgres, '"'), (Dialect::Mysql, '`'), (Dialect::Sqlite, '"')] {
+            for word in ["user", "order", "key", "range", "end", "desc", "values", "to", "action", "rank"] {
+                assert_eq!(dialect.identifier(word), format!("{quote}{word}{quote}"));
+            }
+            assert_eq!(dialect.identifier("users"), "users");
+            assert_eq!(dialect.identifier("created_at"), "created_at");
+            assert_eq!(dialect.identifier("User"), format!("{quote}User{quote}"));
+        }
+    }
+}

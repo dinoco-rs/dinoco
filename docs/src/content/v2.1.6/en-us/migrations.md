@@ -117,6 +117,8 @@ Any change to an index's name, columns, order, or kind produces matching drop/cr
 
 Dropping a populated table or column, narrowing a column's type, removing enum values, and turning a nullable column required can all destroy data or fail outright against existing rows. Dinoco lists these under **Data Impact**, and in a terminal the approval prompt starts on **Cancel**, so you have to actively opt in. Without a terminal, `--yes` is not enough: pass `--allow-destructive`.
 
+Approving is not enough for a change the existing rows can't take. Before asking, and before writing any file, `migrate generate` checks the rows: a column that becomes required while some rows hold `NULL` in it, or a required column without a default added to a table that has rows, stops the command with the table, the column and the number of rows, and nothing is written or changed. Fill in those values, or keep the column optional (or give it a `@default`) until the rows are backfilled. This matters most on MySQL, which commits each DDL statement on its own and would otherwise be left partly migrated. `--create-only` skips the check, since it applies nothing.
+
 The very first migration against a database that already has user tables, but no `dinoco_migrations` table yet, also needs approval (`--adopt-baseline` without a terminal). It is only possible when the existing tables match the schema exactly, which protects a database that wasn't managed by Dinoco from an unreviewed first migration that assumes it owns everything. Repairing drift, changes made to the database outside Dinoco migrations, needs approval too (`--repair-drift`).
 
 > [!NOTE]

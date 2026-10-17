@@ -16,6 +16,8 @@ use crate::ui::{self, Change};
 #[derive(Debug, Clone, Default)]
 pub struct GenerateOptions {
     pub workspace: Option<String>,
+    /// Workspace whose saved schema is applied instead of dinoco/schema.dinoco.
+    pub schema_from: Option<String>,
     pub yes: bool,
     pub allow_destructive: bool,
     pub create_only: bool,

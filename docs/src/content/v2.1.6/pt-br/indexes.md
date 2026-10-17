@@ -154,6 +154,8 @@ Quando dois nomes da mesma tabela ficam iguais depois do corte, o segundo ganha 
 > [!NOTE]
 > Antes da v2.1.5, o PostgreSQL cortava esses nomes por conta própria enquanto o Dinoco continuava comparando com o nome completo, então todo `dinoco migrate` reportava `Missing index` e `Unexpected index` para o mesmo índice. Os nomes cortados batem com o que o PostgreSQL já guardou, então atualizar não precisa de migration.
 
+Nomes escolhidos por você nunca são cortados: um nome de tabela, coluna ou enum maior que o limite faz o `migrate generate` parar antes de conectar, listando cada um desses nomes. Encurte-os, dando a um model longo um `@@table_name("...")` mais curto. Do contrário o PostgreSQL cortaria o nome por conta própria, e o banco nunca bateria com o schema, e o MySQL recusaria a migration no meio.
+
 ## Regras de validação
 
 - `@index` aceita somente o argumento opcional `map: "nome"`.

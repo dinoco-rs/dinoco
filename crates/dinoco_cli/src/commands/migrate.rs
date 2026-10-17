@@ -13,7 +13,9 @@ use super::review::{Decisions, change_kind, render_plan};
 use crate::db::CliDatabase;
 use crate::error::{CliError, WithCliError};
 use crate::prompt;
-use crate::schema::{Database, RuntimeConfig, read_schema_for_workspace, runtime_config};
+use crate::schema::{
+    Database, Questions, RuntimeConfig, SchemaSource, read_schema_for_workspace, runtime_config, select_schema,
+};
 use crate::sql::{
     EnumValueReplacement, MigrationPlan, MigrationStep, PlanOptions, SqliteForeignKeyCheck, SqliteTableRebuild,
     desired_database_schema, fit_schema_identifiers, plan_database_migration, plan_database_migration_with,
@@ -24,6 +26,7 @@ use crate::ui::{self, Change};
 const MIGRATION_CHECKSUM_MARKER: &str = "-- dinoco-checksum: ";
 const MIGRATION_CHECKSUM_PLACEHOLDER: &str = "__DINOCO_INTERNAL_SHA256_PLACEHOLDER_7F43A9C2__";
 const SQLITE_REBUILD_MARKER: &str = "dinoco-sqlite-table-rebuild";
+const WORKSPACE_QUESTION: &str = "Which workspace do you want to apply the migrations to?";
 
 /// `dinoco migrate generate` with default options: decisions are asked for
 /// interactively, or taken from the `DINOCO_CLI_CONFIRM_*` environment
@@ -46,11 +49,17 @@ enum Mode {
 
 pub async fn generate_with(options: GenerateOptions) -> anyhow::Result<()> {
     let mut decisions = Decisions::new(&options)?;
-    let (_, schema, workspace) = read_schema_for_workspace(options.workspace.as_deref())?;
-    let workspace = workspace.as_deref();
+    let selected = select_schema(
+        options.workspace.as_deref(),
+        options.schema_from.as_deref(),
+        Questions { workspace: WORKSPACE_QUESTION, schema: Some("Which schema do you want to apply?") },
+    )?;
+    let (schema, source) = (selected.schema, selected.source);
+    let workspace = selected.workspace.as_deref();
     let config = runtime_config(&schema)?;
     let migrations_root = migrations_root(workspace);
-    print_target(&config, workspace, &migrations_root);
+    print_target(&config, workspace, Some(&source), &migrations_root);
+    ensure_names_fit(&schema, config.database)?;
 
     let db = CliDatabase::connect(&config).await?;
     db.adopt_legacy_migration_history().await?;
@@ -118,7 +127,7 @@ pub async fn generate_with(options: GenerateOptions) -> anyhow::Result<()> {
             let latest = server_history.applied.last().expect("legacy history is not empty");
             db.record_server_schema_snapshot(latest, &current).await?;
             persist_legacy_checksums(&db, history.as_ref(), Some(server_history)).await?;
-            crate::runner::generate_models(&schema, workspace)?;
+            crate::runner::generate_models(&schema, workspace, &source)?;
             ui::success("Legacy migration history adopted with a canonical schema snapshot.");
             ui::success("Rust models generated at dinoco/models/");
             return Ok(());
@@ -216,7 +225,7 @@ pub async fn generate_with(options: GenerateOptions) -> anyhow::Result<()> {
         }
         persist_legacy_checksums(&db, history.as_ref(), server_history.as_ref()).await?;
         ui::info("No schema changes were found.");
-        crate::runner::generate_models(&schema, workspace)?;
+        crate::runner::generate_models(&schema, workspace, &source)?;
         ui::success("Rust models generated at dinoco/models/");
         return Ok(());
     }
@@ -236,7 +245,7 @@ pub async fn generate_with(options: GenerateOptions) -> anyhow::Result<()> {
                 .reason("The repair failed and all changes were rolled back.")
         })?;
         ensure_live_schema_matches(&db, &desired).await?;
-        crate::runner::generate_models(&schema, workspace)?;
+        crate::runner::generate_models(&schema, workspace, &source)?;
         ui::success("Schema drift repaired; no new migration was needed because the Dinoco schema did not change.");
         ui::success("Rust models generated at dinoco/models/");
         return Ok(());
@@ -252,6 +261,9 @@ pub async fn generate_with(options: GenerateOptions) -> anyhow::Result<()> {
     };
     render_plan(plan_title, &migration_plan, describe_step);
     ensure_plan_is_supported(&db, &migration_plan)?;
+    if !decisions.create_only {
+        ensure_rows_fit_plan(&db, &live_plan, &current).await?;
+    }
     decisions.check_rename_options(&[&live_plan, &migration_plan])?;
 
     let replacements = decisions.resolve_enum_replacements(&db, &current, &desired_database_schema(&schema)).await?;
@@ -347,7 +359,7 @@ pub async fn generate_with(options: GenerateOptions) -> anyhow::Result<()> {
     if !db.is_sqlite() {
         db.record_server_schema_snapshot(&migration_name, &desired).await?;
     }
-    crate::runner::generate_models(&schema, workspace)?;
+    crate::runner::generate_models(&schema, workspace, &source)?;
 
     ui::success(format!("Migration generated and applied: {}", migration_dir.display()));
     ui::success("Rust models generated at dinoco/models/");
@@ -355,16 +367,63 @@ pub async fn generate_with(options: GenerateOptions) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_target(config: &RuntimeConfig, workspace: Option<&str>, migrations_root: &Path) {
+fn print_target(
+    config: &RuntimeConfig,
+    workspace: Option<&str>,
+    source: Option<&SchemaSource>,
+    migrations_root: &Path,
+) {
     ui::heading("Target");
     let mut fields = Vec::new();
     if let Some(workspace) = workspace {
         fields.push(("Workspace", workspace.to_string()));
+        if let Some(source) = source {
+            fields.push(("Schema", source.label()));
+        }
     }
     fields.push(("Database", config.database_label().to_string()));
     fields.push(("Location", crate::db::redact_database_url(&config.database_url)));
     fields.push(("Migrations", format!("{}/", migrations_root.display())));
     ui::fields(&fields);
+}
+
+/// Table, column and enum names longer than the database keeps. PostgreSQL
+/// would silently truncate them, so the database would never match the
+/// schema, and MySQL would reject the migration halfway. Generated index,
+/// constraint and pivot table names are already fitted to the limit.
+fn ensure_names_fit(schema: &dinoco_compiler::Schema, database: Database) -> anyhow::Result<()> {
+    let Some(limit) = database.identifier_limit() else {
+        return Ok(());
+    };
+    let too_long = |name: &str| limit.fit(name.to_string()).len() != name.len();
+    let desired = desired_database_schema(schema);
+    let mut names = Vec::new();
+    for table in &desired.tables {
+        if too_long(&table.name) {
+            names.push(format!("table `{}`", table.name));
+        }
+        names.extend(
+            table
+                .columns
+                .iter()
+                .filter(|column| too_long(&column.name))
+                .map(|column| format!("column `{}.{}`", table.name, column.name)),
+        );
+    }
+    names.extend(desired.enums.iter().filter(|item| too_long(&item.name)).map(|item| format!("enum `{}`", item.name)));
+    if names.is_empty() {
+        return Ok(());
+    }
+
+    let max = match limit {
+        dinoco_compiler::IdentifierLimit::Bytes(max) => format!("{max} bytes"),
+        dinoco_compiler::IdentifierLimit::Chars(max) => format!("{max} characters"),
+    };
+    Err(CliError::failure(format!("These names are longer than {} allows ({max}).", database.label()))
+        .detail("Names", names.join(", "))
+        .reason("The database would truncate or reject them, so it could never match the schema. Nothing was changed.")
+        .hint("Shorten them: rename the field or enum, and give a long model a shorter @@table_name(\"...\").")
+        .into())
 }
 
 fn pending_migrations_error(pending: &[String], workspace: Option<&str>) -> CliError {
@@ -533,7 +592,8 @@ async fn inspect_server_migration_history(
         }
     }
     let mut tracks_indexes = true;
-    let expected = if let Some(latest) = applied.last() {
+    let mut lacks_literal_defaults = false;
+    let mut expected = if let Some(latest) = applied.last() {
         match schema_snapshots.as_ref() {
             Some(snapshots) => {
                 let snapshot = snapshots
@@ -542,6 +602,7 @@ async fn inspect_server_migration_history(
                 let snapshot_value: serde_json::Value = serde_json::from_str(snapshot)
                     .with_context(|| format!("canonical schema snapshot for migration `{latest}` is invalid"))?;
                 tracks_indexes = snapshot_tracks_indexes(&snapshot_value);
+                lacks_literal_defaults = snapshot_value.get(crate::db::SNAPSHOT_LITERAL_DEFAULTS_KEY).is_none();
                 let mut expected = serde_json::from_value(snapshot_value)
                     .with_context(|| format!("canonical schema snapshot for migration `{latest}` is invalid"))?;
                 // Snapshots recorded before 2.1.5 keep generated names longer than the
@@ -554,6 +615,9 @@ async fn inspect_server_migration_history(
     } else {
         Some(crate::db::DatabaseSchema::default())
     };
+    if lacks_literal_defaults && let Some(expected) = &mut expected {
+        adopt_unread_literal_defaults(expected, &primary.inspect_schema().await?);
+    }
 
     let mut legacy_checksums = Vec::new();
     let mut validated = BTreeMap::new();
@@ -586,6 +650,31 @@ async fn inspect_server_migration_history(
     }
 
     Ok(Some(ServerMigrationHistory { history_exists, expected, tracks_indexes, applied, legacy_checksums, validated }))
+}
+
+/// A snapshot taken from the live database before 2.1.6 records string, enum
+/// and negative number defaults as no default, because they were not read
+/// back. Takes those defaults from the live columns instead of reporting
+/// them as drift.
+#[doc(hidden)]
+pub fn adopt_unread_literal_defaults(expected: &mut crate::db::DatabaseSchema, live: &crate::db::DatabaseSchema) {
+    use dinoco_engine::MigrationDefault;
+
+    for table in &mut expected.tables {
+        let Some(live_table) = live.tables.iter().find(|live| live.name == table.name) else {
+            continue;
+        };
+        for column in table.columns.iter_mut().filter(|column| column.default.is_none()) {
+            let live_default =
+                live_table.columns.iter().find(|live| live.name == column.name).and_then(|live| match &live.default {
+                    Some(MigrationDefault::String(_)) => live.default.clone(),
+                    Some(MigrationDefault::Integer(value)) if *value < 0 => live.default.clone(),
+                    Some(MigrationDefault::Float(value)) if *value < 0.0 => live.default.clone(),
+                    _ => None,
+                });
+            column.default = live_default;
+        }
+    }
 }
 
 fn snapshot_tracks_indexes(snapshot: &serde_json::Value) -> bool {
@@ -949,10 +1038,10 @@ async fn repair_pending_history_drift(
 }
 
 pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
-    let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref())?;
+    let (_, schema, workspace) = read_schema_for_workspace(workspace.as_deref(), WORKSPACE_QUESTION)?;
     let config = runtime_config(&schema)?;
     let migrations_root = migrations_root(workspace.as_deref());
-    print_target(&config, workspace.as_deref(), &migrations_root);
+    print_target(&config, workspace.as_deref(), None, &migrations_root);
     let db = CliDatabase::connect(&config).await?;
     db.adopt_legacy_migration_history().await?;
 
@@ -1179,6 +1268,86 @@ fn plan_migration_with(
     } else {
         plan_database_migration_with(desired, current, options)
     }
+}
+
+/// Finds, before anything is written, the changes the database would reject
+/// because of the rows it already holds. MySQL commits DDL one statement at a
+/// time, so a migration failing on them halfway would leave it partly
+/// migrated; PostgreSQL and SQLite would roll back, but only after the files
+/// were written.
+async fn ensure_rows_fit_plan(
+    db: &CliDatabase,
+    plan: &MigrationPlan,
+    current: &crate::db::DatabaseSchema,
+) -> anyhow::Result<()> {
+    let row_count =
+        |table: &str| current.tables.iter().find(|item| item.name == table).map_or(0, |item| item.row_count);
+    let mut problems = Vec::new();
+    for step in &plan.steps {
+        match step {
+            MigrationStep::AlterColumn(item)
+                if item.current.nullable && !item.desired.nullable && row_count(&item.table) > 0 =>
+            {
+                problems.extend(required_column_problem(db, &item.table, &item.desired, Some(&item.current), 0).await?);
+            }
+            MigrationStep::AddColumn(item) if !item.column.nullable && item.column.default.is_none() => {
+                let rows = row_count(&item.table);
+                problems.extend(required_column_problem(db, &item.table, &item.column, None, rows).await?);
+            }
+            MigrationStep::RebuildTable(rebuild) if rebuild.current.row_count > 0 => {
+                for column in rebuild.desired.columns.iter().filter(|column| !column.nullable) {
+                    let source = rebuild
+                        .column_mappings
+                        .iter()
+                        .find(|mapping| mapping.to == column.name)
+                        .and_then(|mapping| rebuild.current.columns.iter().find(|item| item.name == mapping.from));
+                    let rows = rebuild.current.row_count;
+                    problems.extend(required_column_problem(db, &rebuild.desired.name, column, source, rows).await?);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if problems.is_empty() {
+        return Ok(());
+    }
+    Err(CliError::failure("The migration cannot be applied to the rows this database already holds.")
+        .detail("Rows", problems.join("; "))
+        .reason("Nothing was written or changed.")
+        .hint("Fill in those values first, or keep the column optional (or give it a @default) until the existing rows are backfilled, then run the command again.")
+        .into())
+}
+
+/// Why the existing rows can't fill the required `column`, if they can't:
+/// `source` is the column its values come from, `None` for a new column
+/// added to a table of `rows` rows.
+async fn required_column_problem(
+    db: &CliDatabase,
+    table: &str,
+    column: &dinoco_engine::MigrationColumn,
+    source: Option<&dinoco_engine::MigrationColumn>,
+    rows: i64,
+) -> anyhow::Result<Option<String>> {
+    Ok(match source {
+        Some(source) if source.nullable => {
+            let nulls = db.count_null_rows(table, &source.name).await?;
+            (nulls > 0).then(|| {
+                format!(
+                    "`{table}.{}` becomes required, but {} NULL",
+                    column.name,
+                    ui::plural(nulls as usize, "row holds", "rows hold")
+                )
+            })
+        }
+        Some(_) => None,
+        None if column.default.is_none() && rows > 0 => Some(format!(
+            "`{table}.{}` is added as required without a default to a table with {}",
+            column.name,
+            ui::plural(rows as usize, "row", "rows")
+        )),
+        None => None,
+    })
 }
 
 async fn ensure_live_schema_matches(db: &CliDatabase, desired: &crate::db::DatabaseSchema) -> anyhow::Result<()> {

@@ -117,6 +117,8 @@ Qualquer mudança no nome, colunas, ordem ou tipo de um índice produz os passos
 
 Remover uma tabela ou coluna populada, estreitar o tipo de uma coluna, remover valores de enum, e tornar uma coluna nullable obrigatória podem todos destruir dados ou falhar de imediato contra rows existentes. O Dinoco lista esses casos em **Data Impact** e, num terminal, a pergunta de aprovação começa em **Cancel**, então você precisa optar ativamente por continuar. Sem terminal, `--yes` não basta: passe `--allow-destructive`.
 
+Aprovar não basta para uma mudança que as rows existentes não aceitam. Antes de perguntar, e antes de escrever qualquer arquivo, o `migrate generate` confere as rows: uma coluna que vira obrigatória enquanto alguma row guarda `NULL` nela, ou uma coluna obrigatória sem default adicionada a uma tabela com rows, para o comando com a tabela, a coluna e o número de rows, e nada é escrito nem alterado. Preencha esses valores, ou mantenha a coluna opcional (ou dê a ela um `@default`) até as rows serem preenchidas. Isso importa sobretudo no MySQL, que confirma cada comando DDL sozinho e, sem a verificação, ficaria migrado pela metade. O `--create-only` pula a verificação, já que não aplica nada.
+
 A primeiríssima migration contra um banco que já tem tabelas de usuário, mas ainda não tem uma tabela `dinoco_migrations`, também precisa de aprovação (`--adopt-baseline` sem terminal). Ela só é possível quando as tabelas existentes batem exatamente com o schema, o que protege um banco que não era gerenciado pelo Dinoco de uma primeira migration não revisada que assume ser dona de tudo. Reparar drift, mudanças feitas no banco fora das migrations do Dinoco, também precisa de aprovação (`--repair-drift`).
 
 > [!NOTE]

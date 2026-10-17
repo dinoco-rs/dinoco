@@ -91,6 +91,7 @@ enum MigrateCommands {
 const MIGRATE_GENERATE_EXAMPLES: &str = "Examples:
   dinoco migrate generate
   dinoco migrate generate --workspace dev --yes
+  dinoco migrate generate --workspace prod --schema-from dev
   dinoco migrate generate --create-only --yes
   dinoco migrate generate --non-interactive --yes --rename user.username=display_name
   dinoco migrate generate --replace-enum-value Status.Processing=Pending --allow-destructive";
@@ -98,7 +99,10 @@ const MIGRATE_GENERATE_EXAMPLES: &str = "Examples:
 #[derive(Subcommand)]
 enum ModelsCommands {
     /// Regenerate dinoco/mod.rs and dinoco/models/ without touching the database
-    Generate(WorkspaceArgs),
+    #[command(
+        after_help = "Examples:\n  dinoco models generate --workspace dev\n  dinoco models generate --workspace prod --schema-from dev"
+    )]
+    Generate(ModelsGenerateArgs),
 }
 
 #[derive(Args)]
@@ -110,9 +114,30 @@ struct WorkspaceArgs {
 }
 
 #[derive(Args)]
+struct SchemaFromArgs {
+    /// Use the schema saved for this workspace in
+    /// dinoco/migrations/<NAME>/schema/ instead of dinoco/schema.dinoco. Asked
+    /// for when more than one workspace is defined
+    #[arg(long, value_name = "NAME")]
+    schema_from: Option<String>,
+}
+
+#[derive(Args)]
+struct ModelsGenerateArgs {
+    #[command(flatten)]
+    workspace: WorkspaceArgs,
+
+    #[command(flatten)]
+    schema: SchemaFromArgs,
+}
+
+#[derive(Args)]
 struct GenerateArgs {
     #[command(flatten)]
     workspace: WorkspaceArgs,
+
+    #[command(flatten)]
+    schema: SchemaFromArgs,
 
     /// Approve the migration plan without asking. Plans with destructive
     /// changes need --allow-destructive
@@ -190,6 +215,7 @@ pub async fn run() -> anyhow::Result<()> {
         Commands::Migrate(MigrateCommands::Generate(args)) => {
             commands::migrate::generate_with(GenerateOptions {
                 workspace: args.workspace.workspace,
+                schema_from: args.schema.schema_from,
                 yes: args.yes,
                 allow_destructive: args.allow_destructive,
                 create_only: args.create_only,
@@ -203,7 +229,9 @@ pub async fn run() -> anyhow::Result<()> {
             .await?
         }
         Commands::Migrate(MigrateCommands::Run(args)) => commands::migrate::run(args.workspace).await?,
-        Commands::Models(ModelsCommands::Generate(args)) => commands::models::generate(args.workspace).await?,
+        Commands::Models(ModelsCommands::Generate(args)) => {
+            commands::models::generate_with(args.workspace.workspace, args.schema.schema_from).await?
+        }
     }
 
     Ok(())

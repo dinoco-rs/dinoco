@@ -12,8 +12,8 @@ This walkthrough takes you from an empty Rust binary crate to a migrated Postgre
 Install the CLI binary and add the runtime crates your generated code will depend on:
 
 ```bash
-cargo install dinoco --version 2.1.5
-cargo add dinoco@2.1.5 dinoco_engine@2.1.5 anyhow
+cargo install dinoco --version 2.1.6
+cargo add dinoco@2.1.6 dinoco_engine@2.1.6 anyhow
 cargo add tokio --features macros,rt-multi-thread
 ```
 

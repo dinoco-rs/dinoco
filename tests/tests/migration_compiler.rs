@@ -139,7 +139,7 @@ async fn sqlite_adapter_compiles_foreign_key_actions() -> anyhow::Result<()> {
         }],
     });
 
-    assert!(sql.contains("CONSTRAINT fk_post_user_id FOREIGN KEY (user_id) REFERENCES user (id)"));
+    assert!(sql.contains("CONSTRAINT fk_post_user_id FOREIGN KEY (user_id) REFERENCES \"user\" (id)"));
     assert!(sql.contains("ON UPDATE RESTRICT ON DELETE CASCADE"));
 
     Ok(())

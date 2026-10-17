@@ -100,6 +100,7 @@ In a terminal, the approval prompt offers to proceed, to show the migration SQL 
 | Option | Effect |
 | --- | --- |
 | `-w`, `--workspace <NAME>` | Workspace to use. See [Workspaces](#workspaces). |
+| `--schema-from <NAME>` | Apply the schema saved for workspace `NAME` instead of `dinoco/schema.dinoco`. See [Workspaces](#workspaces). |
 | `-y`, `--yes` | Approve the plan without asking. Plans with destructive changes need `--allow-destructive`. |
 | `--allow-destructive` | Approve the plan, including changes that drop or rewrite data. Implies `--yes`. |
 | `--create-only` | Write the migration files without applying them. |
@@ -152,7 +153,7 @@ dinoco models generate
 
 Compiles and validates the schema, then rebuilds the generated Rust module tree, without connecting to a database or touching migrations. If `dinoco/transform.rs` exists, it is applied to the output (see [Code transforms](/en-us/docs/orm/guide/transforms)); the same happens in `migrate generate`. Use it after switching branches, or whenever only the generated code is stale.
 
-This command also accepts `--workspace name`/`-w name`. Switching the workspace you generate for removes the previously generated tree first, then rebuilds it for the newly selected configuration, so two workspaces' generated code never mixes.
+This command also accepts `--workspace name`/`-w name`, and `--schema-from name` to generate the models from the schema saved for another workspace. Switching the workspace you generate for removes the previously generated tree first, then rebuilds it for the newly selected configuration, so two workspaces' generated code never mixes.
 
 ## Workspaces
 
@@ -160,7 +161,13 @@ When the schema defines workspaces, every command needs to know which one to use
 
 - `--workspace name` selects it. An unknown name fails with exit code `2` and lists the defined workspaces.
 - When the schema defines a single workspace, it is used, and the **Target** section shows it.
-- Otherwise the CLI asks, listing each workspace with the environment variable its database URL comes from. Without a terminal, the command fails with exit code `2` and asks for `--workspace`.
+- Otherwise the CLI asks which workspace to apply the migrations to, listing each one with the environment variable its database URL comes from. Without a terminal, the command fails with exit code `2` and asks for `--workspace`.
+
+`migrate generate` and `models generate` then ask which schema to use, when more than one workspace is defined and another workspace already has a [saved schema](/en-us/docs/orm/guide/configuration#saved-schema-per-workspace): `dinoco/schema.dinoco`, the schema you edit, or the copy saved for another workspace, such as dev's when you target prod. A copy identical to `dinoco/schema.dinoco` is marked as such. The **Target** section shows the schema that was picked.
+
+- `--schema-from name` answers that question: `dinoco migrate generate -w prod --schema-from dev` applies dev's schema to prod. A name that isn't a workspace, or a workspace without a saved schema yet, fails with exit code `2`.
+- Without a terminal and without `--schema-from`, `dinoco/schema.dinoco` is used.
+- When the schema comes from another workspace, it is saved as the selected workspace's copy once the command succeeds. Only the models and enums come from the copy: the database settings still come from the selected workspace in `dinoco/schema.dinoco`, and that file is never changed.
 
 ## Environment variables from earlier releases
 
@@ -184,6 +191,9 @@ dinoco migrate generate
 
 # When deploying to another environment
 dinoco migrate run
+
+# When another workspace should get the schema dev was generated with
+dinoco migrate generate --workspace prod --schema-from dev
 
 # When only the generated Rust code is stale
 dinoco models generate
