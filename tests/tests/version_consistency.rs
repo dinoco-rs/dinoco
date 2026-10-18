@@ -1,11 +1,9 @@
 use std::{fs, path::Path};
 
+// The documentation site lives outside this repository (it covers every crate of the
+// Dinoco ecosystem), so its versioned directories are checked by its own scripts.
 const CRATE_VERSION: &str = "2.1.7";
 const PREVIOUS_CRATE_VERSION: &str = "2.1.6";
-// Only one docs version is kept on the site at a time; a release bump renames
-// the versioned directories in place rather than keeping the previous tree.
-const DOCS_VERSION: &str = "2.1.7";
-const PREVIOUS_DOCS_VERSION: &str = "2.1.6";
 
 fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("tests crate must be inside the workspace")
@@ -84,29 +82,5 @@ fn release_version_is_consistent_across_the_workspace() {
             "{documentation_path} does not show the current Dinoco dependency"
         );
         assert!(!documentation.contains(PREVIOUS_CRATE_VERSION));
-    }
-}
-
-#[test]
-fn documentation_uses_the_current_version_directories() {
-    let content_dir = workspace_root().join(format!("docs/src/content/v{DOCS_VERSION}"));
-    let navigation_dir = workspace_root().join(format!("docs/src/jsons/versions/v{DOCS_VERSION}"));
-    let previous_content_dir = workspace_root().join(format!("docs/src/content/v{PREVIOUS_DOCS_VERSION}"));
-    let previous_navigation_dir = workspace_root().join(format!("docs/src/jsons/versions/v{PREVIOUS_DOCS_VERSION}"));
-
-    assert!(content_dir.is_dir());
-    assert!(navigation_dir.is_dir());
-    assert!(!previous_content_dir.exists());
-    assert!(!previous_navigation_dir.exists());
-
-    let versions = read("docs/src/jsons/versions.ts");
-    assert!(versions.contains("import v2_1_7 from './versions/v2.1.7';"));
-    assert!(versions.contains("const versionsData: DocsVersionData[] = [v2_1_7"));
-    assert!(!versions.contains("v1_3_3"));
-    assert!(!versions.contains(&format!("v{PREVIOUS_DOCS_VERSION}")));
-
-    for locale in ["en-us", "pt-br"] {
-        let release_notes = read(&format!("docs/src/content/v{DOCS_VERSION}/{locale}/release-notes.md"));
-        assert!(release_notes.starts_with(&format!("# Dinoco v{DOCS_VERSION}\n")));
     }
 }

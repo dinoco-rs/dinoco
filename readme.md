@@ -1,6 +1,6 @@
 <p align="center">
-	<img src="./docs/public/logo.png#gh-dark-mode-only" alt="Dinoco logo" width="220" />
-	<img src="./docs/public/logo.png#gh-light-mode-only" alt="Dinoco logo" width="220" style="filter: invert(1);" />
+	<img src="https://dinoco.io/logo.png#gh-dark-mode-only" alt="Dinoco logo" width="220" />
+	<img src="https://dinoco.io/logo.png#gh-light-mode-only" alt="Dinoco logo" width="220" style="filter: invert(1);" />
 </p>
 
 <h1 align="center">Dinoco</h1>
@@ -12,12 +12,19 @@
 <p align="center">
   <a href="https://crates.io/crates/dinoco"><img src="https://img.shields.io/crates/v/dinoco.svg?color=black" alt="Crates.io"></a>
   <a href="https://dinoco.io"><img src="https://img.shields.io/badge/docs-dinoco.io-black.svg" alt="Docs"></a>
-  <a href="https://github.com/theuszastro/dinoco/blob/main/LICENSE"><img src="https://img.shields.io/crates/l/dinoco.svg?color=black" alt="License"></a>
+  <a href="https://github.com/dinoco-rs/dinoco/blob/master/LICENSE"><img src="https://img.shields.io/crates/l/dinoco.svg?color=black" alt="License"></a>
 </p>
 
 ---
 
-This repository brings together the project's core crates, the CLI, the documentation, and the VS Code extension. **Dinoco** is focused on delivering a smooth, safe, and modern ORM experience for the Rust ecosystem.
+This repository brings together the project's core crates, the CLI, and the VS Code extension; the documentation lives at [dinoco.io](https://dinoco.io). **Dinoco** is focused on delivering a smooth, safe, and modern ORM experience for the Rust ecosystem.
+
+## 🦖 The Dinoco ecosystem
+
+Dinoco started as the tooling a developer who moved from TypeScript to Rust missed the most, and it is growing one focused crate at a time:
+
+- **[Dinoco ORM](https://dinoco.io/docs/orm)** (this repository): schema-driven models, typed queries, and migrations for PostgreSQL, MySQL, and SQLite.
+- **[Rekka](https://github.com/dinoco-rs/rekka)**: Redis-backed job queues, recurring workers, and a typed cache, safe to scale horizontally.
 
 ## 💖 Support the Project
 

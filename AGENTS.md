@@ -34,7 +34,6 @@ Dinoco is a schema-driven Rust ORM for SQLite, PostgreSQL and MySQL. A `.dinoco`
 │                           workspace) + TypeScript client (src/extension.ts); prebuilt binaries in bin/
 ├── tests/                  `dinoco_tests` crate: integration suites for every crate (see Tests)
 ├── benchmarks/             `dinoco_benchmarks` crate (see Benchmarks)
-├── docs/                   Next.js documentation site (see Documentation)
 ├── examples/               axum, actix-web and tower services exposing the same API on SQLite
 ├── scripts/publish-crates.js  Publishes the crates in dependency order (`--plan`, `--dry-run`)
 ├── readme.md, crates.md    Repository README and crates.io README; keep them in sync
@@ -50,7 +49,7 @@ Ignore these when reading the tree: `target/`, the empty `file:` directories (le
 - Suites under `tests/tests/<crate>/<topic>.rs` must be registered as a `[[test]]` in `tests/Cargo.toml`, named `<crate>_<topic>` (for example `dinoco_relation_filters`). Files directly under `tests/tests/` are discovered automatically and named after the file.
 - Shared helpers (`column`, `primary`, `nullable`, `create_table`, ...) live in `tests/src/lib.rs`. Schema fixtures live in `tests/fixtures/`.
 - Database suites run every scenario on all three backends through an `on_every_backend!` macro (see `tests/tests/dinoco/relation_filters.rs`). PostgreSQL and MySQL come from local servers: `postgres://postgres:postgres@localhost:5432/postgres` and `mysql://root:root@localhost:3306/mysql` (Podman containers `postgres` and `mysql`).
-- `version_consistency` checks that every manifest, lockfile entry, README and docs directory agrees on the release version.
+- `version_consistency` checks that every manifest, lockfile entry and README agrees on the release version.
 
 ### Benchmarks
 
@@ -61,9 +60,11 @@ Ignore these when reading the tree: `target/`, the empty `file:` directories (le
 
 ### Documentation
 
-- One version tree only, renamed in place on each release: `docs/src/content/v<X>/{en-us,pt-br}/*.md`, navigation in `docs/src/jsons/versions/v<X>/{en-us,pt-br}.json` + `index.ts`, registered in `docs/src/jsons/versions.ts`.
-- Routes are `/<locale>/docs/orm/<group>/<shortName>`, with groups `guide`, `orm`, `tooling` and `reference`.
-- Every navigation item's `inPage` must list the page's `##`–`######` headings exactly. Anchors drop accents (`docs/src/lib/to-anchor-id.ts`).
+The documentation site is a separate Next.js project (`../docs` in the workspace) shared by every crate of the Dinoco ecosystem, Dinoco ORM and Rekka.
+
+- One version tree per product, renamed in place on each release: `src/content/orm/v<X>/{en-us,pt-br}/*.md`, navigation in `src/jsons/orm/v<X>/{en-us,pt-br}.json` + `index.ts`, registered in `src/lib/products.ts`.
+- Routes are `/<locale>/docs/orm/<group>/<shortName>`, with groups `guide`, `orm`, `tooling` and `reference`. Rekka pages live under `/<locale>/docs/rekka/...`.
+- Every navigation item's `inPage` must list the page's `##`–`######` headings exactly. Anchors drop accents and turn every other non-alphanumeric run into `-` (`src/lib/to-anchor-id.ts`).
 - `release-notes.md` starts with `# Dinoco v<X>` and has one `## v<X>` section per release, newest first.
 
 ## Adding a feature
@@ -140,14 +141,11 @@ cargo bench -p dinoco_benchmarks --bench runtime -- --save-baseline before   # o
 cargo bench -p dinoco_benchmarks --bench runtime -- --baseline before        # on the change
 cargo bench -p dinoco_benchmarks --bench runtime -- compile/                 # compilation only
 
-# Docs (must run from docs/, paths resolve from the working directory)
-cd docs && node scripts/validate-content.mjs
-# check-anchors.mjs is hardcoded to v2.0.0; run a patched copy for the current version
-cd docs && sed 's/v2\.0\.0/v<X>/g' scripts/check-anchors.mjs > scripts/.check-anchors.mjs \
-  && node scripts/.check-anchors.mjs; rm scripts/.check-anchors.mjs
+# Docs (in the docs site; paths resolve from its root)
+cd ../docs && yarn validate && yarn anchors
 ```
 
-- New links must not add anchor errors. Two broken anchors already exist, both in `update.md`.
+- New links must not add anchor errors; `yarn anchors` checks every internal link and heading of both products.
 - MySQL timings are noisy. Compare MySQL numbers only with interleaved A/B runs.
 
 ## Conventions
@@ -167,8 +165,7 @@ A version bump touches all of these:
 - `Cargo.lock` (refreshed by any cargo build);
 - `vscode/package.json` and the root entries of `vscode/package-lock.json`;
 - `readme.md` and `crates.md`;
-- the docs directories, renamed with `git mv`;
-- `versions.ts` (import name `v<X_Y_Z>` and fallback), `index.ts`, the navigation `contentPath`s and `validate-content.mjs`;
+- in the docs site: the `src/content/orm/v<X>` and `src/jsons/orm/v<X>` directories (renamed in place), the import in `src/lib/products.ts`, `index.ts`, the navigation `contentPath`s, and the `products` map in `scripts/validate-content.mjs` and `scripts/check-anchors.mjs`;
 - version mentions in the introduction, quickstart, clients-adapters, vscode and cookbook pages;
 - a new `## v<X>` section in the release notes;
 - the constants in `tests/tests/version_consistency.rs`.
