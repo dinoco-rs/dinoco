@@ -20,12 +20,24 @@ enum_value = { ident }
 
 model_block = { "model" ~ ident ~ "{" ~ (model_field | model_attribute)* ~ "}" }
 model_field = { ident ~ field_type ~ field_optional? ~ field_list? ~ attribute* }
-model_attribute = { "@@" ~ ident ~ ("(" ~ attribute_arguments? ~ ")")? }
+model_attribute = { "@@" ~ ident ~ attribute_condition? ~ ("(" ~ attribute_arguments? ~ ")")? }
 field_type = { ident }
 field_optional = { "?" }
 field_list = { "[" ~ "]" }
 
-attribute = { "@" ~ ident ~ ("(" ~ attribute_arguments? ~ ")")? }
+attribute = { "@" ~ ident ~ attribute_condition? ~ ("(" ~ attribute_arguments? ~ ")")? }
+attribute_condition = { "<" ~ condition ~ ">" }
+condition = { condition_and ~ ("||" ~ condition_and)* }
+condition_and = { condition_unary ~ ("&&" ~ condition_unary)* }
+condition_unary = _{ condition_not | condition_primary }
+condition_not = { "!" ~ condition_unary }
+condition_primary = _{ "(" ~ condition ~ ")" | condition_comparison | condition_field }
+condition_comparison = { ident ~ condition_operator ~ condition_value }
+condition_field = { ident }
+condition_operator = { "==" | "!=" | "<=" | ">=" | "<" | ">" }
+condition_value = { null_keyword | boolean_keyword | string_literal | number_literal | ident }
+null_keyword = @{ "null" ~ !(ASCII_ALPHANUMERIC | "_") }
+boolean_keyword = @{ ("true" | "false") ~ !(ASCII_ALPHANUMERIC | "_") }
 attribute_arguments = { attribute_argument ~ ("," ~ attribute_argument)* ~ ","? }
 attribute_argument = { named_argument | attribute_value }
 named_argument = { ident ~ (":" | "=") ~ attribute_value }

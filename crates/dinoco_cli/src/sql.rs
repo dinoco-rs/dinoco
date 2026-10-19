@@ -1,12 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use dinoco_compiler::{AttributeArgument, AttributeValue, ConfigValue, IdentifierLimit, Model, ModelField, Schema};
+use dinoco_compiler::{
+    AttributeArgument, AttributeValue, Condition, ConditionOperator, ConditionValue, ConfigValue, IdentifierLimit,
+    Model, ModelField, Schema,
+};
 use dinoco_engine::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CreateEnumMigration,
     CreateIndexMigration, CreateTableMigration, DropColumnMigration, DropEnumMigration, DropForeignKeyMigration,
-    DropIndexMigration, DropTableMigration, MigrationColumn, MigrationColumnType, MigrationDefault,
-    MigrationForeignKey, MigrationIndex, MigrationIndexKind, ReferentialAction, RenameColumnMigration,
-    RenameTableMigration,
+    DropIndexMigration, DropTableMigration, IndexPredicate, MigrationColumn, MigrationColumnType, MigrationDefault,
+    MigrationForeignKey, MigrationIndex, MigrationIndexKind, PredicateOperator, PredicateValue, ReferentialAction,
+    RenameColumnMigration, RenameTableMigration,
 };
 
 use crate::db::{DatabaseEnum, DatabaseSchema, DatabaseTable};
@@ -840,6 +843,7 @@ fn diff_indexes(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired
         if let Some(current_index) = current_indexes.get(desired_index.name.as_str())
             && current_index.columns == desired_index.columns
             && current_index.kind == desired_index.kind
+            && current_index.predicate == desired_index.predicate
         {
             matched_current.insert(current_index.name.clone());
             continue;
@@ -850,6 +854,7 @@ fn diff_indexes(plan: &mut MigrationPlan, current_table: &DatabaseTable, desired
                 !matched_current.contains(&index.name)
                     && index.columns == desired_index.columns
                     && index.kind == desired_index.kind
+                    && index.predicate == desired_index.predicate
             })
         {
             matched_current.insert(current_index.name.clone());
@@ -978,9 +983,12 @@ fn migration_column(model: &Model, field: &ModelField, schema: &Schema) -> Migra
         name: field.name.clone(),
         ty: migration_type(field, schema),
         primary_key: is_primary_key_field(model, field),
-        unique: field.attributes.iter().any(|attr| attr.name == "unique")
+        // A conditional `@unique<...>` is a partial unique index instead (see
+        // `table_indexes`), never a column constraint.
+        unique: field.attributes.iter().any(|attr| attr.name == "unique" && attr.is_unconditional())
             || model
                 .attributes("uniques")
+                .filter(|attribute| attribute.is_unconditional())
                 .filter_map(|attribute| attribute.field_names())
                 .any(|fields| fields.as_slice() == [field.name.as_str()]),
         nullable: field.ty.optional,
@@ -995,7 +1003,7 @@ fn relation_unique_columns<'a>(model: &'a dinoco_compiler::Model, schema: &Schem
         .filter(|field| {
             !field.ty.list
                 && field.is_relation(schema)
-                && field.attributes.iter().any(|attribute| attribute.name == "unique")
+                && field.attributes.iter().any(|attribute| attribute.name == "unique" && attribute.is_unconditional())
         })
         .filter_map(|field| field.attributes.iter().find(|attribute| attribute.name == "relation"))
         .filter_map(|relation| relation.argument("fields"))
@@ -1066,7 +1074,31 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                     .argument("map")
                     .and_then(string_or_ident)
                     .unwrap_or_else(|| index_name(&migration.table, &[field.name.as_str()]));
-                push_index(&mut indexes, &mut seen_names, name, columns, false, MigrationIndexKind::Standard, limit);
+                push_index(
+                    &mut indexes,
+                    &mut seen_names,
+                    name,
+                    columns,
+                    false,
+                    MigrationIndexKind::Standard,
+                    index_predicate(attribute),
+                    limit,
+                );
+            }
+
+            if let Some(attribute) = field.attributes.iter().find(|attribute| attribute.name == "unique")
+                && let Some(predicate) = index_predicate(attribute)
+            {
+                push_index(
+                    &mut indexes,
+                    &mut seen_names,
+                    unique_index_name(&migration.table, &[field.name.as_str()]),
+                    vec![field.name.clone()],
+                    false,
+                    MigrationIndexKind::Unique,
+                    Some(predicate),
+                    limit,
+                );
             }
 
             if fulltext_indexes_supported(schema)
@@ -1079,6 +1111,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                     vec![field.name.clone()],
                     false,
                     MigrationIndexKind::FullText,
+                    None,
                     limit,
                 );
             }
@@ -1095,6 +1128,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                 columns,
                 false,
                 MigrationIndexKind::Standard,
+                index_predicate(attribute),
                 limit,
             );
         }
@@ -1102,7 +1136,9 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
         for attribute in model.attributes("uniques") {
             let columns =
                 attribute.field_names().unwrap_or_default().into_iter().map(str::to_string).collect::<Vec<_>>();
-            if columns.len() <= 1 {
+            let predicate = index_predicate(attribute);
+            // One unconditional column is a column constraint instead.
+            if columns.len() <= 1 && predicate.is_none() {
                 continue;
             }
             let column_refs = columns.iter().map(String::as_str).collect::<Vec<_>>();
@@ -1113,6 +1149,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                 columns,
                 false,
                 MigrationIndexKind::Unique,
+                predicate,
                 limit,
             );
         }
@@ -1129,6 +1166,7 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
                     columns,
                     false,
                     MigrationIndexKind::FullText,
+                    None,
                     limit,
                 );
             }
@@ -1144,19 +1182,63 @@ fn table_indexes(migration: &CreateTableMigration, schema: &Schema) -> Vec<Migra
     if !primary_key_columns.is_empty() {
         let column_refs = primary_key_columns.iter().map(String::as_str).collect::<Vec<_>>();
         let name = index_name(&migration.table, &column_refs);
-        push_index(&mut indexes, &mut seen_names, name, primary_key_columns, true, MigrationIndexKind::Standard, limit);
+        push_index(
+            &mut indexes,
+            &mut seen_names,
+            name,
+            primary_key_columns,
+            true,
+            MigrationIndexKind::Standard,
+            None,
+            limit,
+        );
     }
 
     for foreign_key in &migration.foreign_keys {
         let columns = foreign_key.columns.clone();
         let column_refs = columns.iter().map(String::as_str).collect::<Vec<_>>();
         let name = index_name(&migration.table, &column_refs);
-        push_index(&mut indexes, &mut seen_names, name, columns, true, MigrationIndexKind::Standard, limit);
+        push_index(&mut indexes, &mut seen_names, name, columns, true, MigrationIndexKind::Standard, None, limit);
     }
 
     indexes
 }
 
+/// The condition of `@unique<...>`, `@index<...>`, `@@uniques<...>` or
+/// `@@indexes<...>`, with enum values as strings.
+fn index_predicate(attribute: &dinoco_compiler::Attribute) -> Option<IndexPredicate> {
+    fn convert(condition: &Condition) -> IndexPredicate {
+        match condition {
+            Condition::Compare { field, operator, value } => IndexPredicate::Compare {
+                field: field.clone(),
+                operator: match operator {
+                    ConditionOperator::Eq => PredicateOperator::Eq,
+                    ConditionOperator::Neq => PredicateOperator::Neq,
+                    ConditionOperator::Lt => PredicateOperator::Lt,
+                    ConditionOperator::Lte => PredicateOperator::Lte,
+                    ConditionOperator::Gt => PredicateOperator::Gt,
+                    ConditionOperator::Gte => PredicateOperator::Gte,
+                },
+                value: match value {
+                    ConditionValue::Null => PredicateValue::Null,
+                    ConditionValue::Boolean(value) => PredicateValue::Boolean(*value),
+                    ConditionValue::Number(value) => PredicateValue::Number(value.clone()),
+                    ConditionValue::String(value) | ConditionValue::Ident(value) => {
+                        PredicateValue::String(value.clone())
+                    }
+                },
+            },
+            Condition::Field(field) => IndexPredicate::Field(field.clone()),
+            Condition::Not(condition) => IndexPredicate::Not(Box::new(convert(condition))),
+            Condition::And(conditions) => IndexPredicate::And(conditions.iter().map(convert).collect()),
+            Condition::Or(conditions) => IndexPredicate::Or(conditions.iter().map(convert).collect()),
+        }
+    }
+
+    attribute.condition.as_ref().map(convert)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn push_index(
     indexes: &mut Vec<MigrationIndex>,
     seen_names: &mut BTreeSet<String>,
@@ -1164,18 +1246,19 @@ fn push_index(
     columns: Vec<String>,
     automatic: bool,
     kind: MigrationIndexKind,
+    predicate: Option<IndexPredicate>,
     limit: Option<IdentifierLimit>,
 ) {
     let name = fit_identifier(name, limit);
-    if let Some(existing) =
-        indexes.iter_mut().find(|index| index.name == name && index.columns == columns && index.kind == kind)
-    {
+    if let Some(existing) = indexes.iter_mut().find(|index| {
+        index.name == name && index.columns == columns && index.kind == kind && index.predicate == predicate
+    }) {
         existing.automatic |= automatic;
         return;
     }
     let name = unique_identifier(name, seen_names, limit);
     seen_names.insert(name.clone());
-    indexes.push(MigrationIndex { name, columns, automatic, kind });
+    indexes.push(MigrationIndex { name, columns, automatic, kind, predicate });
 }
 
 /// Returns `name`, or the first `<name>_<n>` (n >= 2) not in `taken`, cutting

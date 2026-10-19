@@ -1,6 +1,6 @@
 use dinoco_engine::{
-    DeleteQuery, DinocoClient, DinocoRowModel, FindQuery, InsertQuery, TransactionCommand, TransactionExecutor,
-    UpdateQuery,
+    DeleteQuery, DinocoClient, DinocoRowModel, FindQuery, InsertQuery, LookupQuery, TransactionCommand,
+    TransactionExecutor, UpdateQuery,
 };
 use std::sync::Arc;
 
@@ -26,6 +26,11 @@ pub struct TransactionContext;
 #[async_trait::async_trait]
 pub trait MutationExecutor: Sync {
     async fn query<M>(&self, query: FindQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel;
+    /// The row each key tuple names, in the order of the keys; reads back
+    /// the rows of an insert with `on_conflict_do_nothing(...)`.
+    async fn lookup<M>(&self, query: LookupQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel;
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize>;
@@ -59,6 +64,23 @@ impl MutationExecutor for DinocoClient {
             query,
             |compiler, query| compiler.compile_find_query(query),
             |query| self.backend.query(query),
+            Vec::len,
+        )
+        .await
+    }
+
+    async fn lookup<M>(&self, query: LookupQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        let observer = Observer::for_client(self);
+        observe_rows(
+            observer.as_ref(),
+            RowCountKind::Find,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_lookup_query(query),
+            |query| self.backend.lookup(query),
             Vec::len,
         )
         .await
@@ -169,6 +191,13 @@ where
         (**self).query(query).await
     }
 
+    async fn lookup<M>(&self, query: LookupQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        (**self).lookup(query).await
+    }
+
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
         (**self).insert(query).await
     }
@@ -222,6 +251,13 @@ where
         (**self).query(query).await
     }
 
+    async fn lookup<M>(&self, query: LookupQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        (**self).lookup(query).await
+    }
+
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
         (**self).insert(query).await
     }
@@ -270,6 +306,13 @@ impl MutationExecutor for TransactionExecutor {
         M: DinocoRowModel,
     {
         self.execute(TransactionCommand::find_many::<M>(query)).await
+    }
+
+    async fn lookup<M>(&self, query: LookupQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        self.execute(TransactionCommand::lookup::<M>(query)).await
     }
 
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
@@ -354,6 +397,23 @@ impl MutationExecutor for TransactionContext {
             query,
             |compiler, query| compiler.compile_find_query(query),
             |query| active.executor.query(query),
+            Vec::len,
+        )
+        .await
+    }
+
+    async fn lookup<M>(&self, query: LookupQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        let active = active_transaction()?;
+        observe_rows(
+            active.observer.as_ref(),
+            RowCountKind::Find,
+            query.table,
+            query,
+            |compiler, query| compiler.compile_lookup_query(query),
+            |query| active.executor.lookup(query),
             Vec::len,
         )
         .await

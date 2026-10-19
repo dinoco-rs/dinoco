@@ -94,6 +94,7 @@ async fn sqlite_quotes_reserved_identifiers_in_migrations_and_queries() -> anyho
         fields: vec!["id", "group"],
         rows: vec![vec![1_i64.into(), "admin".into()]],
         returning: None,
+        on_conflict_do_nothing: None,
     });
     assert!(insert.contains("(id, \"group\")"), "{insert}");
     adapter.execute(&insert, &params).await?;
@@ -171,6 +172,7 @@ async fn sqlite_adapter_compiles_and_applies_indexes() -> anyhow::Result<()> {
         columns: vec!["email".to_string()],
         automatic: false,
         kind: MigrationIndexKind::Standard,
+        predicate: None,
     };
     let create = adapter
         .compile_create_index_migration(CreateIndexMigration { table: "account".to_string(), index: index.clone() });

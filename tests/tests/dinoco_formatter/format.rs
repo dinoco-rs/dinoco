@@ -454,3 +454,28 @@ model AdminToken {
     assert!(formatted.contains("password  String\n    tokens"));
     assert!(!formatted.contains("password  String\n\n    tokens"));
 }
+
+#[test]
+fn formatter_writes_index_conditions_canonically() {
+    let raw = r#"
+enum Plan{FREE PRO}
+model Account{
+id String @id
+email String? @unique<email!=null>
+handle String? @index<(handle!=null)&&handle!="a\"b">(map:"handle_key")
+plan Plan
+archived Boolean
+@@uniques<!archived||(plan==PRO&&!(email==null))>([email,handle])
+@@indexes<((archived))>([plan])
+}
+"#;
+
+    let once = dinoco_formatter::format_from_raw(raw).expect("format once");
+    let twice = dinoco_formatter::format_from_raw(&once).expect("format twice");
+
+    assert_eq!(once, twice);
+    assert!(once.contains("@unique<email != null>"), "{once}");
+    assert!(once.contains(r#"@index<handle != null && handle != "a\"b">(map: "handle_key")"#), "{once}");
+    assert!(once.contains("@@uniques<!archived || plan == PRO && !(email == null)>([email, handle])"), "{once}");
+    assert!(once.contains("@@indexes<archived>([plan])"), "{once}");
+}

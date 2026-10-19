@@ -946,22 +946,32 @@ fn relation_mapping(field: &ModelField) -> RelationMapping<'_> {
     }
 }
 
+/// A conditional `@unique<...>` only covers some rows, so it is no key here.
 fn relation_field_is_unique(model: &Model, field: &ModelField, fields: &[&str]) -> bool {
-    field.attributes.iter().any(|attribute| attribute.name == "unique") || model_has_unique_key(model, fields)
+    field.attributes.iter().any(|attribute| attribute.name == "unique" && attribute.is_unconditional())
+        || model_has_unique_key(model, fields)
+}
+
+fn is_key_attribute(attribute: &Attribute) -> bool {
+    matches!(attribute.name.as_str(), "id" | "unique") && attribute.is_unconditional()
 }
 
 fn model_has_unique_key(model: &Model, fields: &[&str]) -> bool {
     if fields.len() == 1
-        && model.fields.iter().find(|field| field.name == fields[0]).is_some_and(|field| {
-            field.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
-        })
+        && model
+            .fields
+            .iter()
+            .find(|field| field.name == fields[0])
+            .is_some_and(|field| field.attributes.iter().any(is_key_attribute))
     {
         return true;
     }
     if fields.iter().all(|name| {
-        model.fields.iter().find(|field| field.name == *name).is_some_and(|field| {
-            field.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
-        })
+        model
+            .fields
+            .iter()
+            .find(|field| field.name == *name)
+            .is_some_and(|field| field.attributes.iter().any(is_key_attribute))
     }) {
         return true;
     }
@@ -969,7 +979,7 @@ fn model_has_unique_key(model: &Model, fields: &[&str]) -> bool {
     model
         .attributes
         .iter()
-        .filter(|attribute| matches!(attribute.name.as_str(), "ids" | "uniques"))
+        .filter(|attribute| matches!(attribute.name.as_str(), "ids" | "uniques") && attribute.is_unconditional())
         .filter_map(Attribute::field_names)
         .any(|candidate| candidate.iter().copied().eq(fields.iter().copied()))
 }

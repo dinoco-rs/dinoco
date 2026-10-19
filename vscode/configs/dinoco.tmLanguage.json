@@ -14,6 +14,7 @@
 		{ "include": "#custom_fields" },
 		{ "include": "#model_decorators" },
 		{ "include": "#core_attributes" },
+		{ "include": "#index_conditions" },
 		{ "include": "#decorators" },
 		{ "include": "#named_parameters" },
 		{ "include": "#functions" },
@@ -111,11 +112,12 @@
 		"model_decorators": {
 			"patterns": [
 				{
-					"begin": "(@@)(ids|uniques|indexes|fulltexts)(\\s*\\()",
+					"begin": "(@@)(ids|uniques|indexes|fulltexts)(\\s*<.*?>)?(\\s*\\()",
 					"beginCaptures": {
 						"1": { "name": "punctuation.definition.decorator.dinoco" },
 						"2": { "name": "entity.name.function.decorator.dinoco" },
-						"3": { "name": "punctuation.section.group.begin.dinoco" }
+						"3": { "name": "meta.condition.dinoco", "patterns": [{ "include": "#condition_tokens" }] },
+						"4": { "name": "punctuation.section.group.begin.dinoco" }
 					},
 					"end": "(\\))",
 					"endCaptures": {
@@ -154,6 +156,24 @@
 						"2": { "name": "entity.name.function.decorator.dinoco" }
 					}
 				}
+			]
+		},
+		"index_conditions": {
+			"comment": "The condition of a partial index: @unique<email != null>, @index<archived == false>.",
+			"begin": "(?<=@unique|@index)\\s*(<)",
+			"beginCaptures": { "1": { "name": "punctuation.definition.condition.begin.dinoco" } },
+			"end": "(>)(?=\\s*(?:\\(|@|$|//|#))",
+			"endCaptures": { "1": { "name": "punctuation.definition.condition.end.dinoco" } },
+			"name": "meta.condition.dinoco",
+			"patterns": [{ "include": "#condition_tokens" }]
+		},
+		"condition_tokens": {
+			"patterns": [
+				{ "include": "#strings" },
+				{ "match": "(&&|\\|\\||==|!=|<=|>=|<|>|!)", "name": "keyword.operator.dinoco" },
+				{ "match": "\\b(null|true|false)\\b", "name": "constant.language.dinoco" },
+				{ "match": "-?\\b\\d+(\\.\\d+)?\\b", "name": "constant.numeric.dinoco" },
+				{ "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b", "name": "variable.other.field.dinoco" }
 			]
 		},
 		"core_attributes": {

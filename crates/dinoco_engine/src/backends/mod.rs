@@ -16,9 +16,9 @@ pub use sqlite::*;
 use sql::Dialect;
 
 use crate::{
-    CountQuery, DeleteQuery, DinocoRowModel, DinocoSqlCompiler, DinocoValue, ExistsQuery, FindQuery, FindWhere,
-    InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery,
-    RelationJoinQuery, RelationOccurrenceQuery, UpdateQuery,
+    AggregateQuery, CountQuery, DeleteQuery, DinocoRowModel, DinocoSqlCompiler, DinocoValue, ExistsQuery, FindQuery,
+    FindWhere, InsertQuery, LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery,
+    RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, UpdateQuery,
 };
 
 /// Cloning a backend is cheap: adapters share their connection pool.
@@ -232,6 +232,22 @@ impl Backend {
         M: DinocoRowModel,
     {
         self.fetch(sql::many_to_many_relation_with_keys(self.dialect(), query, keys), Decode::Strict).await
+    }
+
+    /// One row of `M` for the whole aggregate, or one per group.
+    pub async fn aggregate<M>(&self, query: AggregateQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        self.fetch(sql::aggregate(self.dialect(), query), Decode::Strict).await
+    }
+
+    /// The row each key tuple names, in the order of the keys.
+    pub async fn lookup<M>(&self, query: LookupQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        self.fetch(sql::lookup(self.dialect(), query), Decode::Strict).await
     }
 
     pub async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {

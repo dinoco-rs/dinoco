@@ -28,6 +28,111 @@ pub struct InsertQuery {
     pub fields: Vec<&'static str>,
     pub rows: Vec<Vec<DinocoValue>>,
     pub returning: Option<&'static [&'static str]>,
+    /// Columns of a unique index: a row whose values on them collide with an
+    /// existing row is skipped instead of failing the statement (`ON CONFLICT
+    /// (...) DO NOTHING`). MySQL has no conflict target, so there a duplicate
+    /// on any unique index is skipped (`ON DUPLICATE KEY UPDATE`).
+    pub on_conflict_do_nothing: Option<&'static [&'static str]>,
+}
+
+/// The rows of `table` whose `key_fields` hold each tuple of `keys`, one row
+/// per tuple and in the order of `keys`, projected onto `fields`. Reads back
+/// the rows an insert with [`InsertQuery::on_conflict_do_nothing`] landed on,
+/// inserted or already there. A tuple no row matches is left out.
+#[derive(Debug, Clone)]
+pub struct LookupQuery {
+    pub table: &'static str,
+    pub fields: &'static [&'static str],
+    pub key_fields: &'static [&'static str],
+    /// One value per `key_fields` entry in each tuple.
+    pub keys: Vec<Vec<DinocoValue>>,
+}
+
+/// An aggregate over the rows of `source`, computed by the database, either
+/// as one value or as one value per group.
+#[derive(Debug, Clone)]
+pub struct AggregateQuery {
+    /// The rows aggregated: `from` and `conditions`, plus `order_by`, `limit`
+    /// and `skip` when they pick a window of rows to aggregate (`order_by`
+    /// alone changes nothing and is left out). `fields` is not read.
+    pub source: FindQuery,
+    pub aggregate: AggregateColumn,
+    /// Splits the rows into groups, one result row each; `None` reads back a
+    /// single row.
+    pub group: Option<AggregateGroup>,
+}
+
+/// One aggregate function over one column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AggregateColumn {
+    pub function: AggregateFunction,
+    pub field: &'static str,
+}
+
+/// The aggregate functions, each read back as one type in every database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AggregateFunction {
+    /// `SUM` of an integer column as a 64-bit integer, `0` over no values.
+    SumInteger,
+    /// `SUM` of a floating point column as a double, `0` over no values.
+    SumFloat,
+    /// `AVG` as a double; `NULL` over no values.
+    Avg,
+    /// `MIN`, in the column's own type; `NULL` over no values.
+    Min,
+    /// `MAX`, in the column's own type; `NULL` over no values.
+    Max,
+    /// `COUNT` of the values that are not `NULL`.
+    Count,
+}
+
+/// The groups of an [`AggregateQuery`] and the order and page they are read
+/// back in. Every result row is the group key followed by the aggregate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AggregateGroup {
+    pub key: GroupBy,
+    /// `None` orders by the key, ascending.
+    pub order_by: Option<GroupOrder>,
+    pub limit: i32,
+    pub skip: i32,
+}
+
+/// What rows are grouped by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupBy {
+    /// The column's value.
+    Field(&'static str),
+    /// The first day of the period a date or timestamp column falls in, as a
+    /// date.
+    Date(&'static str, DateBucket),
+}
+
+impl GroupBy {
+    /// The column the key is computed from.
+    pub fn field(self) -> &'static str {
+        match self {
+            GroupBy::Field(field) | GroupBy::Date(field, _) => field,
+        }
+    }
+}
+
+/// The period a [`GroupBy::Date`] key truncates to. Weeks start on Monday.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DateBucket {
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+/// How the groups of an [`AggregateQuery`] are ordered. Ties on the
+/// aggregate are broken by the key, ascending.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupOrder {
+    KeyAsc,
+    KeyDesc,
+    AggregateAsc,
+    AggregateDesc,
 }
 
 #[derive(Debug, Clone)]
@@ -397,6 +502,9 @@ pub struct MigrationIndex {
     pub automatic: bool,
     #[serde(default)]
     pub kind: MigrationIndexKind,
+    /// The condition of a partial index; `None` indexes every row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predicate: Option<crate::IndexPredicate>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

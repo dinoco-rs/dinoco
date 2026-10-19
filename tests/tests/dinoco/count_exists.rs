@@ -597,6 +597,7 @@ fn links(pairs: &[(&str, &str)]) -> InsertQuery {
             })
             .collect(),
         returning: None,
+        on_conflict_do_nothing: None,
     }
 }
 

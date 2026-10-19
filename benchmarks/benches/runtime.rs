@@ -16,8 +16,10 @@ use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_ma
 use dinoco::{count, exists, find_first, find_many, insert_into, insert_many, transaction, update};
 use dinoco_benchmarks::{BenchEvent, BenchPost, BenchUser, Dialect, Fixture, event, fixtures, raw_users};
 use dinoco_engine::{
-    DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery, MySqlAdapter, PostgresAdapter,
-    RelationMatch, RelationOccurrenceQuery, RelationQuantifier, SqliteAdapter, UpdateOperation, UpdateQuery, UpdateSet,
+    AggregateColumn, AggregateFunction, AggregateGroup, AggregateQuery, DateBucket, DinocoEntity, DinocoSqlCompiler,
+    DinocoValue, FindOrderBy, FindQuery, FindWhere, GroupBy, GroupOrder, InsertQuery, LookupQuery, MySqlAdapter,
+    PostgresAdapter, RelationMatch, RelationOccurrenceQuery, RelationQuantifier, SqliteAdapter, UpdateOperation,
+    UpdateQuery, UpdateSet,
 };
 use tokio::runtime::Runtime;
 
@@ -85,6 +87,7 @@ fn insert_query(rows: usize) -> InsertQuery {
             })
             .collect(),
         returning: None,
+        on_conflict_do_nothing: None,
     }
 }
 
@@ -146,8 +149,38 @@ fn bench_compile(c: &mut Criterion, rt: &Runtime) {
         group.bench_function(BenchmarkId::new("update_returning_complex", name), |b| {
             b.iter_batched(update_query, |query| compiler.compile_update_query(query), BatchSize::SmallInput)
         });
+        group.bench_function(BenchmarkId::new("aggregate_grouped_complex", name), |b| {
+            b.iter_batched(aggregate_query, |query| compiler.compile_aggregate_query(query), BatchSize::SmallInput)
+        });
+        group.bench_function(BenchmarkId::new("lookup_100_keys", name), |b| {
+            b.iter_batched(|| lookup_query(100), |query| compiler.compile_lookup_query(query), BatchSize::SmallInput)
+        });
     }
     group.finish();
+}
+
+fn aggregate_query() -> AggregateQuery {
+    AggregateQuery {
+        source: complex_find(),
+        aggregate: AggregateColumn { function: AggregateFunction::SumInteger, field: "age" },
+        group: Some(AggregateGroup {
+            key: GroupBy::Date("created_at", DateBucket::Day),
+            order_by: Some(GroupOrder::AggregateDesc),
+            limit: 10,
+            skip: -1,
+        }),
+    }
+}
+
+fn lookup_query(keys: usize) -> LookupQuery {
+    LookupQuery {
+        table: "bench_event",
+        fields: <BenchEvent as DinocoEntity>::FIELDS,
+        key_fields: &["kind", "amount"],
+        keys: (0..keys)
+            .map(|index| vec![DinocoValue::String(format!("kind-{index}")), DinocoValue::Integer(index as i64)])
+            .collect(),
+    }
 }
 
 fn bench_backend(c: &mut Criterion, rt: &Runtime, fixture: &Fixture) {
@@ -236,6 +269,28 @@ fn bench_backend(c: &mut Criterion, rt: &Runtime, fixture: &Fixture) {
         })
     });
 
+    group.bench_function("pluck_sum", |b| {
+        b.to_async(rt).iter(|| async move {
+            find_many::<BenchUser>()
+                .where_(|user| user.active.eq(true))
+                .pluck(|user| user.age.sum())
+                .execute(client)
+                .await
+                .expect("pluck sum")
+        })
+    });
+
+    group.bench_function("pluck_sum_group_by_day", |b| {
+        b.to_async(rt).iter(|| async move {
+            find_many::<BenchUser>()
+                .pluck(|user| user.age.sum())
+                .group_by(|user| user.created_at.day())
+                .execute(client)
+                .await
+                .expect("pluck group")
+        })
+    });
+
     group.bench_function("count", |b| {
         b.to_async(rt).iter(|| async move {
             count::<BenchUser>().where_(|user| user.active.eq(true)).execute(client).await.expect("count")
@@ -298,6 +353,27 @@ fn bench_backend(c: &mut Criterion, rt: &Runtime, fixture: &Fixture) {
                 insert_into::<BenchEvent>().values(&item).execute(client).await.expect("insert");
                 elapsed += start.elapsed();
             }
+            fixture.clear_events().await.expect("clear events");
+            elapsed
+        })
+    });
+
+    // Every iteration collides with the same row and reads it back.
+    group.bench_function("insert_on_conflict_returning_existing", |b| {
+        b.to_async(rt).iter_custom(|iters| async move {
+            let item = event(next_event.fetch_add(1, Ordering::Relaxed));
+            insert_into::<BenchEvent>().values(&item).execute(client).await.expect("seed conflict");
+            let start = Instant::now();
+            for _ in 0..iters {
+                insert_into::<BenchEvent>()
+                    .values(&item)
+                    .on_conflict_do_nothing(|event| event.id)
+                    .returning::<BenchEvent>()
+                    .execute(client)
+                    .await
+                    .expect("insert on conflict");
+            }
+            let elapsed = start.elapsed();
             fixture.clear_events().await.expect("clear events");
             elapsed
         })

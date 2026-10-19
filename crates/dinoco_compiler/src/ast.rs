@@ -249,10 +249,20 @@ pub struct FieldType {
 pub struct Attribute {
     pub name: String,
     pub arguments: Vec<AttributeArgument>,
+    /// The `<...>` of a partial index: `@unique<email != null>`,
+    /// `@@indexes<archived == false>([...])`.
+    pub condition: Option<Condition>,
     pub origin: SourceOrigin,
 }
 
 impl Attribute {
+    /// Whether this is an unconditional `@unique` or `@@uniques`: a partial
+    /// unique index only constrains the rows its condition matches, so it is
+    /// no key for relations.
+    pub fn is_unconditional(&self) -> bool {
+        self.condition.is_none()
+    }
+
     pub fn argument(&self, name: &str) -> Option<&AttributeValue> {
         self.arguments.iter().find_map(|argument| match argument {
             AttributeArgument::Named { key, value } if key == name => Some(value),
@@ -287,4 +297,137 @@ pub enum AttributeValue {
     Ident(String),
     Call { name: String, arguments: Vec<AttributeArgument> },
     Array(Vec<AttributeValue>),
+}
+
+/// The condition of a partial index, over the fields of its model.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Condition {
+    /// `field <operator> value`.
+    Compare {
+        field: String,
+        operator: ConditionOperator,
+        value: ConditionValue,
+    },
+    /// A bare Boolean field, true for the rows where it is `true`.
+    Field(String),
+    Not(Box<Condition>),
+    And(Vec<Condition>),
+    Or(Vec<Condition>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConditionOperator {
+    Eq,
+    Neq,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+}
+
+impl ConditionOperator {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Eq => "==",
+            Self::Neq => "!=",
+            Self::Lt => "<",
+            Self::Lte => "<=",
+            Self::Gt => ">",
+            Self::Gte => ">=",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConditionValue {
+    Null,
+    Boolean(bool),
+    /// The literal as written, so `1.50` stays `1.50`.
+    Number(String),
+    String(String),
+    /// An enum value of the compared field.
+    Ident(String),
+}
+
+impl Condition {
+    /// Every field the condition reads, in order of appearance.
+    pub fn fields(&self) -> Vec<&str> {
+        let mut fields = Vec::new();
+        self.collect_fields(&mut fields);
+        fields
+    }
+
+    fn collect_fields<'a>(&'a self, fields: &mut Vec<&'a str>) {
+        match self {
+            Self::Compare { field, .. } | Self::Field(field) => fields.push(field),
+            Self::Not(condition) => condition.collect_fields(fields),
+            Self::And(conditions) | Self::Or(conditions) => {
+                conditions.iter().for_each(|condition| condition.collect_fields(fields))
+            }
+        }
+    }
+
+    fn write(&self, out: &mut std::fmt::Formatter<'_>, parent: u8) -> std::fmt::Result {
+        // Precedence: `||` 1, `&&` 2, everything else binds tighter.
+        let (own, separator, conditions) = match self {
+            Self::Or(conditions) => (1, " || ", conditions),
+            Self::And(conditions) => (2, " && ", conditions),
+            Self::Not(condition) => {
+                out.write_str("!")?;
+                return match condition.as_ref() {
+                    Self::Field(_) | Self::Not(_) => condition.write(out, 3),
+                    condition => {
+                        out.write_str("(")?;
+                        condition.write(out, 0)?;
+                        out.write_str(")")
+                    }
+                };
+            }
+            Self::Field(field) => return out.write_str(field),
+            Self::Compare { field, operator, value } => {
+                write!(out, "{field} {} ", operator.as_str())?;
+                return match value {
+                    ConditionValue::Null => out.write_str("null"),
+                    ConditionValue::Boolean(value) => write!(out, "{value}"),
+                    ConditionValue::Number(value) | ConditionValue::Ident(value) => out.write_str(value),
+                    ConditionValue::String(value) => {
+                        out.write_str("\"")?;
+                        for character in value.chars() {
+                            match character {
+                                '"' => out.write_str("\\\"")?,
+                                '\\' => out.write_str("\\\\")?,
+                                '\n' => out.write_str("\\n")?,
+                                '\r' => out.write_str("\\r")?,
+                                '\t' => out.write_str("\\t")?,
+                                character => write!(out, "{character}")?,
+                            }
+                        }
+                        out.write_str("\"")
+                    }
+                };
+            }
+        };
+
+        let grouped = own < parent;
+        if grouped {
+            out.write_str("(")?;
+        }
+        for (index, condition) in conditions.iter().enumerate() {
+            if index > 0 {
+                out.write_str(separator)?;
+            }
+            condition.write(out, own + 1)?;
+        }
+        if grouped {
+            out.write_str(")")?;
+        }
+        Ok(())
+    }
+}
+
+/// The condition as it is written in a schema: `a != null && (b == "x" || !c)`.
+impl std::fmt::Display for Condition {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.write(out, 0)
+    }
 }

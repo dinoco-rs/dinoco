@@ -1,10 +1,13 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue, WhereComplex,
+    AggregateColumn, AggregateGroup, AggregateQuery, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy,
+    FindQuery, FindWhere, GroupOrder, GroupedValue, PluckColumn, PluckValue, WhereComplex,
 };
 
-use crate::{Field, IncludeLoader, IntoIncludeLoader, ReadExecutor, load_includes, single_field};
+use crate::{
+    Aggregate, Field, IncludeLoader, IntoGroupKey, IntoIncludeLoader, ReadExecutor, load_includes, single_field,
+};
 
 pub struct FindMany<M, S = M> {
     query: FindQuery,
@@ -95,21 +98,20 @@ where
         self
     }
 
-    /// Projects onto a single column instead of a full row.
+    /// Projects onto a single column instead of a full row, or onto an
+    /// aggregate the database computes over the matching rows.
     ///
-    /// Unlike `.select(...)`, which still builds a row-model struct, this
-    /// returns the raw column values directly (e.g. `Vec<i64>` for an `id`
-    /// field).
-    pub fn pluck<F, T, C>(self, callback: F) -> Pluck<M, T>
+    /// With a field, this returns the raw column values directly (e.g.
+    /// `Vec<i64>` for an `id` field) instead of building a row-model struct
+    /// like `.select(...)`. With an aggregate (`sum`, `avg`, `min`, `max`,
+    /// `count` of a field) it returns that one value, or one per group after
+    /// `.group_by(...)`.
+    pub fn pluck<F, P>(self, callback: F) -> P::Pluck
     where
-        F: FnOnce(M::Where) -> Field<T, C>,
-        PluckValue<T>: DinocoRowModel,
+        F: FnOnce(M::Where) -> P,
+        P: IntoPluck<M>,
     {
-        let name = callback(M::Where::default()).field_name();
-        let mut query = self.query;
-        query.fields = single_field(name, M::FIELDS);
-
-        Pluck { query, read_primary: self.read_primary, marker: PhantomData }
+        callback(M::Where::default()).into_pluck(self.query, self.read_primary)
     }
 
     /// Applies a post-query mapping to every row.
@@ -161,6 +163,167 @@ where
         let rows = client.read_target(self.read_primary)?.query::<PluckValue<T>>(self.query).await?;
 
         Ok(rows.into_iter().map(|value| value.0).collect())
+    }
+}
+
+/// What `.pluck(...)` accepts: a [`Field`], read back as `Vec<T>`, or an
+/// [`Aggregate`], read back as one value (or one per group).
+pub trait IntoPluck<M> {
+    type Pluck;
+
+    #[doc(hidden)]
+    fn into_pluck(self, query: FindQuery, read_primary: bool) -> Self::Pluck;
+}
+
+impl<M, T, C> IntoPluck<M> for Field<T, C>
+where
+    M: DinocoEntity,
+    PluckValue<T>: DinocoRowModel,
+{
+    type Pluck = Pluck<M, T>;
+
+    fn into_pluck(self, mut query: FindQuery, read_primary: bool) -> Self::Pluck {
+        query.fields = single_field(self.field_name(), M::FIELDS);
+
+        Pluck { query, read_primary, marker: PhantomData }
+    }
+}
+
+impl<M, T> IntoPluck<M> for Aggregate<T>
+where
+    M: DinocoEntity,
+    T: PluckColumn,
+{
+    type Pluck = PluckAggregate<M, T>;
+
+    fn into_pluck(self, mut query: FindQuery, read_primary: bool) -> Self::Pluck {
+        query.fields = &[];
+
+        PluckAggregate { query, aggregate: self.column(), read_primary, marker: PhantomData }
+    }
+}
+
+/// An aggregate over the rows of a `find_many`, from `.pluck(...)`.
+///
+/// `where_` and `where_complex` pick the rows aggregated. So do `take` and
+/// `skip` (with `order_by` deciding which rows they keep): the aggregate reads
+/// only the rows `find_many` would return. After `.group_by(...)`, `order_by`,
+/// `take` and `skip` apply to the groups instead.
+pub struct PluckAggregate<M, T> {
+    query: FindQuery,
+    aggregate: AggregateColumn,
+    read_primary: bool,
+    marker: PhantomData<fn() -> (M, T)>,
+}
+
+impl<M, T> PluckAggregate<M, T>
+where
+    M: DinocoEntity,
+    T: PluckColumn,
+{
+    /// Computes the aggregate once per group of rows sharing a key, read back
+    /// as `Vec<(key, value)>`.
+    ///
+    /// The groups come ordered by key, ascending. `order_by` on the grouped
+    /// field orders them by key, and on the aggregated field by value (ties
+    /// by key); `order_by` on any other field fails the query. `take` and
+    /// `skip` page the groups.
+    pub fn group_by<F, G>(self, callback: F) -> PluckGroup<M, G::Key, T>
+    where
+        F: FnOnce(M::Where) -> G,
+        G: IntoGroupKey,
+    {
+        let key = callback(M::Where::default()).into_group_by();
+        let FindQuery { from, conditions, limit, skip, order_by, .. } = self.query;
+        let (order_by, unordered_field) = match order_by {
+            None => (None, None),
+            Some(order_by) => {
+                let (field, descending) = match order_by {
+                    FindOrderBy::Asc(field) => (field, false),
+                    FindOrderBy::Desc(field) => (field, true),
+                };
+                let order = if field == key.field() {
+                    Some(if descending { GroupOrder::KeyDesc } else { GroupOrder::KeyAsc })
+                } else if field == self.aggregate.field {
+                    Some(if descending { GroupOrder::AggregateDesc } else { GroupOrder::AggregateAsc })
+                } else {
+                    None
+                };
+                (order, order.is_none().then_some(field))
+            }
+        };
+        let mut source = FindQuery::new(&[], from, -1, -1);
+        source.conditions = conditions;
+
+        PluckGroup {
+            query: AggregateQuery {
+                source,
+                aggregate: self.aggregate,
+                group: Some(AggregateGroup { key, order_by, limit, skip }),
+            },
+            unordered_field,
+            read_primary: self.read_primary,
+            marker: PhantomData,
+        }
+    }
+
+    pub fn read_in_primary(mut self) -> Self {
+        self.read_primary = true;
+
+        self
+    }
+
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<T>
+    where
+        C: ReadExecutor,
+    {
+        let query = AggregateQuery { source: self.query, aggregate: self.aggregate, group: None };
+        let mut rows = client.read_target(self.read_primary)?.aggregate::<PluckValue<T>>(query).await?;
+
+        match rows.pop() {
+            Some(PluckValue(value)) => Ok(value),
+            None => anyhow::bail!("the aggregate over `{}` returned no row", M::TABLE_NAME),
+        }
+    }
+}
+
+/// A grouped aggregate, from `.pluck(...).group_by(...)`: one `(K, T)` per
+/// group of rows sharing a key.
+pub struct PluckGroup<M, K, T> {
+    query: AggregateQuery,
+    /// A field `order_by` named that is neither the key nor the aggregated
+    /// one: the groups have no such column to be ordered by.
+    unordered_field: Option<&'static str>,
+    read_primary: bool,
+    marker: PhantomData<fn() -> (M, K, T)>,
+}
+
+impl<M, K, T> PluckGroup<M, K, T>
+where
+    M: DinocoEntity,
+    K: PluckColumn,
+    T: PluckColumn,
+{
+    pub fn read_in_primary(mut self) -> Self {
+        self.read_primary = true;
+
+        self
+    }
+
+    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<(K, T)>>
+    where
+        C: ReadExecutor,
+    {
+        if let Some(field) = self.unordered_field {
+            anyhow::bail!(
+                "a grouped pluck on `{}` can only be ordered by the grouped or the aggregated field, not by `{field}`",
+                M::TABLE_NAME
+            );
+        }
+
+        let rows = client.read_target(self.read_primary)?.aggregate::<GroupedValue<K, T>>(self.query).await?;
+
+        Ok(rows.into_iter().map(|GroupedValue(key, value)| (key, value)).collect())
     }
 }
 

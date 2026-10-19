@@ -405,6 +405,7 @@ async fn seed(client: &DinocoClient) -> anyhow::Result<()> {
             fields: vec!["group_id", "user_id"],
             rows: vec![link("g1", "u1"), link("g2", "u1"), link("g2", "u2")],
             returning: None,
+            on_conflict_do_nothing: None,
         })
         .await?;
     Ok(())

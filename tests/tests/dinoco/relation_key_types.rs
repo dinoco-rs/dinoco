@@ -439,7 +439,7 @@ where
 /// Tags reuse the group ids. Notes n1, n2 belong to `alpha`, n3 to `gamma`.
 async fn seed(client: &DinocoClient) -> anyhow::Result<()> {
     let insert = |table: &'static str, fields: Vec<&'static str>, rows: Vec<Vec<DinocoValue>>| {
-        client.backend.insert(InsertQuery { table, fields, rows, returning: None })
+        client.backend.insert(InsertQuery { table, fields, rows, returning: None, on_conflict_do_nothing: None })
     };
     let int = DinocoValue::Integer;
     let text = |value: &str| DinocoValue::String(value.to_string());

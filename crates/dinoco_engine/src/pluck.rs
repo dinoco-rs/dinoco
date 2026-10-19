@@ -10,11 +10,164 @@ use chrono::{DateTime, NaiveDate, Utc};
 #[derive(Debug, Clone, PartialEq)]
 pub struct PluckValue<T>(pub T);
 
-/// Scalars every database decodes directly.
-macro_rules! scalars {
-    ($impl:ident) => {
-        $impl!(String, bool, i64, f64, Vec<u8>, NaiveDate, crate::serde_json::Value);
+/// A group key and its aggregate, read from positions `0` and `1` of a row of
+/// a grouped [`crate::AggregateQuery`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupedValue<K, T>(pub K, pub T);
+
+/// A scalar read from one column of a row, by position.
+///
+/// Implemented for every scalar type a model field can have (and for enums
+/// deriving `DinocoEnum`), plus `Option` of each. [`PluckValue`] and
+/// [`GroupedValue`] decode their columns through it.
+pub trait PluckColumn: Sized + Send + Sync + 'static {
+    #[cfg(feature = "sqlite")]
+    #[doc(hidden)]
+    fn from_sqlite_column(row: &crate::SqliteRow<'_>, index: usize) -> Option<Self>;
+
+    /// The column as an `Option`, `None` for `NULL`.
+    #[cfg(feature = "sqlite")]
+    #[doc(hidden)]
+    fn from_sqlite_column_nullable(row: &crate::SqliteRow<'_>, index: usize) -> Option<Option<Self>>;
+
+    #[cfg(feature = "postgres")]
+    #[doc(hidden)]
+    fn from_postgres_column(row: &crate::PostgresRow, index: usize) -> Option<Self>;
+
+    #[cfg(feature = "postgres")]
+    #[doc(hidden)]
+    fn from_postgres_column_nullable(row: &crate::PostgresRow, index: usize) -> Option<Option<Self>>;
+
+    /// Moves the value out of a row Dinoco owns.
+    #[cfg(feature = "mysql")]
+    #[doc(hidden)]
+    fn from_mysql_column(row: &mut crate::MysqlRow, index: usize) -> Option<Self>;
+
+    #[cfg(feature = "mysql")]
+    #[doc(hidden)]
+    fn from_mysql_column_nullable(row: &mut crate::MysqlRow, index: usize) -> Option<Option<Self>>;
+}
+
+impl<T: PluckColumn> PluckColumn for Option<T> {
+    #[cfg(feature = "sqlite")]
+    fn from_sqlite_column(row: &crate::SqliteRow<'_>, index: usize) -> Option<Self> {
+        T::from_sqlite_column_nullable(row, index)
+    }
+
+    #[cfg(feature = "sqlite")]
+    fn from_sqlite_column_nullable(row: &crate::SqliteRow<'_>, index: usize) -> Option<Option<Self>> {
+        T::from_sqlite_column_nullable(row, index).map(Some)
+    }
+
+    #[cfg(feature = "postgres")]
+    fn from_postgres_column(row: &crate::PostgresRow, index: usize) -> Option<Self> {
+        T::from_postgres_column_nullable(row, index)
+    }
+
+    #[cfg(feature = "postgres")]
+    fn from_postgres_column_nullable(row: &crate::PostgresRow, index: usize) -> Option<Option<Self>> {
+        T::from_postgres_column_nullable(row, index).map(Some)
+    }
+
+    #[cfg(feature = "mysql")]
+    fn from_mysql_column(row: &mut crate::MysqlRow, index: usize) -> Option<Self> {
+        T::from_mysql_column_nullable(row, index)
+    }
+
+    #[cfg(feature = "mysql")]
+    fn from_mysql_column_nullable(row: &mut crate::MysqlRow, index: usize) -> Option<Option<Self>> {
+        T::from_mysql_column_nullable(row, index).map(Some)
+    }
+}
+
+/// Implements [`PluckColumn`] for types each driver decodes directly
+/// (`rusqlite::FromSql`, `tokio_postgres::FromSql`, `mysql_common::FromValue`).
+/// `DinocoEnum` expands it for every enum.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __dinoco_pluck_column {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl $crate::PluckColumn for $ty {
+                $crate::__dinoco_sqlite! {
+                    fn from_sqlite_column(row: &$crate::SqliteRow<'_>, index: usize) -> ::core::option::Option<Self> {
+                        row.get::<_, $ty>(index).ok()
+                    }
+
+                    fn from_sqlite_column_nullable(
+                        row: &$crate::SqliteRow<'_>,
+                        index: usize,
+                    ) -> ::core::option::Option<::core::option::Option<Self>> {
+                        row.get::<_, ::core::option::Option<$ty>>(index).ok()
+                    }
+                }
+
+                $crate::__dinoco_postgres! {
+                    fn from_postgres_column(row: &$crate::PostgresRow, index: usize) -> ::core::option::Option<Self> {
+                        row.try_get::<_, $ty>(index).ok()
+                    }
+
+                    fn from_postgres_column_nullable(
+                        row: &$crate::PostgresRow,
+                        index: usize,
+                    ) -> ::core::option::Option<::core::option::Option<Self>> {
+                        row.try_get::<_, ::core::option::Option<$ty>>(index).ok()
+                    }
+                }
+
+                $crate::__dinoco_mysql! {
+                    fn from_mysql_column(row: &mut $crate::MysqlRow, index: usize) -> ::core::option::Option<Self> {
+                        $crate::mysql_take::<$ty>(row, index)
+                    }
+
+                    fn from_mysql_column_nullable(
+                        row: &mut $crate::MysqlRow,
+                        index: usize,
+                    ) -> ::core::option::Option<::core::option::Option<Self>> {
+                        $crate::mysql_take::<::core::option::Option<$ty>>(row, index)
+                    }
+                }
+            }
+        )*
     };
+}
+
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+crate::__dinoco_pluck_column!(String, bool, i64, f64, Vec<u8>, NaiveDate, crate::serde_json::Value);
+
+/// `DateTime` columns are RFC 3339 text on SQLite, `TIMESTAMP` holding UTC (or
+/// `TIMESTAMPTZ`) on PostgreSQL, and UTC wall clock values on MySQL.
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+impl PluckColumn for DateTime<Utc> {
+    #[cfg(feature = "sqlite")]
+    fn from_sqlite_column(row: &crate::SqliteRow<'_>, index: usize) -> Option<Self> {
+        row.get::<_, DateTime<Utc>>(index).ok()
+    }
+
+    #[cfg(feature = "sqlite")]
+    fn from_sqlite_column_nullable(row: &crate::SqliteRow<'_>, index: usize) -> Option<Option<Self>> {
+        row.get::<_, Option<DateTime<Utc>>>(index).ok()
+    }
+
+    #[cfg(feature = "postgres")]
+    fn from_postgres_column(row: &crate::PostgresRow, index: usize) -> Option<Self> {
+        crate::postgres_datetime_at(row, index)
+    }
+
+    #[cfg(feature = "postgres")]
+    fn from_postgres_column_nullable(row: &crate::PostgresRow, index: usize) -> Option<Option<Self>> {
+        crate::postgres_optional_datetime_at(row, index)
+    }
+
+    #[cfg(feature = "mysql")]
+    fn from_mysql_column(row: &mut crate::MysqlRow, index: usize) -> Option<Self> {
+        crate::mysql_take::<chrono::NaiveDateTime>(row, index).map(|value| value.and_utc())
+    }
+
+    #[cfg(feature = "mysql")]
+    fn from_mysql_column_nullable(row: &mut crate::MysqlRow, index: usize) -> Option<Option<Self>> {
+        crate::mysql_take::<Option<chrono::NaiveDateTime>>(row, index).map(|value| value.map(|value| value.and_utc()))
+    }
 }
 
 #[cfg(feature = "sqlite")]
@@ -22,26 +175,17 @@ mod sqlite {
     use super::*;
     use crate::{DinocoSqlite, SqliteRow};
 
-    macro_rules! impl_sqlite {
-        ($($ty:ty),* $(,)?) => {
-            $(
-                impl DinocoSqlite for PluckValue<$ty> {
-                    fn from_sqlite_row(row: &SqliteRow<'_>) -> Option<Self> {
-                        row.get::<_, $ty>(0).ok().map(PluckValue)
-                    }
-                }
-
-                impl DinocoSqlite for PluckValue<Option<$ty>> {
-                    fn from_sqlite_row(row: &SqliteRow<'_>) -> Option<Self> {
-                        row.get::<_, Option<$ty>>(0).ok().map(PluckValue)
-                    }
-                }
-            )*
-        };
+    impl<T: PluckColumn> DinocoSqlite for PluckValue<T> {
+        fn from_sqlite_row(row: &SqliteRow<'_>) -> Option<Self> {
+            T::from_sqlite_column(row, 0).map(PluckValue)
+        }
     }
 
-    scalars!(impl_sqlite);
-    impl_sqlite!(DateTime<Utc>);
+    impl<K: PluckColumn, T: PluckColumn> DinocoSqlite for GroupedValue<K, T> {
+        fn from_sqlite_row(row: &SqliteRow<'_>) -> Option<Self> {
+            Some(GroupedValue(K::from_sqlite_column(row, 0)?, T::from_sqlite_column(row, 1)?))
+        }
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -49,38 +193,9 @@ mod postgres {
     use super::*;
     use crate::{DeadpoolPostgresRow, DinocoPostgres, PostgresRow};
 
-    macro_rules! impl_postgres {
-        ($($ty:ty),* $(,)?) => {
-            $(
-                impl DinocoPostgres for PluckValue<$ty> {
-                    fn from_deadpool_posgres_row(row: &DeadpoolPostgresRow) -> Option<Self> {
-                        row.try_get::<_, $ty>(0).ok().map(PluckValue)
-                    }
-
-                    fn from_postgres_row(row: &PostgresRow) -> Option<Self> {
-                        Self::from_deadpool_posgres_row(row)
-                    }
-                }
-
-                impl DinocoPostgres for PluckValue<Option<$ty>> {
-                    fn from_deadpool_posgres_row(row: &DeadpoolPostgresRow) -> Option<Self> {
-                        row.try_get::<_, Option<$ty>>(0).ok().map(PluckValue)
-                    }
-
-                    fn from_postgres_row(row: &PostgresRow) -> Option<Self> {
-                        Self::from_deadpool_posgres_row(row)
-                    }
-                }
-            )*
-        };
-    }
-
-    scalars!(impl_postgres);
-
-    /// `DateTime` columns are `TIMESTAMP` holding UTC, or `TIMESTAMPTZ`.
-    impl DinocoPostgres for PluckValue<DateTime<Utc>> {
+    impl<T: PluckColumn> DinocoPostgres for PluckValue<T> {
         fn from_deadpool_posgres_row(row: &DeadpoolPostgresRow) -> Option<Self> {
-            crate::postgres_datetime_at(row, 0).map(PluckValue)
+            T::from_postgres_column(row, 0).map(PluckValue)
         }
 
         fn from_postgres_row(row: &PostgresRow) -> Option<Self> {
@@ -88,9 +203,9 @@ mod postgres {
         }
     }
 
-    impl DinocoPostgres for PluckValue<Option<DateTime<Utc>>> {
+    impl<K: PluckColumn, T: PluckColumn> DinocoPostgres for GroupedValue<K, T> {
         fn from_deadpool_posgres_row(row: &DeadpoolPostgresRow) -> Option<Self> {
-            crate::postgres_optional_datetime_at(row, 0).map(PluckValue)
+            Some(GroupedValue(K::from_postgres_column(row, 0)?, T::from_postgres_column(row, 1)?))
         }
 
         fn from_postgres_row(row: &PostgresRow) -> Option<Self> {
@@ -101,49 +216,26 @@ mod postgres {
 
 #[cfg(feature = "mysql")]
 mod mysql {
-    use chrono::NaiveDateTime;
-
     use super::*;
     use crate::{DinocoMysql, MysqlRow};
 
-    macro_rules! impl_mysql {
-        ($($ty:ty),* $(,)?) => {
-            $(
-                impl DinocoMysql for PluckValue<$ty> {
-                    fn from_mysql_row(row: &MysqlRow) -> Option<Self> {
-                        row.get_opt::<$ty, _>(0)?.ok().map(PluckValue)
-                    }
-
-                    fn from_mysql_row_owned(mut row: MysqlRow) -> Option<Self> {
-                        crate::mysql_take::<$ty>(&mut row, 0).map(PluckValue)
-                    }
-                }
-
-                impl DinocoMysql for PluckValue<Option<$ty>> {
-                    fn from_mysql_row(row: &MysqlRow) -> Option<Self> {
-                        row.get_opt::<Option<$ty>, _>(0)?.ok().map(PluckValue)
-                    }
-
-                    fn from_mysql_row_owned(mut row: MysqlRow) -> Option<Self> {
-                        crate::mysql_take::<Option<$ty>>(&mut row, 0).map(PluckValue)
-                    }
-                }
-            )*
-        };
-    }
-
-    scalars!(impl_mysql);
-
-    /// `DateTime` columns hold UTC wall clock values.
-    impl DinocoMysql for PluckValue<DateTime<Utc>> {
+    impl<T: PluckColumn> DinocoMysql for PluckValue<T> {
         fn from_mysql_row(row: &MysqlRow) -> Option<Self> {
-            row.get_opt::<NaiveDateTime, _>(0)?.ok().map(|value| PluckValue(value.and_utc()))
+            Self::from_mysql_row_owned(row.clone())
+        }
+
+        fn from_mysql_row_owned(mut row: MysqlRow) -> Option<Self> {
+            T::from_mysql_column(&mut row, 0).map(PluckValue)
         }
     }
 
-    impl DinocoMysql for PluckValue<Option<DateTime<Utc>>> {
+    impl<K: PluckColumn, T: PluckColumn> DinocoMysql for GroupedValue<K, T> {
         fn from_mysql_row(row: &MysqlRow) -> Option<Self> {
-            row.get_opt::<Option<NaiveDateTime>, _>(0)?.ok().map(|value| PluckValue(value.map(|value| value.and_utc())))
+            Self::from_mysql_row_owned(row.clone())
+        }
+
+        fn from_mysql_row_owned(mut row: MysqlRow) -> Option<Self> {
+            Some(GroupedValue(K::from_mysql_column(&mut row, 0)?, T::from_mysql_column(&mut row, 1)?))
         }
     }
 }

@@ -634,6 +634,7 @@ async fn migrate_generate_detects_and_applies_destructive_column_drop_when_confi
             DinocoValue::String("secret".to_string()),
         ]],
         returning: None,
+        on_conflict_do_nothing: None,
     });
     adapter.execute(&insert_sql, &insert_params).await.expect("seed user");
     drop(adapter);

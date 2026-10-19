@@ -5,12 +5,12 @@ use crate::MysqlRow;
 #[cfg(feature = "sqlite")]
 use crate::SqliteRow;
 use crate::{
-    AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CountQuery,
+    AddColumnMigration, AddForeignKeyMigration, AggregateQuery, AlterColumnMigration, AlterEnumMigration, CountQuery,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoValue, DropColumnMigration,
     DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, ExistsQuery, FindQuery,
-    InsertQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery,
-    RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration, RenameTableMigration, UpdateQuery,
-    UpdatedAtField,
+    InsertQuery, LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery,
+    RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration, RenameTableMigration,
+    UpdateQuery, UpdatedAtField,
 };
 #[cfg(feature = "postgres")]
 use crate::{DeadpoolPostgresRow, PostgresRow};
@@ -52,6 +52,8 @@ pub trait DinocoSqlCompiler {
     fn compile_delete_query(&self, query: DeleteQuery) -> (String, Vec<DinocoValue>);
     fn compile_count_query(&self, query: CountQuery) -> (String, Vec<DinocoValue>);
     fn compile_exists_query(&self, query: ExistsQuery) -> (String, Vec<DinocoValue>);
+    fn compile_aggregate_query(&self, query: AggregateQuery) -> (String, Vec<DinocoValue>);
+    fn compile_lookup_query(&self, query: LookupQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_count_query(&self, query: RelationCountQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_batch_query(&self, query: RelationBatchQuery) -> (String, Vec<DinocoValue>);
     fn compile_relation_join_query(&self, query: RelationJoinQuery) -> (String, Vec<DinocoValue>);

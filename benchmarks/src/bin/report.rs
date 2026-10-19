@@ -95,6 +95,11 @@ fn print_layouts() {
         dinoco::BelongsTo<BenchPost, BenchUser>,
         dinoco::Update<BenchUser>,
         dinoco::InsertMany<BenchEvent>,
+        dinoco::Insert<BenchEvent>,
+        AggregateQuery,
+        LookupQuery,
+        dinoco::PluckAggregate<BenchUser, i64>,
+        dinoco::PluckGroup<BenchUser, chrono::NaiveDate, i64>,
         dinoco::CreateError,
         dinoco::UpdateError,
         dinoco::TransactionError,
@@ -132,6 +137,38 @@ fn print_future_sizes(client: &DinocoClient) {
     future_size(
         "transaction(client, find_first)",
         transaction(client, |tx| async move { find_first::<BenchUser>().execute(tx).await }),
+    );
+    future_size(
+        "find_many::<User>().pluck(age.sum()).execute",
+        find_many::<BenchUser>().pluck(|user| user.age.sum()).execute(client),
+    );
+    future_size(
+        "find_many::<User>().pluck(age.sum()).group_by(day).execute",
+        find_many::<BenchUser>().pluck(|user| user.age.sum()).group_by(|user| user.created_at.day()).execute(client),
+    );
+    future_size(
+        "insert_into::<Event>().on_conflict_do_nothing.execute",
+        insert_into::<BenchEvent>().values(&item).on_conflict_do_nothing(|event| event.id).execute(client),
+    );
+    future_size(
+        "insert_into::<Event>().on_conflict_do_nothing.returning.execute",
+        insert_into::<BenchEvent>()
+            .values(&item)
+            .on_conflict_do_nothing(|event| event.id)
+            .returning::<BenchEvent>()
+            .execute(client),
+    );
+    future_size(
+        "insert_into::<Event>().returning.execute",
+        insert_into::<BenchEvent>().values(&item).returning::<BenchEvent>().execute(client),
+    );
+    future_size(
+        "insert_many::<Event>().returning.execute",
+        insert_many::<BenchEvent>().values(vec![event(1)]).returning::<BenchEvent>().execute(client),
+    );
+    future_size(
+        "find_many::<User>().pluck(id).execute",
+        find_many::<BenchUser>().pluck(|user| user.id).execute(client),
     );
     future_size(
         "Backend::query::<User>",
@@ -190,6 +227,24 @@ async fn print_operations(fixture: &Fixture) {
     .await;
     measure("pluck ids take(1000)", || async move {
         find_many::<BenchUser>().take(1000).pluck(|user| user.id).execute(client).await.unwrap()
+    })
+    .await;
+    measure("pluck age.sum() where", || async move {
+        find_many::<BenchUser>()
+            .where_(|user| user.active.eq(true))
+            .pluck(|user| user.age.sum())
+            .execute(client)
+            .await
+            .unwrap()
+    })
+    .await;
+    measure("pluck age.sum() group_by(created_at.day())", || async move {
+        find_many::<BenchUser>()
+            .pluck(|user| user.age.sum())
+            .group_by(|user| user.created_at.day())
+            .execute(client)
+            .await
+            .unwrap()
     })
     .await;
     measure("count where", || async move {
@@ -269,6 +324,18 @@ async fn print_operations(fixture: &Fixture) {
         async move { insert_into::<BenchEvent>().values(item).execute(client).await.unwrap() }
     })
     .await;
+    // Every call after the first collides and reads the existing row back.
+    let existing = event(0);
+    measure("insert_into on_conflict_do_nothing returning (existing)", || async {
+        insert_into::<BenchEvent>()
+            .values(&existing)
+            .on_conflict_do_nothing(|event| event.id)
+            .returning::<BenchEvent>()
+            .execute(client)
+            .await
+            .unwrap()
+    })
+    .await;
     let ranges = (0..ITERATIONS + 4).map(|_| take(100)).collect::<Vec<_>>();
     let mut ranges = ranges.into_iter();
     measure("insert_many 100 (owned)", || {
@@ -302,12 +369,42 @@ async fn print_compile() {
             || occurrence_query(100),
             |query| compiler.compile_relation_occurrence_query(query),
         );
+        compile_row(
+            &format!("{name} aggregate grouped by day (5 conditions, relation filter)"),
+            || AggregateQuery {
+                source: complex_find(),
+                aggregate: AggregateColumn { function: AggregateFunction::SumInteger, field: "age" },
+                group: Some(AggregateGroup {
+                    key: GroupBy::Date("created_at", DateBucket::Day),
+                    order_by: Some(GroupOrder::AggregateDesc),
+                    limit: 10,
+                    skip: -1,
+                }),
+            },
+            |query| compiler.compile_aggregate_query(query),
+        );
+        compile_row(
+            &format!("{name} lookup 100 keys"),
+            || lookup_query(100),
+            |query| compiler.compile_lookup_query(query),
+        );
         // As includes run it, with the parent keys bound.
         compile_row(
             &format!("{name} relation occurrence 100 integer keys bound"),
             || (occurrence_query(100), (1..=100).map(DinocoValue::Integer).collect::<Vec<_>>()),
             |(query, keys)| compiler.compile_relation_occurrence_query_with_keys(query, keys),
         );
+    }
+}
+
+fn lookup_query(keys: usize) -> LookupQuery {
+    LookupQuery {
+        table: "bench_event",
+        fields: <BenchEvent as DinocoEntity>::FIELDS,
+        key_fields: &["kind", "amount"],
+        keys: (0..keys)
+            .map(|index| vec![DinocoValue::String(format!("kind-{index}")), DinocoValue::Integer(index as i64)])
+            .collect(),
     }
 }
 
@@ -379,6 +476,7 @@ fn insert_query(rows: usize) -> InsertQuery {
             })
             .collect(),
         returning: None,
+        on_conflict_do_nothing: None,
     }
 }
 

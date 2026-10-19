@@ -1,3 +1,4 @@
+mod aggregate;
 mod count;
 mod error;
 mod fields;
@@ -31,9 +32,10 @@ pub use async_trait::async_trait;
 pub use dinoco_derives::{DinocoEnum, Entity, EntityExtend, Extend};
 pub use dinoco_engine::*;
 #[doc(hidden)]
-pub use dinoco_engine::{__dinoco_mysql, __dinoco_postgres, __dinoco_sqlite};
+pub use dinoco_engine::{__dinoco_mysql, __dinoco_pluck_column, __dinoco_postgres, __dinoco_sqlite};
 pub use serde;
 
+pub use aggregate::*;
 pub use count::*;
 pub use error::*;
 pub use fields::*;

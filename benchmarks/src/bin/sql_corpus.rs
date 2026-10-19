@@ -432,6 +432,7 @@ fn corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
                     })
                     .collect(),
                 returning,
+                on_conflict_do_nothing: None,
             }),
         );
     }
@@ -557,6 +558,7 @@ fn corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
             columns: vec!["title".to_string(), "Body".to_string()],
             automatic: false,
             kind,
+            predicate: None,
         };
         print_statements(
             dialect,
@@ -594,6 +596,175 @@ fn corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
             desired_values: vec!["a".to_string(), "b".to_string(), "it's".to_string()],
         }),
     );
+
+    aggregate_corpus(dialect, compiler);
+    partial_index_corpus(dialect, compiler);
+}
+
+fn partial_index_corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
+    let compare = |field: &str, operator, value| IndexPredicate::Compare { field: field.to_string(), operator, value };
+    let predicates = [
+        ("null", compare("deleted_at", PredicateOperator::Eq, PredicateValue::Null)),
+        ("not_null", compare("Body", PredicateOperator::Neq, PredicateValue::Null)),
+        (
+            "nested",
+            IndexPredicate::Or(vec![
+                IndexPredicate::And(vec![
+                    compare("rank", PredicateOperator::Gte, PredicateValue::Number("-1.5".to_string())),
+                    IndexPredicate::Not(Box::new(IndexPredicate::Field("archived".to_string()))),
+                ]),
+                compare("status", PredicateOperator::Neq, PredicateValue::String("it's \\ */".to_string())),
+                compare("group", PredicateOperator::Eq, PredicateValue::Boolean(true)),
+            ]),
+        ),
+    ];
+    for kind in [MigrationIndexKind::Standard, MigrationIndexKind::Unique] {
+        for (case, predicate) in &predicates {
+            let index = MigrationIndex {
+                name: "post_title_idx".to_string(),
+                columns: vec!["title".to_string(), "Body".to_string()],
+                automatic: false,
+                kind,
+                predicate: Some(predicate.clone()),
+            };
+            print_statements(
+                dialect,
+                &format!("create partial index {kind:?} {case}"),
+                vec![
+                    compiler.compile_create_index_migration(CreateIndexMigration { table: "post".to_string(), index }),
+                ],
+            );
+        }
+    }
+}
+
+fn aggregate_corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
+    let functions = [
+        AggregateFunction::SumInteger,
+        AggregateFunction::SumFloat,
+        AggregateFunction::Avg,
+        AggregateFunction::Min,
+        AggregateFunction::Max,
+        AggregateFunction::Count,
+    ];
+    let keys = [
+        GroupBy::Field("status"),
+        GroupBy::Field("group"),
+        GroupBy::Date("createdAt", DateBucket::Day),
+        GroupBy::Date("createdAt", DateBucket::Week),
+        GroupBy::Date("createdAt", DateBucket::Month),
+        GroupBy::Date("createdAt", DateBucket::Year),
+    ];
+    let orders = [
+        None,
+        Some(GroupOrder::KeyAsc),
+        Some(GroupOrder::KeyDesc),
+        Some(GroupOrder::AggregateAsc),
+        Some(GroupOrder::AggregateDesc),
+    ];
+
+    for (case, conditions) in conditions() {
+        for (index, page) in pages().into_iter().enumerate() {
+            print(
+                dialect,
+                &format!("aggregate {case} page{index}"),
+                compiler.compile_aggregate_query(AggregateQuery {
+                    source: find(&[], "account", conditions.clone(), page),
+                    aggregate: AggregateColumn { function: AggregateFunction::SumInteger, field: "balance" },
+                    group: None,
+                }),
+            );
+        }
+        print(
+            dialect,
+            &format!("aggregate grouped {case}"),
+            compiler.compile_aggregate_query(AggregateQuery {
+                source: find(&[], "account", conditions, (-1, -1, None)),
+                aggregate: AggregateColumn { function: AggregateFunction::Count, field: "id" },
+                group: Some(AggregateGroup {
+                    key: GroupBy::Date("createdAt", DateBucket::Day),
+                    order_by: Some(GroupOrder::AggregateDesc),
+                    limit: 10,
+                    skip: 5,
+                }),
+            }),
+        );
+    }
+
+    for function in functions {
+        for key in keys {
+            for (index, order_by) in orders.into_iter().enumerate() {
+                print(
+                    dialect,
+                    &format!("aggregate {function:?} by {key:?} order{index}"),
+                    compiler.compile_aggregate_query(AggregateQuery {
+                        source: find(
+                            &[],
+                            "order",
+                            vec![FindWhere::Eq("user", value("ana"))],
+                            (5, -1, Some(FindOrderBy::Desc("id"))),
+                        ),
+                        aggregate: AggregateColumn { function, field: "key" },
+                        group: Some(AggregateGroup {
+                            key,
+                            order_by,
+                            limit: -1,
+                            skip: if index % 2 == 0 { -1 } else { 2 },
+                        }),
+                    }),
+                );
+            }
+        }
+    }
+
+    for (rows, target, returning) in [
+        (1, &["email"][..], None),
+        (3, &["email"][..], Some(&["id", "group"][..])),
+        (2, &["tenant", "group"][..], None),
+    ] {
+        print(
+            dialect,
+            &format!("insert on conflict rows{rows} target={target:?} returning={}", returning.is_some()),
+            compiler.compile_insert_query(InsertQuery {
+                table: "Account",
+                fields: vec!["id", "email", "tenant", "group"],
+                rows: (0..rows)
+                    .map(|row| vec![DinocoValue::Integer(row), value("a@dinoco.rs"), value("acme"), DinocoValue::Null])
+                    .collect(),
+                returning,
+                on_conflict_do_nothing: Some(target),
+            }),
+        );
+    }
+
+    for (case, key_fields, keys) in [
+        ("single", &["email"][..], vec![vec![value("a@dinoco.rs")]]),
+        ("strings", &["email"][..], vec![vec![value("a@dinoco.rs")], vec![value("b@dinoco.rs")], vec![value("it's")]]),
+        (
+            "composite",
+            &["tenant", "group", "createdAt"][..],
+            vec![
+                vec![value("acme"), DinocoValue::Integer(1), DinocoValue::Date(Default::default())],
+                vec![value("globex"), DinocoValue::Float(1.5), DinocoValue::DateTime(Default::default())],
+                vec![
+                    DinocoValue::Enum("Status".to_string(), "active".to_string()),
+                    DinocoValue::Boolean(true),
+                    DinocoValue::Null,
+                ],
+            ],
+        ),
+    ] {
+        print(
+            dialect,
+            &format!("lookup {case}"),
+            compiler.compile_lookup_query(LookupQuery {
+                table: "Account",
+                fields: &["id", "email", "group"],
+                key_fields,
+                keys,
+            }),
+        );
+    }
 }
 
 fn update_sets() -> Vec<UpdateSet> {

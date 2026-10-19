@@ -59,6 +59,7 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
         fields: vec!["id", "email"],
         rows: vec![vec![DinocoValue::String("1".to_string()), DinocoValue::String("a@dinoco.rs".to_string())]],
         returning: Some(&["id"]),
+        on_conflict_do_nothing: None,
     });
     assert_eq!(sql, "INSERT INTO \"user\" (id, email) VALUES (?, ?) RETURNING id");
     assert_eq!(params.len(), 2);

@@ -259,3 +259,45 @@ fn reports_invalid_inverse_mapping_and_inverse_actions() {
             .any(|item| item.code == Some(NumberOrString::String("dinoco.referentialOptionOnInverse".into())))
     );
 }
+
+#[test]
+fn partial_indexes_compile_cleanly_but_are_no_relation_keys() {
+    let clean = r#"config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+}
+
+model Account {
+    id         String    @id
+    email      String?   @unique<email != null>
+    deleted_at DateTime?
+    slug       String
+
+    @@uniques<deleted_at == null>([slug])
+}
+"#;
+    let diagnostics = analyze(clean, &DocumentIndex::new(clean));
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+
+    let one_to_one = r#"config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+}
+
+model User {
+    id      String   @id
+    profile Profile?
+}
+
+model Profile {
+    id      String @id
+    user_id String @unique<user_id != "">
+    user    User?  @relation(fields: [user_id], references: [id])
+}
+"#;
+    let diagnostics = analyze(one_to_one, &DocumentIndex::new(one_to_one));
+    assert!(
+        diagnostics.iter().any(|item| item.message.contains("a conditional @unique<...> only covers some rows")),
+        "{diagnostics:#?}"
+    );
+}

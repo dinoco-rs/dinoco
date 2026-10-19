@@ -5,8 +5,9 @@ use pest::iterators::Pair;
 use pest_derive::Parser;
 
 use crate::ast::{
-    Attribute, AttributeArgument, AttributeValue, ConfigBlock, ConfigEntry, ConfigImport, ConfigValue,
-    EnumDef, FieldType, Import, Model, ModelField, Schema, SchemaItem, SourceOrigin, WorkspaceConfig,
+    Attribute, AttributeArgument, AttributeValue, Condition, ConditionOperator, ConditionValue, ConfigBlock,
+    ConfigEntry, ConfigImport, ConfigValue, EnumDef, FieldType, Import, Model, ModelField, Schema, SchemaItem,
+    SourceOrigin, WorkspaceConfig,
 };
 use crate::error::CompileError;
 
@@ -140,6 +141,7 @@ pub(crate) fn validate_schema(schema: &Schema) -> CompileResult<()> {
     validate_config_values(schema)?;
     validate_model_attributes(schema)?;
     validate_index_attributes(schema)?;
+    validate_index_conditions(schema)?;
     validate_relation_attributes(schema)?;
     validate_relation_pairs(schema)?;
     validate_primary_keys(schema)?;
@@ -244,8 +246,7 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
             }
         }
 
-        if config.entries.iter().any(|entry| !matches!(entry.key.as_str(), "imports"))
-            && !config.workspaces.is_empty()
+        if config.entries.iter().any(|entry| !matches!(entry.key.as_str(), "imports")) && !config.workspaces.is_empty()
         {
             return source_error(
                 &config.origin,
@@ -367,8 +368,7 @@ fn validate_declarations(schema: &Schema) -> CompileResult<()> {
                 if matches!(
                     attribute.name.as_str(),
                     "id" | "unique" | "default" | "relation" | "index" | "fulltext" | "updated_at"
-                )
-                    && let Some(first) = attributes.insert(attribute.name.as_str(), &attribute.origin)
+                ) && let Some(first) = attributes.insert(attribute.name.as_str(), &attribute.origin)
                 {
                     return Err(CompileError::at(
                         format!("Field `{}.{}` declares @{} more than once", model.name, field.name, attribute.name),
@@ -511,6 +511,140 @@ fn validate_index_attributes(schema: &Schema) -> CompileResult<()> {
     Ok(())
 }
 
+/// Conditions (`@unique<...>`, `@index<...>`, `@@uniques<...>(...)`,
+/// `@@indexes<...>(...)`) read scalar or enum fields of their own model and
+/// compare them with a value of the field's type.
+fn validate_index_conditions(schema: &Schema) -> CompileResult<()> {
+    for model in schema.models() {
+        let field_attributes = model
+            .fields
+            .iter()
+            .flat_map(|field| field.attributes.iter().map(move |attribute| (Some(field), attribute)));
+        let model_attributes = model.attributes.iter().map(|attribute| (None, attribute));
+
+        for (field, attribute) in field_attributes.chain(model_attributes) {
+            let Some(condition) = &attribute.condition else {
+                continue;
+            };
+            let prefix = if field.is_some() { "@" } else { "@@" };
+            let allowed = match field {
+                Some(_) => matches!(attribute.name.as_str(), "unique" | "index"),
+                None => matches!(attribute.name.as_str(), "uniques" | "indexes"),
+            };
+            if !allowed {
+                return source_error(
+                    &attribute.origin,
+                    format!(
+                        "{prefix}{}<...> on model `{}` is not supported; only @unique, @index, @@uniques and @@indexes \
+                         take a condition",
+                        attribute.name, model.name
+                    ),
+                );
+            }
+            if let Some(field) = field
+                && field.is_relation(schema)
+            {
+                return source_error(
+                    &attribute.origin,
+                    format!(
+                        "Relation field `{}.{}` cannot take a condition; put @{}<...> on its foreign key field",
+                        model.name, field.name, attribute.name
+                    ),
+                );
+            }
+            if let Some(field) = field
+                && attribute.name == "unique"
+                && field.attributes.iter().any(|attribute| attribute.name == "id")
+            {
+                return source_error(
+                    &attribute.origin,
+                    format!(
+                        "Field `{}.{}` is the primary key, which is unique for every row; remove the condition or the \
+                         @unique",
+                        model.name, field.name
+                    ),
+                );
+            }
+            validate_condition(schema, model, attribute, prefix, condition)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_condition(
+    schema: &Schema,
+    model: &Model,
+    attribute: &Attribute,
+    prefix: &str,
+    condition: &Condition,
+) -> CompileResult<()> {
+    let fail = |message: String| {
+        source_error::<()>(
+            &attribute.origin,
+            format!("{prefix}{}<{condition}> on model `{}`: {message}", attribute.name, model.name),
+        )
+    };
+
+    match condition {
+        Condition::And(conditions) | Condition::Or(conditions) => {
+            for condition in conditions {
+                validate_condition(schema, model, attribute, prefix, condition)?;
+            }
+            Ok(())
+        }
+        Condition::Not(condition) => validate_condition(schema, model, attribute, prefix, condition),
+        Condition::Field(name) | Condition::Compare { field: name, .. } => {
+            let Some(field) = model.fields.iter().find(|field| field.name == *name) else {
+                return fail(format!("`{name}` is not a field of `{}`", model.name));
+            };
+            if field.ty.list || field.is_relation(schema) || field.ty.name == "Json" {
+                return fail(format!("`{name}` must be a scalar or enum field, not a relation, list or Json"));
+            }
+            let enum_values = schema.enums().find(|item| item.name == field.ty.name).map(|item| &item.values);
+
+            let Condition::Compare { operator, value, .. } = condition else {
+                return if field.ty.name == "Boolean" {
+                    Ok(())
+                } else {
+                    fail(format!("`{name}` alone needs a Boolean field; compare it with a value instead"))
+                };
+            };
+            let equality = matches!(operator, ConditionOperator::Eq | ConditionOperator::Neq);
+            let ty = field.ty.name.as_str();
+
+            match value {
+                ConditionValue::Null if !equality => fail(format!("compare `{name}` with null using == or !=")),
+                ConditionValue::Null => Ok(()),
+                ConditionValue::Boolean(_) if ty != "Boolean" => {
+                    fail(format!("`{name}` is `{ty}`, so it cannot be compared with true or false"))
+                }
+                ConditionValue::Boolean(_) if !equality => fail(format!("compare the Boolean `{name}` using == or !=")),
+                ConditionValue::Number(_) if !matches!(ty, "Integer" | "Float") => {
+                    fail(format!("`{name}` is `{ty}`, so it cannot be compared with a number"))
+                }
+                ConditionValue::String(_) if !matches!(ty, "String" | "DateTime" | "Date") && enum_values.is_none() => {
+                    fail(format!("`{name}` is `{ty}`, so it cannot be compared with a string"))
+                }
+                ConditionValue::String(text) | ConditionValue::Ident(text) if enum_values.is_some() => {
+                    if !equality {
+                        return fail(format!("compare the enum `{name}` using == or !="));
+                    }
+                    if enum_values.is_some_and(|values| values.contains(text)) {
+                        Ok(())
+                    } else {
+                        fail(format!("`{text}` is not a value of enum `{ty}`"))
+                    }
+                }
+                ConditionValue::Ident(text) => fail(format!(
+                    "`{text}` is not a value; quote strings (\"{text}\") and compare `{name}` with a literal"
+                )),
+                _ => Ok(()),
+            }
+        }
+    }
+}
+
 fn validate_model_attributes(schema: &Schema) -> CompileResult<()> {
     for model in schema.models() {
         let known = ["ids", "uniques", "indexes", "fulltexts", "table_name"];
@@ -624,7 +758,8 @@ fn validate_model_attributes(schema: &Schema) -> CompileResult<()> {
                 }
             }
 
-            let signature = format!("{}:{}", attribute.name, fields.join(","));
+            let condition = attribute.condition.as_ref().map(ToString::to_string).unwrap_or_default();
+            let signature = format!("{}:{}:{condition}", attribute.name, fields.join(","));
             if !declarations.insert(signature) {
                 return source_error(
                     &attribute.origin,
@@ -725,15 +860,14 @@ fn validate_updated_at(schema: &Schema) -> CompileResult<()> {
                 );
             }
 
-            let default_now = field.attributes.iter().find(|attribute| attribute.name == "default").is_some_and(
-                |default| {
+            let default_now =
+                field.attributes.iter().find(|attribute| attribute.name == "default").is_some_and(|default| {
                     matches!(
                         default.arguments.as_slice(),
                         [AttributeArgument::Value(AttributeValue::Call { name, arguments })]
                             if name == "now" && arguments.is_empty()
                     )
-                },
-            );
+                });
             if !default_now {
                 return source_error(
                     &updated_at.origin,
@@ -751,19 +885,13 @@ fn validate_config_values(schema: &Schema) -> CompileResult<()> {
         SchemaItem::Config(config) => Some(config),
         _ => None,
     }) {
-        let database_entries = config
-            .entries
-            .iter()
-            .filter(|entry| !matches!(entry.key.as_str(), "imports"))
-            .cloned()
-            .collect::<Vec<_>>();
+        let database_entries =
+            config.entries.iter().filter(|entry| !matches!(entry.key.as_str(), "imports")).cloned().collect::<Vec<_>>();
         if !database_entries.is_empty() {
             validate_config_scope("config", &database_entries)?;
         }
         for workspace in &config.workspaces {
-            if let Some(entry) =
-                workspace.entries.iter().find(|entry| matches!(entry.key.as_str(), "imports"))
-            {
+            if let Some(entry) = workspace.entries.iter().find(|entry| matches!(entry.key.as_str(), "imports")) {
                 return Err(CompileError::at(
                     format!("`{}` must be declared at the top level of `config`", entry.key),
                     &entry.origin,
@@ -1179,7 +1307,8 @@ fn validate_one_to_one_pair(
         return source_error(
             &owner_field.origin,
             format!(
-                "One-to-one relation `{}.{}` requires @unique on the relation field or its local foreign-key field",
+                "One-to-one relation `{}.{}` requires @unique on the relation field or its local foreign-key field \
+                 (a conditional @unique<...> only covers some rows, so it does not count)",
                 owner_model.name, owner_field.name
             ),
         );
@@ -1350,23 +1479,33 @@ fn validate_many_to_many_id(schema: &Schema, model: &Model) -> CompileResult<()>
     Ok(())
 }
 
+/// Partial unique indexes (`@unique<...>`) only constrain the rows their
+/// condition matches, so none of these helpers count them as keys.
 fn relation_is_unique(model: &Model, field: &ModelField, definition: &RelationDefinition) -> bool {
-    field.attributes.iter().any(|attribute| attribute.name == "unique")
+    field.attributes.iter().any(|attribute| attribute.name == "unique" && attribute.is_unconditional())
         || definition.fields.as_ref().is_some_and(|fields| model_has_unique_key(model, fields))
+}
+
+fn is_key_attribute(attribute: &Attribute) -> bool {
+    matches!(attribute.name.as_str(), "id" | "unique") && attribute.is_unconditional()
 }
 
 fn model_has_unique_key(model: &Model, fields: &[String]) -> bool {
     if fields.len() == 1
-        && model.fields.iter().find(|field| field.name == fields[0]).is_some_and(|field| {
-            field.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
-        })
+        && model
+            .fields
+            .iter()
+            .find(|field| field.name == fields[0])
+            .is_some_and(|field| field.attributes.iter().any(is_key_attribute))
     {
         return true;
     }
     if fields.iter().all(|name| {
-        model.fields.iter().find(|field| field.name == *name).is_some_and(|field| {
-            field.attributes.iter().any(|attribute| matches!(attribute.name.as_str(), "id" | "unique"))
-        })
+        model
+            .fields
+            .iter()
+            .find(|field| field.name == *name)
+            .is_some_and(|field| field.attributes.iter().any(is_key_attribute))
     }) {
         return true;
     }
@@ -1374,7 +1513,7 @@ fn model_has_unique_key(model: &Model, fields: &[String]) -> bool {
     model
         .attributes
         .iter()
-        .filter(|attribute| matches!(attribute.name.as_str(), "ids" | "uniques"))
+        .filter(|attribute| matches!(attribute.name.as_str(), "ids" | "uniques") && attribute.is_unconditional())
         .filter_map(Attribute::field_names)
         .any(|candidate| candidate.iter().copied().eq(fields.iter().map(String::as_str)))
 }
@@ -1728,13 +1867,65 @@ fn parse_attribute(pair: Pair<'_, Rule>, file: &str) -> CompileResult<Attribute>
     let origin = pair_origin(&pair, file);
     let mut inner = pair.into_inner();
     let name = expect_rule(&mut inner, Rule::ident, "expected attribute name")?.as_str().to_string();
-    let arguments = inner
-        .find(|pair| pair.as_rule() == Rule::attribute_arguments)
-        .map(parse_attribute_arguments)
-        .transpose()?
-        .unwrap_or_default();
+    let mut arguments = Vec::new();
+    let mut condition = None;
 
-    Ok(Attribute { name, arguments, origin })
+    for pair in inner {
+        match pair.as_rule() {
+            Rule::attribute_condition => {
+                let error = pair_error(&pair, "expected a condition");
+                condition = Some(parse_condition(pair.into_inner().next().ok_or(error)?)?);
+            }
+            Rule::attribute_arguments => arguments = parse_attribute_arguments(pair)?,
+            _ => {}
+        }
+    }
+
+    Ok(Attribute { name, arguments, condition, origin })
+}
+
+fn parse_condition(pair: Pair<'_, Rule>) -> CompileResult<Condition> {
+    match pair.as_rule() {
+        Rule::condition | Rule::condition_and => {
+            let or = pair.as_rule() == Rule::condition;
+            let mut conditions = pair.into_inner().map(parse_condition).collect::<CompileResult<Vec<_>>>()?;
+            Ok(match conditions.len() {
+                1 => conditions.pop().expect("one condition"),
+                _ if or => Condition::Or(conditions),
+                _ => Condition::And(conditions),
+            })
+        }
+        Rule::condition_not => {
+            let error = pair_error(&pair, "expected a condition after `!`");
+            Ok(Condition::Not(Box::new(parse_condition(pair.into_inner().next().ok_or(error)?)?)))
+        }
+        Rule::condition_field => Ok(Condition::Field(pair.as_str().to_string())),
+        Rule::condition_comparison => {
+            let mut inner = pair.into_inner();
+            let field = expect_rule(&mut inner, Rule::ident, "expected a field name")?.as_str().to_string();
+            let operator = match expect_rule(&mut inner, Rule::condition_operator, "expected an operator")?.as_str() {
+                "==" => ConditionOperator::Eq,
+                "!=" => ConditionOperator::Neq,
+                "<" => ConditionOperator::Lt,
+                "<=" => ConditionOperator::Lte,
+                ">" => ConditionOperator::Gt,
+                _ => ConditionOperator::Gte,
+            };
+            let value = expect_rule(&mut inner, Rule::condition_value, "expected a value")?;
+            let error = pair_error(&value, "expected a value");
+            let value = value.into_inner().next().ok_or(error)?;
+            let value = match value.as_rule() {
+                Rule::null_keyword => ConditionValue::Null,
+                Rule::boolean_keyword => ConditionValue::Boolean(value.as_str() == "true"),
+                Rule::string_literal => ConditionValue::String(unquote(value.as_str())),
+                Rule::number_literal => ConditionValue::Number(value.as_str().to_string()),
+                _ => ConditionValue::Ident(value.as_str().to_string()),
+            };
+
+            Ok(Condition::Compare { field, operator, value })
+        }
+        _ => Err(pair_error(&pair, "unexpected condition token")),
+    }
 }
 
 fn parse_attribute_arguments(pair: Pair<'_, Rule>) -> CompileResult<Vec<AttributeArgument>> {

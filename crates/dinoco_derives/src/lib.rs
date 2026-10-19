@@ -215,6 +215,8 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
             }
         }
 
+        ::dinoco::__dinoco_pluck_column!(#name);
+
         ::dinoco::__dinoco_mysql! {
             impl ::core::convert::TryFrom<::dinoco::mysql_async::Value> for #name {
                 type Error = ::dinoco::mysql_common::value::convert::FromValueError;
@@ -854,6 +856,7 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                     fields: ::std::vec![#join_parent_field, #join_child_field],
                     rows: ::std::vec![::std::vec![parent_value, ::core::convert::Into::into(value)]],
                     returning: ::core::option::Option::None,
+                    on_conflict_do_nothing: ::core::option::Option::None,
                 };
                 ::dinoco::MutationExecutor::insert(client, query).await?;
             }
@@ -861,6 +864,20 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     });
 
     let has_nested_insert = !insert_nested_relations.is_empty() || !many_to_many_keys.is_empty();
+    let nested_value_checks = insert_nested_relations
+        .iter()
+        .map(|field| {
+            let ident = &field.ident;
+            if vec_inner(&field.ty).is_some() {
+                quote! { !self.#ident.is_empty() }
+            } else {
+                quote! { self.#ident.is_some() }
+            }
+        })
+        .chain(many_to_many_keys.iter().map(|field| {
+            let ident = &field.ident;
+            quote! { self.#ident.is_some() }
+        }));
 
     let mut belongs_to_groups = Vec::<(&Type, Vec<(&ParsedField, &ParsedField)>)>::new();
     for field in &relations {
@@ -1145,6 +1162,10 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 self
             }
 
+            fn dinoco_has_nested_values(&self) -> bool {
+                false #(|| #nested_value_checks)*
+            }
+
             fn dinoco_insert_nested<'a, C>(
                 &'a self,
                 parent: &'a #name,
@@ -1366,6 +1387,14 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
     });
 
     let has_nested_insert = relations.iter().any(|field| field.kind == FieldKind::HasMany);
+    let nested_value_checks = relations.iter().filter(|field| field.kind == FieldKind::HasMany).map(|field| {
+        let ident = &field.ident;
+        if vec_inner(&field.ty).is_some() {
+            quote! { !self.#ident.is_empty() }
+        } else {
+            quote! { self.#ident.is_some() }
+        }
+    });
 
     let insert_payload_impl = quote! {
         impl ::dinoco::InsertPayload<#model> for #name {
@@ -1375,6 +1404,10 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
                 let mut model = <#model as ::core::default::Default>::default();
                 #(#insert_model_assignments)*
                 model
+            }
+
+            fn dinoco_has_nested_values(&self) -> bool {
+                false #(|| #nested_value_checks)*
             }
 
             fn dinoco_insert_nested<'a, C>(

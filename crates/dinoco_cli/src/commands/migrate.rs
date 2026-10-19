@@ -951,7 +951,9 @@ fn describe_drift_step(step: &MigrationStep) -> String {
             format!("Missing foreign key `{}.{}`", item.table, item.foreign_key.name)
         }
         MigrationStep::DropForeignKey(item) => format!("Unexpected foreign key `{}.{}`", item.table, item.name),
-        MigrationStep::CreateIndex(item) => format!("Missing index `{}.{}`", item.table, item.index.name),
+        MigrationStep::CreateIndex(item) => {
+            format!("Missing index `{}.{}`{}", item.table, item.index.name, index_condition(&item.index))
+        }
         MigrationStep::DropIndex(item) => format!("Unexpected index `{}.{}`", item.table, item.index.name),
         MigrationStep::RebuildTable(item) => format!("Changed table `{}`", item.desired.name),
         MigrationStep::ReplaceEnumValue(item) => {
@@ -2170,24 +2172,29 @@ fn compile_sqlite_table_rebuild(db: &CliDatabase, rebuild: SqliteTableRebuild) -
     }
 
     let unique_sets = sqlite_unique_sets(&rebuild.desired);
-    for (position, columns) in unique_sets.iter().enumerate() {
-        let Some(expressions) = columns
-            .iter()
-            .map(|column| {
-                let mapping = mappings.get(column.as_str())?;
-                let current = current_columns.get(mapping.from.as_str())?;
-                let desired = desired_columns.get(mapping.to.as_str())?;
-                Some(sqlite_copy_expression(
-                    &sqlite_qualified_identifier(table, &mapping.from),
-                    &current.ty,
-                    &desired.ty,
-                ))
-            })
-            .collect::<Option<Vec<_>>>()
+    let copied_expression = |column: &str| {
+        let mapping = mappings.get(column)?;
+        let current = current_columns.get(mapping.from.as_str())?;
+        let desired = desired_columns.get(mapping.to.as_str())?;
+        Some(sqlite_copy_expression(&sqlite_qualified_identifier(table, &mapping.from), &current.ty, &desired.ty))
+    };
+    for (position, (columns, predicate)) in unique_sets.iter().enumerate() {
+        let Some(expressions) = columns.iter().map(|column| copied_expression(column)).collect::<Option<Vec<_>>>()
         else {
             continue;
         };
-        let non_null = expressions.iter().map(|expression| format!("{expression} IS NOT NULL")).collect::<Vec<_>>();
+        let mut non_null = expressions.iter().map(|expression| format!("{expression} IS NOT NULL")).collect::<Vec<_>>();
+        // A partial unique index only rejects duplicates among the rows its
+        // condition matches.
+        if let Some(predicate) = predicate {
+            if predicate.fields().into_iter().any(|field| copied_expression(field).is_none()) {
+                continue;
+            }
+            non_null.push(format!(
+                "({})",
+                predicate.to_sql(&|field| copied_expression(field).unwrap_or_else(|| "NULL".to_string()), false)
+            ));
+        }
         let condition = format!(
             "{} GROUP BY {} HAVING COUNT(*) > 1",
             if non_null.is_empty() { String::new() } else { non_null.join(" AND ") },
@@ -2253,26 +2260,30 @@ fn compile_sqlite_table_rebuild(db: &CliDatabase, rebuild: SqliteTableRebuild) -
     statements
 }
 
-fn sqlite_unique_sets(table: &crate::db::DatabaseTable) -> Vec<Vec<String>> {
+/// Every set of columns `table` keeps unique, with the condition of a partial
+/// unique index.
+fn sqlite_unique_sets(table: &crate::db::DatabaseTable) -> Vec<(Vec<String>, Option<dinoco_engine::IndexPredicate>)> {
     let mut sets = table
         .columns
         .iter()
         .filter(|column| column.unique && !column.primary_key)
-        .map(|column| vec![column.name.clone()])
+        .map(|column| (vec![column.name.clone()], None))
         .collect::<Vec<_>>();
     let primary =
         table.columns.iter().filter(|column| column.primary_key).map(|column| column.name.clone()).collect::<Vec<_>>();
     if !primary.is_empty() {
-        sets.push(primary);
+        sets.push((primary, None));
     }
     sets.extend(
         table
             .indexes
             .iter()
             .filter(|index| index.kind == dinoco_engine::MigrationIndexKind::Unique)
-            .map(|index| index.columns.clone()),
+            .map(|index| (index.columns.clone(), index.predicate.clone())),
     );
-    sets.sort();
+    sets.sort_by(|left, right| {
+        left.0.cmp(&right.0).then_with(|| format!("{:?}", left.1).cmp(&format!("{:?}", right.1)))
+    });
     sets.dedup();
     sets
 }
@@ -2662,7 +2673,9 @@ fn describe_step(step: &MigrationStep) -> String {
         MigrationStep::RenameColumn(item) => format!("Rename column `{}.{}` to `{}`", item.table, item.from, item.to),
         MigrationStep::AddForeignKey(item) => format!("Add foreign key `{}.{}`", item.table, item.foreign_key.name),
         MigrationStep::DropForeignKey(item) => format!("Drop foreign key `{}.{}`", item.table, item.name),
-        MigrationStep::CreateIndex(item) => format!("Create index `{}.{}`", item.table, item.index.name),
+        MigrationStep::CreateIndex(item) => {
+            format!("Create index `{}.{}`{}", item.table, item.index.name, index_condition(&item.index))
+        }
         MigrationStep::DropIndex(item) => format!("Drop index `{}.{}`", item.table, item.index.name),
         MigrationStep::ReplaceEnumValue(item) => format!(
             "Replace `{}` with `{}` in `{}.{}` ({})",
@@ -3110,4 +3123,9 @@ fn sql_control_surface(sql: &str) -> String {
         }
     }
     String::from_utf8(output).expect("SQL control surface preserves UTF-8 bytes").to_ascii_lowercase()
+}
+
+/// ` where <condition>` for a partial index, empty otherwise.
+fn index_condition(index: &dinoco_engine::MigrationIndex) -> String {
+    index.predicate.as_ref().map_or_else(String::new, |predicate| format!(" where {predicate}"))
 }

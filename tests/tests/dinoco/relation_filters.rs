@@ -1282,6 +1282,7 @@ async fn seed(client: &DinocoClient) -> anyhow::Result<()> {
             fields: vec!["tag_id", "transaction_id"],
             rows: vec![link("vip", "t1"), link("promo", "t1"), link("promo", "t2"), link("vip", "t5")],
             returning: None,
+            on_conflict_do_nothing: None,
         })
         .await?;
 

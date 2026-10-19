@@ -1223,15 +1223,27 @@ fn keyword_description(name: &str) -> Option<&'static str> {
 fn attribute_description(name: &str) -> Option<&'static str> {
     match name {
         "id" => Some("`@id` marks this field as the model's primary key."),
-        "unique" => Some("`@unique` creates a unique constraint for this field."),
-        "index" => Some("`@index` creates a standard database index for this field."),
+        "unique" => Some(
+            "`@unique` creates a unique constraint for this field. `@unique<email != null>` makes it a partial unique \
+             index: only the rows matching the condition must be unique.",
+        ),
+        "index" => Some(
+            "`@index` creates a standard database index for this field. `@index<archived == false>` indexes only the \
+             rows matching the condition.",
+        ),
         "fulltext" => Some("`@fulltext` enables native full-text search for this String field."),
         "updated_at" => Some(
             "`@updated_at` sets this DateTime/Date field to the database's current time on every update. Requires `@default(now())`.",
         ),
         "ids" => Some("`@@ids([...])` defines the model's composite primary key."),
-        "uniques" => Some("`@@uniques([...])` creates a composite unique constraint."),
-        "indexes" => Some("`@@indexes([...])` creates a composite standard index."),
+        "uniques" => Some(
+            "`@@uniques([...])` creates a composite unique constraint. `@@uniques<deleted_at == null>([...])` only \
+             constrains the rows matching the condition.",
+        ),
+        "indexes" => Some(
+            "`@@indexes([...])` creates a composite standard index. `@@indexes<...>([...])` indexes only the rows \
+             matching the condition.",
+        ),
         "fulltexts" => Some("`@@fulltexts([...])` creates a composite full-text index for String fields."),
         "table_name" => Some("`@@table_name(\"...\")` maps the model to a database table name."),
         "default" => Some("`@default(...)` supplies a literal, enum, or generated default value."),

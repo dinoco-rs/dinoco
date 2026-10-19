@@ -466,7 +466,7 @@ where
 
             if !rows.is_empty() {
                 let fields = connect_fields(conditions, connect.field)?;
-                let query = InsertQuery { table, fields, rows, returning: None };
+                let query = InsertQuery { table, fields, rows, returning: None, on_conflict_do_nothing: None };
                 client.insert(query).await?;
             }
             continue;
@@ -487,6 +487,7 @@ where
                 fields: vec![relation.join_parent_field, relation.join_child_field],
                 rows,
                 returning: None,
+                on_conflict_do_nothing: None,
             };
             client.insert(query).await?;
         }

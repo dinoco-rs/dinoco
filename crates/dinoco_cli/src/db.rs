@@ -4,9 +4,9 @@ use anyhow::Context;
 use dinoco_engine::{
     AddColumnMigration, AddForeignKeyMigration, AlterColumnMigration, AlterEnumMigration, CreateEnumMigration,
     CreateIndexMigration, CreateTableMigration, DinocoAdapter, DinocoSqlCompiler, DropColumnMigration,
-    DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, MigrationColumn,
-    MigrationColumnType, MigrationForeignKey, MigrationIndex, MigrationIndexKind, MySqlAdapter, PgBouncerAdapter,
-    PostgresAdapter, ReferentialAction, RenameColumnMigration, RenameTableMigration, SqliteAdapter,
+    DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, IndexPredicate,
+    MigrationColumn, MigrationColumnType, MigrationForeignKey, MigrationIndex, MigrationIndexKind, MySqlAdapter,
+    PgBouncerAdapter, PostgresAdapter, ReferentialAction, RenameColumnMigration, RenameTableMigration, SqliteAdapter,
 };
 use dinoco_engine::{
     mysql_async::{TxOpts, prelude::Queryable},
@@ -1476,7 +1476,10 @@ fn sqlite_unique_columns(
     table_name: &str,
 ) -> rusqlite::Result<std::collections::BTreeSet<String>> {
     let mut index_stmt =
-        conn.prepare("SELECT name FROM pragma_index_list(?1) WHERE [unique] = 1 AND origin <> 'pk' ORDER BY seq")?;
+        // A partial unique index is an index of its own, never a column constraint.
+        conn.prepare(
+            "SELECT name FROM pragma_index_list(?1) WHERE [unique] = 1 AND origin <> 'pk' AND partial = 0 ORDER BY seq",
+        )?;
     let index_names =
         index_stmt.query_map([table_name], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
     let mut unique_columns = std::collections::BTreeSet::new();
@@ -1494,28 +1497,56 @@ fn sqlite_unique_columns(
 }
 
 fn sqlite_indexes(conn: &rusqlite::Connection, table_name: &str) -> rusqlite::Result<Vec<MigrationIndex>> {
-    let mut index_stmt =
-        conn.prepare("SELECT name, [unique] FROM pragma_index_list(?1) WHERE origin = 'c' ORDER BY name")?;
-    let index_names = index_stmt
-        .query_map([table_name], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+    let mut index_stmt = conn.prepare(
+        "SELECT list.name, list.[unique], list.partial, master.sql
+         FROM pragma_index_list(?1) AS list
+         LEFT JOIN sqlite_master AS master ON master.type = 'index' AND master.name = list.name
+         WHERE list.origin = 'c'
+         ORDER BY list.name",
+    )?;
+    let index_rows = index_stmt
+        .query_map([table_name], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut indexes = Vec::new();
 
-    for (name, unique) in index_names {
+    for (name, unique, partial, sql) in index_rows {
         let mut columns_stmt = conn.prepare("SELECT name FROM pragma_index_info(?1) ORDER BY seqno")?;
         let columns =
             columns_stmt.query_map([name.as_str()], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
-        if !(columns.is_empty() || unique == 1 && columns.len() == 1) {
+        let predicate = (partial == 1).then(|| sqlite_index_predicate(sql.as_deref().unwrap_or_default()));
+        if !(columns.is_empty() || unique == 1 && columns.len() == 1 && predicate.is_none()) {
             indexes.push(MigrationIndex {
                 name,
                 columns,
                 automatic: false,
                 kind: if unique == 1 { MigrationIndexKind::Unique } else { MigrationIndexKind::Standard },
+                predicate,
             });
         }
     }
 
     Ok(indexes)
+}
+
+/// The condition of a SQLite partial index, from the comment Dinoco writes in
+/// its `CREATE INDEX` statement, or the raw `WHERE` of one Dinoco did not
+/// write.
+fn sqlite_index_predicate(sql: &str) -> IndexPredicate {
+    let comment = sql.rfind("/*").and_then(|start| {
+        let comment = sql[start + 2..].trim_end();
+        IndexPredicate::from_comment(comment.strip_suffix("*/").unwrap_or(comment))
+    });
+    comment.unwrap_or_else(|| {
+        let condition = sql.rfind(" WHERE ").map_or(sql, |start| &sql[start + " WHERE ".len()..]);
+        IndexPredicate::Raw(condition.trim().to_string())
+    })
 }
 
 async fn inspect_postgres(adapter: &PostgresAdapter) -> anyhow::Result<DatabaseSchema> {
@@ -1673,7 +1704,8 @@ async fn postgres_indexes(
 ) -> anyhow::Result<Vec<MigrationIndex>> {
     let rows = conn
         .query(
-            "SELECT i.relname, a.attname, ix.indisunique
+            "SELECT i.relname, a.attname, ix.indisunique, pg_get_expr(ix.indpred, ix.indrelid),
+                    obj_description(i.oid, 'pg_class')
              FROM pg_class t
              JOIN pg_namespace n ON n.oid = t.relnamespace
              JOIN pg_index ix ON ix.indrelid = t.oid
@@ -1684,7 +1716,6 @@ async fn postgres_indexes(
              WHERE n.nspname = 'public'
                AND t.relname = $1
                AND NOT ix.indisprimary
-               AND ix.indpred IS NULL
                AND key.attnum > 0
                AND c.oid IS NULL
              ORDER BY i.relname, key.ordinality",
@@ -1700,15 +1731,28 @@ async fn postgres_indexes(
         if let Some(index) = indexes.iter_mut().find(|index| index.name == name) {
             index.columns.push(column);
         } else {
+            // `pg_get_expr` rewrites the condition, so Dinoco's own text comes
+            // from the index comment it wrote.
+            let predicate = row.try_get::<_, Option<String>>(3)?.map(|condition| {
+                row.try_get::<_, Option<String>>(4)
+                    .ok()
+                    .flatten()
+                    .and_then(|comment| IndexPredicate::from_comment(&comment))
+                    .unwrap_or(IndexPredicate::Raw(condition))
+            });
             indexes.push(MigrationIndex {
                 name,
                 columns: vec![column],
                 automatic: false,
                 kind: if unique { MigrationIndexKind::Unique } else { MigrationIndexKind::Standard },
+                predicate,
             });
         }
     }
-    indexes.retain(|index| index.kind != MigrationIndexKind::Unique || index.columns.len() > 1);
+    // One unconditional unique column is the column's own `unique` flag.
+    indexes.retain(|index| {
+        index.kind != MigrationIndexKind::Unique || index.columns.len() > 1 || index.predicate.is_some()
+    });
 
     let fulltext_rows = conn
         .query(
@@ -1740,6 +1784,7 @@ async fn postgres_indexes(
                 columns: indexed_columns,
                 automatic: false,
                 kind: MigrationIndexKind::FullText,
+                predicate: None,
             });
         }
     }
@@ -1886,7 +1931,7 @@ async fn mysql_indexes(
     let rows: Vec<dinoco_engine::mysql_async::Row> = conn
         .exec(
             "SELECT index_name AS name, column_name AS column_name, index_type AS index_type,
-                    non_unique AS non_unique
+                    non_unique AS non_unique, expression AS expression, index_comment AS index_comment
              FROM information_schema.statistics
              WHERE table_schema = DATABASE()
                AND table_name = ?
@@ -1898,10 +1943,21 @@ async fn mysql_indexes(
     let mut indexes: Vec<MigrationIndex> = Vec::new();
 
     for mut row in rows {
-        let name = row.take::<String, _>("name").unwrap_or_default();
-        let column = row.take::<String, _>("column_name").unwrap_or_default();
-        let index_type = row.take::<String, _>("index_type").unwrap_or_default();
-        let unique = row.take::<u8, _>("non_unique").unwrap_or(1) == 0;
+        let name = row.take::<Option<String>, _>("name").flatten().unwrap_or_default();
+        let index_type = row.take::<Option<String>, _>("index_type").flatten().unwrap_or_default();
+        let unique = row.take::<Option<u8>, _>("non_unique").flatten().unwrap_or(1) == 0;
+        // The key parts of a conditional unique index are expressions.
+        let column = row
+            .take::<Option<String>, _>("column_name")
+            .flatten()
+            .or_else(|| {
+                row.take::<Option<String>, _>("expression").flatten().map(|expression| mysql_case_column(&expression))
+            })
+            .unwrap_or_default();
+        let predicate = row
+            .take::<Option<String>, _>("index_comment")
+            .flatten()
+            .and_then(|comment| IndexPredicate::from_comment(&comment));
         let kind = if index_type.eq_ignore_ascii_case("FULLTEXT") {
             MigrationIndexKind::FullText
         } else if unique {
@@ -1915,12 +1971,28 @@ async fn mysql_indexes(
         if let Some(index) = indexes.iter_mut().find(|index| index.name == name) {
             index.columns.push(column);
         } else {
-            indexes.push(MigrationIndex { name, columns: vec![column], automatic: false, kind });
+            indexes.push(MigrationIndex { name, columns: vec![column], automatic: false, kind, predicate });
         }
     }
-    indexes.retain(|index| index.kind != MigrationIndexKind::Unique || index.columns.len() > 1);
+    // One unconditional unique column is the column's own `unique` flag.
+    indexes.retain(|index| {
+        index.kind != MigrationIndexKind::Unique || index.columns.len() > 1 || index.predicate.is_some()
+    });
 
     Ok(indexes)
+}
+
+/// The column of a `CASE WHEN <condition> THEN column END` key part, as
+/// Dinoco writes the key of a conditional unique index on MySQL (which reports
+/// it as ``(case when (...) then `column` end)``). Any other expression is
+/// kept whole, so it matches no schema column.
+fn mysql_case_column(expression: &str) -> String {
+    expression
+        .rfind(" then ")
+        .map(|start| &expression[start + " then ".len()..])
+        .and_then(|rest| rest.strip_suffix(')').unwrap_or(rest).trim_end().strip_suffix(" end"))
+        .map(|column| column.trim().trim_matches('`').replace("``", "`"))
+        .unwrap_or_else(|| expression.to_string())
 }
 
 fn parse_column_type(raw: &str) -> MigrationColumnType {

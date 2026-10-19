@@ -5,10 +5,11 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dinoco_engine::{
-    DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery, PluckValue,
+    DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery, LookupQuery,
+    PluckValue,
 };
 
-use crate::single_field;
+use crate::{CreateError, Field, field_list, single_field};
 
 pub type Uuid = String;
 pub type Snowflake = i64;
@@ -51,6 +52,12 @@ where
     {
         Box::pin(async { Ok(()) })
     }
+
+    /// Whether this payload carries nested rows or many-to-many links for
+    /// [`dinoco_insert_nested`](Self::dinoco_insert_nested) to insert.
+    fn dinoco_has_nested_values(&self) -> bool {
+        Self::HAS_NESTED
+    }
 }
 
 impl<M, V> InsertPayload<M> for &V
@@ -69,6 +76,10 @@ where
         C: crate::MutationExecutor + 'a,
     {
         (*self).dinoco_insert_nested(parent, client)
+    }
+
+    fn dinoco_has_nested_values(&self) -> bool {
+        (*self).dinoco_has_nested_values()
     }
 }
 
@@ -148,7 +159,13 @@ where
     }
 
     let rows = models.iter().map(DinocoInsertable::dinoco_insert_values).collect::<Vec<_>>();
-    let query = InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning: None };
+    let query = InsertQuery {
+        table: M::TABLE_NAME,
+        fields: M::INSERT_FIELDS.to_vec(),
+        rows,
+        returning: None,
+        on_conflict_do_nothing: None,
+    };
 
     client.insert(query).await
 }
@@ -164,8 +181,13 @@ where
     }
 
     let rows = models.iter().map(DinocoInsertable::dinoco_insert_values).collect::<Vec<_>>();
-    let query =
-        InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning: Some(S::FIELDS) };
+    let query = InsertQuery {
+        table: M::TABLE_NAME,
+        fields: M::INSERT_FIELDS.to_vec(),
+        rows,
+        returning: Some(S::FIELDS),
+        on_conflict_do_nothing: None,
+    };
 
     client.insert_returning::<S>(query).await
 }
@@ -181,7 +203,7 @@ where
         return Ok(0);
     }
 
-    client.insert(owned_insert_query::<M, V>(values, None)).await
+    client.insert(owned_insert_query::<M, V>(values, None, None)).await
 }
 
 /// [`execute_insert_owned`] returning the inserted rows projected onto `S`.
@@ -196,7 +218,7 @@ where
         return Ok(Vec::new());
     }
 
-    client.insert_returning::<S>(owned_insert_query::<M, V>(values, Some(S::FIELDS))).await
+    client.insert_returning::<S>(owned_insert_query::<M, V>(values, Some(S::FIELDS), None)).await
 }
 
 /// [`execute_insert_owned`] returning one column of the inserted rows.
@@ -216,19 +238,213 @@ where
     }
 
     let fields = single_field(field, <M as DinocoEntity>::FIELDS);
-    let rows = client.insert_returning::<PluckValue<T>>(owned_insert_query::<M, V>(values, Some(fields))).await?;
+    let rows = client.insert_returning::<PluckValue<T>>(owned_insert_query::<M, V>(values, Some(fields), None)).await?;
 
     Ok(rows.into_iter().map(|value| value.0).collect())
 }
 
-fn owned_insert_query<M, V>(values: Vec<V>, returning: Option<&'static [&'static str]>) -> InsertQuery
+fn owned_insert_query<M, V>(
+    values: Vec<V>,
+    returning: Option<&'static [&'static str]>,
+    on_conflict_do_nothing: Option<&'static [&'static str]>,
+) -> InsertQuery
 where
     M: DinocoInsertable,
     V: InsertPayload<M>,
 {
     let rows = values.into_iter().map(|value| value.dinoco_into_insert_model().dinoco_into_insert_values()).collect();
 
-    InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning }
+    InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning, on_conflict_do_nothing }
+}
+
+/// Whether an insert builder skips conflicting rows: [`NoConflict`] (zero
+/// sized, every plain insert) or [`OnConflict`], set by
+/// `.on_conflict_do_nothing(...)`.
+pub trait ConflictMode: Copy + Send + Sync {
+    #[doc(hidden)]
+    fn target(self) -> Option<&'static [&'static str]>;
+}
+
+/// The conflict mode of a plain insert: a conflict fails it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoConflict;
+
+/// The conflict mode after `.on_conflict_do_nothing(...)`: a row that collides
+/// on these columns is skipped.
+#[derive(Debug, Clone, Copy)]
+pub struct OnConflict {
+    target: &'static [&'static str],
+}
+
+impl OnConflict {
+    pub(crate) const fn new(target: &'static [&'static str]) -> Self {
+        Self { target }
+    }
+}
+
+impl ConflictMode for NoConflict {
+    #[inline]
+    fn target(self) -> Option<&'static [&'static str]> {
+        None
+    }
+}
+
+impl ConflictMode for OnConflict {
+    #[inline]
+    fn target(self) -> Option<&'static [&'static str]> {
+        Some(self.target)
+    }
+}
+
+/// The columns `.on_conflict_do_nothing(...)` names: one [`Field`], or a
+/// tuple of up to four for a unique index over several columns.
+pub trait ConflictTarget {
+    #[doc(hidden)]
+    fn conflict_fields(self, fields: &'static [&'static str]) -> &'static [&'static str];
+}
+
+impl<T, C> ConflictTarget for Field<T, C> {
+    fn conflict_fields(self, fields: &'static [&'static str]) -> &'static [&'static str] {
+        single_field(self.field_name(), fields)
+    }
+}
+
+macro_rules! conflict_target_tuples {
+    ($(($($field:ident: $ty:ident, $capability:ident),+)),* $(,)?) => {
+        $(
+            impl<$($ty, $capability),+> ConflictTarget for ($(Field<$ty, $capability>,)+) {
+                fn conflict_fields(self, fields: &'static [&'static str]) -> &'static [&'static str] {
+                    let ($($field,)+) = self;
+                    field_list(&[$($field.field_name()),+], fields)
+                }
+            }
+        )*
+    };
+}
+
+conflict_target_tuples!(
+    (a: A, CA, b: B, CB),
+    (a: A, CA, b: B, CB, c: C, CC),
+    (a: A, CA, b: B, CB, c: C, CC, d: D, CD),
+);
+
+/// `on_conflict_do_nothing(...)` inserts top-level rows only: a skipped
+/// payload has no inserted row for its nested relations to hang from.
+pub(crate) fn reject_nested_on_conflict<M, V>(values: &[V]) -> Result<(), CreateError>
+where
+    M: DinocoInsertable,
+    V: InsertPayload<M>,
+{
+    if V::HAS_NESTED && values.iter().any(InsertPayload::dinoco_has_nested_values) {
+        return Err(CreateError::InvalidOperation(format!(
+            "on_conflict_do_nothing(...) on `{}` does not insert nested relations or many-to-many links; insert them \
+             separately",
+            M::TABLE_NAME
+        )));
+    }
+
+    Ok(())
+}
+
+/// Inserts `values`, skipping each one that collides with an existing row on
+/// `target`.
+pub(crate) async fn execute_insert_skipping_conflicts<M, V, C>(
+    values: Vec<V>,
+    target: &'static [&'static str],
+    client: &C,
+) -> Result<(), CreateError>
+where
+    M: DinocoInsertable,
+    V: InsertPayload<M>,
+    C: crate::MutationExecutor,
+{
+    reject_nested_on_conflict::<M, V>(&values)?;
+    if values.is_empty() {
+        return Ok(());
+    }
+
+    client.insert(owned_insert_query::<M, V>(values, None, Some(target))).await.map_err(CreateError::from_database)?;
+
+    Ok(())
+}
+
+/// [`execute_insert_skipping_conflicts`], then reads back the row every payload landed on (the new row or
+/// the one already there) projected onto `fields`, in payload order.
+pub(crate) async fn execute_insert_or_existing<M, V, R, C>(
+    values: Vec<V>,
+    target: &'static [&'static str],
+    fields: &'static [&'static str],
+    client: &C,
+) -> Result<Vec<R>, CreateError>
+where
+    M: DinocoInsertable,
+    V: InsertPayload<M>,
+    R: DinocoRowModel,
+    C: crate::MutationExecutor,
+{
+    reject_nested_on_conflict::<M, V>(&values)?;
+    if values.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let query = owned_insert_query::<M, V>(values, None, Some(target));
+    let mut keys = conflict_keys(&query, target)?;
+    let expected = keys.len();
+    client.insert(query).await.map_err(CreateError::from_database)?;
+
+    let rows = if expected == 1 {
+        let mut lookup = FindQuery::new(fields, M::TABLE_NAME, 1, -1);
+        lookup.conditions = target
+            .iter()
+            .zip(keys.pop().unwrap_or_default())
+            .map(|(field, value)| FindWhere::Eq(field, value))
+            .collect();
+        client.query::<R>(lookup).await
+    } else {
+        client.lookup::<R>(LookupQuery { table: M::TABLE_NAME, fields, key_fields: target, keys }).await
+    }
+    .map_err(CreateError::from_database)?;
+
+    if rows.len() != expected {
+        return Err(CreateError::NotReturned { table: M::TABLE_NAME });
+    }
+
+    Ok(rows)
+}
+
+/// The `target` values of every row of `query`, which find the row again
+/// after the insert. A `NULL` never collides with anything, nor finds it.
+fn conflict_keys(query: &InsertQuery, target: &[&'static str]) -> Result<Vec<Vec<DinocoValue>>, CreateError> {
+    let positions = target
+        .iter()
+        .map(|column| {
+            query.fields.iter().position(|field| field == column).ok_or_else(|| {
+                CreateError::InvalidOperation(format!(
+                    "on_conflict_do_nothing(...) column `{column}` is not inserted into `{}`, so the row can't be read \
+                     back",
+                    query.table
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    query
+        .rows
+        .iter()
+        .map(|row| {
+            positions
+                .iter()
+                .map(|&position| match &row[position] {
+                    DinocoValue::Null => Err(CreateError::InvalidOperation(format!(
+                        "on_conflict_do_nothing(...) column `{}` of `{}` is NULL, which never conflicts, so the row \
+                         can't be read back",
+                        query.fields[position], query.table
+                    ))),
+                    value => Ok(value.clone()),
+                })
+                .collect()
+        })
+        .collect()
 }
 
 pub async fn reload_inserted<M, S, C>(models: &[M], client: &C) -> anyhow::Result<Vec<S>>

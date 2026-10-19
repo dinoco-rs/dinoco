@@ -89,12 +89,16 @@ fn format_attributes(attributes: &[Attribute], config: &FormatterConfig, indent:
 }
 
 fn format_attribute(attribute: &Attribute, prefix: &str, config: &FormatterConfig, indent: &str, column: usize) -> String {
+    let name = match &attribute.condition {
+        Some(condition) => format!("{prefix}{}<{condition}>", attribute.name),
+        None => format!("{prefix}{}", attribute.name),
+    };
     if attribute.arguments.is_empty() {
-        return format!("{prefix}{}", attribute.name);
+        return name;
     }
 
     let arguments = attribute.arguments.iter().map(format_attribute_argument).collect::<Vec<_>>();
-    let single_line = format!("{prefix}{}({})", attribute.name, arguments.join(", "));
+    let single_line = format!("{name}({})", arguments.join(", "));
 
     let all_named = attribute.arguments.iter().all(|argument| matches!(argument, AttributeArgument::Named { .. }));
     if !all_named || column + single_line.chars().count() <= config.max_width {
@@ -102,7 +106,7 @@ fn format_attribute(attribute: &Attribute, prefix: &str, config: &FormatterConfi
     }
 
     let inner_indent = format!("{indent}{}", config.indent());
-    let mut out = format!("{prefix}{}(\n", attribute.name);
+    let mut out = format!("{name}(\n");
     for argument in &attribute.arguments {
         out.push_str(&inner_indent);
         out.push_str(&format_attribute_argument(argument));

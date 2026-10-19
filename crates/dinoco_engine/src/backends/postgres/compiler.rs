@@ -238,11 +238,22 @@ fn compile_create_index_migration(migration: CreateIndexMigration) -> String {
         );
     }
     let unique = if migration.index.kind == MigrationIndexKind::Unique { "UNIQUE " } else { "" };
-    format!(
-        "CREATE {unique}INDEX {} ON {} ({});",
+    let create = format!(
+        "CREATE {unique}INDEX {} ON {} ({})",
         sql_identifier(&migration.index.name),
         sql_identifier(&migration.table),
         migration.index.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", ")
+    );
+    let Some(predicate) = &migration.index.predicate else {
+        return format!("{create};");
+    };
+    // `pg_get_expr` rewrites a condition with casts and parentheses, so drift
+    // detection reads Dinoco's own text back from the index comment instead.
+    format!(
+        "{create} WHERE {};\nCOMMENT ON INDEX {} IS '{}';",
+        predicate.to_sql(&|field| sql_identifier(field), false),
+        sql_identifier(&migration.index.name),
+        predicate.comment().replace('\'', "''")
     )
 }
 

@@ -1038,3 +1038,222 @@ fn compiles_schema_model() {
     assert!(user.ty.optional);
     assert!(user.attributes.iter().any(|attribute| attribute.name == "relation"));
 }
+
+mod index_conditions {
+    use dinoco_compiler::{Condition, ConditionOperator, ConditionValue, Schema, compile};
+
+    const HEADER: &str = r#"
+        config {
+            database = "postgresql"
+            database_url = env("DATABASE_URL")
+        }
+
+        enum Plan {
+            FREE
+            PRO
+        }
+    "#;
+
+    fn schema(models: &str) -> Result<Schema, dinoco_compiler::CompileError> {
+        compile(&format!("{HEADER}{models}"))
+    }
+
+    fn error(models: &str) -> String {
+        schema(models).expect_err("the condition must be rejected").message
+    }
+
+    fn compare(field: &str, operator: ConditionOperator, value: ConditionValue) -> Condition {
+        Condition::Compare { field: field.to_string(), operator, value }
+    }
+
+    #[test]
+    fn conditions_parse_on_unique_index_uniques_and_indexes() {
+        let schema = schema(
+            r#"
+            model Account {
+                id         String    @id
+                email      String?   @unique<email != null>
+                handle     String?   @index<handle != null>(map: "account_handle_key")
+                tenant     String
+                slug       String
+                plan       Plan
+                archived   Boolean
+                score      Float
+                deleted_at DateTime?
+
+                @@uniques<deleted_at == null && slug != "_">([tenant, slug])
+                @@indexes<plan == PRO || score >= -1.5 && !archived>([tenant, score])
+                @@uniques<!(archived || slug == "a\"b")>([handle])
+            }
+            "#,
+        )
+        .expect("conditions should compile");
+        let model = schema.models().next().expect("model");
+        let field_condition = |name: &str, attribute: &str| {
+            model
+                .fields
+                .iter()
+                .find(|field| field.name == name)
+                .and_then(|field| field.attributes.iter().find(|item| item.name == attribute))
+                .and_then(|attribute| attribute.condition.clone())
+        };
+
+        assert_eq!(
+            field_condition("email", "unique"),
+            Some(compare("email", ConditionOperator::Neq, ConditionValue::Null))
+        );
+        let index = model.fields.iter().find(|field| field.name == "handle").unwrap().attributes[0].clone();
+        assert_eq!(index.condition, Some(compare("handle", ConditionOperator::Neq, ConditionValue::Null)));
+        assert!(index.argument("map").is_some(), "arguments still parse after the condition");
+
+        let conditions =
+            model.attributes.iter().map(|attribute| attribute.condition.clone().unwrap()).collect::<Vec<_>>();
+        assert_eq!(
+            conditions[0],
+            Condition::And(vec![
+                compare("deleted_at", ConditionOperator::Eq, ConditionValue::Null),
+                compare("slug", ConditionOperator::Neq, ConditionValue::String("_".to_string())),
+            ])
+        );
+        // `&&` binds tighter than `||`.
+        assert_eq!(
+            conditions[1],
+            Condition::Or(vec![
+                compare("plan", ConditionOperator::Eq, ConditionValue::Ident("PRO".to_string())),
+                Condition::And(vec![
+                    compare("score", ConditionOperator::Gte, ConditionValue::Number("-1.5".to_string())),
+                    Condition::Not(Box::new(Condition::Field("archived".to_string()))),
+                ]),
+            ])
+        );
+        assert_eq!(conditions[2].to_string(), r#"!(archived || slug == "a\"b")"#);
+        assert_eq!(conditions[1].to_string(), "plan == PRO || score >= -1.5 && !archived");
+        assert_eq!(conditions[2].fields(), ["archived", "slug"]);
+    }
+
+    #[test]
+    fn values_follow_the_field_type() {
+        let ok = schema(
+            r#"
+            model Item {
+                id       String   @id
+                flag     Boolean  @index<flag == true>
+                count    Integer  @index<count > 0>
+                name     String   @index<name <= "m">
+                created  DateTime @index<created >= "2026-01-01">
+                day      Date     @index<day != null>
+                plan     Plan     @index<plan != "FREE">
+                nullable_name String? @index<nullable_name != null>
+            }
+            "#,
+        );
+        assert!(ok.is_ok(), "{:?}", ok.err());
+
+        let model = |field: &str| {
+            format!(
+                "model Item {{\n id String @id\n flag Boolean\n count Integer\n name String\n plan Plan\n data Json?\n {field}\n}}"
+            )
+        };
+        let cases = [
+            ("x String @unique<missing != null>", "`missing` is not a field of `Item`"),
+            ("x String @index<data != null>", "must be a scalar or enum field"),
+            ("x String @index<name < null>", "compare `name` with null using == or !="),
+            ("x String @index<name == true>", "cannot be compared with true or false"),
+            ("x String @index<flag > false>", "compare the Boolean `flag` using == or !="),
+            ("x String @index<name == 1>", "cannot be compared with a number"),
+            ("x String @index<count == \"1\">", "cannot be compared with a string"),
+            ("x String @index<plan == GOLD>", "`GOLD` is not a value of enum `Plan`"),
+            ("x String @index<plan > FREE>", "compare the enum `plan` using == or !="),
+            ("x String @index<name == other>", "quote strings"),
+            ("x String @index<count>", "`count` alone needs a Boolean field"),
+        ];
+        for (field, message) in cases {
+            let found = error(&model(field));
+            assert!(found.contains(message), "{field}: {found}");
+        }
+    }
+
+    #[test]
+    fn only_index_attributes_take_a_condition() {
+        let cases = [
+            ("model A {\n id String @id<id != null>\n}", "@id<...> on model `A` is not supported"),
+            (
+                "model A {\n id String @id\n n Integer @default<n != null>(1)\n}",
+                "@default<...> on model `A` is not supported",
+            ),
+            (
+                "model A {\n id String @id\n t String @fulltext<t != null>\n}",
+                "@fulltext<...> on model `A` is not supported",
+            ),
+            (
+                "model A {\n a String\n b String\n @@ids<a != null>([a, b])\n}",
+                "@@ids<...> on model `A` is not supported",
+            ),
+            ("model A {\n id String @id @unique<id != null>\n}", "is the primary key, which is unique for every row"),
+        ];
+        for (models, message) in cases {
+            let found = error(models);
+            assert!(found.contains(message), "{models}: {found}");
+        }
+    }
+
+    #[test]
+    fn conditional_uniques_are_no_keys_for_relations() {
+        let message = error(
+            r#"
+            model User {
+                id      String   @id
+                profile Profile?
+            }
+
+            model Profile {
+                id      String @id
+                user_id String @unique<user_id != "">
+                user    User?  @relation(fields: [user_id], references: [id])
+            }
+            "#,
+        );
+        assert!(message.contains("a conditional @unique<...> only covers some rows"), "{message}");
+
+        let message = error(
+            r#"
+            model User {
+                id     String  @id
+                tokens Token[]
+            }
+
+            model Token {
+                id      String @id
+                user_id String
+                user    User?  @relation(fields: [user_id], references: [id]) @unique<user_id != "">
+            }
+            "#,
+        );
+        assert!(message.contains("Relation field `Token.user` cannot take a condition"), "{message}");
+    }
+
+    #[test]
+    fn the_same_columns_may_repeat_with_another_condition() {
+        let models =
+            |second: &str| format!("model A {{\n id String @id\n a String\n b Boolean\n @@uniques([a])\n {second}\n}}");
+        assert!(schema(&models("@@uniques<b>([a])")).is_ok());
+        let message = error(&models("@@uniques([a])"));
+        assert!(message.contains("declares @@uniques([a]) more than once"), "{message}");
+    }
+
+    #[test]
+    fn malformed_conditions_are_syntax_errors() {
+        for models in [
+            "model A {\n id String @id\n a String @unique<>\n}",
+            "model A {\n id String @id\n a String @unique<a !=>\n}",
+            "model A {\n id String @id\n a String @unique<a != null &&>\n}",
+            "model A {\n id String @id\n a String @unique<a = null>\n}",
+        ] {
+            assert!(schema(models).is_err(), "{models}");
+        }
+        // `null` is a keyword only on its own.
+        assert!(
+            schema("model A {\n id String @id\n nullable String\n b Boolean @index<b == nullable_flag>\n}").is_err()
+        );
+    }
+}

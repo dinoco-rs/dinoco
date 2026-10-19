@@ -749,13 +749,11 @@ fn inverse_relation_fields(model: &Model, field: &ModelField, schema: &Schema) -
 }
 
 fn relation_is_unique(model: &Model, field: &ModelField, foreign_key: Option<&str>) -> bool {
-    field.attributes.iter().any(|attr| attr.name == "unique")
+    field.attributes.iter().any(|attr| attr.name == "unique" && attr.is_unconditional())
         || foreign_key.is_some_and(|foreign_key| {
-            model
-                .fields
-                .iter()
-                .find(|candidate| candidate.name == foreign_key)
-                .is_some_and(|candidate| candidate.attributes.iter().any(|attr| attr.name == "unique"))
+            model.fields.iter().find(|candidate| candidate.name == foreign_key).is_some_and(|candidate| {
+                candidate.attributes.iter().any(|attr| attr.name == "unique" && attr.is_unconditional())
+            })
         })
 }
 

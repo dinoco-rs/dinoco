@@ -119,11 +119,33 @@ impl DinocoSqlCompiler for MySqlAdapter {
             MigrationIndexKind::Unique => "UNIQUE ",
             MigrationIndexKind::FullText => "FULLTEXT ",
         };
+        let columns = migration.index.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>();
+        let Some(predicate) = &migration.index.predicate else {
+            return format!(
+                "CREATE {index_type}INDEX {} ON {} ({});",
+                sql_identifier(&migration.index.name),
+                sql_identifier(&migration.table),
+                columns.join(", ")
+            );
+        };
+
+        // MySQL has no partial indexes. A unique one keys every column by
+        // `CASE WHEN <condition> THEN column END`, which is NULL outside the
+        // condition, and NULLs never collide. Any other index covers every
+        // row, which serves the same queries. Either way the condition is kept
+        // in the index comment for drift detection.
+        let key_parts = if migration.index.kind == MigrationIndexKind::Unique {
+            let condition = predicate.to_sql(&|field| sql_identifier(field), true);
+            columns.iter().map(|column| format!("(CASE WHEN {condition} THEN {column} END)")).collect::<Vec<_>>()
+        } else {
+            columns
+        };
         format!(
-            "CREATE {index_type}INDEX {} ON {} ({});",
+            "CREATE {index_type}INDEX {} ON {} ({}) COMMENT '{}';",
             sql_identifier(&migration.index.name),
             sql_identifier(&migration.table),
-            migration.index.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", ")
+            key_parts.join(", "),
+            predicate.comment().replace('\\', "\\\\").replace('\'', "''")
         )
     }
 

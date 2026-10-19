@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use dinoco_engine::{
-    CountQuery, DinocoClient, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery, ManyToManyRelationCountQuery,
-    ManyToManyRelationQuery, RelationCountQuery, RelationOccurrenceQuery, TransactionCommand, TransactionExecutor,
+    AggregateQuery, CountQuery, DinocoClient, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery,
+    ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationCountQuery, RelationOccurrenceQuery,
+    TransactionCommand, TransactionExecutor,
 };
 use futures_util::future::Either;
 
@@ -64,6 +65,32 @@ impl ReadTarget<'_> {
                     }
                     ReadConnection::Transaction(executor) => {
                         Box::pin(executor.execute(TransactionCommand::find_many::<M>(query))).await
+                    }
+                }
+            },
+            Vec::len,
+        )
+        .await
+    }
+
+    /// Reported to `on_find` like any other read, with one row per group.
+    pub(crate) async fn aggregate<M>(&self, query: AggregateQuery) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        observe_rows(
+            self.observer.as_ref(),
+            RowCountKind::Find,
+            query.source.from,
+            query,
+            |compiler, query| compiler.compile_aggregate_query(query),
+            |query| async move {
+                match &self.source.0 {
+                    ReadConnection::Client { client, read_primary } => {
+                        client.read_backend(*read_primary).aggregate::<M>(query).await
+                    }
+                    ReadConnection::Transaction(executor) => {
+                        Box::pin(executor.execute(TransactionCommand::aggregate::<M>(query))).await
                     }
                 }
             },

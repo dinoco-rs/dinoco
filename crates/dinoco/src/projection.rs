@@ -19,9 +19,33 @@ pub(crate) fn single_field(field: &'static str, fields: &'static [&'static str])
     projection
 }
 
+/// The projection of several `columns`, in their order, as a `'static` field
+/// list: sliced from `fields` when they sit there side by side, interned once
+/// per distinct list otherwise.
+pub(crate) fn field_list(columns: &[&'static str], fields: &'static [&'static str]) -> &'static [&'static str] {
+    match columns {
+        [] => return &[],
+        [column] => return single_field(column, fields),
+        _ => {}
+    }
+    if let Some(window) = fields.windows(columns.len()).find(|window| *window == columns) {
+        return window;
+    }
+
+    static INTERNED: Mutex<Vec<&'static [&'static str]>> = Mutex::new(Vec::new());
+    let mut interned = INTERNED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(projection) = interned.iter().find(|projection| **projection == columns) {
+        return projection;
+    }
+
+    let projection: &'static [&'static str] = Box::leak(columns.to_vec().into_boxed_slice());
+    interned.push(projection);
+    projection
+}
+
 #[cfg(test)]
 mod tests {
-    use super::single_field;
+    use super::{field_list, single_field};
 
     const FIELDS: &[&str] = &["id", "email", "name"];
 
@@ -40,5 +64,18 @@ mod tests {
 
         assert_eq!(first, ["dinoco_projection_test_column"]);
         assert!(std::ptr::eq(first, second));
+    }
+
+    #[test]
+    fn column_lists_are_sliced_when_adjacent_and_interned_otherwise() {
+        let adjacent = field_list(&["email", "name"], FIELDS);
+        assert_eq!(adjacent, ["email", "name"]);
+        assert!(std::ptr::eq(adjacent.as_ptr(), &FIELDS[1]));
+
+        let reordered = field_list(&["name", "id"], FIELDS);
+        assert_eq!(reordered, ["name", "id"]);
+        assert!(std::ptr::eq(reordered, field_list(&["name", "id"], FIELDS)));
+
+        assert!(std::ptr::eq(field_list(&["email"], FIELDS).as_ptr(), &FIELDS[1]));
     }
 }

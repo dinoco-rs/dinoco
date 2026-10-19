@@ -176,6 +176,7 @@ async fn adapters_compile_index_migrations_with_their_dialect() -> anyhow::Resul
         columns: vec!["tenant_id".to_string(), "author_id".to_string()],
         automatic: false,
         kind: MigrationIndexKind::Standard,
+        predicate: None,
     };
     let create = CreateIndexMigration { table: "post".to_string(), index: index.clone() };
     let drop = DropIndexMigration { table: "post".to_string(), index };
@@ -208,6 +209,7 @@ async fn adapters_compile_index_migrations_with_their_dialect() -> anyhow::Resul
             columns: vec!["body".to_string()],
             automatic: false,
             kind: MigrationIndexKind::FullText,
+            predicate: None,
         },
     };
     assert!(sqlite.compile_create_index_migration(fulltext.clone()).contains("LIKE fallback"));
@@ -227,6 +229,7 @@ async fn adapters_compile_index_migrations_with_their_dialect() -> anyhow::Resul
             columns: vec!["tenant_id".to_string(), "slug".to_string()],
             automatic: false,
             kind: MigrationIndexKind::Unique,
+            predicate: None,
         },
     };
     assert_eq!(
@@ -249,6 +252,7 @@ async fn adapters_compile_index_migrations_with_their_dialect() -> anyhow::Resul
             columns: vec!["title".to_string(), "body".to_string()],
             automatic: false,
             kind: MigrationIndexKind::FullText,
+            predicate: None,
         },
     };
     assert_eq!(
@@ -259,6 +263,89 @@ async fn adapters_compile_index_migrations_with_their_dialect() -> anyhow::Resul
         mysql.compile_create_index_migration(composite_fulltext),
         "CREATE FULLTEXT INDEX idx_post_title_body_fulltext ON post (title, body);"
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn adapters_compile_partial_indexes_and_keep_the_condition_in_a_comment() -> anyhow::Result<()> {
+    use dinoco_engine::{IndexPredicate, PredicateOperator, PredicateValue};
+
+    let condition = IndexPredicate::And(vec![
+        IndexPredicate::Compare {
+            field: "deleted_at".to_string(),
+            operator: PredicateOperator::Eq,
+            value: PredicateValue::Null,
+        },
+        IndexPredicate::Compare {
+            field: "slug".to_string(),
+            operator: PredicateOperator::Neq,
+            value: PredicateValue::String("it's \\".to_string()),
+        },
+    ]);
+    let index = |kind, name: &str| CreateIndexMigration {
+        table: "post".to_string(),
+        index: MigrationIndex {
+            name: name.to_string(),
+            columns: vec!["tenant_id".to_string(), "slug".to_string()],
+            automatic: false,
+            kind,
+            predicate: Some(condition.clone()),
+        },
+    };
+    let unique = index(MigrationIndexKind::Unique, "uq_post_tenant_slug");
+    let standard = index(MigrationIndexKind::Standard, "idx_post_tenant_slug");
+    let comment = r#"dinoco:where deleted_at == null && slug != "it's \\""#;
+
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    assert_eq!(
+        sqlite.compile_create_index_migration(unique.clone()),
+        format!(
+            "CREATE UNIQUE INDEX uq_post_tenant_slug ON post (tenant_id, slug) WHERE deleted_at IS NULL AND slug <> \
+             'it''s \\' /* {comment} */;"
+        )
+    );
+
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost:5432/postgres").await?;
+    assert_eq!(
+        postgres.compile_create_index_migration(standard.clone()),
+        format!(
+            "CREATE INDEX idx_post_tenant_slug ON post (tenant_id, slug) WHERE deleted_at IS NULL AND slug <> 'it''s \\';\n\
+             COMMENT ON INDEX idx_post_tenant_slug IS '{}';",
+            comment.replace('\'', "''")
+        )
+    );
+
+    // MySQL has no partial indexes: a unique one keys every column by the
+    // condition, a standard one covers every row.
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost:3306/mysql");
+    let mysql_condition = "deleted_at IS NULL AND slug <> 'it''s \\\\'";
+    let mysql_comment = comment.replace('\\', "\\\\").replace('\'', "''");
+    assert_eq!(
+        mysql.compile_create_index_migration(unique),
+        format!(
+            "CREATE UNIQUE INDEX uq_post_tenant_slug ON post ((CASE WHEN {mysql_condition} THEN tenant_id END), \
+             (CASE WHEN {mysql_condition} THEN slug END)) COMMENT '{mysql_comment}';"
+        )
+    );
+    assert_eq!(
+        mysql.compile_create_index_migration(standard),
+        format!("CREATE INDEX idx_post_tenant_slug ON post (tenant_id, slug) COMMENT '{mysql_comment}';")
+    );
+
+    // Reserved names are quoted inside the condition too.
+    let reserved = CreateIndexMigration {
+        table: "order".to_string(),
+        index: MigrationIndex {
+            name: "uq_order_key".to_string(),
+            columns: vec!["key".to_string()],
+            automatic: false,
+            kind: MigrationIndexKind::Unique,
+            predicate: Some(IndexPredicate::Field("desc".to_string())),
+        },
+    };
+    assert!(sqlite.compile_create_index_migration(reserved.clone()).contains(r#"("key") WHERE "desc" = TRUE"#));
+    assert!(mysql.compile_create_index_migration(reserved).contains("(CASE WHEN `desc` = TRUE THEN `key` END)"));
 
     Ok(())
 }

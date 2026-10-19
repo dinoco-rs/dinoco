@@ -6,9 +6,9 @@ use tokio::sync::{mpsc, oneshot};
 use crate::RowDecodeError;
 use crate::backends::sql::{self, Dialect};
 use crate::{
-    CountQuery, DeleteQuery, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery, InsertQuery,
-    ManyToManyRelationCountQuery, ManyToManyRelationQuery, PluckValue, RelationCountQuery, RelationOccurrenceQuery,
-    UpdateQuery,
+    AggregateQuery, CountQuery, DeleteQuery, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery, InsertQuery,
+    LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, PluckValue, RelationCountQuery,
+    RelationOccurrenceQuery, UpdateQuery,
 };
 #[cfg(feature = "mysql")]
 use crate::{DinocoMysql, MysqlRow};
@@ -112,6 +112,8 @@ pub struct TransactionCommand {
 
 enum TransactionStatement {
     Find(FindQuery),
+    Aggregate(AggregateQuery),
+    Lookup(LookupQuery),
     RelationOccurrences(RelationOccurrenceQuery, Vec<DinocoValue>),
     ManyToManyRelation(ManyToManyRelationQuery, Vec<DinocoValue>),
     Insert(InsertQuery),
@@ -217,6 +219,22 @@ impl TransactionCommand {
         Self::rows::<M>(TransactionStatement::Find(query))
     }
 
+    /// One row of `M` for the whole aggregate, or one per group.
+    pub fn aggregate<M>(query: AggregateQuery) -> Self
+    where
+        M: DinocoRowModel,
+    {
+        Self::rows::<M>(TransactionStatement::Aggregate(query))
+    }
+
+    /// The row each key tuple names, in the order of the keys.
+    pub fn lookup<M>(query: LookupQuery) -> Self
+    where
+        M: DinocoRowModel,
+    {
+        Self::rows::<M>(TransactionStatement::Lookup(query))
+    }
+
     /// Loads relation rows for `includes(...)`; `params` are the parent keys
     /// placed before the query's own parameters.
     #[doc(hidden)]
@@ -307,6 +325,8 @@ impl TransactionCommand {
 
         let (sql, params) = match self.statement {
             TransactionStatement::Find(query) => sql::find(dialect, query),
+            TransactionStatement::Aggregate(query) => sql::aggregate(dialect, query),
+            TransactionStatement::Lookup(query) => sql::lookup(dialect, query),
             TransactionStatement::RelationOccurrences(query, keys) => {
                 sql::relation_occurrence_with_keys(dialect, query, keys)
             }

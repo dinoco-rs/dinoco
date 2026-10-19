@@ -7,9 +7,11 @@
 //! MySQL's restrictions on writes) are decided by [`Dialect`].
 
 use crate::{
-    CountQuery, CurrentTimeSql, DeleteQuery, DinocoValue, ExistsQuery, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery, RelationJoinQuery,
-    RelationMatch, RelationOccurrenceQuery, RelationQuantifier, UpdateOperation, UpdateQuery, UpdateSet,
+    AggregateColumn, AggregateFunction, AggregateGroup, AggregateQuery, CountQuery, CurrentTimeSql, DateBucket,
+    DeleteQuery, DinocoValue, ExistsQuery, FindOrderBy, FindQuery, FindWhere, GroupBy, GroupOrder, InsertQuery,
+    LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery,
+    RelationJoinQuery, RelationMatch, RelationOccurrenceQuery, RelationQuantifier, UpdateOperation, UpdateQuery,
+    UpdateSet,
 };
 
 /// Alias of the related table in a relation filter subquery, suffixed with the
@@ -302,7 +304,10 @@ impl SqlWriter {
     ) {
         self.where_clause(conditions, qualifier);
         self.order_by(order_by, qualifier);
+        self.page(limit, skip);
+    }
 
+    fn page(&mut self, limit: i32, skip: i32) {
         if limit >= 0 {
             self.push(" LIMIT ");
             self.bind(DinocoValue::Integer(i64::from(limit)));
@@ -311,6 +316,90 @@ impl SqlWriter {
         if skip >= 0 {
             self.push(" OFFSET ");
             self.bind(DinocoValue::Integer(i64::from(skip)));
+        }
+    }
+
+    /// The aggregate's SQL, cast where a database widens the result: a
+    /// PostgreSQL `SUM(bigint)` is `numeric` and a MySQL `SUM` is `DECIMAL`.
+    fn aggregate(&mut self, aggregate: AggregateColumn) {
+        let field = aggregate.field;
+        let (open, close) = match (aggregate.function, self.dialect) {
+            (AggregateFunction::SumInteger, Dialect::Sqlite) => ("COALESCE(SUM(", "), 0)"),
+            (AggregateFunction::SumInteger, Dialect::Postgres) => ("CAST(COALESCE(SUM(", "), 0) AS BIGINT)"),
+            (AggregateFunction::SumInteger, Dialect::Mysql) => ("CAST(COALESCE(SUM(", "), 0) AS SIGNED)"),
+            // `TOTAL` is SQLite's `SUM` that is always a float, and `0.0` over
+            // no values.
+            (AggregateFunction::SumFloat, Dialect::Sqlite) => ("TOTAL(", ")"),
+            (AggregateFunction::SumFloat, Dialect::Postgres) => ("CAST(COALESCE(SUM(", "), 0) AS DOUBLE PRECISION)"),
+            (AggregateFunction::SumFloat, Dialect::Mysql) => ("CAST(COALESCE(SUM(", "), 0) AS DOUBLE)"),
+            (AggregateFunction::Avg, Dialect::Sqlite) => ("AVG(", ")"),
+            (AggregateFunction::Avg, Dialect::Postgres) => ("CAST(AVG(", ") AS DOUBLE PRECISION)"),
+            (AggregateFunction::Avg, Dialect::Mysql) => ("CAST(AVG(", ") AS DOUBLE)"),
+            (AggregateFunction::Min, _) => ("MIN(", ")"),
+            (AggregateFunction::Max, _) => ("MAX(", ")"),
+            (AggregateFunction::Count, _) => ("COUNT(", ")"),
+        };
+
+        self.push(open);
+        self.identifier(field);
+        self.push(close);
+    }
+
+    /// The key a row is grouped under. Every date bucket is a `DATE`: the
+    /// first day of the row's day, week (starting on Monday), month or year.
+    fn group_key(&mut self, key: GroupBy) {
+        let (field, bucket) = match key {
+            GroupBy::Field(field) => return self.identifier(field),
+            GroupBy::Date(field, bucket) => (field, bucket),
+        };
+
+        match self.dialect {
+            // `DateTime` values are RFC 3339 text, which the date functions
+            // read (offset included).
+            Dialect::Sqlite => {
+                self.push("date(");
+                self.identifier(field);
+                self.push(match bucket {
+                    DateBucket::Day => ")",
+                    // The next Sunday (or the same day), back to its Monday.
+                    DateBucket::Week => ", 'weekday 0', '-6 days')",
+                    DateBucket::Month => ", 'start of month')",
+                    DateBucket::Year => ", 'start of year')",
+                });
+            }
+            Dialect::Postgres => {
+                self.push(match bucket {
+                    DateBucket::Day => "CAST(",
+                    DateBucket::Week => "CAST(date_trunc('week', ",
+                    DateBucket::Month => "CAST(date_trunc('month', ",
+                    DateBucket::Year => "CAST(date_trunc('year', ",
+                });
+                self.identifier(field);
+                self.push(if bucket == DateBucket::Day { " AS DATE)" } else { ") AS DATE)" });
+            }
+            Dialect::Mysql => match bucket {
+                DateBucket::Day => {
+                    self.push("DATE(");
+                    self.identifier(field);
+                    self.sql.push(')');
+                }
+                DateBucket::Week | DateBucket::Month => {
+                    self.push("DATE_SUB(DATE(");
+                    self.identifier(field);
+                    self.push(if bucket == DateBucket::Week {
+                        "), INTERVAL WEEKDAY("
+                    } else {
+                        "), INTERVAL DAYOFMONTH("
+                    });
+                    self.identifier(field);
+                    self.push(if bucket == DateBucket::Week { ") DAY)" } else { ") - 1 DAY)" });
+                }
+                DateBucket::Year => {
+                    self.push("MAKEDATE(YEAR(");
+                    self.identifier(field);
+                    self.push("), 1)");
+                }
+            },
         }
     }
 
@@ -883,14 +972,15 @@ pub(crate) fn find(dialect: Dialect, query: FindQuery) -> (String, Vec<DinocoVal
 }
 
 pub(crate) fn insert(dialect: Dialect, query: InsertQuery) -> (String, Vec<DinocoValue>) {
-    let InsertQuery { table, fields, rows, returning } = query;
+    let InsertQuery { table, fields, rows, returning, on_conflict_do_nothing } = query;
     let values = rows.iter().map(Vec::len).sum::<usize>();
     let placeholder_width = if dialect == Dialect::Postgres { 7 } else { 3 };
     let capacity = 64
         + table.len()
         + fields.len() * 16
         + rows.len() * (fields.len() * placeholder_width + 4)
-        + returning.map_or(0, |returning| 12 + returning.len() * 16);
+        + returning.map_or(0, |returning| 12 + returning.len() * 16)
+        + on_conflict_do_nothing.map_or(0, |target| 32 + target.len() * 16);
     let mut sql = SqlWriter::new(dialect, capacity, Vec::with_capacity(values));
 
     sql.push("INSERT INTO ");
@@ -907,7 +997,140 @@ pub(crate) fn insert(dialect: Dialect, query: InsertQuery) -> (String, Vec<Dinoc
         sql.sql.push(')');
         sql.params.extend(row);
     }
+    if let Some(target) = on_conflict_do_nothing {
+        if dialect == Dialect::Mysql {
+            // MySQL takes no conflict target and has no `DO NOTHING`: assigning
+            // a column to itself leaves the existing row as it is.
+            let column = target.first().or(fields.first()).copied().unwrap_or("id");
+            sql.push(" ON DUPLICATE KEY UPDATE ");
+            sql.identifier(column);
+            sql.push(" = ");
+            sql.identifier(column);
+        } else {
+            sql.push(" ON CONFLICT (");
+            sql.identifiers(target);
+            sql.push(") DO NOTHING");
+        }
+    }
     sql.returning(returning);
+
+    sql.finish()
+}
+
+pub(crate) fn lookup(dialect: Dialect, query: LookupQuery) -> (String, Vec<DinocoValue>) {
+    let LookupQuery { table, fields, key_fields, keys } = query;
+    let values = keys.iter().map(Vec::len).sum::<usize>();
+    // `(0, $1::bigint), ` per tuple on PostgreSQL, `(0, ?), ` elsewhere.
+    let per_value = if dialect == Dialect::Postgres { 20 } else { 8 };
+    let capacity = sql_capacity(fields.len() + key_fields.len() * 2, 0) + keys.len() * 8 + values * per_value;
+    let mut sql = SqlWriter::new(dialect, capacity, Vec::with_capacity(values));
+
+    sql.push("WITH __dinoco_lookup_keys");
+    match dialect {
+        Dialect::Mysql => {
+            sql.push(" AS (");
+            for (ordinal, key) in keys.into_iter().enumerate() {
+                if ordinal == 0 {
+                    sql.push("SELECT 0 AS __dinoco_lookup_ordinal");
+                } else {
+                    sql.push(" UNION ALL SELECT ");
+                    sql.number(ordinal);
+                }
+                for (index, value) in key.into_iter().enumerate() {
+                    sql.push(", ");
+                    sql.bind(value);
+                    if ordinal == 0 {
+                        sql.push(" AS __dinoco_lookup_key_");
+                        sql.number(index);
+                    }
+                }
+            }
+        }
+        Dialect::Sqlite | Dialect::Postgres => {
+            sql.push("(__dinoco_lookup_ordinal");
+            for index in 0..key_fields.len() {
+                sql.push(", __dinoco_lookup_key_");
+                sql.number(index);
+            }
+            sql.push(") AS (VALUES ");
+            for (ordinal, key) in keys.into_iter().enumerate() {
+                if ordinal > 0 {
+                    sql.push(", ");
+                }
+                sql.sql.push('(');
+                sql.number(ordinal);
+                for value in key {
+                    sql.push(", ");
+                    sql.bind(value);
+                    if dialect == Dialect::Postgres {
+                        sql.postgres_key_cast(sql.placeholders - 1);
+                    }
+                }
+                sql.sql.push(')');
+            }
+        }
+    }
+    sql.push(") SELECT ");
+    sql.fields(fields, Qualifier::Table(table));
+    sql.push(" FROM __dinoco_lookup_keys INNER JOIN ");
+    sql.identifier(table);
+    sql.push(" ON ");
+    for (index, field) in key_fields.iter().enumerate() {
+        if index > 0 {
+            sql.push(" AND ");
+        }
+        sql.raw_field(table, field);
+        sql.push(" = __dinoco_lookup_keys.__dinoco_lookup_key_");
+        sql.number(index);
+    }
+    sql.push(" ORDER BY __dinoco_lookup_keys.__dinoco_lookup_ordinal");
+
+    sql.finish()
+}
+
+pub(crate) fn aggregate(dialect: Dialect, query: AggregateQuery) -> (String, Vec<DinocoValue>) {
+    let AggregateQuery { source: FindQuery { from, conditions, limit, skip, order_by, .. }, aggregate, group } = query;
+    let windowed = limit >= 0 || skip >= 0;
+    let mut sql = writer(dialect, 6, &conditions, 4);
+
+    sql.push("SELECT ");
+    if let Some(group) = group {
+        sql.group_key(group.key);
+        sql.push(" AS __dinoco_group_key, ");
+    }
+    sql.aggregate(aggregate);
+    if group.is_some() {
+        sql.push(" AS __dinoco_aggregate");
+    }
+
+    sql.push(" FROM ");
+    if windowed {
+        // The window of rows aggregated, with only the columns read outside.
+        sql.push("(SELECT ");
+        sql.identifier(aggregate.field);
+        if let Some(key) = group.map(|group| group.key.field()).filter(|key| *key != aggregate.field) {
+            sql.push(", ");
+            sql.identifier(key);
+        }
+        sql.push(" FROM ");
+        sql.identifier(from);
+        sql.find_tail(conditions, order_by, limit, skip, Qualifier::None);
+        sql.push(") AS __dinoco_rows");
+    } else {
+        sql.identifier(from);
+        sql.where_clause(conditions, Qualifier::None);
+    }
+
+    if let Some(AggregateGroup { order_by, limit, skip, .. }) = group {
+        sql.push(" GROUP BY __dinoco_group_key ORDER BY ");
+        sql.push(match order_by.unwrap_or(GroupOrder::KeyAsc) {
+            GroupOrder::KeyAsc => "__dinoco_group_key ASC",
+            GroupOrder::KeyDesc => "__dinoco_group_key DESC",
+            GroupOrder::AggregateAsc => "__dinoco_aggregate ASC, __dinoco_group_key ASC",
+            GroupOrder::AggregateDesc => "__dinoco_aggregate DESC, __dinoco_group_key ASC",
+        });
+        sql.page(limit, skip);
+    }
 
     sql.finish()
 }
@@ -1307,6 +1530,14 @@ macro_rules! query_compiler_methods {
 
         fn compile_exists_query(&self, query: $crate::ExistsQuery) -> (String, Vec<$crate::DinocoValue>) {
             $crate::backends::sql::exists($dialect, query)
+        }
+
+        fn compile_aggregate_query(&self, query: $crate::AggregateQuery) -> (String, Vec<$crate::DinocoValue>) {
+            $crate::backends::sql::aggregate($dialect, query)
+        }
+
+        fn compile_lookup_query(&self, query: $crate::LookupQuery) -> (String, Vec<$crate::DinocoValue>) {
+            $crate::backends::sql::lookup($dialect, query)
         }
 
         fn compile_relation_count_query(

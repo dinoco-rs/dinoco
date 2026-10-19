@@ -112,8 +112,13 @@ impl DinocoSqlCompiler for SqliteAdapter {
             );
         }
         let unique = if migration.index.kind == MigrationIndexKind::Unique { "UNIQUE " } else { "" };
+        // The condition is kept as a comment too: SQLite stores the statement's
+        // text, which is where drift detection reads it back from.
+        let predicate = migration.index.predicate.as_ref().map_or_else(String::new, |predicate| {
+            format!(" WHERE {} /* {} */", predicate.to_sql(&|field| sql_identifier(field), false), predicate.comment())
+        });
         format!(
-            "CREATE {unique}INDEX {} ON {} ({});",
+            "CREATE {unique}INDEX {} ON {} ({}){predicate};",
             sql_identifier(&migration.index.name),
             sql_identifier(&migration.table),
             migration.index.columns.iter().map(|column| sql_identifier(column)).collect::<Vec<_>>().join(", ")

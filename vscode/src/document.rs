@@ -26,6 +26,9 @@ pub struct AttributeInfo {
     pub name: Symbol,
     pub range: Range,
     pub arguments: Vec<AttributeArgumentInfo>,
+    /// The identifiers of a partial index condition (`@unique<email != null>`),
+    /// `None` without one.
+    pub condition: Option<Vec<Symbol>>,
 }
 
 impl AttributeInfo {
@@ -231,6 +234,9 @@ impl DocumentIndex {
                 }
 
                 for attribute in &field.attributes {
+                    if let Some(symbol) = condition_field(block, attribute, &token) {
+                        return Some(ResolvedSymbol::Field { model: model_name.clone(), field: symbol });
+                    }
                     if attribute.name.name == "relation" {
                         if attribute
                             .argument("fields")
@@ -260,6 +266,9 @@ impl DocumentIndex {
             }
 
             for attribute in &block.attributes {
+                if let Some(symbol) = condition_field(block, attribute, &token) {
+                    return Some(ResolvedSymbol::Field { model: model_name.clone(), field: symbol });
+                }
                 if matches!(attribute.name.name.as_str(), "ids" | "uniques" | "indexes" | "fulltexts")
                     && attribute
                         .arguments
@@ -327,6 +336,7 @@ impl DocumentIndex {
                 }
 
                 for attribute in &field.attributes {
+                    ranges.extend(condition_occurrences(model_name, attribute, target));
                     if attribute.name.name == "relation"
                         && let ResolvedSymbol::Field { model, field: target_field } = target
                     {
@@ -374,6 +384,7 @@ impl DocumentIndex {
                 && model == model_name
             {
                 for attribute in &block.attributes {
+                    ranges.extend(condition_occurrences(model_name, attribute, target));
                     if matches!(attribute.name.name.as_str(), "ids" | "uniques" | "indexes" | "fulltexts") {
                         ranges.extend(
                             attribute
@@ -423,6 +434,28 @@ impl DocumentIndex {
         }
         occurrences
     }
+}
+
+/// The field `token` names inside the condition of `attribute`, when it is a
+/// field of `block` (enum values in a condition are left alone).
+fn condition_field(block: &BlockInfo, attribute: &AttributeInfo, token: &Symbol) -> Option<String> {
+    attribute
+        .condition
+        .as_ref()?
+        .iter()
+        .find(|symbol| symbol.range == token.range && block.field(&symbol.name).is_some())
+        .map(|symbol| symbol.name.clone())
+}
+
+fn condition_occurrences<'a>(
+    model_name: &'a str,
+    attribute: &'a AttributeInfo,
+    target: &'a ResolvedSymbol,
+) -> impl Iterator<Item = Range> + 'a {
+    attribute.condition.iter().flatten().filter_map(move |symbol| match target {
+        ResolvedSymbol::Field { model, field } if model == model_name && symbol.name == *field => Some(symbol.range),
+        _ => None,
+    })
 }
 
 pub fn scalar_types() -> &'static [&'static str] {
@@ -622,6 +655,12 @@ fn parse_model_attributes(tokens: &[Token], start: usize, end: usize) -> Vec<Att
         cursor += 3;
         let mut arguments = Vec::new();
         let mut last = name_index;
+        let mut condition = None;
+        if let Some((symbols, close)) = parse_condition(tokens, cursor, end) {
+            condition = Some(symbols);
+            cursor = close + 1;
+            last = close;
+        }
         if cursor < end && tokens[cursor].is_symbol("(") {
             let close = matching_token(tokens, cursor, "(", ")").unwrap_or(end.saturating_sub(1));
             arguments = parse_attribute_arguments(tokens, cursor + 1, close);
@@ -633,10 +672,52 @@ fn parse_model_attributes(tokens: &[Token], start: usize, end: usize) -> Vec<Att
             name: tokens[name_index].as_value_symbol(),
             range: Range::new(tokens[attribute_start].range.start, tokens[last].range.end),
             arguments,
+            condition,
         });
     }
 
     attributes
+}
+
+/// The condition that opens with the `<` at `open`: its identifiers (keywords
+/// left out) and the index of its closing `>`. A `>` closes it when it is not
+/// the `>`/`>=` of a comparison, which a value always follows on the same
+/// line.
+fn parse_condition(tokens: &[Token], open: usize, end: usize) -> Option<(Vec<Symbol>, usize)> {
+    if open >= end || !tokens[open].is_symbol("<") {
+        return None;
+    }
+    let line = tokens[open].range.start.line;
+    let mut depth = 0i32;
+    let mut close = None;
+    for index in open + 1..end {
+        let token = &tokens[index];
+        if token.is_symbol("(") {
+            depth += 1;
+        } else if token.is_symbol(")") {
+            depth -= 1;
+        } else if token.is_symbol(">") && depth <= 0 {
+            let comparison = tokens[index + 1..end].first().is_some_and(|next| {
+                next.range.start.line == line
+                    && (next.is_symbol("=")
+                        || next.is_symbol("-")
+                        || matches!(next.kind, TokenKind::Ident | TokenKind::Number | TokenKind::String))
+            });
+            if !comparison {
+                close = Some(index);
+                break;
+            }
+        } else if token.is_symbol("@") || token.is_symbol("}") || token.range.start.line != line {
+            break;
+        }
+    }
+    let close = close?;
+    let symbols = tokens[open + 1..close]
+        .iter()
+        .filter(|token| token.kind == TokenKind::Ident && !matches!(token.text.as_str(), "null" | "true" | "false"))
+        .map(Token::as_value_symbol)
+        .collect();
+    Some((symbols, close))
 }
 
 fn block_kind(token: &Token) -> Option<BlockKind> {
@@ -686,7 +767,14 @@ fn parse_fields(tokens: &[Token], start: usize, end: usize) -> Vec<FieldInfo> {
             let name_index = next + 1;
             next += 2;
             let mut arguments = Vec::new();
+            let mut condition = None;
+            last = name_index;
 
+            if let Some((symbols, close)) = parse_condition(tokens, next, end) {
+                condition = Some(symbols);
+                next = close + 1;
+                last = close;
+            }
             if next < end && tokens[next].is_symbol("(") {
                 let close = matching_token(tokens, next, "(", ")").unwrap_or_else(|| {
                     (next + 1..end)
@@ -696,14 +784,13 @@ fn parse_fields(tokens: &[Token], start: usize, end: usize) -> Vec<FieldInfo> {
                 arguments = parse_attribute_arguments(tokens, next + 1, close);
                 next = close.saturating_add(1);
                 last = close;
-            } else {
-                last = name_index;
             }
 
             attributes.push(AttributeInfo {
                 name: tokens[name_index].as_value_symbol(),
                 range: Range::new(tokens[attribute_start].range.start, tokens[last].range.end),
                 arguments,
+                condition,
             });
         }
 
