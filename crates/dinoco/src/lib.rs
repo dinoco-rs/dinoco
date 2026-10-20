@@ -29,7 +29,7 @@ pub mod codegen {
 
 pub use anyhow;
 pub use async_trait::async_trait;
-pub use dinoco_derives::{DinocoEnum, Entity, EntityExtend, Extend};
+pub use dinoco_derives::{DinocoEnum, DinocoRuntimeEnum, Entity, EntityExtend, Extend};
 pub use dinoco_engine::*;
 #[doc(hidden)]
 pub use dinoco_engine::{__dinoco_mysql, __dinoco_pluck_column, __dinoco_postgres, __dinoco_sqlite};

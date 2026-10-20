@@ -15,6 +15,20 @@ pub enum DinocoValue {
     Date(NaiveDate),
 }
 
+/// An enum kept in a plain string column, implemented by
+/// `#[derive(DinocoRuntimeEnum)]`.
+///
+/// Unlike a schema enum (`DinocoEnum`), its values are always written as
+/// [`DinocoValue::String`], so the column stays `String` in the schema and in
+/// the database while the model holds the enum.
+pub trait DinocoRuntimeEnum: Sized {
+    /// The string stored in the column for this variant.
+    fn as_str(&self) -> &'static str;
+
+    /// The variant stored as `value`, or `None` when no variant maps to it.
+    fn from_column(value: &str) -> Option<Self>;
+}
+
 impl From<&str> for DinocoValue {
     fn from(value: &str) -> Self {
         DinocoValue::String(value.to_string())

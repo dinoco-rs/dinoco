@@ -309,3 +309,80 @@ fn dinoco_codegen_reexports_everything_a_transform_uses() {
     let _: &dyn dinoco_codegen::DinocoTransformer = &transformer;
     let _ = dinoco::codegen::prelude::Receiver::Owned;
 }
+
+const RUNTIME_ENUM_SCHEMA: &str = r#"
+model Grant {
+    id         String  @id
+    permission String  @default("permission:view-users")
+    fallback   String? @default("permission:\"quoted\"")
+    revoked    String?
+    note       String
+}
+"#;
+
+fn render_runtime_enum_model(transformer: &dyn DinocoTransformer) -> String {
+    let schema = dinoco_compiler::compile(RUNTIME_ENUM_SCHEMA).expect("schema");
+    let mut generated = build_schema(&schema);
+    apply_transformer(&mut generated, transformer);
+    let model = generated.model("Grant").expect("model");
+    render_model_source(model, &generated.imports_for(&model.imports))
+}
+
+struct RuntimeEnums;
+
+impl DinocoTransformer for RuntimeEnums {
+    fn transform_field(&self, model: &Model, field: &mut Field) {
+        if model.name == "Grant" && matches!(field.name.as_str(), "permission" | "fallback" | "revoked") {
+            field.set_runtime_enum("crate::Permission");
+        }
+    }
+}
+
+#[test]
+fn set_runtime_enum_replaces_the_type_and_marks_the_field_as_an_enum() {
+    let grant = render_runtime_enum_model(&RuntimeEnums);
+
+    assert!(
+        grant.contains(concat!(
+            "    #[dinoco(default = <crate::Permission as ::dinoco::DinocoRuntimeEnum>::from_column(",
+            "\"permission:view-users\").expect(\"the @default of a runtime enum field must be a value of ",
+            "`crate::Permission`\"))]\n",
+            "    #[dinoco(enum)]\n",
+            "    pub permission: crate::Permission,"
+        )),
+        "{grant}"
+    );
+    // A nullable field wraps the variant in `Some`; escaped quotes stay one literal.
+    assert!(
+        grant.contains(concat!(
+            "    #[dinoco(default = ::core::option::Option::Some(<crate::Permission as ::dinoco::DinocoRuntimeEnum>",
+            "::from_column(\"permission:\\\"quoted\\\"\").expect(\"the @default of a runtime enum field must be a ",
+            "value of `crate::Permission`\")))]\n",
+            "    #[dinoco(enum)]\n",
+            "    pub fallback: Option<crate::Permission>,"
+        )),
+        "{grant}"
+    );
+    assert!(grant.contains("    #[dinoco(enum)]\n    pub revoked: Option<crate::Permission>,"), "{grant}");
+    // Untouched fields keep their `String`.
+    assert!(grant.contains("    pub note: String,"), "{grant}");
+    assert!(grant.contains("    #[dinoco(primary_key)]\n    pub id: String,"), "{grant}");
+}
+
+#[test]
+fn set_runtime_enum_is_idempotent() {
+    struct Twice;
+    impl DinocoTransformer for Twice {
+        fn transform_field(&self, _model: &Model, field: &mut Field) {
+            if field.name == "permission" {
+                field.set_runtime_enum("crate::Permission");
+                field.set_runtime_enum(RustType::new("crate::Permission"));
+            }
+        }
+    }
+
+    let twice = render_runtime_enum_model(&Twice);
+    assert_eq!(twice.matches("#[dinoco(enum)]").count(), 1, "{twice}");
+    assert_eq!(twice.matches("from_column(").count(), 1, "{twice}");
+    assert!(twice.contains("pub permission: crate::Permission,"), "{twice}");
+}

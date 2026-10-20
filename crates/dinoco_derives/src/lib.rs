@@ -16,23 +16,51 @@ pub fn derive_entity(input: TokenStream) -> TokenStream {
 pub fn derive_dinoco_enum(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match expand_dinoco_enum(input) {
+    match expand_dinoco_enum(input, EnumStorage::Native) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
 }
 
-fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+/// An enum stored in a plain string column (`String` in the schema): it reads
+/// like a `DinocoEnum` and is always written as a string, so it can replace a
+/// `String` field through the transformer or be passed wherever a `String`
+/// field takes a value.
+#[proc_macro_derive(DinocoRuntimeEnum, attributes(dinoco))]
+pub fn derive_dinoco_runtime_enum(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    match expand_dinoco_enum(input, EnumStorage::Runtime) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+/// How an enum's values reach the database.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EnumStorage {
+    /// A schema enum: written as `DinocoValue::Enum`, so PostgreSQL checks it
+    /// against the native type of the same name.
+    Native,
+    /// A string column: written as `DinocoValue::String`.
+    Runtime,
+}
+
+fn expand_dinoco_enum(input: DeriveInput, storage: EnumStorage) -> syn::Result<proc_macro2::TokenStream> {
+    let derive = match storage {
+        EnumStorage::Native => "DinocoEnum",
+        EnumStorage::Runtime => "DinocoRuntimeEnum",
+    };
     let name = input.ident;
     let Data::Enum(data) = input.data else {
-        return Err(syn::Error::new_spanned(name, "DinocoEnum can only be derived for enums"));
+        return Err(syn::Error::new_spanned(name, format!("{derive} can only be derived for enums")));
     };
 
     let mut variants = Vec::new();
 
     for variant in data.variants {
         if !matches!(variant.fields, Fields::Unit) {
-            return Err(syn::Error::new_spanned(variant, "DinocoEnum only supports unit variants"));
+            return Err(syn::Error::new_spanned(variant, format!("{derive} only supports unit variants")));
         }
 
         let mut value = None;
@@ -47,7 +75,7 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
                     return Ok(());
                 }
 
-                Err(meta.error("unknown DinocoEnum variant attribute"))
+                Err(meta.error(format!("unknown {derive} variant attribute")))
             })?;
         }
 
@@ -56,17 +84,20 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
     }
 
     if variants.is_empty() {
-        return Err(syn::Error::new_spanned(name, "DinocoEnum requires at least one variant"));
+        return Err(syn::Error::new_spanned(name, format!("{derive} requires at least one variant")));
     }
 
     let enum_name = name.to_string();
-    let value_arms = variants.iter().map(|(variant, value)| {
-        quote! {
+    let value_arms = variants.iter().map(|(variant, value)| match storage {
+        EnumStorage::Native => quote! {
             #name::#variant => ::dinoco::DinocoValue::Enum(
                 ::std::string::String::from(#enum_name),
                 ::std::string::String::from(#value),
             ),
-        }
+        },
+        EnumStorage::Runtime => quote! {
+            #name::#variant => ::dinoco::DinocoValue::String(::std::string::String::from(#value)),
+        },
     });
     let display_arms = variants.iter().map(|(variant, value)| {
         quote! { #name::#variant => formatter.write_str(#value), }
@@ -84,6 +115,7 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
         let value = syn::LitByteStr::new(value.as_bytes(), variant.span());
         quote! { #value => return ::core::result::Result::Ok(Self::#variant), }
     });
+    let runtime_impls = (storage == EnumStorage::Runtime).then(|| runtime_enum_impls(&name, &variants));
 
     Ok(quote! {
         impl ::core::fmt::Display for #name {
@@ -238,7 +270,86 @@ fn expand_dinoco_enum(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
                 }
             }
         }
+
+        #runtime_impls
     })
+}
+
+/// What `DinocoRuntimeEnum` adds on top of `DinocoEnum`: the
+/// `dinoco::DinocoRuntimeEnum` trait, and conversions that let the enum be
+/// passed wherever a `String` field takes a value.
+fn runtime_enum_impls(name: &syn::Ident, variants: &[(syn::Ident, String)]) -> proc_macro2::TokenStream {
+    let as_str_arms = variants.iter().map(|(variant, value)| {
+        quote! { #name::#variant => #value, }
+    });
+    let from_column_arms = variants.iter().map(|(variant, value)| {
+        quote! { #value => ::core::option::Option::Some(Self::#variant), }
+    });
+
+    quote! {
+        impl ::dinoco::DinocoRuntimeEnum for #name {
+            fn as_str(&self) -> &'static str {
+                match self {
+                    #(#as_str_arms)*
+                }
+            }
+
+            fn from_column(value: &str) -> ::core::option::Option<Self> {
+                match value {
+                    #(#from_column_arms)*
+                    _ => ::core::option::Option::None,
+                }
+            }
+        }
+
+        impl ::core::convert::From<&#name> for ::std::string::String {
+            fn from(value: &#name) -> Self {
+                ::std::string::String::from(<#name as ::dinoco::DinocoRuntimeEnum>::as_str(value))
+            }
+        }
+
+        impl ::core::convert::From<#name> for ::std::string::String {
+            fn from(value: #name) -> Self {
+                ::std::string::String::from(&value)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<::std::string::String> for #name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(&self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<::std::string::String> for &#name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<::core::option::Option<::std::string::String>> for #name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(&self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<::core::option::Option<::std::string::String>> for &#name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<::core::option::Option<#name>> for #name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(&self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<::core::option::Option<#name>> for &#name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(self)
+            }
+        }
+    }
 }
 
 #[proc_macro_derive(EntityExtend, attributes(extend))]

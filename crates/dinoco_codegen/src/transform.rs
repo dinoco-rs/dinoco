@@ -234,9 +234,66 @@ impl Field {
         self.attributes.retain(|attribute| !attribute.starts_with(prefix));
     }
 
+    /// Makes a `String` field hold `ty`, an enum deriving
+    /// `dinoco::DinocoRuntimeEnum`, while the column stays a string.
+    ///
+    /// Besides replacing [`Field::ty`], it marks the field `#[dinoco(enum)]`
+    /// (so `Option<ty>` is not read as a relation) and turns a string
+    /// `@default("...")` into the variant stored as that string.
+    pub fn set_runtime_enum(&mut self, ty: impl Into<RustType>) {
+        let ty = ty.into();
+        for attribute in &mut self.attributes {
+            if attribute.starts_with("#[dinoco(") {
+                runtime_enum_default(attribute, &ty, self.nullable);
+            }
+        }
+        self.add_attribute("#[dinoco(enum)]");
+        self.ty = ty;
+    }
+
     fn rendered_type(&self) -> String {
         if self.nullable { format!("Option<{}>", self.ty) } else { self.ty.to_string() }
     }
+}
+
+/// Rewrites the `default = ::std::string::String::from("...")` codegen writes
+/// for a string `@default` into the `ty` variant stored as that string.
+fn runtime_enum_default(attribute: &mut String, ty: &RustType, nullable: bool) {
+    const STRING_DEFAULT: &str = "default = ::std::string::String::from(";
+
+    let Some(start) = attribute.find(STRING_DEFAULT) else {
+        return;
+    };
+    let literal_start = start + STRING_DEFAULT.len();
+    // The literal is escaped by codegen, so its end is the first `"` that no
+    // backslash escapes.
+    let mut escaped = false;
+    let Some(literal_len) = attribute[literal_start..].char_indices().skip(1).find_map(|(index, ch)| match ch {
+        _ if escaped => {
+            escaped = false;
+            None
+        }
+        '\\' => {
+            escaped = true;
+            None
+        }
+        '"' => Some(index + 1),
+        _ => None,
+    }) else {
+        return;
+    };
+    let literal_end = literal_start + literal_len;
+    if !attribute[literal_end..].starts_with(')') {
+        return;
+    }
+
+    let literal = &attribute[literal_start..literal_end];
+    let variant = format!(
+        "<{ty} as ::dinoco::DinocoRuntimeEnum>::from_column({literal}).expect(\"the @default of a runtime enum field must be a value of `{}`\")",
+        ty.as_str().replace('"', "\\\"")
+    );
+    let value = if nullable { format!("::core::option::Option::Some({variant})") } else { variant };
+    attribute.replace_range(start + "default = ".len()..literal_end + 1, &value);
 }
 
 /// A field that points to another model.
