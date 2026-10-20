@@ -94,6 +94,10 @@ name = "dinoco_insert_conflicts"
 path = "tests/dinoco/insert_conflicts.rs"
 
 [[test]]
+name = "dinoco_pagination"
+path = "tests/dinoco/pagination.rs"
+
+[[test]]
 name = "dinoco_test_ambient"
 path = "tests/dinoco/test_ambient.rs"
 

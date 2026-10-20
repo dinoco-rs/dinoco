@@ -654,6 +654,8 @@ fn aggregate_corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
         GroupBy::Date("createdAt", DateBucket::Week),
         GroupBy::Date("createdAt", DateBucket::Month),
         GroupBy::Date("createdAt", DateBucket::Year),
+        GroupBy::Date("createdAt", DateBucket::Hour),
+        GroupBy::Date("createdAt", DateBucket::Minute),
     ];
     let orders = [
         None,

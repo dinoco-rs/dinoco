@@ -102,8 +102,8 @@ pub struct AggregateGroup {
 pub enum GroupBy {
     /// The column's value.
     Field(&'static str),
-    /// The first day of the period a date or timestamp column falls in, as a
-    /// date.
+    /// The start of the period a date or timestamp column falls in: a date
+    /// for days, weeks, months and years, a timestamp for hours and minutes.
     Date(&'static str, DateBucket),
 }
 
@@ -123,6 +123,10 @@ pub enum DateBucket {
     Week,
     Month,
     Year,
+    /// A timestamp column's hour, as a timestamp at minute zero.
+    Hour,
+    /// A timestamp column's minute, as a timestamp at second zero.
+    Minute,
 }
 
 /// How the groups of an [`AggregateQuery`] are ordered. Ties on the

@@ -198,6 +198,22 @@ async fn date_buckets_truncate_to_the_first_day_of_the_period() -> anyhow::Resul
                 "MAKEDATE(YEAR(created_at), 1)",
             ],
         ),
+        (
+            DateBucket::Hour,
+            [
+                "strftime('%Y-%m-%dT%H:00:00+00:00', created_at)",
+                "date_trunc('hour', created_at)",
+                "CAST(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS DATETIME)",
+            ],
+        ),
+        (
+            DateBucket::Minute,
+            [
+                "strftime('%Y-%m-%dT%H:%M:00+00:00', created_at)",
+                "date_trunc('minute', created_at)",
+                "CAST(DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:00') AS DATETIME)",
+            ],
+        ),
     ];
 
     for (bucket, expressions) in cases {
@@ -379,6 +395,35 @@ async fn lookups_join_the_keys_and_keep_their_order() -> anyhow::Result<()> {
         )
     );
     assert_eq!(params.len(), 4);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn skip_without_take_gets_a_limit_where_offset_needs_one() -> anyhow::Result<()> {
+    let compilers = Compilers::new().await?;
+    let expected = [
+        "SELECT id FROM ag_order ORDER BY id ASC LIMIT -1 OFFSET ?",
+        "SELECT id FROM ag_order ORDER BY id ASC OFFSET $1",
+        "SELECT id FROM ag_order ORDER BY id ASC LIMIT 18446744073709551615 OFFSET ?",
+    ];
+
+    for (compiler, expected) in compilers.each().into_iter().zip(expected) {
+        let mut query = FindQuery::new(&["id"], "ag_order", -1, 2);
+        query.order_by = Some(FindOrderBy::Asc("id"));
+        let (sql, params) = compiler.compile_find_query(query);
+
+        assert_eq!(sql, expected);
+        assert!(matches!(params[..], [DinocoValue::Integer(2)]), "{params:?}");
+
+        // Groups page the same way.
+        let (sql, _) = compiler.compile_aggregate_query(AggregateQuery {
+            source: source(Vec::new()),
+            aggregate: aggregate(AggregateFunction::Count, "id"),
+            group: Some(AggregateGroup { key: GroupBy::Field("status"), order_by: None, limit: -1, skip: 1 }),
+        });
+        assert!(sql.ends_with(expected.rsplit_once(" ASC ").map(|(_, page)| page).unwrap_or_default()), "{sql}");
+    }
 
     Ok(())
 }

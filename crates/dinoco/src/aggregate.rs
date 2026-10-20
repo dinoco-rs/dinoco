@@ -43,13 +43,14 @@ impl<T> Aggregate<T> {
     }
 }
 
-/// What `.group_by(...)` splits rows by: a field's own values, or the day,
-/// week, month or year a date field falls in. `K` is the type of the key read
-/// back with each group.
+/// What `.group_by(...)` splits rows by: a field's own values, or the date,
+/// week, month or year a date field falls in, or the hour or minute of a
+/// timestamp. `K` is the type of the key read back with each group.
 ///
 /// ```ignore
-/// .group_by(|order| order.status)            // Status
-/// .group_by(|order| order.created_at.day())  // NaiveDate
+/// .group_by(|order| order.status)             // Status
+/// .group_by(|order| order.created_at.date())  // NaiveDate
+/// .group_by(|order| order.created_at.hour())  // DateTime<Utc>
 /// ```
 pub struct GroupKey<K> {
     key: GroupBy,
@@ -65,7 +66,7 @@ impl<K> Clone for GroupKey<K> {
 impl<K> Copy for GroupKey<K> {}
 
 impl<K> GroupKey<K> {
-    const fn date(field: &'static str, bucket: DateBucket) -> Self {
+    const fn bucket(field: &'static str, bucket: DateBucket) -> Self {
         Self { key: GroupBy::Date(field, bucket), marker: PhantomData }
     }
 }
@@ -159,6 +160,22 @@ macro_rules! ordered_values {
 
 ordered_values!(i64, f64, String, NaiveDate, DateTime<Utc>);
 
+/// Timestamp field types, which can also be grouped by hour or minute. Each
+/// bucket is read back as the timestamp it starts at, optional when the field
+/// is.
+pub trait TimestampValue {
+    #[doc(hidden)]
+    type Truncated: PluckColumn;
+}
+
+impl TimestampValue for DateTime<Utc> {
+    type Truncated = DateTime<Utc>;
+}
+
+impl TimestampValue for Option<DateTime<Utc>> {
+    type Truncated = Option<DateTime<Utc>>;
+}
+
 impl DateValue for DateTime<Utc> {
     type Bucket = NaiveDate;
 }
@@ -217,23 +234,44 @@ impl<T, C> Field<T, C>
 where
     T: DateValue,
 {
-    /// Groups by the date of the value.
+    /// Groups by the full date of the value: its day, month and year.
+    pub fn date(self) -> GroupKey<T::Bucket> {
+        GroupKey::bucket(self.field_name(), DateBucket::Day)
+    }
+
+    /// The same as [`date`](Self::date).
     pub fn day(self) -> GroupKey<T::Bucket> {
-        GroupKey::date(self.field_name(), DateBucket::Day)
+        self.date()
     }
 
     /// Groups by the Monday of the value's week.
     pub fn week(self) -> GroupKey<T::Bucket> {
-        GroupKey::date(self.field_name(), DateBucket::Week)
+        GroupKey::bucket(self.field_name(), DateBucket::Week)
     }
 
     /// Groups by the first day of the value's month.
     pub fn month(self) -> GroupKey<T::Bucket> {
-        GroupKey::date(self.field_name(), DateBucket::Month)
+        GroupKey::bucket(self.field_name(), DateBucket::Month)
     }
 
     /// Groups by January 1st of the value's year.
     pub fn year(self) -> GroupKey<T::Bucket> {
-        GroupKey::date(self.field_name(), DateBucket::Year)
+        GroupKey::bucket(self.field_name(), DateBucket::Year)
+    }
+}
+
+impl<T, C> Field<T, C>
+where
+    T: TimestampValue,
+{
+    /// Groups by the hour of the value: its date and hour, at minute zero.
+    pub fn hour(self) -> GroupKey<T::Truncated> {
+        GroupKey::bucket(self.field_name(), DateBucket::Hour)
+    }
+
+    /// Groups by the minute of the value: its date, hour and minute, at second
+    /// zero.
+    pub fn minute(self) -> GroupKey<T::Truncated> {
+        GroupKey::bucket(self.field_name(), DateBucket::Minute)
     }
 }

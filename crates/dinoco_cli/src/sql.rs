@@ -960,8 +960,15 @@ fn normalize_default(default: &Option<MigrationDefault>) -> Option<String> {
     match default {
         Some(MigrationDefault::String(value)) => Some(format!("string:{value}")),
         Some(MigrationDefault::Boolean(value)) => Some(format!("bool:{value}")),
-        Some(MigrationDefault::Integer(value)) => Some(format!("int:{value}")),
-        Some(MigrationDefault::Float(value)) => Some(format!("float:{value}")),
+        // A whole number is the same default as an integer or a float:
+        // `Float @default(0)` reads back as `0.0` from PostgreSQL and MySQL.
+        Some(MigrationDefault::Integer(value)) => Some(format!("number:{value}")),
+        Some(MigrationDefault::Float(value))
+            if value.fract() == 0.0 && *value >= i64::MIN as f64 && *value <= i64::MAX as f64 =>
+        {
+            Some(format!("number:{}", *value as i64))
+        }
+        Some(MigrationDefault::Float(value)) => Some(format!("number:{value}")),
         Some(MigrationDefault::CurrentTimestamp) => Some("current_timestamp".to_string()),
         Some(MigrationDefault::AutoIncrement) => Some("autoincrement".to_string()),
         None => None,

@@ -1,6 +1,6 @@
 //! `find_many(...).pluck(...)` with an aggregate (`sum`, `avg`, `min`, `max`,
-//! `count`) and `.group_by(...)` (a field, or the day, week, month or year of
-//! a date). Covers `where_`, `where_complex`, relation filters, `order_by`,
+//! `count`) and `.group_by(...)` (a field, the date, week, month or year of a
+//! date, or the hour or minute of a timestamp). Covers `where_`, `where_complex`, relation filters, `order_by`,
 //! `take`/`skip` (a window of rows without a group, a page of groups with one),
 //! `NULL`, empty results, every value type, enum and optional keys, the
 //! `order_by` error path, transactions, hooks and the generated types.
@@ -113,7 +113,11 @@ pub struct Order {
 }
 
 fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(year, month, day, hour, minute, 0).unwrap()
+    at_second(year, month, day, hour, minute, 0)
+}
+
+fn at_second(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(year, month, day, hour, minute, second).unwrap()
 }
 
 fn date(year: i32, month: u32, day: u32) -> NaiveDate {
@@ -129,7 +133,7 @@ fn close(left: f64, right: f64) -> bool {
 /// | o1    | ana      | paid     | 100    | 10       | 0.5   | 1.5  | a    | 2026-01-05 09:00 (Mon) | 2026-01-06 | 2026-01-10 |
 /// | o2    | ana      | paid     | 250    |          | 1.5   |      |      | 2026-01-05 18:30 (Mon) |            | 2026-01-10 |
 /// | o3    | bia      | refunded | 400    | 40       | 2.0   | 2.5  | c    | 2026-01-07 12:00 (Wed) | 2026-01-08 | 2026-02-01 |
-/// | o4    | bia      | paid     | 50     |          | 0.25  |      | d    | 2026-01-11 23:59 (Sun) |            | 2026-02-15 |
+/// | o4    | bia      | paid     | 50     |          | 0.25  |      | d    | 2026-01-11 23:59:42 (Sun) |         | 2026-02-15 |
 /// | o5    |          | pending  | 75     | 5        | 1.0   | 0.5  |      | 2026-02-03 08:00 (Tue) |            | 2027-03-01 |
 /// | o6    | caio     | paid     | 125    |          | 0.75  |      |      | 2025-12-31 23:00 (Wed) | 2026-01-02 | 2025-12-31 |
 ///
@@ -205,7 +209,7 @@ async fn seed(client: &DinocoClient) -> anyhow::Result<()> {
                 0.25,
                 None,
                 Some("d"),
-                at(2026, 1, 11, 23, 59),
+                at_second(2026, 1, 11, 23, 59, 42),
                 None,
                 date(2026, 2, 15),
             ),
@@ -521,6 +525,49 @@ async fn groups_by_date(client: DinocoClient) -> anyhow::Result<()> {
         find_many::<Order>().pluck(|x| x.ratio.sum()).group_by(|x| x.created_at.year()).execute(&client).await?;
     assert_eq!(ratio_by_year, [(date(2025, 1, 1), 0.75), (date(2026, 1, 1), 5.25)]);
 
+    // `date()` is the full date, the same as `day()`.
+    assert_eq!(sum_by(|x| x.created_at.date()).await?, sum_by(|x| x.created_at.day()).await?);
+    assert_eq!(sum_by(|x| x.due_on.date()).await?[0], (date(2025, 12, 31), 125));
+
+    let by_hour =
+        find_many::<Order>().pluck(|x| x.amount.sum()).group_by(|x| x.created_at.hour()).execute(&client).await?;
+    assert_eq!(
+        by_hour,
+        [
+            (at(2025, 12, 31, 23, 0), 125),
+            (at(2026, 1, 5, 9, 0), 100),
+            (at(2026, 1, 5, 18, 0), 250),
+            (at(2026, 1, 7, 12, 0), 400),
+            (at(2026, 1, 11, 23, 0), 50),
+            (at(2026, 2, 3, 8, 0), 75),
+        ]
+    );
+    // Seconds are cut too: 23:59:42 falls in the minute 23:59.
+    let by_minute = find_many::<Order>()
+        .where_(|x| x.created_at.gte(at(2026, 1, 5, 0, 0)))
+        .pluck(|x| x.id.count())
+        .group_by(|x| x.created_at.minute())
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        by_minute,
+        [
+            (at(2026, 1, 5, 9, 0), 1),
+            (at(2026, 1, 5, 18, 30), 1),
+            (at(2026, 1, 7, 12, 0), 1),
+            (at(2026, 1, 11, 23, 59), 1),
+            (at(2026, 2, 3, 8, 0), 1),
+        ]
+    );
+    let busiest_hour = find_many::<Order>()
+        .order_by(|x| x.amount.desc())
+        .take(1)
+        .pluck(|x| x.amount.sum())
+        .group_by(|x| x.created_at.hour())
+        .execute(&client)
+        .await?;
+    assert_eq!(busiest_hour, [(at(2026, 1, 7, 12, 0), 400)]);
+
     let cheapest_by_day =
         find_many::<Order>().pluck(|x| x.amount.min()).group_by(|x| x.created_at.day()).execute(&client).await?;
     assert_eq!(cheapest_by_day[1], (date(2026, 1, 5), Some(100)));
@@ -543,6 +590,19 @@ async fn groups_by_optional_keys(client: DinocoClient) -> anyhow::Result<()> {
     assert_eq!(
         by_shipping_day,
         [(None, 375), (Some(date(2026, 1, 2)), 125), (Some(date(2026, 1, 6)), 100), (Some(date(2026, 1, 8)), 400)]
+    );
+
+    let mut by_shipping_hour =
+        find_many::<Order>().pluck(|x| x.id.count()).group_by(|x| x.shipped_at.hour()).execute(&client).await?;
+    by_shipping_hour.sort();
+    assert_eq!(
+        by_shipping_hour,
+        [
+            (None, 3),
+            (Some(at(2026, 1, 2, 10, 0)), 1),
+            (Some(at(2026, 1, 6, 10, 0)), 1),
+            (Some(at(2026, 1, 8, 10, 0)), 1)
+        ]
     );
 
     let mut tips_by_note = find_many::<Order>().pluck(|x| x.tip.sum()).group_by(|x| x.note).execute(&client).await?;
@@ -743,6 +803,10 @@ fn aggregate_types() {
     let _: GroupKey<NaiveDate> = where_.created_at.week();
     let _: GroupKey<Option<NaiveDate>> = where_.shipped_at.month();
     let _: GroupKey<NaiveDate> = where_.due_on.year();
+    let _: GroupKey<NaiveDate> = where_.created_at.date();
+    let _: GroupKey<Option<NaiveDate>> = where_.shipped_at.date();
+    let _: GroupKey<DateTime<Utc>> = where_.created_at.hour();
+    let _: GroupKey<Option<DateTime<Utc>>> = where_.shipped_at.minute();
 
     let _: PluckAggregate<Order, i64> = find_many::<Order>().pluck(|x| x.amount.sum());
     let _: PluckGroup<Order, AgOrderStatus, Option<f64>> =

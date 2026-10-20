@@ -754,3 +754,50 @@ fn nullable_integer_column(name: &str) -> MigrationColumn {
         default: None,
     }
 }
+
+#[test]
+fn whole_number_defaults_match_as_integer_or_float() {
+    let float_column = |default| MigrationColumn {
+        name: "score".to_string(),
+        ty: MigrationColumnType::Float,
+        primary_key: false,
+        unique: false,
+        nullable: false,
+        default: Some(default),
+    };
+    let plan = |desired, current| {
+        plan_database_migration(
+            &DatabaseSchema {
+                tables: vec![table("account", vec![string_column("id", true), float_column(desired)], vec![], 0)],
+                enums: Vec::new(),
+            },
+            &DatabaseSchema {
+                tables: vec![table("account", vec![string_column("id", true), float_column(current)], vec![], 3)],
+                enums: Vec::new(),
+            },
+        )
+    };
+
+    // `Float @default(0)` is `Integer(0)` in the schema and `0.0` read back
+    // from PostgreSQL and MySQL, and in snapshots recorded before 2.1.8.
+    for (desired, current) in [
+        (MigrationDefault::Integer(0), MigrationDefault::Float(0.0)),
+        (MigrationDefault::Float(0.0), MigrationDefault::Integer(0)),
+        (MigrationDefault::Integer(-3), MigrationDefault::Float(-3.0)),
+    ] {
+        let steps = plan(desired.clone(), current.clone()).steps;
+        assert!(steps.is_empty(), "{desired:?} vs {current:?}: {steps:?}");
+    }
+
+    // Different numbers still differ.
+    for (desired, current) in [
+        (MigrationDefault::Integer(0), MigrationDefault::Float(0.5)),
+        (MigrationDefault::Float(1.5), MigrationDefault::Integer(1)),
+    ] {
+        let steps = plan(desired.clone(), current.clone()).steps;
+        assert!(
+            steps.iter().any(|step| matches!(step, MigrationStep::AlterColumn(_))),
+            "{desired:?} vs {current:?}: {steps:?}"
+        );
+    }
+}

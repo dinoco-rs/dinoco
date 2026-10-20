@@ -98,6 +98,8 @@ model Account {
     positive  Integer @default(7)
     ratio     Float   @default(-0.5)
     score     Float   @default(1.5)
+    whole     Float   @default(0)
+    minus     Float   @default(-2)
     active    Boolean @default(true)
     joined_at DateTime @default(now())
 }
@@ -127,6 +129,18 @@ async fn fresh_database_matches_the_schema(backend: Backend) -> anyhow::Result<(
         assert_eq!(default_of(&live, "positive"), Some(MigrationDefault::Integer(7)));
         assert_eq!(default_of(&live, "ratio"), Some(MigrationDefault::Float(-0.5)));
         assert_eq!(default_of(&live, "score"), Some(MigrationDefault::Float(1.5)));
+        // A whole number on a Float field reads back as an integer on SQLite
+        // and as a float on PostgreSQL and MySQL; both are the same default.
+        assert!(
+            matches!(default_of(&live, "whole"), Some(MigrationDefault::Integer(0) | MigrationDefault::Float(0.0))),
+            "{:?}",
+            default_of(&live, "whole")
+        );
+        assert!(
+            matches!(default_of(&live, "minus"), Some(MigrationDefault::Integer(-2) | MigrationDefault::Float(-2.0))),
+            "{:?}",
+            default_of(&live, "minus")
+        );
         assert_eq!(default_of(&live, "active"), Some(MigrationDefault::Boolean(true)));
         assert_eq!(default_of(&live, "joined_at"), Some(MigrationDefault::CurrentTimestamp));
 

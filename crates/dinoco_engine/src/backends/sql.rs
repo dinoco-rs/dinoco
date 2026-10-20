@@ -311,6 +311,14 @@ impl SqlWriter {
         if limit >= 0 {
             self.push(" LIMIT ");
             self.bind(DinocoValue::Integer(i64::from(limit)));
+        } else if skip >= 0 {
+            // SQLite and MySQL only take `OFFSET` after a `LIMIT`; these are
+            // their "no limit" values. PostgreSQL takes `OFFSET` alone.
+            match self.dialect {
+                Dialect::Sqlite => self.push(" LIMIT -1"),
+                Dialect::Mysql => self.push(" LIMIT 18446744073709551615"),
+                Dialect::Postgres => {}
+            }
         }
 
         if skip >= 0 {
@@ -345,13 +353,45 @@ impl SqlWriter {
         self.push(close);
     }
 
-    /// The key a row is grouped under. Every date bucket is a `DATE`: the
-    /// first day of the row's day, week (starting on Monday), month or year.
+    /// The key a row is grouped under. A day, week (starting on Monday),
+    /// month or year bucket is the `DATE` it starts on; an hour or minute
+    /// bucket is the timestamp it starts at.
     fn group_key(&mut self, key: GroupBy) {
         let (field, bucket) = match key {
             GroupBy::Field(field) => return self.identifier(field),
             GroupBy::Date(field, bucket) => (field, bucket),
         };
+
+        if matches!(bucket, DateBucket::Hour | DateBucket::Minute) {
+            let hour = bucket == DateBucket::Hour;
+            match self.dialect {
+                // RFC 3339 text, the shape SQLite stores `DateTime` values in.
+                Dialect::Sqlite => {
+                    self.push(if hour {
+                        "strftime('%Y-%m-%dT%H:00:00+00:00', "
+                    } else {
+                        "strftime('%Y-%m-%dT%H:%M:00+00:00', "
+                    });
+                    self.identifier(field);
+                    self.sql.push(')');
+                }
+                Dialect::Postgres => {
+                    self.push(if hour { "date_trunc('hour', " } else { "date_trunc('minute', " });
+                    self.identifier(field);
+                    self.sql.push(')');
+                }
+                Dialect::Mysql => {
+                    self.push("CAST(DATE_FORMAT(");
+                    self.identifier(field);
+                    self.push(if hour {
+                        ", '%Y-%m-%d %H:00:00') AS DATETIME)"
+                    } else {
+                        ", '%Y-%m-%d %H:%i:00') AS DATETIME)"
+                    });
+                }
+            }
+            return;
+        }
 
         match self.dialect {
             // `DateTime` values are RFC 3339 text, which the date functions
@@ -360,7 +400,7 @@ impl SqlWriter {
                 self.push("date(");
                 self.identifier(field);
                 self.push(match bucket {
-                    DateBucket::Day => ")",
+                    DateBucket::Day | DateBucket::Hour | DateBucket::Minute => ")",
                     // The next Sunday (or the same day), back to its Monday.
                     DateBucket::Week => ", 'weekday 0', '-6 days')",
                     DateBucket::Month => ", 'start of month')",
@@ -369,7 +409,7 @@ impl SqlWriter {
             }
             Dialect::Postgres => {
                 self.push(match bucket {
-                    DateBucket::Day => "CAST(",
+                    DateBucket::Day | DateBucket::Hour | DateBucket::Minute => "CAST(",
                     DateBucket::Week => "CAST(date_trunc('week', ",
                     DateBucket::Month => "CAST(date_trunc('month', ",
                     DateBucket::Year => "CAST(date_trunc('year', ",
@@ -378,7 +418,7 @@ impl SqlWriter {
                 self.push(if bucket == DateBucket::Day { " AS DATE)" } else { ") AS DATE)" });
             }
             Dialect::Mysql => match bucket {
-                DateBucket::Day => {
+                DateBucket::Day | DateBucket::Hour | DateBucket::Minute => {
                     self.push("DATE(");
                     self.identifier(field);
                     self.sql.push(')');
