@@ -23,7 +23,8 @@ const targetConfigs = [
 	{ target: 'x86_64-unknown-linux-gnu', outputName: 'dinoco_vscode-linux-x64', platform: 'linux' },
 	{ target: 'aarch64-unknown-linux-gnu', outputName: 'dinoco_vscode-linux-arm64', platform: 'linux' },
 	{ target: 'x86_64-pc-windows-msvc', outputName: 'dinoco_vscode-win32-x64.exe', platform: 'windows' },
-	{ target: 'aarch64-pc-windows-msvc', outputName: 'dinoco_vscode-win32-arm64.exe', platform: 'windows' },
+	// psm (via pest) only preprocesses its GAS assembly when the C compiler is not msvc-like, so clang-cl fails here.
+	{ target: 'aarch64-pc-windows-msvc', outputName: 'dinoco_vscode-win32-arm64.exe', platform: 'windows', xwinCrossCompiler: 'clang' },
 ];
 
 function fail(message) {
@@ -429,7 +430,8 @@ for (const config of selectedTargets) {
 	} else if (strategy === 'podman') {
 		sourcePath = buildLinuxWithPodman(config, workspaceRoot, targetDirectory, workspacePackages);
 	} else {
-		runCommand('cargo', ['xwin', ...buildArgs], { cwd: workspaceRoot, env: xwinEnv });
+		const targetXwinEnv = config.xwinCrossCompiler ? { ...xwinEnv, XWIN_CROSS_COMPILER: config.xwinCrossCompiler } : xwinEnv;
+		runCommand('cargo', ['xwin', ...buildArgs], { cwd: workspaceRoot, env: targetXwinEnv });
 		sourcePath = path.join(targetDirectory, config.target, 'release', sourceName);
 	}
 
