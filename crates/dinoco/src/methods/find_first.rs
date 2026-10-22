@@ -72,7 +72,7 @@ where
     where
         F: FnOnce(M::OrderBy) -> FindOrderBy,
     {
-        self.query.order_by = Some(closure(M::OrderBy::default()));
+        self.query.order_by.push(closure(M::OrderBy::default()));
 
         self
     }

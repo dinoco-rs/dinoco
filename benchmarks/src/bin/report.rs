@@ -147,6 +147,13 @@ fn print_future_sizes(client: &DinocoClient) {
         find_many::<BenchUser>().pluck(|user| user.age.sum()).group_by(|user| user.created_at.day()).execute(client),
     );
     future_size(
+        "find_many::<User>().pluck(age.sum()).group_by(day in zone).execute",
+        find_many::<BenchUser>()
+            .pluck(|user| user.age.sum())
+            .group_by(|user| user.created_at.day().with_timezone(&chrono_tz::America::Sao_Paulo))
+            .execute(client),
+    );
+    future_size(
         "insert_into::<Event>().on_conflict_do_nothing.execute",
         insert_into::<BenchEvent>().values(&item).on_conflict_do_nothing(|event| event.id).execute(client),
     );
@@ -242,6 +249,25 @@ async fn print_operations(fixture: &Fixture) {
         find_many::<BenchUser>()
             .pluck(|user| user.age.sum())
             .group_by(|user| user.created_at.day())
+            .execute(client)
+            .await
+            .unwrap()
+    })
+    .await;
+    measure("pluck age.sum() group_by(created_at.day() in America/Sao_Paulo)", || async move {
+        find_many::<BenchUser>()
+            .pluck(|user| user.age.sum())
+            .group_by(|user| user.created_at.day().with_timezone(&chrono_tz::America::Sao_Paulo))
+            .execute(client)
+            .await
+            .unwrap()
+    })
+    .await;
+    measure("find_many order_by(created_at desc, id asc) take(100)", || async move {
+        find_many::<BenchUser>()
+            .order_by(|user| user.created_at.desc())
+            .order_by(|user| user.id.asc())
+            .take(100)
             .execute(client)
             .await
             .unwrap()
@@ -377,6 +403,7 @@ async fn print_compile() {
                 group: Some(AggregateGroup {
                     key: GroupBy::Date("created_at", DateBucket::Day),
                     order_by: Some(GroupOrder::AggregateDesc),
+                    then_by: None,
                     limit: 10,
                     skip: -1,
                 }),
@@ -453,7 +480,7 @@ fn complex_find() -> FindQuery {
         ],
         limit: 50,
         skip: 10,
-        order_by: Some(FindOrderBy::Desc("created_at")),
+        order_by: FindOrderBy::Desc("created_at").into(),
     }
 }
 

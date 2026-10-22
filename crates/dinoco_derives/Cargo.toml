@@ -1,13 +1,13 @@
 [package]
 name = "dinoco_derives"
-version = "2.1.9"
-edition = "2024"
-rust-version = "1.95"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 description = "Procedural macros for Dinoco models, projections, and type-safe ORM helpers."
-homepage = "https://dinoco.io"
-repository = "https://github.com/dinoco-rs/dinoco"
-readme = "../../crates.md"
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
 keywords = ["orm", "macros", "proc-macro", "derive", "database"]
 
 [lib]
@@ -15,5 +15,5 @@ proc-macro = true
 
 [dependencies]
 proc-macro2 = "1.0.106"
-quote = "1.0.45"
+quote = { workspace = true }
 syn = { version = "2.0.117", features = ["full", "parsing", "extra-traits"] }

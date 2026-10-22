@@ -1,13 +1,13 @@
 [package]
 name = "dinoco"
-version = "2.1.9"
-edition = "2024"
-rust-version = "1.95"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 description = "A modern Rust ORM for schema-driven queries, migrations, and database operations."
-homepage = "https://dinoco.io"
-repository = "https://github.com/dinoco-rs/dinoco"
-readme = "../../crates.md"
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
 keywords = ["orm", "database", "sql", "migrations", "rust"]
 
 [features]
@@ -35,20 +35,19 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [dependencies]
-dinoco_engine = { path = "../dinoco_engine", version = "2.1.9", default-features = false }
-# Exact: generated code calls into this exact version of the runtime.
-dinoco_derives = { path = "../dinoco_derives", version = "=2.1.9" }
-dinoco_cli = { path = "../dinoco_cli", version = "2.1.9", optional = true }
-dinoco_compiler = { path = "../dinoco_compiler", version = "2.1.9", optional = true }
-dinoco_codegen = { path = "../dinoco_codegen", version = "2.1.9", optional = true }
+dinoco_engine = { workspace = true }
+dinoco_derives = { workspace = true }
+dinoco_cli = { workspace = true, optional = true }
+dinoco_compiler = { workspace = true, optional = true }
+dinoco_codegen = { workspace = true, optional = true }
 
 uuid = { version = "1.18.1", features = ["v7"] }
 
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
-tokio = { version = "1.53", features = ["rt", "sync"] }
-async-trait = "0.1.89"
-anyhow = "1.0.103"
-futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+futures-util = { workspace = true }
 thiserror = "2"

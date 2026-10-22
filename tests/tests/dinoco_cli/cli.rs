@@ -909,6 +909,138 @@ model Article {
 }
 "#;
 
+/// `dinoco seed` needs exactly one seed file, declared by the generated
+/// `dinoco/mod.rs`; each missing piece stops it with exit code 2 and the step
+/// that fixes it, before it touches the database or builds anything.
+#[test]
+fn seed_requires_one_seed_declared_in_dinoco_mod() {
+    let project = temp_project("seed-errors");
+    fs::create_dir_all(project.join("dinoco/seed")).expect("dinoco dir");
+    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("schema");
+    let database = project.join("dev.sqlite");
+    let cli = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+            .args(args)
+            .env("DATABASE_URL", database.to_string_lossy().as_ref())
+            .stdin(Stdio::null())
+            .current_dir(&project)
+            .output()
+            .expect("cli should run")
+    };
+    let seed = |expected: &str| {
+        let output = cli(&["seed"]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "stderr: {stderr}");
+        assert!(stderr.contains(expected), "{stderr}");
+        stderr.into_owned()
+    };
+
+    let stderr = seed("There is no seed to run.");
+    assert!(stderr.contains("dinoco/seed.rs"), "{stderr}");
+
+    const SEED: &str = "pub async fn seed(_: &dinoco::DinocoClient) -> dinoco::anyhow::Result<()> { Ok(()) }\n";
+    fs::write(project.join("dinoco/seed.rs"), SEED).expect("seed");
+    fs::write(project.join("dinoco/seed/mod.rs"), SEED).expect("seed directory");
+    seed("The seed is defined twice.");
+
+    fs::remove_file(project.join("dinoco/seed/mod.rs")).expect("remove seed directory");
+    let stderr = seed("dinoco/mod.rs does not declare the seed yet.");
+    assert!(stderr.contains("dinoco models generate"), "{stderr}");
+    assert!(!database.exists(), "nothing connects to the database before the seed can run");
+
+    // `models generate` declares it, for either layout.
+    assert!(cli(&["models", "generate"]).status.success());
+    let module = fs::read_to_string(project.join("dinoco/mod.rs")).expect("dinoco/mod.rs");
+    assert!(module.contains("\npub mod seed;\n"), "{module}");
+    fs::remove_file(project.join("dinoco/seed.rs")).expect("remove seed");
+    fs::write(project.join("dinoco/seed/mod.rs"), SEED).expect("seed directory");
+    assert!(cli(&["models", "generate"]).status.success());
+    let module = fs::read_to_string(project.join("dinoco/mod.rs")).expect("dinoco/mod.rs");
+    assert!(module.contains("\npub mod seed;\n"), "{module}");
+    fs::remove_dir_all(project.join("dinoco/seed")).expect("remove seed directory");
+    assert!(cli(&["models", "generate"]).status.success());
+    let module = fs::read_to_string(project.join("dinoco/mod.rs")).expect("dinoco/mod.rs");
+    assert!(!module.contains("mod seed"), "a removed seed is no longer declared: {module}");
+}
+
+/// The whole flow on a real Cargo project depending on this checkout: the
+/// runner builds into the project's own target directory, so after the
+/// application's build it only compiles the runner itself, and running the
+/// seed again changes nothing.
+#[test]
+#[ignore = "builds a Cargo project and the Dinoco runner (about a minute); run with --ignored"]
+fn seed_runs_through_the_runner_on_the_project_build() {
+    let checkout = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("checkout").to_path_buf();
+    let project = temp_project("seed-runner");
+    fs::create_dir_all(project.join("src")).expect("src");
+    fs::create_dir_all(project.join("dinoco")).expect("dinoco dir");
+    fs::write(
+        project.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"seed-runner\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[workspace]\n\n[dependencies]\ndinoco = {{ path = \"{}/crates/dinoco\" }}\n",
+            checkout.display()
+        ),
+    )
+    .expect("manifest");
+    fs::copy(checkout.join("Cargo.lock"), project.join("Cargo.lock")).expect("lockfile");
+    fs::write(project.join("src/main.rs"), "#[path = \"../dinoco/mod.rs\"]\nmod dinoco;\n\nfn main() {}\n")
+        .expect("main");
+    fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("schema");
+    fs::write(
+        project.join("dinoco/seed.rs"),
+        r#"use super::models::*;
+
+pub async fn seed(client: &dinoco::DinocoClient) -> dinoco::anyhow::Result<()> {
+    dinoco::insert_many::<User>()
+        .values([User { id: "u1".to_string(), email: "ana@dinoco.rs".to_string() }])
+        .on_conflict_do_nothing(|user| user.id)
+        .execute(client)
+        .await?;
+    Ok(())
+}
+"#,
+    )
+    .expect("seed");
+    let database = project.join("dev.sqlite");
+    let cli = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_dinoco_cli"))
+            .args(args)
+            .env("DATABASE_URL", database.to_string_lossy().as_ref())
+            .env("DINOCO_RUNNER_CRATES_PATH", &checkout)
+            .env_remove("CARGO_TARGET_DIR")
+            .stdin(Stdio::null())
+            .current_dir(&project)
+            .output()
+            .expect("cli should run");
+        assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+
+    cli(&["migrate", "generate", "--yes"]);
+    let build = Command::new(env!("CARGO"))
+        .args(["build", "--quiet"])
+        .env_remove("CARGO_TARGET_DIR")
+        .current_dir(&project)
+        .status()
+        .expect("cargo build");
+    assert!(build.success(), "the application compiles with the seed declared");
+
+    let stdout = cli(&["seed"]);
+    assert!(stdout.contains("Seed applied"), "{stdout}");
+    assert!(stdout.contains("dinoco/seed.rs"), "{stdout}");
+    let runner_binary = fs::read_dir(project.join("target/debug"))
+        .expect("the project's target directory")
+        .filter_map(|entry| entry.ok())
+        .any(|entry| entry.file_name().to_string_lossy().starts_with("dinoco-seed-"));
+    assert!(runner_binary, "the runner builds into the project's target directory");
+    assert!(!project.join("dinoco/.runner/target").exists(), "the runner has no target directory of its own");
+
+    cli(&["seed"]);
+    let connection = Connection::open(&database).expect("database");
+    let users: i64 = connection.query_row("SELECT COUNT(*) FROM \"user\"", [], |row| row.get(0)).expect("count");
+    assert_eq!(users, 1, "running the seed again changes nothing");
+}
+
 fn temp_project(name: &str) -> std::path::PathBuf {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
     let path = std::env::temp_dir().join(format!("dinoco-cli-{name}-{}-{nanos}", std::process::id()));

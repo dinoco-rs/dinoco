@@ -61,11 +61,13 @@ where
         }
     }
 
+    /// Orders the rows by a column. Each call adds a column after the ones
+    /// before it, so `.order_by(a).order_by(b)` orders by `a`, then by `b`.
     pub fn order_by<F>(mut self, closure: F) -> Self
     where
         F: FnOnce(M::OrderBy) -> FindOrderBy,
     {
-        self.query.order_by = Some(closure(M::OrderBy::default()));
+        self.query.order_by.push(closure(M::OrderBy::default()));
 
         self
     }
@@ -226,8 +228,9 @@ where
     ///
     /// The groups come ordered by key, ascending. `order_by` on the grouped
     /// field orders them by key, and on the aggregated field by value (ties
-    /// by key); `order_by` on any other field fails the query. `take` and
-    /// `skip` page the groups.
+    /// by key, ascending, unless a later `order_by` on the grouped field picks
+    /// the direction); `order_by` on any other field fails the query. `take`
+    /// and `skip` page the groups.
     pub fn group_by<F, G>(self, callback: F) -> PluckGroup<M, G::Key, T>
     where
         F: FnOnce(M::Where) -> G,
@@ -235,23 +238,23 @@ where
     {
         let key = callback(M::Where::default()).into_group_by();
         let FindQuery { from, conditions, limit, skip, order_by, .. } = self.query;
-        let (order_by, unordered_field) = match order_by {
-            None => (None, None),
-            Some(order_by) => {
-                let (field, descending) = match order_by {
-                    FindOrderBy::Asc(field) => (field, false),
-                    FindOrderBy::Desc(field) => (field, true),
-                };
-                let order = if field == key.field() {
-                    Some(if descending { GroupOrder::KeyDesc } else { GroupOrder::KeyAsc })
-                } else if field == self.aggregate.field {
-                    Some(if descending { GroupOrder::AggregateDesc } else { GroupOrder::AggregateAsc })
-                } else {
-                    None
-                };
-                (order, order.is_none().then_some(field))
+        // Each order names the key or the aggregate; any other field has no
+        // column in the groups to be ordered by.
+        let group_order = |order: &FindOrderBy| {
+            let field = order.field();
+            if field == key.field() {
+                Some(if order.is_descending() { GroupOrder::KeyDesc } else { GroupOrder::KeyAsc })
+            } else if field == self.aggregate.field {
+                Some(if order.is_descending() { GroupOrder::AggregateDesc } else { GroupOrder::AggregateAsc })
+            } else {
+                None
             }
         };
+        let orders = order_by.as_slice();
+        let unordered_field = orders.iter().find(|order| group_order(order).is_none()).map(|order| order.field());
+        let mut group_orders = orders.iter().filter_map(group_order);
+        let order_by = group_orders.next();
+        let then_by = group_orders.next();
         let mut source = FindQuery::new(&[], from, -1, -1);
         source.conditions = conditions;
 
@@ -259,7 +262,7 @@ where
             query: AggregateQuery {
                 source,
                 aggregate: self.aggregate,
-                group: Some(AggregateGroup { key, order_by, limit, skip }),
+                group: Some(AggregateGroup { key, order_by, then_by, limit, skip }),
             },
             unordered_field,
             read_primary: self.read_primary,

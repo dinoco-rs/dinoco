@@ -7,7 +7,7 @@ use mysql_async::{Opts, OptsBuilder, Pool, TxOpts, Value};
 mod compiler;
 
 use super::Decode;
-use super::sql::Dialect;
+use super::sql::{self, Dialect};
 use crate::{
     CompiledTransactionCommand, CompiledTransactionStatement, DinocoAdapter, DinocoMysql, DinocoRowModel, DinocoValue,
     LiveTransactionMessage, RawTransactionOutput, RowDecodeError, TransactionCommandKind,
@@ -68,6 +68,14 @@ impl MySqlAdapter {
         };
 
         Self { url, pool: Arc::new(pool), with_logger: false }
+    }
+
+    /// Whether the server can compute dates in `zone`: see
+    /// [`sql::mysql_time_zone_check`]. Checked on every query that needs it
+    /// (they are rare), so tables loaded or dropped later are noticed.
+    pub(crate) async fn time_zone_supported(&self, zone: chrono_tz::Tz) -> anyhow::Result<bool> {
+        let (sql, params) = sql::mysql_time_zone_check(zone);
+        Ok(self.fetch_count(sql, params).await? != 0)
     }
 
     pub(crate) fn set_logger(&mut self, enabled: bool) {

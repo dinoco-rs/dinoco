@@ -2,10 +2,84 @@ use std::vec;
 
 use crate::DinocoValue;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FindOrderBy {
     Asc(&'static str),
     Desc(&'static str),
+}
+
+impl FindOrderBy {
+    /// The column ordered by.
+    pub const fn field(self) -> &'static str {
+        match self {
+            FindOrderBy::Asc(field) | FindOrderBy::Desc(field) => field,
+        }
+    }
+
+    pub const fn is_descending(self) -> bool {
+        matches!(self, FindOrderBy::Desc(_))
+    }
+}
+
+/// The `ORDER BY` of a query: its columns in priority order, one per
+/// `order_by(...)` call. A single column, the usual case, is stored inline and
+/// allocates nothing; the list is as small as one `FindOrderBy`, so it does
+/// not grow `FindQuery` or the futures that hold one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum OrderByList {
+    #[default]
+    None,
+    One(FindOrderBy),
+    Many(Box<[FindOrderBy]>),
+}
+
+impl OrderByList {
+    /// Adds `order` after the columns already in the list.
+    pub fn push(&mut self, order: FindOrderBy) {
+        *self = match std::mem::take(self) {
+            OrderByList::None => OrderByList::One(order),
+            OrderByList::One(first) => OrderByList::Many(Box::new([first, order])),
+            OrderByList::Many(orders) => {
+                let mut orders = orders.into_vec();
+                orders.push(order);
+                OrderByList::Many(orders.into_boxed_slice())
+            }
+        };
+    }
+
+    pub fn as_slice(&self) -> &[FindOrderBy] {
+        match self {
+            OrderByList::None => &[],
+            OrderByList::One(order) => std::slice::from_ref(order),
+            OrderByList::Many(orders) => orders,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+}
+
+impl From<FindOrderBy> for OrderByList {
+    fn from(order: FindOrderBy) -> Self {
+        OrderByList::One(order)
+    }
+}
+
+impl From<Option<FindOrderBy>> for OrderByList {
+    fn from(order: Option<FindOrderBy>) -> Self {
+        order.map_or(OrderByList::None, OrderByList::One)
+    }
+}
+
+impl FromIterator<FindOrderBy> for OrderByList {
+    fn from_iter<I: IntoIterator<Item = FindOrderBy>>(orders: I) -> Self {
+        let mut list = OrderByList::None;
+        for order in orders {
+            list.push(order);
+        }
+        list
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -18,7 +92,7 @@ pub struct FindQuery {
     pub limit: i32,
     pub skip: i32,
 
-    pub order_by: Option<FindOrderBy>,
+    pub order_by: OrderByList,
     // pub relations: Vec<EntityRelation>,
 }
 
@@ -93,6 +167,9 @@ pub struct AggregateGroup {
     pub key: GroupBy,
     /// `None` orders by the key, ascending.
     pub order_by: Option<GroupOrder>,
+    /// Breaks ties of `order_by` on the aggregate; `None` breaks them by the
+    /// key, ascending.
+    pub then_by: Option<GroupOrder>,
     pub limit: i32,
     pub skip: i32,
 }
@@ -105,13 +182,24 @@ pub enum GroupBy {
     /// The start of the period a date or timestamp column falls in: a date
     /// for days, weeks, months and years, a timestamp for hours and minutes.
     Date(&'static str, DateBucket),
+    /// [`Date`](Self::Date) of a timestamp column read in a time zone instead
+    /// of UTC: the day, week, month or year the instant falls in there.
+    DateIn(&'static str, DateBucket, chrono_tz::Tz),
 }
 
 impl GroupBy {
     /// The column the key is computed from.
     pub fn field(self) -> &'static str {
         match self {
-            GroupBy::Field(field) | GroupBy::Date(field, _) => field,
+            GroupBy::Field(field) | GroupBy::Date(field, _) | GroupBy::DateIn(field, _, _) => field,
+        }
+    }
+
+    /// The time zone the key is computed in, when it is not UTC.
+    pub fn time_zone(self) -> Option<chrono_tz::Tz> {
+        match self {
+            GroupBy::DateIn(_, _, zone) => Some(zone),
+            GroupBy::Field(_) | GroupBy::Date(_, _) => None,
         }
     }
 }
@@ -695,7 +783,7 @@ impl FindQuery {
             conditions: vec![],
             limit,
             skip,
-            order_by: None,
+            order_by: OrderByList::None,
         }
     }
 }

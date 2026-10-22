@@ -70,6 +70,8 @@ on_every_backend!(
     where_complex,
     writes,
     includes_and_relation_counts,
+    chained_includes,
+    chained_include_pages,
     transactions,
     exists_complex_shapes,
     exists_complex_edges,
@@ -572,6 +574,249 @@ async fn includes_and_relation_counts(client: DinocoClient) -> anyhow::Result<()
     let counted =
         count::<Tag>().includes(|tag| tag.transactions().where_(|t| t.receipt.exists())).execute(&client).await?;
     assert_eq!(counted.transactions, Some(2), "t1 is tagged twice and has a receipt");
+
+    Ok(())
+}
+
+/// Each transaction's id with the ids of its loaded items.
+fn items_shape(transactions: &[Transaction]) -> Vec<(String, Vec<String>)> {
+    transactions.iter().map(|t| (t.id.clone(), ids(&t.items, |item| &item.id))).collect()
+}
+
+fn shape_of(rows: &[(&str, &[&str])]) -> Vec<(String, Vec<String>)> {
+    rows.iter()
+        .map(|(id, children)| (id.to_string(), children.iter().map(|child| child.to_string()).collect()))
+        .collect()
+}
+
+/// Relation filters inside chained `.includes(...)`: each level's `where_`
+/// narrows that level's rows by their own relations, through every include
+/// shape (one-to-many, many-to-one, many-to-many, one-to-one, self).
+async fn chained_includes(client: DinocoClient) -> anyhow::Result<()> {
+    let payouts = find_many::<Payout>()
+        // Payouts with a vip transaction: p-pix (t1) and p-boleto (t5).
+        .where_(|p| p.transactions.where_(|t| t.tags.where_(|tag| tag.name.eq("vip"))))
+        .order_by(|p| p.id.asc())
+        .includes(|p| p.bank().where_(|bank| bank.name.eq("Nubank")))
+        .includes(|p| {
+            p.transactions()
+                // Transactions with a gift item: t1, t3 and t5.
+                .where_(|t| t.items.where_(|item| item.note.eq("gift")))
+                .order_by(|t| t.id.asc())
+                .includes(|t| {
+                    t.items()
+                        // Items whose transaction has a receipt: t1's and t3's.
+                        .where_(|item| item.transaction.where_(|tx| tx.receipt.exists()))
+                        .order_by(|item| item.id.asc())
+                        .includes(|item| {
+                            item.transaction()
+                                // Only a promo transaction, with its receipt if its amount is below 200.
+                                .where_(|tx| tx.tags.where_(|tag| tag.name.eq("promo")))
+                                .includes(|tx| tx.receipt().where_(|r| r.transaction.where_(|tx| tx.amount.lt(200))))
+                        })
+                })
+                // Tags that also mark a transaction above 200: promo (t2), never vip.
+                .includes(|t| t.tags().where_(|tag| tag.transactions.where_(|tx| tx.amount.gt(200))))
+        })
+        .execute(&client)
+        .await?;
+
+    assert_eq!(ids(&payouts, |p| &p.id), ["p-boleto", "p-pix"]);
+    let (boleto, pix) = (&payouts[0], &payouts[1]);
+    assert!(boleto.bank.is_none());
+    assert_eq!(pix.bank.as_ref().map(|bank| bank.id.as_str()), Some("nubank"));
+    assert_eq!(items_shape(&boleto.transactions), shape_of(&[("t5", &[])]));
+    assert!(boleto.transactions[0].tags.is_empty());
+    assert_eq!(items_shape(&pix.transactions), shape_of(&[("t1", &["i1", "i2"])]));
+    let t1 = &pix.transactions[0];
+    assert_eq!(ids(&t1.tags, |tag| &tag.id), ["promo"]);
+    for item in &t1.items {
+        let transaction = item.transaction.as_ref().expect("t1 is a promo transaction");
+        assert_eq!(transaction.id, "t1");
+        assert_eq!(transaction.receipt.as_ref().map(|receipt| receipt.number.as_str()), Some("R-001"));
+    }
+
+    // From the many-to-many side, two levels down and back up.
+    let tags = find_many::<Tag>()
+        .order_by(|tag| tag.id.asc())
+        .includes(|tag| {
+            tag.transactions()
+                // Paid out to a bank: t1 and t2 (pix, Nubank), not t5 (boleto).
+                .where_(|t| t.payout.where_(|p| p.bank.exists()))
+                .order_by(|t| t.id.asc())
+                .includes(|t| {
+                    t.payout().includes(|p| {
+                        // The payout's transactions with no refunded item: t1, not t2.
+                        p.transactions()
+                            .where_(|tx| tx.items.every(|item| item.refunded.eq(false)))
+                            .order_by(|tx| tx.id.asc())
+                    })
+                })
+        })
+        .execute(&client)
+        .await?;
+    let loaded = tags
+        .iter()
+        .map(|tag| {
+            let transactions = tag
+                .transactions
+                .iter()
+                .map(|t| {
+                    let payout = t.payout.as_ref().expect("every loaded transaction has a payout");
+                    (t.id.clone(), payout.id.clone(), ids(&payout.transactions, |tx| &tx.id))
+                })
+                .collect::<Vec<_>>();
+            (tag.id.clone(), transactions)
+        })
+        .collect::<Vec<_>>();
+    let pix = |t: &str| (t.to_string(), "p-pix".to_string(), vec!["t1".to_string()]);
+    assert_eq!(loaded, [("promo".to_string(), vec![pix("t1"), pix("t2")]), ("vip".to_string(), vec![pix("t1")])]);
+
+    // Self relations: ana -> bia -> {caio, duda}.
+    let roots = find_many::<Employee>()
+        .where_(|e| e.manager.not_exists())
+        .order_by(|e| e.id.asc())
+        .includes(|e| {
+            e.reports()
+                // Reports who manage someone: bia.
+                .where_(|r| r.reports.exists())
+                .includes(|r| {
+                    r.reports()
+                        // Whose manager's manager is Ana: caio and duda.
+                        .where_(|rr| rr.manager.where_(|m| m.manager.where_(|mm| mm.name.eq("Ana"))))
+                        .order_by(|rr| rr.name.desc())
+                })
+                .includes(|r| r.manager().where_(|m| m.reports.every(|x| x.manager_id.eq("ana"))))
+        })
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&roots, |e| &e.id), ["ana", "eva"]);
+    assert_eq!(ids(&roots[0].reports, |e| &e.id), ["bia"]);
+    let bia = &roots[0].reports[0];
+    assert_eq!(ids(&bia.reports, |e| &e.id), ["duda", "caio"]);
+    assert_eq!(bia.manager.as_ref().map(|m| m.id.as_str()), Some("ana"));
+    assert!(roots[1].reports.is_empty());
+
+    Ok(())
+}
+
+/// `take` and `skip` in chained includes: every level pages its rows per
+/// parent, through every include shape, combined with filters,
+/// `where_complex`, two order columns, `find_first` and transactions.
+async fn chained_include_pages(client: DinocoClient) -> anyhow::Result<()> {
+    let biggest_two = || {
+        find_many::<Payout>().order_by(|p| p.id.asc()).includes(|p| {
+            p.transactions()
+                .order_by(|t| t.amount.desc())
+                .take(2)
+                .includes(|t| t.items().order_by(|item| item.id.desc()).skip(1))
+        })
+    };
+    let payouts = biggest_two().execute(&client).await?;
+    let loaded = payouts.iter().map(|p| (p.id.clone(), items_shape(&p.transactions))).collect::<Vec<_>>();
+    let expected = [
+        ("p-boleto".to_string(), shape_of(&[("t5", &["i5"])])),
+        ("p-pix".to_string(), shape_of(&[("t2", &[]), ("t1", &["i1"])])),
+        ("p-ted".to_string(), shape_of(&[("t3", &[])])),
+    ];
+    assert_eq!(loaded, expected);
+
+    // The same inside a transaction.
+    let in_transaction = transaction(&client, |tx| async move { Ok(biggest_two().execute(tx).await?) }).await?;
+    let loaded = in_transaction.iter().map(|p| (p.id.clone(), items_shape(&p.transactions))).collect::<Vec<_>>();
+    assert_eq!(loaded, expected);
+
+    // Many-to-many, paged at two levels: each tag's second-biggest
+    // transaction, and its first item.
+    let tags = find_many::<Tag>()
+        .order_by(|tag| tag.id.asc())
+        .includes(|tag| {
+            tag.transactions()
+                .order_by(|t| t.amount.desc())
+                .skip(1)
+                .take(1)
+                .includes(|t| t.items().order_by(|item| item.id.asc()).take(1))
+        })
+        .execute(&client)
+        .await?;
+    let loaded = tags.iter().map(|tag| (tag.id.clone(), items_shape(&tag.transactions))).collect::<Vec<_>>();
+    assert_eq!(
+        loaded,
+        [("promo".to_string(), shape_of(&[("t1", &["i1"])])), ("vip".to_string(), shape_of(&[("t5", &["i5"])]))]
+    );
+
+    // `where_complex` with a relation filter, paged, and a filtered page below.
+    let payouts = find_many::<Payout>()
+        .order_by(|p| p.id.asc())
+        .includes(|p| {
+            p.transactions()
+                .where_complex(|t, m| m.or(t.amount.gt(200), t.items.where_(|item| item.refunded.eq(true))))
+                .order_by(|t| t.id.asc())
+                .take(1)
+                .includes(|t| t.tags().where_(|tag| tag.name.eq("promo")).take(1))
+        })
+        .execute(&client)
+        .await?;
+    let loaded = payouts
+        .iter()
+        .map(|p| {
+            let transactions = p.transactions.iter().map(|t| (t.id.clone(), ids(&t.tags, |tag| &tag.id))).collect();
+            (p.id.clone(), transactions)
+        })
+        .collect::<Vec<(String, Vec<(String, Vec<String>)>)>>();
+    assert_eq!(
+        loaded,
+        [
+            ("p-boleto".to_string(), shape_of(&[("t5", &[])])),
+            ("p-pix".to_string(), shape_of(&[("t2", &["promo"])])),
+            ("p-ted".to_string(), shape_of(&[("t3", &[])])),
+        ]
+    );
+
+    // Two order columns decide each window: refunded first, then the highest id.
+    let transactions = find_many::<Transaction>()
+        .where_(|t| t.items.exists())
+        .order_by(|t| t.id.asc())
+        .includes(|t| t.items().order_by(|item| item.refunded.desc()).order_by(|item| item.id.desc()).take(1))
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        items_shape(&transactions),
+        shape_of(&[("t1", &["i2"]), ("t2", &["i3"]), ("t3", &["i4"]), ("t5", &["i5"])])
+    );
+
+    // `take(0)` and a `skip` past every window load nothing, at any depth.
+    for empty in [
+        find_many::<Payout>().includes(|p| p.transactions().take(0)).execute(&client).await?,
+        find_many::<Payout>().includes(|p| p.transactions().skip(5)).execute(&client).await?,
+    ] {
+        assert_eq!(empty.len(), 3);
+        assert!(empty.iter().all(|p| p.transactions.is_empty()));
+    }
+    let nested_empty = find_many::<Payout>()
+        .includes(|p| p.transactions().includes(|t| t.items().skip(2).take(1)))
+        .execute(&client)
+        .await?;
+    assert!(nested_empty.iter().flat_map(|p| &p.transactions).all(|t| t.items.is_empty()));
+
+    // Self relation, paged, with a paged many-to-one below.
+    let bia = find_first::<Employee>()
+        .where_(|e| e.id.eq("bia"))
+        .includes(|e| e.reports().order_by(|r| r.name.asc()).skip(1).includes(|r| r.manager().take(1)))
+        .execute(&client)
+        .await?
+        .expect("bia");
+    assert_eq!(ids(&bia.reports, |e| &e.id), ["duda"]);
+    assert_eq!(bia.reports[0].manager.as_ref().map(|m| m.id.as_str()), Some("bia"));
+
+    // `find_first` pages its includes the same way.
+    let pix = find_first::<Payout>()
+        .where_(|p| p.id.eq("p-pix"))
+        .includes(|p| p.transactions().order_by(|t| t.amount.asc()).skip(1).includes(|t| t.items().take(1)))
+        .execute(&client)
+        .await?
+        .expect("p-pix");
+    assert_eq!(items_shape(&pix.transactions), shape_of(&[("t2", &["i3"])]));
 
     Ok(())
 }

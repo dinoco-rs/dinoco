@@ -49,6 +49,11 @@ enum Commands {
     /// Generate the Rust models from the schema
     #[command(subcommand)]
     Models(ModelsCommands),
+
+    /// Run dinoco/seed.rs (or dinoco/seed/mod.rs) against the database, to
+    /// insert the rows every environment needs
+    #[command(after_help = "Examples:\n  dinoco seed\n  dinoco seed --workspace production")]
+    Seed(WorkspaceArgs),
 }
 
 #[derive(Args)]
@@ -232,6 +237,7 @@ pub async fn run() -> anyhow::Result<()> {
         Commands::Models(ModelsCommands::Generate(args)) => {
             commands::models::generate_with(args.workspace.workspace, args.schema.schema_from).await?
         }
+        Commands::Seed(args) => commands::seed::run(args.workspace).await?,
     }
 
     Ok(())

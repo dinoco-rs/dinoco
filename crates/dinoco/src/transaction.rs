@@ -1,5 +1,5 @@
 use dinoco_engine::{
-    DeleteQuery, DinocoClient, DinocoRowModel, FindQuery, InsertQuery, LookupQuery, TransactionCommand,
+    DeleteQuery, DinocoClient, DinocoRowModel, FindQuery, InsertQuery, LookupQuery, OrderByList, TransactionCommand,
     TransactionExecutor, UpdateQuery,
 };
 use std::sync::Arc;
@@ -345,7 +345,7 @@ impl MutationExecutor for TransactionExecutor {
                     conditions: vec![dinoco_engine::FindWhere::Batch("id", ids)],
                     limit: -1,
                     skip: -1,
-                    order_by: None,
+                    order_by: OrderByList::None,
                 }))
                 .await;
         }

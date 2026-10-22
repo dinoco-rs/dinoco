@@ -1,6 +1,6 @@
 use dinoco_engine::{
     DeleteQuery, DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, FindWhere, InsertQuery,
-    ManyToManyMatch, MySqlAdapter, PostgresAdapter, RelationJoinQuery, RelationJoinTable, RelationMatch,
+    ManyToManyMatch, MySqlAdapter, OrderByList, PostgresAdapter, RelationJoinQuery, RelationJoinTable, RelationMatch,
     RelationOccurrenceQuery, RelationQuantifier, SqliteAdapter, UpdateOperation, UpdateQuery, UpdateSet,
     UpdatedAtField,
 };
@@ -17,7 +17,7 @@ async fn relation_join_compilers_alias_both_sides_of_self_relations() -> anyhow:
             conditions: vec![FindWhere::Eq("label", DinocoValue::String("Root".to_string()))],
             limit: -1,
             skip: -1,
-            order_by: None,
+            order_by: OrderByList::None,
         },
         parent_table: "topic_node",
         child_table: "topic_node",
@@ -49,7 +49,7 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
         conditions: vec![FindWhere::Eq("email", DinocoValue::String("a@dinoco.rs".to_string()))],
         limit: 1,
         skip: 2,
-        order_by: Some(FindOrderBy::Desc("id")),
+        order_by: FindOrderBy::Desc("id").into(),
     });
     assert_eq!(sql, "SELECT id, email FROM \"user\" WHERE email = ? ORDER BY id DESC LIMIT ? OFFSET ?");
     assert_eq!(params.len(), 3);
@@ -106,6 +106,38 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn every_order_by_column_is_written_in_priority_order() -> anyhow::Result<()> {
+    let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let compilers: [&dyn DinocoSqlCompiler; 3] = [&sqlite, &postgres, &mysql];
+    let order_by: OrderByList =
+        [FindOrderBy::Asc("pages"), FindOrderBy::Desc("id"), FindOrderBy::Asc("title")].into_iter().collect();
+    assert_eq!(order_by.as_slice().len(), 3);
+
+    for compiler in compilers {
+        let (sql, _) = compiler.compile_find_query(FindQuery {
+            fields: &["id"],
+            from: "book",
+            conditions: vec![],
+            limit: -1,
+            skip: -1,
+            order_by: order_by.clone(),
+        });
+        assert_eq!(sql, "SELECT id FROM book ORDER BY pages ASC, id DESC, title ASC");
+    }
+
+    let mut single = OrderByList::None;
+    assert!(single.is_empty());
+    single.push(FindOrderBy::Desc("id"));
+    assert_eq!(single, OrderByList::One(FindOrderBy::Desc("id")), "one column is stored inline");
+    single.push(FindOrderBy::Asc("pages"));
+    assert_eq!(single.as_slice(), [FindOrderBy::Desc("id"), FindOrderBy::Asc("pages")]);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn compilers_preserve_nested_boolean_where_groups_and_parameter_order() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
     let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
@@ -135,7 +167,7 @@ async fn compilers_preserve_nested_boolean_where_groups_and_parameter_order() ->
         conditions: vec![condition],
         limit: 1,
         skip: -1,
-        order_by: None,
+        order_by: OrderByList::None,
     };
 
     let (sqlite_sql, sqlite_params) = sqlite.compile_find_query(query(condition()));
@@ -170,7 +202,7 @@ async fn compilers_use_native_fulltext_and_sqlite_like_fallback() -> anyhow::Res
         conditions: vec![FindWhere::FullText(&["body"], DinocoValue::String("dinoco rust".to_string()))],
         limit: -1,
         skip: -1,
-        order_by: None,
+        order_by: OrderByList::None,
     };
 
     let (sqlite_sql, sqlite_params) = sqlite.compile_find_query(query());
@@ -194,7 +226,7 @@ async fn compilers_use_native_fulltext_and_sqlite_like_fallback() -> anyhow::Res
         conditions: vec![FindWhere::FullText(&["title", "body"], DinocoValue::String("dinoco rust".to_string()))],
         limit: -1,
         skip: -1,
-        order_by: None,
+        order_by: OrderByList::None,
     };
     let (sqlite_sql, sqlite_params) = sqlite.compile_find_query(composite_query());
     assert_eq!(sqlite_sql, "SELECT id FROM article WHERE (title LIKE ? OR body LIKE ?)");
@@ -234,7 +266,7 @@ async fn compilers_translate_many_to_many_virtual_key_filters_into_join_table_su
         })],
         limit: -1,
         skip: -1,
-        order_by: None,
+        order_by: OrderByList::None,
     };
     let string = |value: &str| DinocoValue::String(value.to_string());
 
@@ -304,7 +336,7 @@ async fn compilers_translate_many_to_many_virtual_key_filters_into_join_table_su
         ],
         limit: -1,
         skip: -1,
-        order_by: None,
+        order_by: OrderByList::None,
     });
     assert_eq!(
         postgres_combined_sql,
@@ -412,7 +444,7 @@ fn relation(
 }
 
 fn find(from: &'static str, conditions: Vec<FindWhere>) -> FindQuery {
-    FindQuery { fields: &["id"], from, conditions, limit: -1, skip: -1, order_by: None }
+    FindQuery { fields: &["id"], from, conditions, limit: -1, skip: -1, order_by: OrderByList::None }
 }
 
 fn string(value: &str) -> DinocoValue {
@@ -706,7 +738,7 @@ fn mysql_atomic_update(update: UpdateQuery) -> [(String, Vec<DinocoValue>); 2] {
             conditions: reload,
             limit: 1,
             skip: -1,
-            order_by: None,
+            order_by: OrderByList::None,
         }),
     ]
 }

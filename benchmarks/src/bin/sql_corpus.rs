@@ -194,7 +194,7 @@ fn find(
     conditions: Vec<FindWhere>,
     page: (i32, i32, Option<FindOrderBy>),
 ) -> FindQuery {
-    FindQuery { fields, from, conditions, limit: page.0, skip: page.1, order_by: page.2 }
+    FindQuery { fields, from, conditions, limit: page.0, skip: page.1, order_by: page.2.into() }
 }
 
 fn print(dialect: &str, case: &str, (sql, params): (String, Vec<DinocoValue>)) {
@@ -686,6 +686,7 @@ fn aggregate_corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
                 group: Some(AggregateGroup {
                     key: GroupBy::Date("createdAt", DateBucket::Day),
                     order_by: Some(GroupOrder::AggregateDesc),
+                    then_by: None,
                     limit: 10,
                     skip: 5,
                 }),
@@ -710,6 +711,7 @@ fn aggregate_corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
                         group: Some(AggregateGroup {
                             key,
                             order_by,
+                            then_by: None,
                             limit: -1,
                             skip: if index % 2 == 0 { -1 } else { 2 },
                         }),
@@ -767,6 +769,55 @@ fn aggregate_corpus<C: DinocoSqlCompiler>(dialect: &str, compiler: &C) {
             }),
         );
     }
+
+    // Date keys in a time zone, and orders on several columns.
+    for bucket in [DateBucket::Day, DateBucket::Week, DateBucket::Month, DateBucket::Year] {
+        print(
+            dialect,
+            &format!("aggregate by {bucket:?} in America/Sao_Paulo"),
+            compiler.compile_aggregate_query(AggregateQuery {
+                source: find(&[], "order", vec![FindWhere::Eq("user", value("ana"))], (-1, -1, None)),
+                aggregate: AggregateColumn { function: AggregateFunction::SumInteger, field: "amount" },
+                group: Some(AggregateGroup {
+                    key: GroupBy::DateIn("createdAt", bucket, chrono_tz::America::Sao_Paulo),
+                    order_by: Some(GroupOrder::AggregateDesc),
+                    then_by: Some(GroupOrder::KeyDesc),
+                    limit: 10,
+                    skip: -1,
+                }),
+            }),
+        );
+    }
+    let three_columns =
+        || [FindOrderBy::Asc("group"), FindOrderBy::Desc("createdAt"), FindOrderBy::Asc("id")].into_iter().collect();
+    print(
+        dialect,
+        "find order by three columns",
+        compiler.compile_find_query(FindQuery {
+            fields: &["id", "email"],
+            from: "account",
+            conditions: vec![FindWhere::Eq("email", value("a@dinoco.rs"))],
+            limit: 10,
+            skip: 5,
+            order_by: three_columns(),
+        }),
+    );
+    print(
+        dialect,
+        "relation_occurrence paged order by three columns",
+        compiler.compile_relation_occurrence_query(RelationOccurrenceQuery {
+            query: FindQuery {
+                fields: &["id", "title"],
+                from: "post",
+                conditions: vec![],
+                limit: 2,
+                skip: 1,
+                order_by: three_columns(),
+            },
+            child_field: "account_id",
+            key_count: 3,
+        }),
+    );
 }
 
 fn update_sets() -> Vec<UpdateSet> {

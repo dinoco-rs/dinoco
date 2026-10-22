@@ -1,16 +1,16 @@
 [package]
 name = "dinoco_vscode"
-version = "2.1.9"
-edition = "2024"
-rust-version = "1.95"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 description = "Language server components for Dinoco editor and VS Code integration."
-repository = "https://github.com/dinoco-rs/dinoco"
+repository.workspace = true
 
 [dependencies]
-dinoco_compiler = { path = "../crates/dinoco_compiler", version = "2.1.9" }
-dinoco_formatter = { path = "../crates/dinoco_formatter", version = "2.1.9" }
-tokio = { version = "1.50", features = [
+dinoco_compiler = { workspace = true }
+dinoco_formatter = { workspace = true }
+tokio = { workspace = true, features = [
 	"io-std",
 	"macros",
 	"rt-multi-thread",

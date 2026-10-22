@@ -297,7 +297,7 @@ impl SqlWriter {
     fn find_tail(
         &mut self,
         conditions: Vec<FindWhere>,
-        order_by: Option<FindOrderBy>,
+        order_by: &[FindOrderBy],
         limit: i32,
         skip: i32,
         qualifier: Qualifier<'_>,
@@ -357,9 +357,10 @@ impl SqlWriter {
     /// month or year bucket is the `DATE` it starts on; an hour or minute
     /// bucket is the timestamp it starts at.
     fn group_key(&mut self, key: GroupBy) {
-        let (field, bucket) = match key {
+        let (field, bucket, zone) = match key {
             GroupBy::Field(field) => return self.identifier(field),
-            GroupBy::Date(field, bucket) => (field, bucket),
+            GroupBy::Date(field, bucket) => (field, bucket, None),
+            GroupBy::DateIn(field, bucket, zone) => (field, bucket, Some(zone)),
         };
 
         if matches!(bucket, DateBucket::Hour | DateBucket::Minute) {
@@ -398,7 +399,7 @@ impl SqlWriter {
             // read (offset included).
             Dialect::Sqlite => {
                 self.push("date(");
-                self.identifier(field);
+                self.date_source(field, zone);
                 self.push(match bucket {
                     DateBucket::Day | DateBucket::Hour | DateBucket::Minute => ")",
                     // The next Sunday (or the same day), back to its Monday.
@@ -414,54 +415,98 @@ impl SqlWriter {
                     DateBucket::Month => "CAST(date_trunc('month', ",
                     DateBucket::Year => "CAST(date_trunc('year', ",
                 });
-                self.identifier(field);
+                self.date_source(field, zone);
                 self.push(if bucket == DateBucket::Day { " AS DATE)" } else { ") AS DATE)" });
             }
             Dialect::Mysql => match bucket {
                 DateBucket::Day | DateBucket::Hour | DateBucket::Minute => {
                     self.push("DATE(");
-                    self.identifier(field);
+                    self.date_source(field, zone);
                     self.sql.push(')');
                 }
                 DateBucket::Week | DateBucket::Month => {
                     self.push("DATE_SUB(DATE(");
-                    self.identifier(field);
+                    self.date_source(field, zone);
                     self.push(if bucket == DateBucket::Week {
                         "), INTERVAL WEEKDAY("
                     } else {
                         "), INTERVAL DAYOFMONTH("
                     });
-                    self.identifier(field);
+                    self.date_source(field, zone);
                     self.push(if bucket == DateBucket::Week { ") DAY)" } else { ") - 1 DAY)" });
                 }
                 DateBucket::Year => {
                     self.push("MAKEDATE(YEAR(");
-                    self.identifier(field);
+                    self.date_source(field, zone);
                     self.push("), 1)");
                 }
             },
         }
     }
 
-    fn order_by(&mut self, order_by: Option<FindOrderBy>, qualifier: Qualifier<'_>) {
-        if let Some(order_by) = order_by {
-            let (field, direction) = order_by_parts(&order_by);
+    /// A date or timestamp column as the date functions read it: as stored
+    /// (UTC), or as the wall-clock time in `zone`. Zone names come from the
+    /// `chrono_tz` database (letters, digits, `/`, `_`, `+`, `-`), so they are
+    /// written as literals.
+    fn date_source(&mut self, field: &'static str, zone: Option<chrono_tz::Tz>) {
+        let Some(zone) = zone else {
+            return self.identifier(field);
+        };
+
+        match self.dialect {
+            // A function the SQLite adapter registers on every connection,
+            // backed by the same `chrono_tz` database. It returns Unix
+            // seconds, so the `'unixepoch'` modifier follows it: SQLite reads
+            // this source only as the first argument of `date(...)`.
+            Dialect::Sqlite => {
+                self.push("dinoco_local_seconds(");
+                self.identifier(field);
+                self.push(", '");
+                self.push(zone.name());
+                self.push("'), 'unixepoch'");
+                return;
+            }
+            // `DateTime` columns are `TIMESTAMP`s holding UTC.
+            Dialect::Postgres => {
+                self.sql.push('(');
+                self.identifier(field);
+                self.push(" AT TIME ZONE 'UTC' AT TIME ZONE '");
+            }
+            Dialect::Mysql => {
+                self.push("CONVERT_TZ(");
+                self.identifier(field);
+                self.push(", '+00:00', '");
+            }
+        }
+        self.push(zone.name());
+        self.push("')");
+    }
+
+    fn order_by(&mut self, order_by: &[FindOrderBy], qualifier: Qualifier<'_>) {
+        if !order_by.is_empty() {
             self.push(" ORDER BY ");
-            self.field(field, qualifier);
-            self.push(direction);
+            self.order_columns(order_by, qualifier);
+        }
+    }
+
+    /// `<field> ASC, <field> DESC, ...`, in the priority order of `order_by`.
+    fn order_columns(&mut self, order_by: &[FindOrderBy], qualifier: Qualifier<'_>) {
+        for (index, order) in order_by.iter().enumerate() {
+            if index > 0 {
+                self.push(", ");
+            }
+            self.field(order.field(), qualifier);
+            self.push(if order.is_descending() { " DESC" } else { " ASC" });
         }
     }
 
     /// The `ORDER BY` of a `ROW_NUMBER()` window: the requested order, or
     /// `<table>.<fallback>`.
-    fn partition_order(&mut self, table: &str, order_by: Option<FindOrderBy>, fallback: &str) {
-        match order_by {
-            Some(order_by) => {
-                let (field, direction) = order_by_parts(&order_by);
-                self.field(field, Qualifier::Table(table));
-                self.push(direction);
-            }
-            None => self.raw_field(table, fallback),
+    fn partition_order(&mut self, table: &str, order_by: &[FindOrderBy], fallback: &str) {
+        if order_by.is_empty() {
+            self.raw_field(table, fallback);
+        } else {
+            self.order_columns(order_by, Qualifier::Table(table));
         }
     }
 
@@ -886,13 +931,6 @@ impl SqlWriter {
     }
 }
 
-fn order_by_parts(order_by: &FindOrderBy) -> (&'static str, &'static str) {
-    match *order_by {
-        FindOrderBy::Asc(field) => (field, " ASC"),
-        FindOrderBy::Desc(field) => (field, " DESC"),
-    }
-}
-
 fn write_number(sql: &mut String, mut number: usize) {
     let mut digits = [0u8; 20];
     let mut start = digits.len();
@@ -1006,7 +1044,7 @@ pub(crate) fn find(dialect: Dialect, query: FindQuery) -> (String, Vec<DinocoVal
     sql.identifiers(fields);
     sql.push(" FROM ");
     sql.identifier(from);
-    sql.find_tail(conditions, order_by, limit, skip, Qualifier::None);
+    sql.find_tail(conditions, order_by.as_slice(), limit, skip, Qualifier::None);
 
     sql.finish()
 }
@@ -1128,6 +1166,17 @@ pub(crate) fn lookup(dialect: Dialect, query: LookupQuery) -> (String, Vec<Dinoc
     sql.finish()
 }
 
+/// MySQL reads named time zones from its time zone tables, which stay empty
+/// until loaded with `mysql_tzinfo_to_sql`; then `CONVERT_TZ` returns `NULL`.
+/// This reads `1` when it can convert to `zone`.
+pub(crate) fn mysql_time_zone_check(zone: chrono_tz::Tz) -> (String, Vec<DinocoValue>) {
+    let mut sql = String::with_capacity(96);
+    sql.push_str("SELECT CONVERT_TZ('2000-01-01 00:00:00', '+00:00', '");
+    sql.push_str(zone.name());
+    sql.push_str("') IS NOT NULL");
+    (sql, Vec::new())
+}
+
 pub(crate) fn aggregate(dialect: Dialect, query: AggregateQuery) -> (String, Vec<DinocoValue>) {
     let AggregateQuery { source: FindQuery { from, conditions, limit, skip, order_by, .. }, aggregate, group } = query;
     let windowed = limit >= 0 || skip >= 0;
@@ -1154,18 +1203,25 @@ pub(crate) fn aggregate(dialect: Dialect, query: AggregateQuery) -> (String, Vec
         }
         sql.push(" FROM ");
         sql.identifier(from);
-        sql.find_tail(conditions, order_by, limit, skip, Qualifier::None);
+        sql.find_tail(conditions, order_by.as_slice(), limit, skip, Qualifier::None);
         sql.push(") AS __dinoco_rows");
     } else {
         sql.identifier(from);
         sql.where_clause(conditions, Qualifier::None);
     }
 
-    if let Some(AggregateGroup { order_by, limit, skip, .. }) = group {
+    if let Some(AggregateGroup { order_by, then_by, limit, skip, .. }) = group {
         sql.push(" GROUP BY __dinoco_group_key ORDER BY ");
         sql.push(match order_by.unwrap_or(GroupOrder::KeyAsc) {
             GroupOrder::KeyAsc => "__dinoco_group_key ASC",
             GroupOrder::KeyDesc => "__dinoco_group_key DESC",
+            // Keys are unique, so only an order on the aggregate has ties to break.
+            GroupOrder::AggregateAsc if then_by == Some(GroupOrder::KeyDesc) => {
+                "__dinoco_aggregate ASC, __dinoco_group_key DESC"
+            }
+            GroupOrder::AggregateDesc if then_by == Some(GroupOrder::KeyDesc) => {
+                "__dinoco_aggregate DESC, __dinoco_group_key DESC"
+            }
             GroupOrder::AggregateAsc => "__dinoco_aggregate ASC, __dinoco_group_key ASC",
             GroupOrder::AggregateDesc => "__dinoco_aggregate DESC, __dinoco_group_key ASC",
         });
@@ -1277,7 +1333,7 @@ pub(crate) fn relation_batch(dialect: Dialect, query: RelationBatchQuery) -> (St
     if partitioned {
         sql.row_number(
             |sql| sql.raw_field(table, relation_key_field),
-            |sql| sql.partition_order(table, order_by, relation_key_field),
+            |sql| sql.partition_order(table, order_by.as_slice(), relation_key_field),
         );
         sql.push(" FROM ");
         sql.identifier(table);
@@ -1286,7 +1342,7 @@ pub(crate) fn relation_batch(dialect: Dialect, query: RelationBatchQuery) -> (St
     } else {
         sql.push(" FROM ");
         sql.identifier(table);
-        sql.find_tail(conditions, order_by, limit, skip, Qualifier::Table(table));
+        sql.find_tail(conditions, order_by.as_slice(), limit, skip, Qualifier::Table(table));
     }
 
     sql.finish()
@@ -1322,7 +1378,7 @@ pub(crate) fn relation_join(dialect: Dialect, query: RelationJoinQuery) -> (Stri
     if partitioned {
         sql.row_number(
             |sql| sql.raw_field(parent, parent_field),
-            |sql| sql.partition_order(child, order_by.clone(), child_field),
+            |sql| sql.partition_order(child, order_by.as_slice(), child_field),
         );
     }
 
@@ -1350,7 +1406,7 @@ pub(crate) fn relation_join(dialect: Dialect, query: RelationJoinQuery) -> (Stri
     if partitioned {
         sql.close_row_window(skip, limit);
     } else {
-        sql.order_by(order_by, Qualifier::Table(child));
+        sql.order_by(order_by.as_slice(), Qualifier::Table(child));
     }
 
     sql.finish()
@@ -1394,7 +1450,7 @@ pub(crate) fn relation_occurrence_with_keys(
     if partitioned {
         sql.row_number(
             |sql| sql.push(PARENT_KEYS_ORDINAL),
-            |sql| sql.partition_order(from, order_by.clone(), child_field),
+            |sql| sql.partition_order(from, order_by.as_slice(), child_field),
         );
     }
     sql.push(" FROM __dinoco_parent_keys INNER JOIN ");
@@ -1406,7 +1462,7 @@ pub(crate) fn relation_occurrence_with_keys(
     if partitioned {
         sql.close_row_window(skip, limit);
     } else {
-        sql.order_by(order_by, Qualifier::Table(from));
+        sql.order_by(order_by.as_slice(), Qualifier::Table(from));
     }
 
     sql.finish()
@@ -1455,7 +1511,7 @@ pub(crate) fn many_to_many_relation_with_keys(
     if partitioned {
         sql.row_number(
             |sql| sql.push(PARENT_KEYS_ORDINAL),
-            |sql| sql.partition_order(from, order_by.clone(), child_field),
+            |sql| sql.partition_order(from, order_by.as_slice(), child_field),
         );
     }
 
@@ -1485,7 +1541,7 @@ pub(crate) fn many_to_many_relation_with_keys(
     if partitioned {
         sql.close_row_window(skip, limit);
     } else {
-        sql.order_by(order_by, Qualifier::Table(from));
+        sql.order_by(order_by.as_slice(), Qualifier::Table(from));
     }
 
     sql.finish()

@@ -6,7 +6,8 @@ Dinoco is a schema-driven Rust ORM for SQLite, PostgreSQL and MySQL. A `.dinoco`
 
 ```
 .
-├── Cargo.toml              Workspace (resolver 3): every crate below, tests, examples, benchmarks
+├── Cargo.toml              Workspace (resolver 3): every crate below, tests, examples, benchmarks; the shared
+│                           package fields (version, edition, MSRV, license) and dependencies live here
 ├── crates/
 │   ├── dinoco/             Public ORM crate
 │   │   └── src/
@@ -28,8 +29,9 @@ Dinoco is a schema-driven Rust ORM for SQLite, PostgreSQL and MySQL. A `.dinoco`
 │   ├── dinoco_compiler/    `.dinoco` schema parser (parser.rs -> ast.rs) and resolver/validation
 │   ├── dinoco_codegen/     Rust model generation from a compiled schema, transforms
 │   ├── dinoco_formatter/   Canonical formatter for `.dinoco` files
-│   └── dinoco_cli/         `dinoco` CLI: commands/ (init, migrate, models, review), db.rs (migration
-│                           state), ui.rs, prompt.rs, error.rs, runner.rs
+│   └── dinoco_cli/         `dinoco` CLI: commands/ (init, migrate, models, seed, review), db.rs (migration
+│                           state), ui.rs, prompt.rs, error.rs, runner.rs (builds dinoco/.runner/ to run
+│                           the project's transform.rs and seed, in the project's target directory)
 ├── vscode/                 Language server in Rust (server, completion, diagnostics, document,
 │                           workspace) + TypeScript client (src/extension.ts); prebuilt binaries in bin/
 ├── tests/                  `dinoco_tests` crate: integration suites for every crate (see Tests)
@@ -150,7 +152,7 @@ cd ../docs && yarn validate && yarn anchors
 
 ## Conventions
 
-- Rust edition 2024, MSRV 1.95 (`rust-version` in every published crate). Default features of `dinoco`/`dinoco_engine` are `sqlite`, `postgres`, `mysql` and `cli`. Backend-specific code is gated by those features.
+- Rust edition 2024, MSRV 1.95, both in `[workspace.package]` and inherited by every crate. Dependencies used by more than one member are declared once in `[workspace.dependencies]` and pulled with `{ workspace = true }` (adding `features`/`optional` as needed); `dinoco_engine` is declared without default features, so members list the databases they need. Default features of `dinoco`/`dinoco_engine` are `sqlite`, `postgres`, `mysql` and `cli`. Backend-specific code is gated by those features.
 - Code, comments, doc comments and CLI output are in English. Docs are bilingual (`en-us` and `pt-br`).
 - Match the surrounding code: naming, comment density, and doc comments on public API.
 - Using `where_complex` on a builder discards every plain `where_` on that builder. This is documented behavior and must be kept.
@@ -160,8 +162,7 @@ cd ../docs && yarn validate && yarn anchors
 ## Releasing a version
 
 A version bump touches all of these:
-- every crate's `Cargo.toml`, including the `=<X>` pin on `dinoco_derives` in `crates/dinoco/Cargo.toml`;
-- `tests/Cargo.toml` and `vscode/Cargo.toml`;
+- the root `Cargo.toml`: `version` in `[workspace.package]` (every crate inherits it with `version.workspace = true`) and the internal crates in `[workspace.dependencies]`, including the `=<X>` pin on `dinoco_derives`. No member manifest declares a version of its own;
 - `Cargo.lock` (refreshed by any cargo build);
 - `vscode/package.json` and the root entries of `vscode/package-lock.json`;
 - `readme.md` and `crates.md`;

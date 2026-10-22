@@ -8,7 +8,7 @@
 
 use std::future::Future;
 
-use dinoco::{Entity, find_many, insert_many, transaction};
+use dinoco::{Entity, find_first, find_many, insert_many, transaction};
 use dinoco_engine::{
     Backend, DinocoAdapter, DinocoClient, DinocoSqlCompiler, MigrationColumnType, MySqlAdapter, PostgresAdapter,
     SqliteAdapter,
@@ -45,7 +45,7 @@ macro_rules! on_every_backend {
     };
 }
 
-on_every_backend!(rows, plucks_and_includes, aggregates, transactions);
+on_every_backend!(rows, plucks_and_includes, aggregates, transactions, several_order_columns);
 
 #[derive(Debug, Entity)]
 #[dinoco(table_name = "pg_author")]
@@ -77,12 +77,6 @@ async fn seed(client: &DinocoClient) -> anyhow::Result<()> {
         .values((1..=5).map(|index| Author { id: format!("a{index}"), name: format!("Author {index}"), books: vec![] }))
         .execute(client)
         .await?;
-    let book = |id: &str, author_id: &str, pages: i64| Book {
-        id: id.to_string(),
-        author_id: author_id.to_string(),
-        pages,
-        author: None,
-    };
     insert_many::<Book>()
         .values([
             book("b1", "a1", 100),
@@ -162,6 +156,132 @@ async fn transactions(client: DinocoClient) -> anyhow::Result<()> {
     })
     .await?;
     assert_eq!(ids, ["a1"]);
+    Ok(())
+}
+
+fn book(id: &str, author_id: &str, pages: i64) -> Book {
+    Book { id: id.to_string(), author_id: author_id.to_string(), pages, author: None }
+}
+
+fn book_ids(books: &[Book]) -> Vec<&str> {
+    books.iter().map(|book| book.id.as_str()).collect()
+}
+
+/// Each `order_by` adds a column after the previous ones, so ties on the first
+/// are broken by the next, in every builder that orders rows.
+async fn several_order_columns(client: DinocoClient) -> anyhow::Result<()> {
+    // Ties on `pages`: b1 and b7 (100), b2 and b8 (200), b3 and b6 (300).
+    insert_many::<Book>()
+        .values([book("b6", "a2", 300), book("b7", "a2", 100), book("b8", "a1", 200)])
+        .execute(&client)
+        .await?;
+
+    let books = find_many::<Book>().order_by(|x| x.pages.asc()).order_by(|x| x.id.desc()).execute(&client).await?;
+    assert_eq!(book_ids(&books), ["b7", "b1", "b8", "b2", "b6", "b3", "b4", "b5"]);
+    let page = find_many::<Book>()
+        .order_by(|x| x.pages.asc())
+        .order_by(|x| x.id.desc())
+        .skip(1)
+        .take(3)
+        .execute(&client)
+        .await?;
+    assert_eq!(book_ids(&page), ["b1", "b8", "b2"]);
+    let three = find_many::<Book>()
+        .order_by(|x| x.author_id.desc())
+        .order_by(|x| x.pages.desc())
+        .order_by(|x| x.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(book_ids(&three), ["b5", "b4", "b3", "b6", "b7", "b2", "b8", "b1"]);
+
+    let first = find_first::<Book>().order_by(|x| x.pages.asc()).order_by(|x| x.id.desc()).execute(&client).await?;
+    assert_eq!(first.map(|book| book.id), Some("b7".to_string()));
+    let ids = find_many::<Book>()
+        .where_(|x| x.pages.lte(200))
+        .order_by(|x| x.pages.desc())
+        .order_by(|x| x.id.asc())
+        .pluck(|x| x.id)
+        .execute(&client)
+        .await?;
+    assert_eq!(ids, ["b2", "b8", "b1", "b7"]);
+
+    // In an include, plain and paged (the paged one orders its window).
+    let shape = |authors: &[Author]| {
+        authors.iter().map(|author| (author.id.clone(), book_ids(&author.books).join(","))).collect::<Vec<_>>()
+    };
+    let books_of = |author: &str, books: &str| (author.to_string(), books.to_string());
+    let authors = find_many::<Author>()
+        .where_(|x| x.id.batch(["a1", "a2"]))
+        .order_by(|x| x.id.asc())
+        .includes(|x| x.books().order_by(|book| book.pages.asc()).order_by(|book| book.id.desc()))
+        .execute(&client)
+        .await?;
+    assert_eq!(shape(&authors), [books_of("a1", "b1,b8,b2"), books_of("a2", "b7,b6,b3")]);
+    let authors = find_many::<Author>()
+        .where_(|x| x.id.batch(["a1", "a2"]))
+        .order_by(|x| x.id.asc())
+        .includes(|x| x.books().order_by(|book| book.pages.desc()).order_by(|book| book.id.desc()).take(2))
+        .execute(&client)
+        .await?;
+    assert_eq!(shape(&authors), [books_of("a1", "b8,b2"), books_of("a2", "b6,b3")]);
+    let authors = find_many::<Author>()
+        .where_(|x| x.id.batch(["a1", "a2"]))
+        .order_by(|x| x.id.asc())
+        .includes(|x| x.books().order_by(|book| book.pages.asc()).order_by(|book| book.id.asc()).skip(1).take(1))
+        .execute(&client)
+        .await?;
+    assert_eq!(shape(&authors), [books_of("a1", "b2"), books_of("a2", "b3")]);
+
+    // The window an aggregate reads: the 300-page tie decides which book is in.
+    let window_max = |id_descending: bool| {
+        let client = &client;
+        async move {
+            find_many::<Book>()
+                .order_by(|x| x.pages.desc())
+                .order_by(|x| if id_descending { x.id.desc() } else { x.id.asc() })
+                .take(3)
+                .pluck(|x| x.id.max())
+                .execute(client)
+                .await
+        }
+    };
+    assert_eq!(window_max(false).await?, Some("b5".to_string()));
+    assert_eq!(window_max(true).await?, Some("b6".to_string()));
+
+    // Groups: a1 and a2 tie on 3 books. A second `order_by` on the key picks
+    // how that tie breaks (by default, key ascending).
+    let count_by_author = |order: fn(dinoco::FindMany<Book>) -> dinoco::FindMany<Book>| {
+        let client = &client;
+        async move { order(find_many::<Book>()).pluck(|x| x.id.count()).group_by(|x| x.author_id).execute(client).await }
+    };
+    let pairs = |pairs: &[(&str, i64)]| pairs.iter().map(|(key, count)| (key.to_string(), *count)).collect::<Vec<_>>();
+    assert_eq!(count_by_author(|q| q.order_by(|x| x.id.desc())).await?, pairs(&[("a1", 3), ("a2", 3), ("a3", 2)]));
+    assert_eq!(
+        count_by_author(|q| q.order_by(|x| x.id.desc()).order_by(|x| x.author_id.desc())).await?,
+        pairs(&[("a2", 3), ("a1", 3), ("a3", 2)])
+    );
+    assert_eq!(
+        count_by_author(|q| q.order_by(|x| x.id.desc()).order_by(|x| x.author_id.asc())).await?,
+        pairs(&[("a1", 3), ("a2", 3), ("a3", 2)])
+    );
+    assert_eq!(
+        count_by_author(|q| q.order_by(|x| x.author_id.desc()).order_by(|x| x.id.asc())).await?,
+        pairs(&[("a3", 2), ("a2", 3), ("a1", 3)])
+    );
+    let error = count_by_author(|q| q.order_by(|x| x.id.desc()).order_by(|x| x.pages.asc())).await.unwrap_err();
+    assert!(error.to_string().contains("not by `pages`"), "{error}");
+
+    let in_transaction = transaction(&client, |tx| async move {
+        Ok(find_many::<Book>()
+            .order_by(|x| x.pages.asc())
+            .order_by(|x| x.id.desc())
+            .pluck(|x| x.id)
+            .execute(tx)
+            .await?)
+    })
+    .await?;
+    assert_eq!(in_transaction, ["b7", "b1", "b8", "b2", "b6", "b3", "b4", "b5"]);
+
     Ok(())
 }
 

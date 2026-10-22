@@ -4,6 +4,7 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::chrono::{DateTime, NaiveDate, Utc};
+use dinoco_engine::chrono_tz::Tz;
 use dinoco_engine::{AggregateColumn, AggregateFunction, DateBucket, GroupBy, PluckColumn};
 
 use crate::Field;
@@ -48,12 +49,16 @@ impl<T> Aggregate<T> {
 /// timestamp. `K` is the type of the key read back with each group.
 ///
 /// ```ignore
-/// .group_by(|order| order.status)             // Status
-/// .group_by(|order| order.created_at.date())  // NaiveDate
-/// .group_by(|order| order.created_at.hour())  // DateTime<Utc>
+/// .group_by(|order| order.status)                                      // Status
+/// .group_by(|order| order.created_at.date())                           // NaiveDate, in UTC
+/// .group_by(|order| order.created_at.date().with_timezone(&Sao_Paulo)) // NaiveDate, in São Paulo
+/// .group_by(|order| order.created_at.hour())                           // DateTime<Utc>
 /// ```
 pub struct GroupKey<K> {
     key: GroupBy,
+    /// The field holds instants, which fall on different dates in different
+    /// time zones.
+    timestamp: bool,
     marker: PhantomData<fn() -> K>,
 }
 
@@ -66,9 +71,52 @@ impl<K> Clone for GroupKey<K> {
 impl<K> Copy for GroupKey<K> {}
 
 impl<K> GroupKey<K> {
-    const fn bucket(field: &'static str, bucket: DateBucket) -> Self {
-        Self { key: GroupBy::Date(field, bucket), marker: PhantomData }
+    const fn bucket(field: &'static str, bucket: DateBucket, timestamp: bool) -> Self {
+        Self { key: GroupBy::Date(field, bucket), timestamp, marker: PhantomData }
     }
+}
+
+impl<K> GroupKey<K>
+where
+    K: DateKey,
+{
+    /// Computes the date, week, month or year in `zone` instead of UTC: each
+    /// timestamp counts on the day it falls on there, daylight saving time
+    /// included. Zones come from `chrono_tz`, re-exported as
+    /// `dinoco::chrono_tz`.
+    ///
+    /// ```ignore
+    /// use dinoco::chrono_tz::America::Sao_Paulo;
+    ///
+    /// .group_by(|order| order.created_at.date().with_timezone(&Sao_Paulo))
+    /// ```
+    ///
+    /// A `Date` field is already a calendar date, the same in every zone, so
+    /// the zone changes nothing there. PostgreSQL and SQLite need nothing else;
+    /// MySQL reads named zones from its time zone tables, and the query fails
+    /// if they are not loaded.
+    pub fn with_timezone(self, zone: &Tz) -> Self {
+        match self.key {
+            GroupBy::Date(field, bucket) if self.timestamp => {
+                Self { key: GroupBy::DateIn(field, bucket, *zone), ..self }
+            }
+            _ => self,
+        }
+    }
+}
+
+/// The key types of a date bucket (`date`, `week`, `month`, `year`), the ones
+/// [`GroupKey::with_timezone`] applies to.
+pub trait DateKey: sealed::Sealed {}
+
+impl DateKey for NaiveDate {}
+impl DateKey for Option<NaiveDate> {}
+
+mod sealed {
+    pub trait Sealed {}
+
+    impl Sealed for super::NaiveDate {}
+    impl Sealed for Option<super::NaiveDate> {}
 }
 
 /// A group key: a [`Field`] groups by its values, a [`GroupKey`] by the date
@@ -123,7 +171,10 @@ pub trait OrderedValue {
 /// the field is.
 pub trait DateValue {
     #[doc(hidden)]
-    type Bucket: PluckColumn;
+    type Bucket: PluckColumn + DateKey;
+    /// Whether the field holds instants (`DateTime`) rather than dates.
+    #[doc(hidden)]
+    const TIMESTAMP: bool;
 }
 
 macro_rules! numeric_values {
@@ -178,18 +229,22 @@ impl TimestampValue for Option<DateTime<Utc>> {
 
 impl DateValue for DateTime<Utc> {
     type Bucket = NaiveDate;
+    const TIMESTAMP: bool = true;
 }
 
 impl DateValue for Option<DateTime<Utc>> {
     type Bucket = Option<NaiveDate>;
+    const TIMESTAMP: bool = true;
 }
 
 impl DateValue for NaiveDate {
     type Bucket = NaiveDate;
+    const TIMESTAMP: bool = false;
 }
 
 impl DateValue for Option<NaiveDate> {
     type Bucket = Option<NaiveDate>;
+    const TIMESTAMP: bool = false;
 }
 
 impl<T, C> Field<T, C> {
@@ -234,9 +289,11 @@ impl<T, C> Field<T, C>
 where
     T: DateValue,
 {
-    /// Groups by the full date of the value: its day, month and year.
+    /// Groups by the full date of the value: its day, month and year. On a
+    /// timestamp, in UTC unless followed by
+    /// [`.with_timezone(&zone)`](GroupKey::with_timezone).
     pub fn date(self) -> GroupKey<T::Bucket> {
-        GroupKey::bucket(self.field_name(), DateBucket::Day)
+        GroupKey::bucket(self.field_name(), DateBucket::Day, T::TIMESTAMP)
     }
 
     /// The same as [`date`](Self::date).
@@ -246,17 +303,17 @@ where
 
     /// Groups by the Monday of the value's week.
     pub fn week(self) -> GroupKey<T::Bucket> {
-        GroupKey::bucket(self.field_name(), DateBucket::Week)
+        GroupKey::bucket(self.field_name(), DateBucket::Week, T::TIMESTAMP)
     }
 
     /// Groups by the first day of the value's month.
     pub fn month(self) -> GroupKey<T::Bucket> {
-        GroupKey::bucket(self.field_name(), DateBucket::Month)
+        GroupKey::bucket(self.field_name(), DateBucket::Month, T::TIMESTAMP)
     }
 
     /// Groups by January 1st of the value's year.
     pub fn year(self) -> GroupKey<T::Bucket> {
-        GroupKey::bucket(self.field_name(), DateBucket::Year)
+        GroupKey::bucket(self.field_name(), DateBucket::Year, T::TIMESTAMP)
     }
 }
 
@@ -266,12 +323,12 @@ where
 {
     /// Groups by the hour of the value: its date and hour, at minute zero.
     pub fn hour(self) -> GroupKey<T::Truncated> {
-        GroupKey::bucket(self.field_name(), DateBucket::Hour)
+        GroupKey::bucket(self.field_name(), DateBucket::Hour, true)
     }
 
     /// Groups by the minute of the value: its date, hour and minute, at second
     /// zero.
     pub fn minute(self) -> GroupKey<T::Truncated> {
-        GroupKey::bucket(self.field_name(), DateBucket::Minute)
+        GroupKey::bucket(self.field_name(), DateBucket::Minute, true)
     }
 }

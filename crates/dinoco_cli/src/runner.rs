@@ -1,20 +1,24 @@
-//! Runs project-owned Rust (`dinoco/transform.rs`).
+//! Runs project-owned Rust: `dinoco/transform.rs` while generating models,
+//! and the project's seed for `dinoco seed`.
 //!
 //! The CLI is a prebuilt binary and cannot load user code, so it generates a
-//! tiny cargo project in `dinoco/.runner/` that `#[path]`-includes that file
-//! and runs it. Set `DINOCO_RUNNER_CRATES_PATH` to a Dinoco checkout to build
-//! the runner against local crates instead of the published ones.
+//! tiny cargo project in `dinoco/.runner/`, with one binary per task, that
+//! `#[path]`-includes those files and runs them. It builds into the project's
+//! own target directory with a copy of the project's `Cargo.lock`, so it reuses
+//! the dependencies the application already compiled instead of building them
+//! again. Set `DINOCO_RUNNER_CRATES_PATH` to a Dinoco checkout to build the
+//! runner against local crates instead of the published ones.
 
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, bail};
 use dinoco_compiler::Schema;
 
-use crate::schema::SchemaSource;
+use crate::schema::{Database, PostgresConnection, RuntimeConfig, SchemaSource};
 
 const RUNNER_DIR: &str = "dinoco/.runner";
 
@@ -34,7 +38,16 @@ pub fn has_transform() -> bool {
 pub fn generate_models(schema: &Schema, workspace: Option<&str>, source: &SchemaSource) -> anyhow::Result<()> {
     if has_transform() {
         crate::ui::progress("Applying dinoco/transform.rs (building the Dinoco runner)...");
-        run(workspace, source)?;
+        let schema = match source {
+            SchemaSource::Current => String::new(),
+            SchemaSource::Saved(from) => {
+                crate::schema::workspace_schema_dir(from).join("schema.dinoco").to_string_lossy().into_owned()
+            }
+        };
+        run(
+            Task::Models,
+            &[("DINOCO_RUNNER_WORKSPACE", workspace.unwrap_or("").to_string()), ("DINOCO_RUNNER_SCHEMA", schema)],
+        )?;
     } else {
         dinoco_codegen::generate_models_for_workspace(schema, workspace)?;
     }
@@ -54,98 +67,184 @@ pub fn generate_models(schema: &Schema, workspace: Option<&str>, source: &Schema
     Ok(())
 }
 
-/// Builds and runs the runner, which generates the models with
-/// `dinoco/transform.rs` applied.
-fn run(workspace: Option<&str>, source: &SchemaSource) -> anyhow::Result<()> {
-    write_project()?;
-
-    let schema = match source {
-        SchemaSource::Current => String::new(),
-        SchemaSource::Saved(from) => {
-            crate::schema::workspace_schema_dir(from).join("schema.dinoco").to_string_lossy().into_owned()
-        }
+/// Runs the project's seed against the database `config` describes.
+pub fn seed(config: &RuntimeConfig) -> anyhow::Result<()> {
+    let database = match config.database {
+        Database::Postgresql => "postgresql",
+        Database::Mysql => "mysql",
+        Database::Sqlite => "sqlite",
     };
-    let status = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()))
+    let connection = match config.postgres_connection {
+        PostgresConnection::Direct => "direct",
+        PostgresConnection::PgBouncer => "pgbouncer",
+    };
+    run(
+        Task::Seed,
+        &[
+            ("DINOCO_SEED_DATABASE", database.to_string()),
+            ("DINOCO_SEED_CONNECTION", connection.to_string()),
+            ("DINOCO_SEED_DATABASE_URL", config.database_url.clone()),
+        ],
+    )
+}
+
+#[derive(Clone, Copy)]
+enum Task {
+    Models,
+    Seed,
+}
+
+impl Task {
+    fn name(self) -> &'static str {
+        match self {
+            Task::Models => "models",
+            Task::Seed => "seed",
+        }
+    }
+}
+
+/// Builds and runs the runner's binary for `task`, with `envs` set.
+fn run(task: Task, envs: &[(&str, String)]) -> anyhow::Result<()> {
+    let id = project_id();
+    let project = cargo_project();
+    write_project(&id, project.as_ref())?;
+
+    let mut command = Command::new(cargo());
+    command
         .args(["run", "--quiet", "--manifest-path"])
         .arg(format!("{RUNNER_DIR}/Cargo.toml"))
-        .arg("--")
-        .arg("models")
-        .env("DINOCO_RUNNER_WORKSPACE", workspace.unwrap_or(""))
-        .env("DINOCO_RUNNER_SCHEMA", schema)
-        .status()
-        .context("failed to launch `cargo`; dinoco/transform.rs needs a Rust toolchain")?;
-    if !status.success() {
-        bail!("the Dinoco runner failed (see the output above)");
+        .arg("--bin")
+        .arg(format!("dinoco-{}-{id}", task.name()))
+        .envs(envs.iter().map(|(name, value)| (name, value)));
+    if let Some(project) = &project {
+        command.env("CARGO_TARGET_DIR", &project.target_directory);
     }
-
-    Ok(())
-}
-
-fn write_project() -> anyhow::Result<()> {
-    let src = Path::new(RUNNER_DIR).join("src");
-    fs::create_dir_all(&src)?;
-    fs::write(Path::new(RUNNER_DIR).join(".gitignore"), "*\n")?;
-    fs::write(Path::new(RUNNER_DIR).join("Cargo.toml"), render_manifest())?;
-    fs::write(src.join("main.rs"), render_main())?;
-
-    // A local checkout resolves offline against the checkout's own lockfile.
-    if let Ok(root) = std::env::var("DINOCO_RUNNER_CRATES_PATH") {
-        let lock = Path::new(RUNNER_DIR).join("Cargo.lock");
-        let source = Path::new(&root).join("Cargo.lock");
-        if !lock.exists() && source.is_file() {
-            fs::copy(source, lock)?;
+    let status = command.status().context("failed to launch `cargo`; the Dinoco runner needs a Rust toolchain")?;
+    if !status.success() {
+        match task {
+            Task::Models => bail!("the Dinoco runner failed (see the output above)"),
+            Task::Seed => bail!("the seed failed (see the output above)"),
         }
     }
 
     Ok(())
 }
 
-fn render_manifest() -> String {
+fn cargo() -> String {
+    std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string())
+}
+
+/// Identifies the project, so projects that share a target directory never
+/// overwrite each other's runner binaries.
+fn project_id() -> String {
+    let mut hasher = DefaultHasher::new();
+    std::env::current_dir().unwrap_or_default().hash(&mut hasher);
+    format!("{:x}", hasher.finish())
+}
+
+/// The Cargo project the CLI runs in.
+struct CargoProject {
+    /// Where the project builds: `CARGO_TARGET_DIR`, `.cargo/config.toml`, or
+    /// `target/` at its workspace root.
+    target_directory: PathBuf,
+    workspace_root: PathBuf,
+}
+
+/// Asks Cargo about the project in the current directory; `None` outside one,
+/// and then the runner builds in its own directory.
+fn cargo_project() -> Option<CargoProject> {
+    let output = Command::new(cargo()).args(["metadata", "--format-version", "1", "--no-deps"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let path = |key: &str| metadata.get(key)?.as_str().map(PathBuf::from);
+
+    Some(CargoProject { target_directory: path("target_directory")?, workspace_root: path("workspace_root")? })
+}
+
+fn write_project(id: &str, project: Option<&CargoProject>) -> anyhow::Result<()> {
+    let runner = Path::new(RUNNER_DIR);
+    let src = runner.join("src");
+    fs::create_dir_all(&src)?;
+    fs::write(runner.join(".gitignore"), "*\n")?;
+    fs::write(runner.join("Cargo.toml"), render_manifest(id))?;
+    fs::write(src.join("models.rs"), MODELS_MAIN)?;
+    fs::write(src.join("seed.rs"), SEED_MAIN)?;
+    // Left by runners of earlier releases, which had a single binary.
+    let legacy_main = src.join("main.rs");
+    if legacy_main.exists() {
+        fs::remove_file(legacy_main)?;
+    }
+
+    // The lockfile decides the dependency versions. The project's own makes
+    // the runner build the exact versions the application did, so their builds
+    // are reused; it is copied again only when it changes, so the runner does
+    // not resolve its extra dependencies on every run. Without one, a local
+    // checkout resolves offline against its own.
+    let lock = runner.join("Cargo.lock");
+    let project_lock = project.map(|project| project.workspace_root.join("Cargo.lock")).filter(|lock| lock.is_file());
+    if let Some(source) = project_lock {
+        if is_newer(&source, &lock) {
+            fs::copy(source, &lock)?;
+        }
+    } else if let Ok(root) = std::env::var("DINOCO_RUNNER_CRATES_PATH") {
+        let source = Path::new(&root).join("Cargo.lock");
+        if !lock.exists() && source.is_file() {
+            fs::copy(source, &lock)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// `source` was modified after `target`, or `target` does not exist.
+fn is_newer(source: &Path, target: &Path) -> bool {
+    let modified = |path: &Path| fs::metadata(path).and_then(|metadata| metadata.modified()).ok();
+    match (modified(source), modified(target)) {
+        (Some(source), Some(target)) => source > target,
+        _ => true,
+    }
+}
+
+fn render_manifest(id: &str) -> String {
     let version = env!("CARGO_PKG_VERSION");
     let dependency = |name: &str| match std::env::var("DINOCO_RUNNER_CRATES_PATH") {
         Ok(root) => format!("{name} = {{ path = \"{}/crates/{name}\" }}\n", root.trim_end_matches('/')),
         Err(_) => format!("{name} = \"={version}\"\n"),
     };
 
-    // Projects that share a `CARGO_TARGET_DIR` must not overwrite each other's
-    // runner binary, so the package name is unique per project directory.
-    let mut hasher = DefaultHasher::new();
-    std::env::current_dir().unwrap_or_default().hash(&mut hasher);
     let mut manifest = format!(
-        "# Generated by the Dinoco CLI. Safe to delete; it is recreated on demand.\n[package]\nname = \"dinoco-runner-{:x}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[workspace]\n\n[dependencies]\n",
-        hasher.finish()
+        "# Generated by the Dinoco CLI. Safe to delete; it is recreated on demand.\n\
+         [package]\nname = \"dinoco-runner-{id}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\nautobins = false\n\n\
+         [workspace]\n\n\
+         [[bin]]\nname = \"dinoco-models-{id}\"\npath = \"src/models.rs\"\n\n\
+         [[bin]]\nname = \"dinoco-seed-{id}\"\npath = \"src/seed.rs\"\n\n\
+         [dependencies]\n"
     );
     for name in ["dinoco", "dinoco_codegen", "dinoco_compiler"] {
         manifest.push_str(&dependency(name));
     }
     manifest.push_str("anyhow = \"1.0\"\n");
+    manifest.push_str("tokio = { version = \"1\", features = [\"rt-multi-thread\"] }\n");
     manifest
 }
 
-fn render_main() -> String {
-    String::from(
-        r#"// Generated by the Dinoco CLI.
+/// Generates the models with `dinoco/transform.rs` applied. It reads the
+/// schema itself and never includes the models it is about to replace.
+const MODELS_MAIN: &str = r#"// Generated by the Dinoco CLI.
 #![allow(unused)]
 
 #[path = "../../transform.rs"]
 mod transform;
 
 fn main() -> ::anyhow::Result<()> {
-    let task = std::env::args().nth(1).unwrap_or_default();
     let workspace = std::env::var("DINOCO_RUNNER_WORKSPACE").ok().filter(|value| !value.is_empty());
-
-    match task.as_str() {
-        "models" => models(workspace.as_deref()),
-        other => ::anyhow::bail!("unknown runner task `{other}`"),
-    }
-}
-
-fn models(workspace: Option<&str>) -> ::anyhow::Result<()> {
     let compile = |path: &str| {
         ::dinoco_compiler::compile_file(std::path::Path::new(path)).map_err(|error| ::anyhow::anyhow!(error.to_string()))
     };
     let schema = compile("dinoco/schema.dinoco")?;
-    let mut schema = match workspace {
+    let mut schema = match workspace.as_deref() {
         Some(name) => schema.for_workspace(name).ok_or_else(|| ::anyhow::anyhow!("workspace `{name}` was not found"))?,
         None => schema,
     };
@@ -161,9 +260,41 @@ fn models(workspace: Option<&str>) -> ::anyhow::Result<()> {
     }
 
     // The CLI reports the result.
-    ::dinoco_codegen::generate_models_with(&schema, workspace, &transform::transformer())?;
+    ::dinoco_codegen::generate_models_with(&schema, workspace.as_deref(), &transform::transformer())?;
     Ok(())
 }
-"#,
-    )
+"#;
+
+/// Runs `seed` from the project's seed, which the generated `dinoco/mod.rs`
+/// declares, against the database the CLI resolved for the workspace.
+const SEED_MAIN: &str = r#"// Generated by the Dinoco CLI.
+#![allow(unused)]
+
+#[path = "../../mod.rs"]
+mod dinoco;
+
+fn main() -> ::anyhow::Result<()> {
+    let runtime = ::tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+    runtime.block_on(async {
+        let client = connect().await?;
+        dinoco::seed::seed(&client).await?;
+        Ok(())
+    })
 }
+
+async fn connect() -> ::anyhow::Result<::dinoco::DinocoClient> {
+    let var = |name: &str| {
+        std::env::var(name).map_err(|_| ::anyhow::anyhow!("{name} is not set: run the seed with `dinoco seed`"))
+    };
+    let url = var("DINOCO_SEED_DATABASE_URL")?;
+    let backend = match (var("DINOCO_SEED_DATABASE")?.as_str(), var("DINOCO_SEED_CONNECTION")?.as_str()) {
+        ("postgresql", "pgbouncer") => ::dinoco::Backend::PgBouncer(::dinoco::PgBouncerAdapter::new(url).await?),
+        ("postgresql", _) => ::dinoco::Backend::Postgres(::dinoco::PostgresAdapter::direct(url).await?),
+        ("mysql", _) => ::dinoco::Backend::Mysql(::dinoco::MySqlAdapter::new(url)),
+        _ => ::dinoco::Backend::Sqlite(
+            <::dinoco::SqliteAdapter as ::dinoco::DinocoAdapter>::new(url).await.map_err(::anyhow::Error::msg)?,
+        ),
+    };
+    Ok(::dinoco::DinocoClient::new(backend))
+}
+"#;

@@ -78,6 +78,11 @@ impl ReadTarget<'_> {
     where
         M: DinocoRowModel,
     {
+        if let Some(zone) = query.group.and_then(|group| group.key.time_zone()) {
+            // Rare: awaited boxed to keep it out of every aggregate's future.
+            Box::pin(self.require_time_zone(zone)).await?;
+        }
+
         observe_rows(
             self.observer.as_ref(),
             RowCountKind::Find,
@@ -97,6 +102,28 @@ impl ReadTarget<'_> {
             Vec::len,
         )
         .await
+    }
+
+    /// Fails when the database cannot compute dates in `zone`, instead of
+    /// grouping every row under a `NULL` key: MySQL needs its time zone tables.
+    async fn require_time_zone(&self, zone: dinoco_engine::chrono_tz::Tz) -> anyhow::Result<()> {
+        let supported = match &self.source.0 {
+            ReadConnection::Client { client, read_primary } => {
+                client.read_backend(*read_primary).time_zone_supported(zone).await?
+            }
+            ReadConnection::Transaction(executor) if executor.is_mysql() => {
+                executor.execute::<i64>(TransactionCommand::mysql_time_zone_check(zone)).await? != 0
+            }
+            ReadConnection::Transaction(_) => true,
+        };
+        if !supported {
+            anyhow::bail!(
+                "MySQL has no time zone data for `{}`: load its time zone tables with `mysql_tzinfo_to_sql` \
+                 (https://dev.mysql.com/doc/refman/8.4/en/time-zone-support.html)",
+                zone.name()
+            );
+        }
+        Ok(())
     }
 
     /// `keys` are the parent keys, bound before the query's own values.

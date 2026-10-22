@@ -64,7 +64,7 @@ fn complex_find() -> FindQuery {
         ],
         limit: 50,
         skip: 10,
-        order_by: Some(FindOrderBy::Desc("created_at")),
+        order_by: FindOrderBy::Desc("created_at").into(),
     }
 }
 
@@ -166,6 +166,7 @@ fn aggregate_query() -> AggregateQuery {
         group: Some(AggregateGroup {
             key: GroupBy::Date("created_at", DateBucket::Day),
             order_by: Some(GroupOrder::AggregateDesc),
+            then_by: None,
             limit: 10,
             skip: -1,
         }),
@@ -288,6 +289,29 @@ fn bench_backend(c: &mut Criterion, rt: &Runtime, fixture: &Fixture) {
                 .execute(client)
                 .await
                 .expect("pluck group")
+        })
+    });
+
+    group.bench_function("pluck_sum_group_by_day_in_time_zone", |b| {
+        b.to_async(rt).iter(|| async move {
+            find_many::<BenchUser>()
+                .pluck(|user| user.age.sum())
+                .group_by(|user| user.created_at.day().with_timezone(&dinoco_engine::chrono_tz::America::Sao_Paulo))
+                .execute(client)
+                .await
+                .expect("pluck group in zone")
+        })
+    });
+
+    group.bench_function("find_many_two_order_columns", |b| {
+        b.to_async(rt).iter(|| async move {
+            find_many::<BenchUser>()
+                .order_by(|user| user.created_at.desc())
+                .order_by(|user| user.id.asc())
+                .take(100)
+                .execute(client)
+                .await
+                .expect("find many")
         })
     });
 

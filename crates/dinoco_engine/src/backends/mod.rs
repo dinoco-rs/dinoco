@@ -17,8 +17,8 @@ use sql::Dialect;
 
 use crate::{
     AggregateQuery, CountQuery, DeleteQuery, DinocoRowModel, DinocoSqlCompiler, DinocoValue, ExistsQuery, FindQuery,
-    FindWhere, InsertQuery, LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery,
-    RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, UpdateQuery,
+    FindWhere, InsertQuery, LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, OrderByList,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, UpdateQuery,
 };
 
 /// Cloning a backend is cheap: adapters share their connection pool.
@@ -234,6 +234,18 @@ impl Backend {
         self.fetch(sql::many_to_many_relation_with_keys(self.dialect(), query, keys), Decode::Strict).await
     }
 
+    /// Whether the database can compute dates in `zone`. Only MySQL can lack
+    /// it: it reads named time zones from tables that may not be loaded.
+    #[doc(hidden)]
+    pub async fn time_zone_supported(&self, zone: chrono_tz::Tz) -> anyhow::Result<bool> {
+        #[cfg(feature = "mysql")]
+        if let Backend::Mysql(adapter) = self {
+            return adapter.time_zone_supported(zone).await;
+        }
+        let _ = zone;
+        Ok(true)
+    }
+
     /// One row of `M` for the whole aggregate, or one per group.
     pub async fn aggregate<M>(&self, query: AggregateQuery) -> anyhow::Result<Vec<M>>
     where
@@ -296,7 +308,7 @@ impl Backend {
                 conditions: query.conditions.clone(),
                 limit: -1,
                 skip: -1,
-                order_by: None,
+                order_by: OrderByList::None,
             })
             .await?
             .into_iter()
@@ -352,7 +364,7 @@ impl Backend {
                 conditions: query.conditions.clone(),
                 limit: -1,
                 skip: -1,
-                order_by: None,
+                order_by: OrderByList::None,
             })
             .await?;
         query.returning = None;
@@ -394,6 +406,6 @@ fn reload_by_id(fields: &'static [&'static str], table: &'static str, ids: Vec<D
         conditions: vec![FindWhere::Batch("id", ids)],
         limit: -1,
         skip: -1,
-        order_by: None,
+        order_by: OrderByList::None,
     }
 }

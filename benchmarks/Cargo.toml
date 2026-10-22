@@ -1,15 +1,15 @@
 [package]
 name = "dinoco_benchmarks"
 version = "0.0.0"
-edition = "2024"
+edition.workspace = true
 publish = false
 description = "Benchmarks, allocation reports and SQL golden corpus for the Dinoco runtime."
 
 [dependencies]
-anyhow = "1.0"
-dinoco = { path = "../crates/dinoco" }
-dinoco_engine = { path = "../crates/dinoco_engine" }
-tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }
+anyhow = { workspace = true }
+dinoco = { workspace = true }
+dinoco_engine = { workspace = true, features = ["sqlite", "postgres", "mysql"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false, features = ["async_tokio", "cargo_bench_support"] }

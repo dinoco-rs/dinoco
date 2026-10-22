@@ -187,7 +187,7 @@ where
     where
         F: FnOnce(C::OrderBy) -> FindOrderBy,
     {
-        self.query.order_by = Some(closure(C::OrderBy::default()));
+        self.query.order_by.push(closure(C::OrderBy::default()));
 
         self
     }
@@ -266,7 +266,7 @@ where
     where
         F: FnOnce(C::OrderBy) -> FindOrderBy,
     {
-        self.query.order_by = Some(closure(C::OrderBy::default()));
+        self.query.order_by.push(closure(C::OrderBy::default()));
 
         self
     }

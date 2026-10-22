@@ -2,6 +2,7 @@ pub mod init;
 pub mod migrate;
 pub mod models;
 mod review;
+pub mod seed;
 
 /// `dinoco <args>`, with `--workspace` when one is selected: the command line
 /// that hints and next steps tell the user to run.

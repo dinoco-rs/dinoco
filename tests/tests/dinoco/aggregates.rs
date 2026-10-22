@@ -12,6 +12,9 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use dinoco::chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use dinoco::chrono_tz::America::New_York;
+use dinoco::chrono_tz::Asia::Tokyo;
+use dinoco::chrono_tz::Pacific::Kiritimati;
 use dinoco::{
     Aggregate, DinocoEnum, Entity, GroupKey, PluckAggregate, PluckGroup, find_first, find_many, insert_into,
     insert_many, remove_test_methods, setup_test_methods, transaction,
@@ -62,6 +65,7 @@ on_every_backend!(
     windows,
     groups_by_field,
     groups_by_date,
+    groups_by_date_in_time_zone,
     groups_by_optional_keys,
     group_order_and_pages,
     group_order_errors,
@@ -574,6 +578,119 @@ async fn groups_by_date(client: DinocoClient) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `.with_timezone(&zone)` buckets each timestamp by the day it falls on in
+/// that zone. In Tokyo (UTC+9) the late UTC orders move to the next day: o2
+/// to Jan 6, o4 to Monday Jan 12 (a new week) and o6 from 2025 into 2026.
+async fn groups_by_date_in_time_zone(client: DinocoClient) -> anyhow::Result<()> {
+    let sum_by = |key: fn(OrderWhere) -> GroupKey<NaiveDate>| {
+        let client = &client;
+        async move { find_many::<Order>().pluck(|x| x.amount.sum()).group_by(key).execute(client).await }
+    };
+
+    assert_eq!(
+        sum_by(|x| x.created_at.date().with_timezone(&Tokyo)).await?,
+        [
+            (date(2026, 1, 1), 125),
+            (date(2026, 1, 5), 100),
+            (date(2026, 1, 6), 250),
+            (date(2026, 1, 7), 400),
+            (date(2026, 1, 12), 50),
+            (date(2026, 2, 3), 75),
+        ]
+    );
+    assert_eq!(
+        sum_by(|x| x.created_at.day().with_timezone(&Tokyo)).await?,
+        sum_by(|x| x.created_at.date().with_timezone(&Tokyo)).await?
+    );
+    assert_eq!(
+        sum_by(|x| x.created_at.week().with_timezone(&Tokyo)).await?,
+        [(date(2025, 12, 29), 125), (date(2026, 1, 5), 750), (date(2026, 1, 12), 50), (date(2026, 2, 2), 75)]
+    );
+    assert_eq!(
+        sum_by(|x| x.created_at.month().with_timezone(&Tokyo)).await?,
+        [(date(2026, 1, 1), 925), (date(2026, 2, 1), 75)]
+    );
+    assert_eq!(sum_by(|x| x.created_at.year().with_timezone(&Tokyo)).await?, [(date(2026, 1, 1), 1000)]);
+    // Without a zone the buckets stay in UTC.
+    assert_eq!(sum_by(|x| x.created_at.year()).await?, [(date(2025, 1, 1), 125), (date(2026, 1, 1), 875)]);
+
+    // A `Date` is a calendar date already: the zone changes nothing.
+    assert_eq!(sum_by(|x| x.due_on.month().with_timezone(&Tokyo)).await?, sum_by(|x| x.due_on.month()).await?);
+
+    // Daylight saving time: 04:30 UTC is 23:30 the day before in New York's
+    // winter (UTC-5), but 00:30 the same day in its summer (UTC-4).
+    let order = |id: &str, amount: i64, created_at: DateTime<Utc>| Order {
+        id: id.to_string(),
+        customer_id: None,
+        status: AgOrderStatus::Pending,
+        amount,
+        discount: None,
+        ratio: 1.0,
+        tip: None,
+        note: None,
+        created_at,
+        shipped_at: None,
+        due_on: date(2026, 3, 1),
+        customer: None,
+    };
+    insert_many::<Order>()
+        .values([order("o7", 7, at(2026, 1, 15, 4, 30)), order("o8", 8, at(2026, 7, 1, 4, 30))])
+        .execute(&client)
+        .await?;
+    let new_york = find_many::<Order>()
+        .where_(|x| x.id.batch(["o7", "o8"]))
+        .pluck(|x| x.amount.sum())
+        .group_by(|x| x.created_at.date().with_timezone(&New_York))
+        .execute(&client)
+        .await?;
+    assert_eq!(new_york, [(date(2026, 1, 14), 7), (date(2026, 7, 1), 8)]);
+
+    // Optional timestamps: `NULL` stays its own group. Kiritimati is UTC+14,
+    // so every 10:00 UTC shipment lands on the next day.
+    let mut by_shipping_day = find_many::<Order>()
+        .pluck(|x| x.id.count())
+        .group_by(|x| x.shipped_at.date().with_timezone(&Kiritimati))
+        .execute(&client)
+        .await?;
+    by_shipping_day.sort();
+    assert_eq!(
+        by_shipping_day,
+        [(None, 5), (Some(date(2026, 1, 3)), 1), (Some(date(2026, 1, 7)), 1), (Some(date(2026, 1, 9)), 1)]
+    );
+
+    // Filters, order, pages and plain fields combine as usual.
+    let latest_paid = find_many::<Order>()
+        .where_(|x| x.status.eq(AgOrderStatus::Paid))
+        .order_by(|x| x.created_at.desc())
+        .take(2)
+        .pluck(|x| x.amount.sum())
+        .group_by(|x| x.created_at.date().with_timezone(&Tokyo))
+        .execute(&client)
+        .await?;
+    assert_eq!(latest_paid, [(date(2026, 1, 12), 50), (date(2026, 1, 6), 250)]);
+    let biggest_day = find_many::<Order>()
+        .order_by(|x| x.amount.desc())
+        .take(1)
+        .pluck(|x| x.amount.sum())
+        .group_by(|x| x.created_at.date().with_timezone(&Tokyo))
+        .execute(&client)
+        .await?;
+    assert_eq!(biggest_day, [(date(2026, 1, 7), 400)]);
+
+    // Inside a transaction too.
+    let in_transaction = transaction(&client, |tx| async move {
+        Ok(find_many::<Order>()
+            .pluck(|x| x.amount.sum())
+            .group_by(|x| x.created_at.year().with_timezone(&Tokyo))
+            .execute(tx)
+            .await?)
+    })
+    .await?;
+    assert_eq!(in_transaction, [(date(2026, 1, 1), 1015)]);
+
+    Ok(())
+}
+
 async fn groups_by_optional_keys(client: DinocoClient) -> anyhow::Result<()> {
     // `NULL` is a group of its own; where it sorts depends on the database.
     let mut by_customer =
@@ -805,6 +922,9 @@ fn aggregate_types() {
     let _: GroupKey<NaiveDate> = where_.due_on.year();
     let _: GroupKey<NaiveDate> = where_.created_at.date();
     let _: GroupKey<Option<NaiveDate>> = where_.shipped_at.date();
+    let _: GroupKey<NaiveDate> = where_.created_at.date().with_timezone(&Tokyo);
+    let _: GroupKey<Option<NaiveDate>> = where_.shipped_at.week().with_timezone(&Tokyo);
+    let _: GroupKey<NaiveDate> = where_.due_on.year().with_timezone(&Tokyo);
     let _: GroupKey<DateTime<Utc>> = where_.created_at.hour();
     let _: GroupKey<Option<DateTime<Utc>>> = where_.shipped_at.minute();
 

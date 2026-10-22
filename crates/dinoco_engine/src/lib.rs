@@ -37,6 +37,7 @@ pub type DeadpoolPostgresRow = tokio_postgres::Row;
 pub type MysqlRow = mysql_async::Row;
 
 pub use chrono;
+pub use chrono_tz;
 #[cfg(feature = "postgres")]
 pub use deadpool_postgres;
 #[cfg(feature = "mysql")]

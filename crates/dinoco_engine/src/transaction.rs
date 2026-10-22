@@ -7,7 +7,7 @@ use crate::RowDecodeError;
 use crate::backends::sql::{self, Dialect};
 use crate::{
     AggregateQuery, CountQuery, DeleteQuery, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery, InsertQuery,
-    LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, PluckValue, RelationCountQuery,
+    LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, OrderByList, PluckValue, RelationCountQuery,
     RelationOccurrenceQuery, UpdateQuery,
 };
 #[cfg(feature = "mysql")]
@@ -123,6 +123,7 @@ enum TransactionStatement {
     Exists(ExistsQuery),
     RelationCount(RelationCountQuery),
     ManyToManyRelationCount(ManyToManyRelationCountQuery),
+    MysqlTimeZoneCheck(chrono_tz::Tz),
 }
 
 #[derive(Clone, Copy)]
@@ -295,6 +296,13 @@ impl TransactionCommand {
         command
     }
 
+    /// MySQL only: `1` when the server can compute dates in `zone` (see
+    /// `Backend::time_zone_supported`); executes to an `i64`.
+    #[doc(hidden)]
+    pub fn mysql_time_zone_check(zone: chrono_tz::Tz) -> Self {
+        Self::scalar::<i64>(TransactionStatement::MysqlTimeZoneCheck(zone))
+    }
+
     /// Counts the matching rows; executes to an `i64`.
     pub fn count(query: CountQuery) -> Self {
         Self::scalar::<i64>(TransactionStatement::Count(query))
@@ -340,6 +348,7 @@ impl TransactionCommand {
             TransactionStatement::Exists(query) => sql::exists(dialect, query),
             TransactionStatement::RelationCount(query) => sql::relation_count(dialect, query),
             TransactionStatement::ManyToManyRelationCount(query) => sql::many_to_many_relation_count(dialect, query),
+            TransactionStatement::MysqlTimeZoneCheck(zone) => sql::mysql_time_zone_check(zone),
         };
 
         Ok(CompiledTransactionCommand {
@@ -472,7 +481,7 @@ pub(crate) fn mysql_atomic_update_statements(mut update: UpdateQuery) -> anyhow:
                 conditions: find_conditions,
                 limit: 1,
                 skip: -1,
-                order_by: None,
+                order_by: OrderByList::None,
             },
         ),
     ))

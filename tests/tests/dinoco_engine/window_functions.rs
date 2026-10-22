@@ -1,6 +1,6 @@
 use dinoco_engine::{
-    DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindQuery, ManyToManyRelationQuery, MySqlAdapter, PostgresAdapter,
-    RelationBatchQuery, RelationJoinQuery, RelationOccurrenceQuery, SqliteAdapter,
+    DinocoAdapter, DinocoSqlCompiler, DinocoValue, FindOrderBy, FindQuery, ManyToManyRelationQuery, MySqlAdapter,
+    PostgresAdapter, RelationBatchQuery, RelationJoinQuery, RelationOccurrenceQuery, SqliteAdapter,
 };
 
 #[tokio::test]
@@ -151,5 +151,30 @@ async fn postgres_parent_keys_are_cast_to_the_type_of_their_value() -> anyhow::R
     let (sql, _) = mysql
         .compile_relation_occurrence_query_with_keys(query(2), vec![DinocoValue::Integer(1), DinocoValue::Integer(2)]);
     assert!(sql.contains("SELECT 0 AS __dinoco_relation_ordinal, ? AS __dinoco_relation_key UNION ALL SELECT 1, ?)"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn relation_windows_order_by_every_column() -> anyhow::Result<()> {
+    let adapter = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
+    let mut query = FindQuery::new(&["id"], "book", 2, -1);
+    query.order_by.push(FindOrderBy::Desc("pages"));
+    query.order_by.push(FindOrderBy::Asc("id"));
+
+    let (paged, _) = adapter.compile_relation_occurrence_query(RelationOccurrenceQuery {
+        query: query.clone(),
+        child_field: "author_id",
+        key_count: 2,
+    });
+    assert!(paged.contains("ORDER BY book.pages DESC, book.id ASC) AS __dinoco_row_num"), "{paged}");
+
+    query.limit = -1;
+    let (plain, _) = adapter.compile_relation_occurrence_query(RelationOccurrenceQuery {
+        query,
+        child_field: "author_id",
+        key_count: 2,
+    });
+    assert!(plain.ends_with(" ORDER BY book.pages DESC, book.id ASC"), "{plain}");
+
     Ok(())
 }

@@ -38,6 +38,7 @@ impl DinocoAdapter for SqliteAdapter {
                 Box::pin(async move {
                     match connection
                         .interact(|conn| -> rusqlite::Result<bool> {
+                            register_functions(conn)?;
                             conn.pragma_update(None, "foreign_keys", true)?;
                             conn.pragma_query_value(None, "foreign_keys", |row| row.get::<_, bool>(0))
                         })
@@ -94,6 +95,35 @@ fn normalize_sqlite_path(path: String) -> String {
     } else {
         format!("dinoco/{path}")
     }
+}
+
+/// Registers the SQL functions Dinoco's queries call, on every connection.
+///
+/// `dinoco_local_seconds(value, zone)`: the wall-clock time the instant
+/// `value` (a `DateTime`, which SQLite stores as RFC 3339 text) shows in
+/// `zone`, a `chrono_tz` name, as seconds since 1970-01-01 00:00 of that wall
+/// clock, for `date(..., 'unixepoch')` to read. An integer, so no row
+/// allocates. SQLite has no time zone database of its own. `NULL` stays
+/// `NULL`.
+fn register_functions(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    use rusqlite::functions::FunctionFlags;
+
+    conn.create_scalar_function(
+        "dinoco_local_seconds",
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            // Parsed once per statement while the zone argument stays the same.
+            let zone =
+                ctx.get_or_create_aux(1, |zone| -> Result<chrono_tz::Tz, Box<dyn std::error::Error + Send + Sync>> {
+                    Ok(zone.as_str()?.parse::<chrono_tz::Tz>()?)
+                })?;
+            let Some(value) = ctx.get::<Option<chrono::DateTime<chrono::Utc>>>(0)? else {
+                return Ok(None);
+            };
+            Ok(Some(value.with_timezone(&*zone).naive_local().and_utc().timestamp()))
+        },
+    )
 }
 
 impl SqliteAdapter {

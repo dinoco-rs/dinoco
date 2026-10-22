@@ -913,3 +913,37 @@ fn codegen_marks_updated_at_fields_for_the_entity_derive() {
         "{article}"
     );
 }
+
+#[test]
+fn codegen_declares_the_project_seed_and_transform_modules() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        config {
+            database = "sqlite"
+            database_url = env("DATABASE_URL")
+        }
+
+        model Role {
+            id String @id
+        }
+        "#,
+    )
+    .expect("schema");
+    let render = |transform, seed| {
+        dinoco_codegen::render_dinoco_mod_for(&schema, None, dinoco_codegen::ProjectModules { transform, seed })
+    };
+
+    let plain = render(false, false);
+    assert!(!plain.contains("mod seed") && !plain.contains("mod transform"), "{plain}");
+
+    let with_seed = render(false, true);
+    assert!(with_seed.contains("\npub mod seed;\n"), "the seed is public, so `dinoco seed` reaches it: {with_seed}");
+    assert!(!with_seed.contains("mod transform"), "{with_seed}");
+
+    let both = render(true, true);
+    assert!(both.contains("\nmod transform;\n") && both.contains("\npub mod seed;\n"), "{both}");
+
+    // The older entry point still renders without a seed.
+    assert_eq!(dinoco_codegen::render_dinoco_mod_with(&schema, None, true), render(true, false));
+    assert_eq!(dinoco_codegen::SEED_PATHS, ["dinoco/seed.rs", "dinoco/seed/mod.rs"]);
+}
