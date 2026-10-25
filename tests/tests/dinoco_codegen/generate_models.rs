@@ -44,7 +44,7 @@ fn codegen_generates_entities_enums_defaults_and_relations() {
     assert!(models.contains("#[dinoco(primary_key, auto_generate = uuid)]"));
     assert!(models.contains("#[dinoco(fulltext)]\n    pub email: String"));
     assert!(models.contains("pub tokens: Vec<UserToken>"));
-    assert!(models.contains("pub user: Option<User>"));
+    assert!(models.contains("pub user: Option<Box<User>>"));
     assert!(dinoco_mod.starts_with("#![allow(unused)]\n\n"));
     assert!(dinoco_mod.contains("pub mod models;"));
     assert!(!dinoco_mod.contains("MIGRATIONS"), "generated code must not embed a runtime migration table");
@@ -300,7 +300,7 @@ fn codegen_preserves_uuid_and_snowflake_types_on_relation_keys() {
 
     assert!(models.contains("pub organization_id: Option<::dinoco::Uuid>"));
     assert!(models.contains("pub account_id: ::dinoco::Snowflake"));
-    assert!(models.contains("pub account: Option<Account>"));
+    assert!(models.contains("pub account: Option<Box<Account>>"));
     assert!(!models.contains("pub struct AccountSystem"));
     assert!(models.contains("pub account_id: Option<::dinoco::Snowflake>"));
     assert!(models.contains("pub system_id: Option<::dinoco::Snowflake>"));
@@ -586,7 +586,30 @@ fn codegen_marks_optional_enums_as_scalars_and_wraps_optional_defaults() {
 }
 
 #[test]
-fn codegen_boxes_only_optional_singular_self_relations() {
+fn codegen_writes_whole_number_float_defaults_as_float_literals() {
+    let schema = dinoco_compiler::compile(
+        r#"
+        model Rate {
+            id       Integer @id
+            zero     Float   @default(0)
+            negative Float   @default(-2)
+            fraction Float   @default(1.5)
+            count    Integer @default(0)
+        }
+        "#,
+    )
+    .expect("schema");
+    let generated = dinoco_codegen::render_model_file(schema.models().next().expect("model"), &schema);
+
+    // `default = 0` on an `f64` field does not compile.
+    assert!(generated.contains("#[dinoco(default = 0.0)]\n    pub zero: f64"), "{generated}");
+    assert!(generated.contains("#[dinoco(default = -2.0)]\n    pub negative: f64"), "{generated}");
+    assert!(generated.contains("#[dinoco(default = 1.5)]\n    pub fraction: f64"), "{generated}");
+    assert!(generated.contains("#[dinoco(default = 0)]\n    pub count: i64"), "{generated}");
+}
+
+#[test]
+fn codegen_boxes_every_singular_relation() {
     let schema = dinoco_compiler::compile(
         r#"
         model Topic {
@@ -612,8 +635,9 @@ fn codegen_boxes_only_optional_singular_self_relations() {
 
     assert!(topic.contains("pub parent: Option<Box<Topic>>"), "{topic}");
     assert!(topic.contains("pub children: Vec<Topic>"), "{topic}");
-    assert!(audit.contains("pub topic: Option<Topic>"), "{audit}");
-    assert!(!audit.contains("Option<Box<Topic>>"), "{audit}");
+    assert!(topic.contains("pub audits: Vec<TopicAudit>"), "{topic}");
+    // Outside any cycle too: a model never holds another one by value.
+    assert!(audit.contains("pub topic: Option<Box<Topic>>"), "{audit}");
 }
 
 #[test]
@@ -766,7 +790,7 @@ fn codegen_binds_named_and_self_one_to_one_inverses_to_their_owner() {
 }
 
 #[test]
-fn codegen_boxes_singular_relations_that_form_a_cycle_across_models() {
+fn codegen_boxes_singular_relations_in_and_out_of_cycles_across_models() {
     let schema = dinoco_compiler::compile(
         r#"
         model Warehouse {
@@ -801,7 +825,7 @@ fn codegen_boxes_singular_relations_that_form_a_cycle_across_models() {
 
     assert!(warehouse.contains("pub manager: Option<Box<Employee>>"), "{warehouse}");
     assert!(employee.contains("pub warehouse: Option<Box<Warehouse>>"), "{employee}");
-    assert!(truck.contains("pub warehouse: Option<Warehouse>"), "{truck}");
+    assert!(truck.contains("pub warehouse: Option<Box<Warehouse>>"), "{truck}");
 }
 
 #[test]
@@ -946,4 +970,43 @@ fn codegen_declares_the_project_seed_and_transform_modules() {
     // The older entry point still renders without a seed.
     assert_eq!(dinoco_codegen::render_dinoco_mod_with(&schema, None, true), render(true, false));
     assert_eq!(dinoco_codegen::SEED_PATHS, ["dinoco/seed.rs", "dinoco/seed/mod.rs"]);
+}
+
+/// `tests/fixtures/payments/models/` is what codegen writes for the fixture
+/// schema; `future_sizes` and `stack` compile against it. Regenerate it with
+/// `DINOCO_UPDATE_FIXTURES=1 cargo test -p dinoco_tests --test dinoco_codegen_generate_models payments`.
+#[test]
+fn payments_fixture_models_match_codegen() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/payments");
+    let source = std::fs::read_to_string(fixture.join("schema.dinoco")).expect("payments schema");
+    let schema = dinoco_compiler::compile(&source).expect("payments schema compiles");
+
+    let mut files = vec![("mod.rs".to_string(), dinoco_codegen::render_models_mod(&schema))];
+    for model in schema.models() {
+        let mut file = String::new();
+        for (index, ch) in model.name.chars().enumerate() {
+            if ch.is_ascii_uppercase() && index > 0 {
+                file.push('_');
+            }
+            file.push(ch.to_ascii_lowercase());
+        }
+        files.push((format!("{file}.rs"), dinoco_codegen::render_model_file(model, &schema)));
+    }
+
+    let models = fixture.join("models");
+    if std::env::var_os("DINOCO_UPDATE_FIXTURES").is_some() {
+        std::fs::create_dir_all(&models).expect("models directory");
+        for (file, source) in &files {
+            std::fs::write(models.join(file), source).expect("model file");
+        }
+    }
+
+    for (file, expected) in &files {
+        let actual = std::fs::read_to_string(models.join(file)).unwrap_or_default();
+        assert!(
+            actual == *expected,
+            "tests/fixtures/payments/models/{file} is not what codegen writes; regenerate it with \
+             DINOCO_UPDATE_FIXTURES=1 cargo test -p dinoco_tests --test dinoco_codegen_generate_models payments"
+        );
+    }
 }

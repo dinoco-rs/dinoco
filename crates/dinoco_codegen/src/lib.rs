@@ -461,6 +461,11 @@ pub fn render_many_to_many_join_file(join: &ManyToManyJoin, schema: &Schema) -> 
 /// Returns the base Rust type and whether it must be wrapped in `Option`.
 /// Scalar lists come back already wrapped in `Vec`; relation lists keep the
 /// element type (see [`tf::Relation::list`]).
+///
+/// A singular relation is always `Box<T>` (rendered `Option<Box<T>>`): a model
+/// never holds another model by value, so its size stays that of its own
+/// columns plus 8 bytes per relation, whether the relation is loaded or not,
+/// and every future that keeps the model across an `.await` stays small.
 fn rust_type_parts(model: &Model, field: &ModelField, schema: &Schema) -> (String, bool) {
     let relation_default = referenced_relation_default(model, field, schema);
     let base = if has_default_call(field, "uuid") || relation_default == Some("uuid") {
@@ -482,46 +487,12 @@ fn rust_type_parts(model: &Model, field: &ModelField, schema: &Schema) -> (Strin
 
     if field.ty.list {
         if field.is_relation(schema) { (base, false) } else { (format!("Vec<{base}>"), false) }
-    } else if field.ty.optional {
-        if field.is_relation(schema) && singular_relation_cycle(schema, &field.ty.name, &model.name) {
-            (format!("Box<{base}>"), true)
-        } else {
-            (base, true)
-        }
+    } else if field.is_relation(schema) {
+        // The compiler rejects a singular relation that is not optional.
+        (format!("Box<{base}>"), true)
     } else {
-        (base, false)
+        (base, field.ty.optional)
     }
-}
-
-/// Whether `target` reaches `source` through singular (non-list) relation
-/// fields. Such a chain makes the generated structs contain each other by
-/// value (a self relation, both sides of a one-to-one, a cycle of
-/// many-to-ones), so every singular relation inside it is boxed.
-fn singular_relation_cycle(schema: &Schema, target: &str, source: &str) -> bool {
-    let mut visited = BTreeSet::new();
-    let mut pending = vec![target];
-
-    while let Some(current) = pending.pop() {
-        if current == source {
-            return true;
-        }
-        if !visited.insert(current) {
-            continue;
-        }
-        let Some(model) = schema.models().find(|model| model.name == current) else {
-            continue;
-        };
-
-        pending.extend(
-            model
-                .fields
-                .iter()
-                .filter(|field| !field.ty.list && field.is_relation(schema))
-                .map(|field| field.ty.name.as_str()),
-        );
-    }
-
-    false
 }
 
 fn referenced_relation_default<'a>(model: &'a Model, field: &ModelField, schema: &'a Schema) -> Option<&'a str> {
@@ -685,6 +656,13 @@ fn field_attributes(model: &Model, field: &ModelField, schema: &Schema) -> Vec<S
                 } else {
                     dinoco_attrs.push(format!("default = {value}"));
                 }
+            }
+            // A whole number on a `Float` field must be an `f64` literal in Rust.
+            dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value))
+                if field.ty.name == "Float"
+                    && value.trim_start_matches('-').bytes().all(|byte| byte.is_ascii_digit()) =>
+            {
+                dinoco_attrs.push(format!("default = {value}.0"));
             }
             dinoco_compiler::AttributeArgument::Value(AttributeValue::Ident(value)) => {
                 dinoco_attrs.push(format!("default = {value}"));

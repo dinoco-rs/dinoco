@@ -1,9 +1,12 @@
+use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{
     AggregateColumn, AggregateGroup, AggregateQuery, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy,
     FindQuery, FindWhere, GroupOrder, GroupedValue, PluckColumn, PluckValue, WhereComplex,
 };
+use futures_util::TryFutureExt;
+use futures_util::future::Either;
 
 use crate::{
     Aggregate, Field, IncludeLoader, IntoGroupKey, IntoIncludeLoader, ReadExecutor, load_includes, single_field,
@@ -128,16 +131,22 @@ where
         FindManyTransform { inner: self, transform: callback }
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<S>>
+    // Not an `async fn`: the builder is taken apart first, so the future
+    // keeps each part once instead of the builder and a copy of it.
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<S>>>
     where
         C: ReadExecutor,
     {
-        let target = client.read_target(self.read_primary)?;
-        let mut rows = target.query::<S>(self.query).await?;
+        let Self { query, includes, read_primary, .. } = self;
 
-        load_includes(self.includes, &target, &mut rows).await?;
+        async move {
+            let target = client.read_target(read_primary)?;
+            let mut rows = target.query::<S>(query).await?;
 
-        Ok(rows)
+            load_includes(includes, &target, &mut rows).await?;
+
+            Ok(rows)
+        }
     }
 }
 
@@ -158,13 +167,18 @@ where
         self
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<T>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<T>>>
     where
         C: ReadExecutor,
     {
-        let rows = client.read_target(self.read_primary)?.query::<PluckValue<T>>(self.query).await?;
+        let Self { query, read_primary, .. } = self;
 
-        Ok(rows.into_iter().map(|value| value.0).collect())
+        async move {
+            let target = client.read_target(read_primary)?;
+            let rows = target.query::<PluckValue<T>>(query).await?;
+
+            Ok(rows.into_iter().map(|value| value.0).collect())
+        }
     }
 }
 
@@ -276,16 +290,21 @@ where
         self
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<T>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<T>>
     where
         C: ReadExecutor,
     {
         let query = AggregateQuery { source: self.query, aggregate: self.aggregate, group: None };
-        let mut rows = client.read_target(self.read_primary)?.aggregate::<PluckValue<T>>(query).await?;
+        let read_primary = self.read_primary;
 
-        match rows.pop() {
-            Some(PluckValue(value)) => Ok(value),
-            None => anyhow::bail!("the aggregate over `{}` returned no row", M::TABLE_NAME),
+        async move {
+            let target = client.read_target(read_primary)?;
+            let mut rows = target.aggregate::<PluckValue<T>>(query).await?;
+
+            match rows.pop() {
+                Some(PluckValue(value)) => Ok(value),
+                None => anyhow::bail!("the aggregate over `{}` returned no row", M::TABLE_NAME),
+            }
         }
     }
 }
@@ -313,20 +332,25 @@ where
         self
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<(K, T)>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<(K, T)>>>
     where
         C: ReadExecutor,
     {
-        if let Some(field) = self.unordered_field {
-            anyhow::bail!(
+        let Self { query, unordered_field, read_primary, .. } = self;
+
+        if let Some(field) = unordered_field {
+            return Either::Left(std::future::ready(Err(anyhow::anyhow!(
                 "a grouped pluck on `{}` can only be ordered by the grouped or the aggregated field, not by `{field}`",
                 M::TABLE_NAME
-            );
+            ))));
         }
 
-        let rows = client.read_target(self.read_primary)?.aggregate::<GroupedValue<K, T>>(self.query).await?;
+        Either::Right(async move {
+            let target = client.read_target(read_primary)?;
+            let rows = target.aggregate::<GroupedValue<K, T>>(query).await?;
 
-        Ok(rows.into_iter().map(|GroupedValue(key, value)| (key, value)).collect())
+            Ok(rows.into_iter().map(|GroupedValue(key, value)| (key, value)).collect())
+        })
     }
 }
 
@@ -341,14 +365,13 @@ where
     S: DinocoRowModel,
     F: FnMut(S) -> R,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<R>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<R>>>
     where
         C: ReadExecutor,
     {
-        let rows = self.inner.execute(client).await?;
-        let mut transform = self.transform;
+        let transform = self.transform;
 
-        Ok(rows.into_iter().map(&mut transform).collect())
+        self.inner.execute(client).map_ok(|rows| rows.into_iter().map(transform).collect())
     }
 }
 

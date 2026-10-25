@@ -1,6 +1,8 @@
+use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, PluckValue};
+use futures_util::TryFutureExt;
 
 use crate::{DeleteError, Field, MutationExecutor, single_field};
 pub struct DeleteNeedsWhere;
@@ -142,13 +144,12 @@ where
     S: DinocoProjection<M> + DinocoRowModel,
     F: FnMut(S) -> R,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<R>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<R>>>
     where
         C: MutationExecutor,
     {
-        let rows = self.inner.execute(client).await?;
-        let mut transform = self.transform;
+        let transform = self.transform;
 
-        Ok(rows.into_iter().map(&mut transform).collect())
+        self.inner.execute(client).map_ok(|rows| rows.into_iter().map(transform).collect())
     }
 }

@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{DinocoEntity, ExistsQuery, FindWhere, WhereComplex};
@@ -42,13 +43,17 @@ where
         self
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<bool>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<bool>>
     where
         C: ReadExecutor,
     {
         let query = ExistsQuery { table: M::TABLE_NAME, conditions: self.conditions };
+        let read_primary = self.read_primary;
 
-        client.read_source(self.read_primary)?.exists(query).await
+        async move {
+            let exists = client.read_source(read_primary)?.exists(query);
+            exists.await
+        }
     }
 }
 

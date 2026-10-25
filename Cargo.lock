@@ -982,7 +982,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1052,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_cli"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1072,7 +1072,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_codegen"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "anyhow",
  "dinoco_compiler",
@@ -1081,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_compiler"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "pest",
  "pest_derive",
@@ -1089,7 +1089,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_derives"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1098,7 +1098,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_engine"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1121,14 +1121,14 @@ dependencies = [
 
 [[package]]
 name = "dinoco_formatter"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "dinoco_compiler",
 ]
 
 [[package]]
 name = "dinoco_tests"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "anyhow",
  "dinoco",
@@ -1145,7 +1145,7 @@ dependencies = [
 
 [[package]]
 name = "dinoco_vscode"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "dinoco_compiler",
  "dinoco_formatter",

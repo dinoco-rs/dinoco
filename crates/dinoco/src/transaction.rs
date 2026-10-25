@@ -2,6 +2,8 @@ use dinoco_engine::{
     DeleteQuery, DinocoClient, DinocoRowModel, FindQuery, InsertQuery, LookupQuery, OrderByList, TransactionCommand,
     TransactionExecutor, UpdateQuery,
 };
+use futures_util::future::Either;
+use futures_util::{FutureExt, TryFutureExt};
 use std::sync::Arc;
 
 use crate::{Observer, RowCountKind, TransactionError, observe_insert, observe_rows};
@@ -537,11 +539,9 @@ where
     F: FnOnce(TransactionContext) -> Fut,
     Fut: std::future::Future<Output = anyhow::Result<T>>,
 {
-    run_transaction(client, |tx| {
-        let operation = callback(tx);
-        async move { operation.await.map_err(TransactionError::from_operation) }
-    })
-    .await
+    // `map_err` keeps the closure's future once; an `async move` block
+    // awaiting it would hold it twice (captured, then being awaited).
+    run_transaction(client, |tx| callback(tx).map_err(TransactionError::from_operation)).await
 }
 
 /// Like [`transaction`], with a custom error type `E`.
@@ -576,20 +576,39 @@ where
         observer: Observer::for_client(client).map(Observer::in_transaction),
     };
     let operation = ACTIVE_TRANSACTION.scope(active, callback(TransactionContext)).await;
+
+    finish_transaction(executor, operation).await
+}
+
+/// Commits after `Ok` and rolls back after `Err`.
+///
+/// Not an `async fn` matching on the closure's result: that result would stay
+/// in the transaction's future next to the value moved out of it, and being
+/// live across both the commit and the rollback, it would take room in every
+/// state of that future, including while the closure runs. Here it moves into
+/// the commit or rollback future once.
+fn finish_transaction<T, E>(
+    executor: TransactionExecutor,
+    operation: Result<T, TransactionError<E>>,
+) -> impl std::future::Future<Output = Result<T, TransactionError<E>>> {
     match operation {
-        Ok(value) => {
+        Ok(value) => Either::Left(
             executor
                 .commit()
-                .await
-                .map_err(|error| TransactionError::Commit(dinoco_engine::DatabaseError::new(error)))?;
-            Ok(value)
-        }
-        Err(source) => match executor.rollback().await {
-            Ok(()) => Err(source),
-            Err(error) => Err(TransactionError::RollbackFailed {
-                source: Box::new(source),
-                rollback_error: dinoco_engine::DatabaseError::new(error),
-            }),
-        },
+                .map_err(|error| TransactionError::Commit(dinoco_engine::DatabaseError::new(error)))
+                .map_ok(move |()| value),
+        ),
+        Err(source) => Either::Right(
+            executor
+                .rollback()
+                .map(move |rolled_back| match rolled_back {
+                    Ok(()) => source,
+                    Err(error) => TransactionError::RollbackFailed {
+                        source: Box::new(source),
+                        rollback_error: dinoco_engine::DatabaseError::new(error),
+                    },
+                })
+                .map(Err),
+        ),
     }
 }

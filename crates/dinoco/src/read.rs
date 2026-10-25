@@ -47,8 +47,12 @@ enum ReadConnection<'a> {
     Transaction(TransactionExecutor),
 }
 
+// Each read returns the future of its round trip (wrapped to report it to a
+// hook, if any) instead of awaiting it, so the caller's future holds that one
+// directly: an `async fn` here would keep another copy of the query beside it.
+// The connection is picked as each read is built.
 impl ReadTarget<'_> {
-    pub(crate) async fn query<M>(&self, query: FindQuery) -> anyhow::Result<Vec<M>>
+    pub(crate) fn query<M>(&self, query: FindQuery) -> impl Future<Output = anyhow::Result<Vec<M>>> + Send
     where
         M: DinocoRowModel,
     {
@@ -58,50 +62,50 @@ impl ReadTarget<'_> {
             query.from,
             query,
             |compiler, query| compiler.compile_find_query(query),
-            |query| async move {
-                match &self.source.0 {
-                    ReadConnection::Client { client, read_primary } => {
-                        client.read_backend(*read_primary).query::<M>(query).await
-                    }
-                    ReadConnection::Transaction(executor) => {
-                        Box::pin(executor.execute(TransactionCommand::find_many::<M>(query))).await
-                    }
+            |query| match &self.source.0 {
+                ReadConnection::Client { client, read_primary } => {
+                    Either::Left(client.read_backend(*read_primary).query::<M>(query))
+                }
+                ReadConnection::Transaction(executor) => {
+                    Either::Right(Box::pin(executor.execute(TransactionCommand::find_many::<M>(query))))
                 }
             },
             Vec::len,
         )
-        .await
     }
 
     /// Reported to `on_find` like any other read, with one row per group.
-    pub(crate) async fn aggregate<M>(&self, query: AggregateQuery) -> anyhow::Result<Vec<M>>
+    pub(crate) fn aggregate<M>(&self, query: AggregateQuery) -> impl Future<Output = anyhow::Result<Vec<M>>> + Send
     where
         M: DinocoRowModel,
     {
-        if let Some(zone) = query.group.and_then(|group| group.key.time_zone()) {
-            // Rare: awaited boxed to keep it out of every aggregate's future.
-            Box::pin(self.require_time_zone(zone)).await?;
-        }
-
-        observe_rows(
+        let zone = query.group.and_then(|group| group.key.time_zone());
+        let rows = observe_rows(
             self.observer.as_ref(),
             RowCountKind::Find,
             query.source.from,
             query,
             |compiler, query| compiler.compile_aggregate_query(query),
-            |query| async move {
-                match &self.source.0 {
-                    ReadConnection::Client { client, read_primary } => {
-                        client.read_backend(*read_primary).aggregate::<M>(query).await
-                    }
-                    ReadConnection::Transaction(executor) => {
-                        Box::pin(executor.execute(TransactionCommand::aggregate::<M>(query))).await
-                    }
+            |query| match &self.source.0 {
+                ReadConnection::Client { client, read_primary } => {
+                    Either::Left(client.read_backend(*read_primary).aggregate::<M>(query))
+                }
+                ReadConnection::Transaction(executor) => {
+                    Either::Right(Box::pin(executor.execute(TransactionCommand::aggregate::<M>(query))))
                 }
             },
             Vec::len,
-        )
-        .await
+        );
+
+        match zone {
+            None => Either::Left(rows),
+            // Rare: boxed, time zone check included, to keep it out of every
+            // aggregate's future.
+            Some(zone) => Either::Right(Box::pin(async move {
+                self.require_time_zone(zone).await?;
+                rows.await
+            })),
+        }
     }
 
     /// Fails when the database cannot compute dates in `zone`, instead of
@@ -127,11 +131,11 @@ impl ReadTarget<'_> {
     }
 
     /// `keys` are the parent keys, bound before the query's own values.
-    pub(crate) async fn query_relation_occurrences<M>(
+    pub(crate) fn query_relation_occurrences<M>(
         &self,
         query: RelationOccurrenceQuery,
         keys: Vec<DinocoValue>,
-    ) -> anyhow::Result<Vec<M>>
+    ) -> impl Future<Output = anyhow::Result<Vec<M>>> + Send
     where
         M: DinocoRowModel,
     {
@@ -141,27 +145,24 @@ impl ReadTarget<'_> {
             query.query.from,
             (query, keys),
             |compiler, (query, keys)| compiler.compile_relation_occurrence_query_with_keys(query, keys),
-            |(query, keys)| async move {
-                match &self.source.0 {
-                    ReadConnection::Client { client, read_primary } => {
-                        client.read_backend(*read_primary).query_relation_occurrences_with_keys::<M>(query, keys).await
-                    }
-                    ReadConnection::Transaction(executor) => {
-                        Box::pin(executor.execute(TransactionCommand::relation_occurrences::<M>(query, keys))).await
-                    }
-                }
+            |(query, keys)| match &self.source.0 {
+                ReadConnection::Client { client, read_primary } => Either::Left(
+                    client.read_backend(*read_primary).query_relation_occurrences_with_keys::<M>(query, keys),
+                ),
+                ReadConnection::Transaction(executor) => Either::Right(Box::pin(
+                    executor.execute(TransactionCommand::relation_occurrences::<M>(query, keys)),
+                )),
             },
             Vec::len,
         )
-        .await
     }
 
     /// `keys` are the parent keys, bound before the query's own values.
-    pub(crate) async fn query_many_to_many_relation<M>(
+    pub(crate) fn query_many_to_many_relation<M>(
         &self,
         query: ManyToManyRelationQuery,
         keys: Vec<DinocoValue>,
-    ) -> anyhow::Result<Vec<M>>
+    ) -> impl Future<Output = anyhow::Result<Vec<M>>> + Send
     where
         M: DinocoRowModel,
     {
@@ -175,19 +176,16 @@ impl ReadTarget<'_> {
                 keys.extend(params);
                 (sql, keys)
             },
-            |(query, keys)| async move {
-                match &self.source.0 {
-                    ReadConnection::Client { client, read_primary } => {
-                        client.read_backend(*read_primary).query_many_to_many_relation_with_keys::<M>(query, keys).await
-                    }
-                    ReadConnection::Transaction(executor) => {
-                        Box::pin(executor.execute(TransactionCommand::many_to_many_relation::<M>(query, keys))).await
-                    }
-                }
+            |(query, keys)| match &self.source.0 {
+                ReadConnection::Client { client, read_primary } => Either::Left(
+                    client.read_backend(*read_primary).query_many_to_many_relation_with_keys::<M>(query, keys),
+                ),
+                ReadConnection::Transaction(executor) => Either::Right(Box::pin(
+                    executor.execute(TransactionCommand::many_to_many_relation::<M>(query, keys)),
+                )),
             },
             Vec::len,
         )
-        .await
     }
 }
 

@@ -1,8 +1,10 @@
+use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{
     DinocoEntity, DinocoProjection, DinocoRowModel, FindQuery, FindWhere, PluckValue, UpdateQuery, UpdateSet,
 };
+use futures_util::TryFutureExt;
 
 use crate::{DinocoRelationValue, Field, IntoUpdateSets, load_update_matches, single_field};
 use crate::{MutationExecutor, UpdateError, prepare_scalar_update};
@@ -68,19 +70,25 @@ where
         UpdateManyPluck { sets: self.sets, conditions: self.conditions, field, marker: PhantomData }
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<()>
+    // Not an `async fn`: the builder is taken apart first, so the future
+    // keeps each part once instead of the builder and a copy of it.
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<()>>
     where
         M: DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
         C: MutationExecutor,
     {
-        let sets = prepare_scalar_update::<M, C>(&self.conditions, self.sets, &client).await?;
+        let Self { sets, conditions, .. } = self;
 
-        if !sets.is_empty() {
-            let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: None };
-            client.update(query).await.map_err(UpdateError::from_database)?;
+        async move {
+            let sets = prepare_scalar_update::<M, C>(&conditions, sets, &client).await?;
+
+            if !sets.is_empty() {
+                let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions, returning: None };
+                client.update(query).await.map_err(UpdateError::from_database)?;
+            }
+
+            Ok(())
         }
-
-        Ok(())
     }
 }
 
@@ -100,21 +108,25 @@ where
         UpdateManyReturningTransform { inner: self, transform: callback }
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<S>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<S>>>
     where
         C: MutationExecutor,
     {
-        let sets = prepare_scalar_update::<M, C>(&self.conditions, self.sets, &client).await?;
+        let Self { sets, conditions, .. } = self;
 
-        if sets.is_empty() {
-            return load_update_matches::<M, S, C>(&self.conditions, &client)
-                .await
-                .map_err(|error| UpdateError::from_database(error).into());
+        async move {
+            let sets = prepare_scalar_update::<M, C>(&conditions, sets, &client).await?;
+
+            if sets.is_empty() {
+                return load_update_matches::<M, S, C>(&conditions, &client)
+                    .await
+                    .map_err(|error| UpdateError::from_database(error).into());
+            }
+
+            let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions, returning: Some(S::FIELDS) };
+
+            client.update_returning::<S>(query).await.map_err(|error| UpdateError::from_database(error).into())
         }
-
-        let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: Some(S::FIELDS) };
-
-        client.update_returning::<S>(query).await.map_err(|error| UpdateError::from_database(error).into())
     }
 }
 
@@ -130,26 +142,29 @@ where
     M: DinocoEntity + DinocoProjection<M> + DinocoRowModel + DinocoRelationValue,
     PluckValue<T>: DinocoRowModel,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<T>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<T>>>
     where
         C: MutationExecutor,
     {
         let fields = single_field(self.field, <M as DinocoEntity>::FIELDS);
-        let sets = prepare_scalar_update::<M, C>(&self.conditions, self.sets, &client).await?;
+        let Self { sets, conditions, .. } = self;
 
-        let rows = if sets.is_empty() {
-            let mut query = FindQuery::new(fields, M::TABLE_NAME, -1, -1);
-            query.conditions = self.conditions;
+        async move {
+            let sets = prepare_scalar_update::<M, C>(&conditions, sets, &client).await?;
 
-            client.query::<PluckValue<T>>(query).await.map_err(UpdateError::from_database)?
-        } else {
-            let query =
-                UpdateQuery { table: M::TABLE_NAME, sets, conditions: self.conditions, returning: Some(fields) };
+            let rows = if sets.is_empty() {
+                let mut query = FindQuery::new(fields, M::TABLE_NAME, -1, -1);
+                query.conditions = conditions;
 
-            client.update_returning::<PluckValue<T>>(query).await.map_err(UpdateError::from_database)?
-        };
+                client.query::<PluckValue<T>>(query).await.map_err(UpdateError::from_database)?
+            } else {
+                let query = UpdateQuery { table: M::TABLE_NAME, sets, conditions, returning: Some(fields) };
 
-        Ok(rows.into_iter().map(|value| value.0).collect())
+                client.update_returning::<PluckValue<T>>(query).await.map_err(UpdateError::from_database)?
+            };
+
+            Ok(rows.into_iter().map(|value| value.0).collect())
+        }
     }
 }
 
@@ -164,13 +179,12 @@ where
     S: DinocoProjection<M> + DinocoRowModel,
     F: FnMut(S) -> R,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Vec<R>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<R>>>
     where
         C: MutationExecutor,
     {
-        let rows = self.inner.execute(client).await?;
-        let mut transform = self.transform;
+        let transform = self.transform;
 
-        Ok(rows.into_iter().map(&mut transform).collect())
+        self.inner.execute(client).map_ok(|rows| rows.into_iter().map(transform).collect())
     }
 }

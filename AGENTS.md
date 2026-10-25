@@ -50,6 +50,7 @@ Ignore these when reading the tree: `target/`, the empty `file:` directories (le
 
 - Suites under `tests/tests/<crate>/<topic>.rs` must be registered as a `[[test]]` in `tests/Cargo.toml`, named `<crate>_<topic>` (for example `dinoco_relation_filters`). Files directly under `tests/tests/` are discovered automatically and named after the file.
 - Shared helpers (`column`, `primary`, `nullable`, `create_table`, ...) live in `tests/src/lib.rs`. Schema fixtures live in `tests/fixtures/`.
+- `tests/fixtures/payments/` is an application-shaped schema with the models codegen writes for it, used by `future_sizes` and `stack`. `dinoco_codegen_generate_models` fails when the models drift from codegen; regenerate them with `DINOCO_UPDATE_FIXTURES=1 cargo test -p dinoco_tests --test dinoco_codegen_generate_models payments`.
 - Database suites run every scenario on all three backends through an `on_every_backend!` macro (see `tests/tests/dinoco/relation_filters.rs`). PostgreSQL and MySQL come from local servers: `postgres://postgres:postgres@localhost:5432/postgres` and `mysql://root:root@localhost:3306/mysql` (Podman containers `postgres` and `mysql`).
 - `version_consistency` checks that every manifest, lockfile entry and README agrees on the release version.
 
@@ -103,7 +104,7 @@ Performance and low memory use are requirements, for async code (futures) and sy
 
 **Keep futures small**
 - Every local held across an `.await` lives in the future's state. Don't keep large values alive across awaits, and drop or scope them before awaiting.
-- Move rare or heavy branches into a separately boxed future so their state stays out of the common path. Example: relation updates in `crates/dinoco/src/methods/update.rs`:
+- Move rare or heavy branches into a separately boxed future so their state stays out of the common path. Example: relation updates in `crates/dinoco/src/methods/find_and_update.rs`:
   ```rust
   // Relation updates are rare; awaiting them boxed keeps their state out of
   // every update's future.
@@ -122,6 +123,18 @@ Performance and low memory use are requirements, for async code (futures) and sy
 - Same rules: no needless clones, iterators over collected intermediates, no allocation inside loops.
 - Keep core types small (`FindWhere`, `DinocoValue`, query structs). `report` prints their layouts, so watch for size regressions.
 - Keep builders cheap: `&'static str` names, `PhantomData` markers, and generic `FnOnce` callbacks instead of boxed closures.
+
+## Performance: future and stack size
+
+- Generated models never contain another model by value: every singular relation is `Option<Box<T>>`, list relations are `Vec<T>`.
+- `tests/tests/future_sizes.rs` holds a size budget for every public builder future and for the fixture models. A change that exceeds a budget must fail; raise a budget only with the measured reason in the commit message.
+- `tests/tests/stack.rs` runs typical flows on a thread with a reduced stack in debug builds. Keep it passing.
+- Database round trips are awaited through `boxed` in `with_adapter!`. Rare or heavy branches are awaited with `Box::pin` (see `require_time_zone`, transaction reads). Keep both patterns.
+- Do not hold a large value (query, row vectors, models) across an `.await` once it is no longer needed. Move what you need into small locals first.
+- Avoid partial moves out of a large struct before an `.await`: the source local stays in the future's state until the end of its scope. Destructure it fully instead.
+- Do not take a future as an `async fn` argument just to wrap it; return `impl Future` (with `Either` for branches), as `ReadSource::count` does. The argument and the local can end up in separate slots.
+- Match/if-let scrutinee temporaries live until the end of the statement, including across an `.await` inside it. Bind first, then await.
+- Inspect layouts with `RUSTC_BOOTSTRAP=1 cargo rustc -p dinoco_tests --test future_sizes --profile test -- -Zprint-type-sizes` (builders are generic, so their futures are laid out where the tests instantiate them; `-p <crate> --lib` shows the crate's own types). PRs that touch query execution, codegen or relations report before/after sizes.
 
 ## Commands
 

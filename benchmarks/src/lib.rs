@@ -42,7 +42,7 @@ pub struct BenchPost {
     pub published: bool,
 
     #[dinoco(many_to_one, foreign_key = "user_id", references = "id")]
-    pub user: Option<BenchUser>,
+    pub user: Option<Box<BenchUser>>,
 }
 
 /// Write target of the insert benchmarks; truncated between runs.

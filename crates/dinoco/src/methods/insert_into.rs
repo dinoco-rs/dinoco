@@ -1,6 +1,8 @@
+use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, PluckValue};
+use futures_util::TryFutureExt;
 
 use crate::{
     ConflictMode, ConflictTarget, CreateError, DinocoInsertable, Field, InsertPayload, MutationExecutor, NoConflict,
@@ -100,24 +102,31 @@ where
         InsertPluck { item: self.item, field, conflict: self.conflict, marker: PhantomData }
     }
 
-    pub async fn execute<C>(self, client: C) -> Result<(), CreateError>
+    // Not an `async fn`: the payload is taken out of the builder first, so
+    // the future keeps it once instead of the builder and a copy of it.
+    pub fn execute<C>(self, client: C) -> impl Future<Output = Result<(), CreateError>>
     where
         C: MutationExecutor,
     {
         let item = self.item.expect("insert_into().values(...) must be called before execute()");
+        let conflict = self.conflict;
 
-        if let Some(target) = self.conflict.target() {
-            // Boxed: skipping conflicts keeps its state out of every plain insert.
-            return Box::pin(execute_insert_skipping_conflicts::<M, V, C>(vec![item], target, &client)).await;
+        async move {
+            if let Some(target) = conflict.target() {
+                // Boxed: skipping conflicts keeps its state out of every plain insert.
+                return Box::pin(execute_insert_skipping_conflicts::<M, V, C>(vec![item], target, &client)).await;
+            }
+
+            if V::HAS_NESTED {
+                execute_insert_payloads::<M, V, V, C>(std::slice::from_ref(&item), &client)
+                    .await
+                    .map_err(CreateError::from_database)?;
+            } else {
+                execute_insert_owned::<M, V, C>(vec![item], &client).await.map_err(CreateError::from_database)?;
+            }
+
+            Ok(())
         }
-
-        if V::HAS_NESTED {
-            execute_insert_payloads::<M, V, V, C>(&[item], &client).await.map_err(CreateError::from_database)?;
-        } else {
-            execute_insert_owned::<M, V, C>(vec![item], &client).await.map_err(CreateError::from_database)?;
-        }
-
-        Ok(())
     }
 }
 
@@ -139,34 +148,37 @@ where
         InsertReturningTransform { inner: self, transform: callback }
     }
 
-    pub async fn execute<C>(self, client: C) -> Result<S, CreateError>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = Result<S, CreateError>>
     where
         C: MutationExecutor,
     {
         let item = self.item.expect("insert_into().values(...) must be called before execute()");
+        let conflict = self.conflict;
 
-        if let Some(target) = self.conflict.target() {
-            // Boxed: the read back keeps its state out of every plain insert.
-            let mut rows =
-                Box::pin(execute_insert_or_existing::<M, V, S, C>(vec![item], target, S::FIELDS, &client)).await?;
+        async move {
+            if let Some(target) = conflict.target() {
+                // Boxed: the read back keeps its state out of every plain insert.
+                let mut rows =
+                    Box::pin(execute_insert_or_existing::<M, V, S, C>(vec![item], target, S::FIELDS, &client)).await?;
 
-            return rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
-        }
+                return rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
+            }
 
-        if !V::HAS_NESTED {
-            let mut rows = execute_insert_owned_returning::<M, V, S, C>(vec![item], &client)
+            if !V::HAS_NESTED {
+                let mut rows = execute_insert_owned_returning::<M, V, S, C>(vec![item], &client)
+                    .await
+                    .map_err(CreateError::from_database)?;
+
+                return rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
+            }
+
+            let inserted = execute_insert_payloads_returning::<M, V, V, C>(std::slice::from_ref(&item), &client)
                 .await
                 .map_err(CreateError::from_database)?;
+            let mut rows = reload_inserted::<M, S, C>(&inserted, &client).await.map_err(CreateError::from_database)?;
 
-            return rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
+            rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
         }
-
-        let inserted = execute_insert_payloads_returning::<M, V, V, C>(&[item], &client)
-            .await
-            .map_err(CreateError::from_database)?;
-        let mut rows = reload_inserted::<M, S, C>(&inserted, &client).await.map_err(CreateError::from_database)?;
-
-        rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
     }
 }
 
@@ -177,37 +189,43 @@ where
     PluckValue<T>: DinocoRowModel,
     K: ConflictMode,
 {
-    pub async fn execute<C>(self, client: C) -> Result<T, CreateError>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = Result<T, CreateError>>
     where
         C: MutationExecutor,
     {
         let item = self.item.expect("insert_into().values(...) must be called before execute()");
+        let (field, conflict) = (self.field, self.conflict);
 
-        if let Some(target) = self.conflict.target() {
-            let fields = single_field(self.field, <M as DinocoEntity>::FIELDS);
-            let mut rows =
-                Box::pin(execute_insert_or_existing::<M, V, PluckValue<T>, C>(vec![item], target, fields, &client))
-                    .await?;
+        async move {
+            if let Some(target) = conflict.target() {
+                let fields = single_field(field, <M as DinocoEntity>::FIELDS);
+                let mut rows =
+                    Box::pin(execute_insert_or_existing::<M, V, PluckValue<T>, C>(vec![item], target, fields, &client))
+                        .await?;
 
-            return rows.pop().map(|value| value.0).ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
-        }
+                return rows
+                    .pop()
+                    .map(|value| value.0)
+                    .ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
+            }
 
-        if !V::HAS_NESTED {
-            let mut rows = execute_insert_owned_returning_field::<M, V, T, C>(vec![item], self.field, &client)
+            if !V::HAS_NESTED {
+                let mut rows = execute_insert_owned_returning_field::<M, V, T, C>(vec![item], field, &client)
+                    .await
+                    .map_err(CreateError::from_database)?;
+
+                return rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
+            }
+
+            let inserted = execute_insert_payloads_returning::<M, V, V, C>(std::slice::from_ref(&item), &client)
+                .await
+                .map_err(CreateError::from_database)?;
+            let mut rows = reload_inserted_field::<M, T, C>(&inserted, field, &client)
                 .await
                 .map_err(CreateError::from_database)?;
 
-            return rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME });
+            rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
         }
-
-        let inserted = execute_insert_payloads_returning::<M, V, V, C>(&[item], &client)
-            .await
-            .map_err(CreateError::from_database)?;
-        let mut rows = reload_inserted_field::<M, T, C>(&inserted, self.field, &client)
-            .await
-            .map_err(CreateError::from_database)?;
-
-        rows.pop().ok_or_else(|| CreateError::NotReturned { table: M::TABLE_NAME })
     }
 }
 
@@ -224,12 +242,12 @@ where
     F: FnOnce(S) -> R,
     K: ConflictMode,
 {
-    pub async fn execute<C>(self, client: C) -> Result<R, CreateError>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = Result<R, CreateError>>
     where
         C: MutationExecutor,
     {
-        let row = self.inner.execute(client).await?;
+        let transform = self.transform;
 
-        Ok((self.transform)(row))
+        self.inner.execute(client).map_ok(transform)
     }
 }

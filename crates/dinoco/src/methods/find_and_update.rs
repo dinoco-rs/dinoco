@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, FindWhere, UpdateQuery, UpdateSet, WhereComplex};
@@ -57,43 +58,64 @@ where
         self
     }
 
-    pub async fn execute<C>(self, client: C) -> Result<M, AtomicUpdateError>
+    // Not an `async fn`: the builder is taken apart first, so the future
+    // keeps each part once instead of the builder and a copy of it.
+    pub fn execute<C>(self, client: C) -> impl Future<Output = Result<M, AtomicUpdateError>>
     where
         C: MutationExecutor,
     {
-        if self.sets.is_empty() {
-            return Err(AtomicUpdateError::EmptyUpdate);
+        let Self { sets, conditions, .. } = self;
+
+        async move {
+            if sets.is_empty() {
+                return Err(AtomicUpdateError::EmptyUpdate);
+            }
+            if let Some(field) = duplicate_update_field(&sets) {
+                return Err(AtomicUpdateError::DuplicateField(field));
+            }
+
+            let has_many_to_many = has_many_to_many_update_sets(&sets);
+            let (sets, connects, disconnects) = split_update_sets(sets);
+            let mut parents = if !connects.is_empty() || !disconnects.is_empty() {
+                // Relation updates are rare; awaiting them boxed keeps their
+                // state out of every find_and_update's future.
+                Box::pin(async {
+                    let parents = load_update_matches::<M, M, C>(&conditions, &client)
+                        .await
+                        .map_err(AtomicUpdateError::from_database)?;
+                    let relation_parents = if has_many_to_many { parents.as_slice() } else { &[] };
+                    execute_relation_update_sets(
+                        M::TABLE_NAME,
+                        &conditions,
+                        connects,
+                        disconnects,
+                        relation_parents,
+                        &client,
+                    )
+                    .await
+                    .map_err(AtomicUpdateError::from_database)?;
+
+                    Ok::<_, AtomicUpdateError>(parents)
+                })
+                .await?
+            } else {
+                Vec::new()
+            };
+
+            if sets.is_empty() {
+                return parents.pop().ok_or(AtomicUpdateError::RowNotAffected);
+            }
+
+            let query = UpdateQuery {
+                table: M::TABLE_NAME,
+                sets: touch_updated_at::<M>(sets),
+                conditions,
+                returning: Some(<M as DinocoProjection<M>>::FIELDS),
+            };
+            let mut rows =
+                client.atomic_update_returning::<M>(query).await.map_err(AtomicUpdateError::from_database)?;
+
+            rows.pop().ok_or(AtomicUpdateError::RowNotAffected)
         }
-        if let Some(field) = duplicate_update_field(&self.sets) {
-            return Err(AtomicUpdateError::DuplicateField(field));
-        }
-
-        let has_many_to_many = has_many_to_many_update_sets(&self.sets);
-        let (sets, connects, disconnects) = split_update_sets(self.sets);
-        let has_relation_updates = !connects.is_empty() || !disconnects.is_empty();
-        let mut parents = if has_relation_updates {
-            load_update_matches::<M, M, C>(&self.conditions, &client).await.map_err(AtomicUpdateError::from_database)?
-        } else {
-            Vec::new()
-        };
-
-        let relation_parents = if has_many_to_many { parents.as_slice() } else { &[] };
-        execute_relation_update_sets(M::TABLE_NAME, &self.conditions, connects, disconnects, relation_parents, &client)
-            .await
-            .map_err(AtomicUpdateError::from_database)?;
-
-        if sets.is_empty() {
-            return parents.pop().ok_or(AtomicUpdateError::RowNotAffected);
-        }
-
-        let query = UpdateQuery {
-            table: M::TABLE_NAME,
-            sets: touch_updated_at::<M>(sets),
-            conditions: self.conditions,
-            returning: Some(<M as DinocoProjection<M>>::FIELDS),
-        };
-        let mut rows = client.atomic_update_returning::<M>(query).await.map_err(AtomicUpdateError::from_database)?;
-
-        rows.pop().ok_or(AtomicUpdateError::RowNotAffected)
     }
 }

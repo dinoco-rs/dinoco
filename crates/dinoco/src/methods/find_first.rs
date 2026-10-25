@@ -1,8 +1,10 @@
+use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{
     DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy, FindQuery, FindWhere, PluckValue, WhereComplex,
 };
+use futures_util::TryFutureExt;
 
 use crate::{Field, IncludeLoader, IntoIncludeLoader, ReadExecutor, load_includes, single_field};
 
@@ -112,16 +114,22 @@ where
         FindFirstTransform { inner: self, transform: callback }
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Option<S>>
+    // Not an `async fn`: the builder is taken apart first, so the future
+    // keeps each part once instead of the builder and a copy of it.
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Option<S>>>
     where
         C: ReadExecutor,
     {
-        let target = client.read_target(self.read_primary)?;
-        let mut rows = target.query::<S>(self.query).await?;
+        let Self { query, includes, read_primary, .. } = self;
 
-        load_includes(self.includes, &target, &mut rows).await?;
+        async move {
+            let target = client.read_target(read_primary)?;
+            let mut rows = target.query::<S>(query).await?;
 
-        Ok(rows.into_iter().next())
+            load_includes(includes, &target, &mut rows).await?;
+
+            Ok(rows.into_iter().next())
+        }
     }
 }
 
@@ -142,13 +150,18 @@ where
         self
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Option<T>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Option<T>>>
     where
         C: ReadExecutor,
     {
-        let rows = client.read_target(self.read_primary)?.query::<PluckValue<T>>(self.query).await?;
+        let Self { query, read_primary, .. } = self;
 
-        Ok(rows.into_iter().next().map(|value| value.0))
+        async move {
+            let target = client.read_target(read_primary)?;
+            let rows = target.query::<PluckValue<T>>(query).await?;
+
+            Ok(rows.into_iter().next().map(|value| value.0))
+        }
     }
 }
 
@@ -163,13 +176,13 @@ where
     S: DinocoRowModel,
     F: FnOnce(S) -> R,
 {
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<Option<R>>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Option<R>>>
     where
         C: ReadExecutor,
     {
-        let row = self.inner.execute(client).await?;
+        let transform = self.transform;
 
-        Ok(row.map(self.transform))
+        self.inner.execute(client).map_ok(|row| row.map(transform))
     }
 }
 

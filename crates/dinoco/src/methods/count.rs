@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{DinocoEntity, FindWhere, WhereComplex};
@@ -57,11 +58,11 @@ where
         self
     }
 
-    pub async fn execute<C>(self, client: C) -> anyhow::Result<M::Count>
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<M::Count>>
     where
         C: ReadExecutor,
         M::Count: crate::DinocoCountModel<M>,
     {
-        execute_count::<M>(self.conditions, self.counts, client).await
+        execute_count::<M>(self.conditions, self.counts, client)
     }
 }

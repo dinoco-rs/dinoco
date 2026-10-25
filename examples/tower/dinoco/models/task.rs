@@ -17,6 +17,6 @@ pub struct Task {
     pub done: bool,
 
     #[dinoco(many_to_one, foreign_key = "project_id", references = "id")]
-    pub project: Option<Project>,
+    pub project: Option<Box<Project>>,
 
 }

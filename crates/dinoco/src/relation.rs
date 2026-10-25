@@ -6,6 +6,7 @@ use dinoco_engine::{
     DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindOrderBy, FindQuery, FindWhere,
     ManyToManyRelationQuery, RelationOccurrenceQuery, WhereComplex,
 };
+use futures_util::future::Either;
 
 use crate::ReadTarget;
 
@@ -24,19 +25,31 @@ pub trait IncludeLoader<S>: Send + Sync {
     fn load_applier<'a>(&'a self, target: &'a ReadTarget<'a>, parents: &'a [S]) -> IncludeLoaderFuture<'a, S>;
 }
 
-pub(crate) async fn load_includes<S>(
+/// Not an `async fn`, which would keep its arguments twice; and without
+/// includes, as most reads are, there is nothing to wait for.
+pub(crate) fn load_includes<'a, S>(
     includes: Vec<Box<dyn IncludeLoader<S>>>,
-    target: &ReadTarget<'_>,
-    items: &mut [S],
-) -> anyhow::Result<()> {
-    let appliers =
-        futures_util::future::try_join_all(includes.iter().map(|include| include.load_applier(target, items))).await?;
-
-    for apply in appliers {
-        apply(items);
+    target: &'a ReadTarget<'_>,
+    items: &'a mut [S],
+) -> impl Future<Output = anyhow::Result<()>> + 'a
+where
+    S: 'a,
+{
+    if includes.is_empty() {
+        return Either::Left(std::future::ready(Ok(())));
     }
 
-    Ok(())
+    Either::Right(async move {
+        let appliers =
+            futures_util::future::try_join_all(includes.iter().map(|include| include.load_applier(target, items)))
+                .await?;
+
+        for apply in appliers {
+            apply(items);
+        }
+
+        Ok(())
+    })
 }
 
 pub trait IntoIncludeLoader<M, S> {

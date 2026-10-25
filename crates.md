@@ -49,10 +49,16 @@ Add Dinoco to your `Cargo.toml` dependencies:
 
 ```toml
 [dependencies]
-dinoco = "2.2.0"
+dinoco = "2.2.1"
 ```
 
 Dinoco requires Rust 1.95 or newer.
+
+Upgrading from an earlier version: every generated to-one relation is now
+`Option<Box<T>>`, so models stay small however many models they point to.
+Regenerate the models with `dinoco models generate`; the
+[release notes](https://dinoco.io/en-us/docs/orm/guide/release-notes#v2-2-1)
+list the code changes.
 
 ### Cargo features
 
@@ -61,7 +67,7 @@ database can turn the others off to skip compiling their drivers:
 
 ```toml
 [dependencies]
-dinoco = { version = "2.2.0", default-features = false, features = ["postgres"] }
+dinoco = { version = "2.2.1", default-features = false, features = ["postgres"] }
 ```
 
 | Feature | Enables |

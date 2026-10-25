@@ -1,0 +1,227 @@
+// A payments and support schema shaped like a real application: chains of
+// many-to-ones at least three levels deep (SupportMessage -> SupportParticipant
+// -> Support -> Pix -> Profit -> Business -> Account) and models that fan out to
+// many others (Support points to six). `tests/future_sizes.rs` and
+// `tests/stack.rs` use the models generated from it, kept in `models/` and
+// checked against codegen by `dinoco_codegen_generate_models`.
+
+config {
+    database = "postgresql"
+    database_url = env("DATABASE_URL")
+}
+
+enum ChargeStatus {
+    PENDING
+    PAID
+    EXPIRED
+    REFUNDED
+}
+
+enum JobStatus {
+    QUEUED
+    RUNNING
+    DONE
+    FAILED
+}
+
+enum SupportStatus {
+    OPEN
+    WAITING
+    CLOSED
+}
+
+enum ParticipantRole {
+    CUSTOMER
+    MERCHANT
+    AGENT
+}
+
+model Account {
+    id                   String               @id @default(uuid())
+    email                String               @unique
+    name                 String
+    document             String?
+    phone                String?
+    active               Boolean              @default(true)
+    created_at           DateTime             @default(now())
+    updated_at           DateTime             @default(now()) @updated_at
+    businesses           Business[]
+    supports             Support[]
+    support_participants SupportParticipant[]
+}
+
+model Business {
+    id                   String               @id @default(uuid())
+    account_id           String
+    legal_name           String
+    trade_name           String?
+    document             String               @unique
+    balance_cents        Integer              @default(0)
+    fee_percent          Float                @default(0)
+    created_at           DateTime             @default(now())
+    updated_at           DateTime             @default(now()) @updated_at
+    account              Account?             @relation(fields: [account_id], references: [id])
+    settings             BusinessSettings?
+    profits              Profit[]
+    pixes                Pix[]
+    tickets              Ticket[]
+    payment_links        PaymentLink[]
+    supports             Support[]
+    support_participants SupportParticipant[]
+}
+
+model BusinessSettings {
+    id              String    @id @default(uuid())
+    business_id     String    @unique
+    webhook_url     String?
+    webhook_secret  String?
+    notify_by_email Boolean   @default(true)
+    business        Business? @relation(fields: [business_id], references: [id])
+}
+
+model Anonymous {
+    id                   String               @id @default(uuid())
+    fingerprint          String               @unique
+    ip                   String?
+    user_agent           String?
+    created_at           DateTime             @default(now())
+    supports             Support[]
+    support_participants SupportParticipant[]
+}
+
+model Profit {
+    id            String        @id @default(uuid())
+    business_id   String
+    amount_cents  Integer
+    fee_cents     Integer
+    description   String?
+    created_at    DateTime      @default(now())
+    business      Business?     @relation(fields: [business_id], references: [id])
+    pixes         Pix[]
+    tickets       Ticket[]
+    payment_links PaymentLink[]
+}
+
+model BackgroundJob {
+    id            String        @id @default(uuid())
+    queue         String
+    status        JobStatus     @default(QUEUED)
+    attempts      Integer       @default(0)
+    payload       Json?
+    last_error    String?
+    run_at        DateTime      @default(now())
+    finished_at   DateTime?
+    pixes         Pix[]
+    tickets       Ticket[]
+    payment_links PaymentLink[]
+}
+
+model Pix {
+    id                String         @id @default(uuid())
+    business_id       String
+    profit_id         String?
+    background_job_id String?
+    amount_cents      Integer
+    status            ChargeStatus   @default(PENDING)
+    txid              String         @unique
+    qr_code           String
+    payer_name        String?
+    payer_document    String?
+    expires_at        DateTime
+    paid_at           DateTime?
+    created_at        DateTime       @default(now())
+    business          Business?      @relation(fields: [business_id], references: [id])
+    profit            Profit?        @relation(fields: [profit_id], references: [id])
+    background_job    BackgroundJob? @relation(fields: [background_job_id], references: [id])
+    supports          Support[]
+}
+
+model Ticket {
+    id                String         @id @default(uuid())
+    business_id       String
+    profit_id         String?
+    background_job_id String?
+    amount_cents      Integer
+    status            ChargeStatus   @default(PENDING)
+    barcode           String         @unique
+    digitable_line    String
+    payer_name        String
+    payer_document    String
+    due_date          Date
+    paid_at           DateTime?
+    created_at        DateTime       @default(now())
+    business          Business?      @relation(fields: [business_id], references: [id])
+    profit            Profit?        @relation(fields: [profit_id], references: [id])
+    background_job    BackgroundJob? @relation(fields: [background_job_id], references: [id])
+    supports          Support[]
+}
+
+model PaymentLink {
+    id                String         @id @default(uuid())
+    business_id       String
+    profit_id         String?
+    background_job_id String?
+    slug              String         @unique
+    title             String
+    description       String?
+    amount_cents      Integer
+    max_uses          Integer?
+    uses              Integer        @default(0)
+    active            Boolean        @default(true)
+    expires_at        DateTime?
+    created_at        DateTime       @default(now())
+    business          Business?      @relation(fields: [business_id], references: [id])
+    profit            Profit?        @relation(fields: [profit_id], references: [id])
+    background_job    BackgroundJob? @relation(fields: [background_job_id], references: [id])
+    supports          Support[]
+}
+
+model Support {
+    id              String               @id @default(uuid())
+    protocol        String               @unique
+    subject         String
+    status          SupportStatus        @default(OPEN)
+    business_id     String?
+    account_id      String?
+    anonymous_id    String?
+    pix_id          String?
+    ticket_id       String?
+    payment_link_id String?
+    created_at      DateTime             @default(now())
+    closed_at       DateTime?
+    business        Business?            @relation(fields: [business_id], references: [id])
+    account         Account?             @relation(fields: [account_id], references: [id])
+    anonymous       Anonymous?           @relation(fields: [anonymous_id], references: [id])
+    pix             Pix?                 @relation(fields: [pix_id], references: [id])
+    ticket          Ticket?              @relation(fields: [ticket_id], references: [id])
+    payment_link    PaymentLink?         @relation(fields: [payment_link_id], references: [id])
+    participants    SupportParticipant[]
+    messages        SupportMessage[]
+}
+
+model SupportParticipant {
+    id           String           @id @default(uuid())
+    support_id   String
+    role         ParticipantRole
+    account_id   String?
+    business_id  String?
+    anonymous_id String?
+    joined_at    DateTime         @default(now())
+    support      Support?         @relation(fields: [support_id], references: [id])
+    account      Account?         @relation(fields: [account_id], references: [id])
+    business     Business?        @relation(fields: [business_id], references: [id])
+    anonymous    Anonymous?       @relation(fields: [anonymous_id], references: [id])
+    messages     SupportMessage[]
+}
+
+model SupportMessage {
+    id             String              @id @default(uuid())
+    support_id     String
+    participant_id String?
+    body           String
+    attachment_url String?
+    read_at        DateTime?
+    created_at     DateTime            @default(now())
+    support        Support?            @relation(fields: [support_id], references: [id])
+    participant    SupportParticipant? @relation(fields: [participant_id], references: [id])
+}

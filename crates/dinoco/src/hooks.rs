@@ -5,6 +5,8 @@ use dinoco_engine::{
     Backend, DatabaseError, DinocoClient, DinocoSqlCompiler, DinocoValue, ExecutedQuery, InsertHook, InsertQuery, QueryHooks,
     RowCountHook,
 };
+use futures_util::FutureExt;
+use futures_util::future::Either;
 
 /// The hooks of one client, captured together with the backend used to
 /// compile the SQL reported to them.
@@ -82,27 +84,34 @@ where
     }
 }
 
-pub(crate) async fn observe_rows<Q, T, F, Fut>(
+/// `run(query)`, reported to the table's hook of `kind` when it has one.
+///
+/// Returns the run's future itself, or that future mapped to report its
+/// result, instead of awaiting it: an `async fn` here would keep `query`
+/// twice (as its argument and as the copy moved into `run`) next to the
+/// run's own state in every read's future.
+pub(crate) fn observe_rows<Q, T, F, Fut, R>(
     observer: Option<&Observer>,
     kind: RowCountKind,
     table: &'static str,
     query: Q,
     compile: Compile<Q>,
     run: F,
-    row_count: impl FnOnce(&T) -> usize,
-) -> anyhow::Result<T>
+    row_count: R,
+) -> impl Future<Output = anyhow::Result<T>> + use<Q, T, F, Fut, R>
 where
     Q: Clone,
     F: FnOnce(Q) -> Fut,
     Fut: Future<Output = anyhow::Result<T>>,
+    R: FnOnce(&T) -> usize,
 {
     let Some((observer, hook)) = observer.and_then(|observer| Some((observer, observer.row_count_hook(kind, table)?))) else {
-        return run(query).await;
+        return Either::Left(run(query));
     };
 
     let executed = observer.executed(table, compile(observer.backend.sql_compiler(), query.clone()));
 
-    match run(query).await {
+    Either::Right(run(query).map(move |result| match result {
         Ok(value) => {
             hook(Some(row_count(&value)), &executed, None);
             Ok(value)
@@ -112,7 +121,7 @@ where
             hook(None, &executed, Some(&error));
             Err(error.into_original())
         }
-    }
+    }))
 }
 
 fn inserted_rows(query: &InsertQuery) -> Vec<serde_json::Value> {

@@ -153,11 +153,14 @@ where
 
 /// Runs `count::<M>()` against `&client` or the `tx` of a transaction
 /// closure, then each requested relation count on the same connection.
-pub async fn execute_count<M>(
+///
+/// Not an `async fn`: the query is built first, so the future keeps each
+/// argument once instead of the arguments and a copy of them.
+pub fn execute_count<M>(
     mut conditions: Vec<FindWhere>,
     loaders: Vec<Box<dyn CountLoader<M::Count>>>,
     client: impl ReadExecutor,
-) -> anyhow::Result<M::Count>
+) -> impl Future<Output = anyhow::Result<M::Count>>
 where
     M: DinocoEntity,
     M::Count: DinocoCountModel<M>,
@@ -165,17 +168,20 @@ where
     // Relation counts reuse the parent conditions; without any, they move
     // into the query instead of being cloned.
     let query_conditions = if loaders.is_empty() { std::mem::take(&mut conditions) } else { conditions.clone() };
-    let total =
-        client.read_source(false)?.count(CountQuery { table: M::TABLE_NAME, conditions: query_conditions }).await?;
-    let mut count = M::Count::default();
-    count.dinoco_set_total(total);
+    let query = CountQuery { table: M::TABLE_NAME, conditions: query_conditions };
 
-    if !loaders.is_empty() {
-        let source = client.read_source(false)?;
-        for loader in loaders {
-            loader.load_count(M::TABLE_NAME, "id", &conditions, &source, &mut count).await?;
+    async move {
+        let total = client.read_source(false)?.count(query);
+        let mut count = M::Count::default();
+        count.dinoco_set_total(total.await?);
+
+        if !loaders.is_empty() {
+            let source = client.read_source(false)?;
+            for loader in loaders {
+                loader.load_count(M::TABLE_NAME, "id", &conditions, &source, &mut count).await?;
+            }
         }
-    }
 
-    Ok(count)
+        Ok(count)
+    }
 }

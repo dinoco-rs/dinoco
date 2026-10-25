@@ -226,7 +226,7 @@ fn transformer_can_edit_relations_and_field_types() {
 
     assert!(user.contains("pub name: Option<::std::sync::Arc<str>>,"), "{user}");
     assert!(user.contains("#[serde(skip)]\n    pub posts: Vec<Post>,"), "{user}");
-    assert!(post.contains("#[serde(skip)]\n    pub author: Option<User>,"), "{post}");
+    assert!(post.contains("#[serde(skip)]\n    pub author: Option<Box<User>>,"), "{post}");
 }
 
 #[test]
