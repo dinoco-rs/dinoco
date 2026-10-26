@@ -94,7 +94,7 @@ pub fn seed(config: &RuntimeConfig) -> anyhow::Result<()> {
 
     let status = Command::new(cargo())
         .args(["test", "--quiet"])
-        .args(test_targets()?)
+        .args(test_selection()?)
         .args(["--", dinoco_codegen::SEED_TEST, "--ignored", "--nocapture", "--test-threads=1"])
         .env("DINOCO_SEED_REPORT", &report)
         .env("DINOCO_SEED_DATABASE", database)
@@ -115,9 +115,11 @@ pub fn seed(config: &RuntimeConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `--lib` and `--bins`, for the targets the package in the current directory
-/// has: Cargo rejects `--lib` in a package without a library.
-fn test_targets() -> anyhow::Result<Vec<&'static str>> {
+/// Selects the package in the current directory, never the workspace's
+/// default members, and its library and binaries, never its integration tests,
+/// examples or doctests: `--lib` and `--bins` only for the targets it has, as
+/// Cargo rejects `--lib` in a package without a library.
+fn test_selection() -> anyhow::Result<Vec<String>> {
     let output = Command::new(cargo())
         .args(["metadata", "--format-version", "1", "--no-deps"])
         .output()
@@ -141,14 +143,18 @@ fn test_targets() -> anyhow::Result<Vec<&'static str>> {
             .any(|target| target["kind"].as_array().into_iter().flatten().any(|value| value.as_str() == Some(kind)))
     };
 
-    let mut targets = Vec::new();
+    let id = package["id"].as_str().context("`cargo metadata` did not identify the package")?;
+    let mut selection = vec!["--package".to_string(), id.to_string()];
     if has_kind("lib") {
-        targets.push("--lib");
+        selection.push("--lib".to_string());
     }
     if has_kind("bin") {
-        targets.push("--bins");
+        selection.push("--bins".to_string());
     }
-    Ok(targets)
+    if selection.len() == 2 {
+        bail!("this package has no library or binary to include dinoco/mod.rs, so it has no seed to run");
+    }
+    Ok(selection)
 }
 
 #[derive(Clone, Copy)]

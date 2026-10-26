@@ -25,7 +25,9 @@ where
         return Ok(());
     }
 
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    // The runtime `#[tokio::main]` builds, so application code the seed calls
+    // (`block_in_place`, tasks it waits on) behaves as it does in the app.
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     runtime.block_on(async {
         let client = connect().await?;
         seed(client).await

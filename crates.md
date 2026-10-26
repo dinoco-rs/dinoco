@@ -49,7 +49,7 @@ Add Dinoco to your `Cargo.toml` dependencies:
 
 ```toml
 [dependencies]
-dinoco = "2.2.2"
+dinoco = "2.2.3"
 ```
 
 Dinoco requires Rust 1.95 or newer.
@@ -67,7 +67,7 @@ database can turn the others off to skip compiling their drivers:
 
 ```toml
 [dependencies]
-dinoco = { version = "2.2.2", default-features = false, features = ["postgres"] }
+dinoco = { version = "2.2.3", default-features = false, features = ["postgres"] }
 ```
 
 | Feature | Enables |
