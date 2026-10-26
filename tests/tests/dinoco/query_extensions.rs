@@ -74,8 +74,12 @@ async fn setup(name: &str) -> anyhow::Result<(DinocoClient, String)> {
         ],
     )
     .await?;
-    create_table(adapter, "qx_tag", vec![primary(column("id", MigrationColumnType::String)), column("name", MigrationColumnType::String)])
-        .await?;
+    create_table(
+        adapter,
+        "qx_tag",
+        vec![primary(column("id", MigrationColumnType::String)), column("name", MigrationColumnType::String)],
+    )
+    .await?;
     create_table(
         adapter,
         "qx_post",
@@ -137,10 +141,8 @@ async fn transform_maps_rows_after_the_query_runs() -> anyhow::Result<()> {
 
     insert_into::<User>().values(User::new("user-1".to_string(), "Ada".to_string(), 30)).execute(&client).await?;
 
-    let rows = find_many::<User>()
-        .transform(|user| json!({ "id": user.id, "name": user.name }))
-        .execute(&client)
-        .await?;
+    let rows =
+        find_many::<User>().transform(|user| json!({ "id": user.id, "name": user.name })).execute(&client).await?;
     assert_eq!(rows, vec![json!({ "id": "user-1", "name": "Ada" })]);
 
     let row = find_first::<User>()
@@ -174,7 +176,12 @@ async fn connect_batch_and_disconnect_batch_link_many_values_in_one_round_trip()
         .execute(&client)
         .await?;
 
-    let loaded = find_first::<User>().where_(|x| x.id.eq("user-1")).includes(|x| x.tags()).execute(&client).await?.expect("user");
+    let loaded = find_first::<User>()
+        .where_(|x| x.id.eq("user-1"))
+        .includes(|x| x.tags())
+        .execute(&client)
+        .await?
+        .expect("user");
     assert_eq!(loaded.tags.len(), 3);
 
     update::<User>()
@@ -183,7 +190,12 @@ async fn connect_batch_and_disconnect_batch_link_many_values_in_one_round_trip()
         .execute(&client)
         .await?;
 
-    let loaded = find_first::<User>().where_(|x| x.id.eq("user-1")).includes(|x| x.tags()).execute(&client).await?.expect("user");
+    let loaded = find_first::<User>()
+        .where_(|x| x.id.eq("user-1"))
+        .includes(|x| x.tags())
+        .execute(&client)
+        .await?
+        .expect("user");
     assert_eq!(loaded.tags.len(), 1);
     assert_eq!(loaded.tags[0].id, "tag-3");
 
@@ -195,7 +207,11 @@ async fn connect_batch_and_disconnect_batch_link_many_values_in_one_round_trip()
 async fn pluck_and_transform_work_on_insert_and_update_returning() -> anyhow::Result<()> {
     let (client, path) = setup("returning-extensions").await?;
 
-    let id = insert_into::<User>().values(User::new("user-1".to_string(), "Ada".to_string(), 30)).pluck(|x| x.id).execute(&client).await?;
+    let id = insert_into::<User>()
+        .values(User::new("user-1".to_string(), "Ada".to_string(), 30))
+        .pluck(|x| x.id)
+        .execute(&client)
+        .await?;
     assert_eq!(id, "user-1");
 
     let name = insert_into::<User>()

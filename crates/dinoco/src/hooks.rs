@@ -2,8 +2,8 @@ use std::future::Future;
 use std::sync::Arc;
 
 use dinoco_engine::{
-    Backend, DatabaseError, DinocoClient, DinocoSqlCompiler, DinocoValue, ExecutedQuery, InsertHook, InsertQuery, QueryHooks,
-    RowCountHook,
+    Backend, DatabaseError, DinocoClient, DinocoSqlCompiler, DinocoValue, ExecutedQuery, InsertHook, InsertQuery,
+    QueryHooks, RowCountHook,
 };
 use futures_util::FutureExt;
 use futures_util::future::Either;
@@ -105,7 +105,8 @@ where
     Fut: Future<Output = anyhow::Result<T>>,
     R: FnOnce(&T) -> usize,
 {
-    let Some((observer, hook)) = observer.and_then(|observer| Some((observer, observer.row_count_hook(kind, table)?))) else {
+    let Some((observer, hook)) = observer.and_then(|observer| Some((observer, observer.row_count_hook(kind, table)?)))
+    else {
         return Either::Left(run(query));
     };
 

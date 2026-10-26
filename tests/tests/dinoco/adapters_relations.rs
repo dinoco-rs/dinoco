@@ -584,7 +584,8 @@ async fn many_to_many_virtual_keys_filter_finds_by_the_opposite_side() -> anyhow
     }
 
     // Connections: A<->X, A<->Y, B<->Y. business-c and system-z stay unlinked.
-    for (business_id, system_id) in [("business-a", "system-x"), ("business-a", "system-y"), ("business-b", "system-y")] {
+    for (business_id, system_id) in [("business-a", "system-x"), ("business-a", "system-y"), ("business-b", "system-y")]
+    {
         dinoco::update::<Business>()
             .where_(|item| item.id.eq(business_id))
             .update(|item| item.system_id.connect(system_id))

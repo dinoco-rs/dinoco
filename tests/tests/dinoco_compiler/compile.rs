@@ -931,11 +931,13 @@ fn compile_rejects_the_removed_migration_engine_and_query_mode_keys() {
         ("migration_engine = \"automatic\"", "migrations are always generated from schema.dinoco"),
         ("query_mode = \"single_query\"", "removed together with `find_batch(...)`"),
     ] {
-        let error = compile(&format!(
-            "config {{ database = \"sqlite\" database_url = env(\"DATABASE_URL\") {entry} }}\n"
-        ))
-        .expect_err("removed config key");
-        assert!(error.message.contains(&format!("`config.{}` was removed", entry.split(' ').next().unwrap())), "{error}");
+        let error =
+            compile(&format!("config {{ database = \"sqlite\" database_url = env(\"DATABASE_URL\") {entry} }}\n"))
+                .expect_err("removed config key");
+        assert!(
+            error.message.contains(&format!("`config.{}` was removed", entry.split(' ').next().unwrap())),
+            "{error}"
+        );
         assert!(error.message.contains(expected), "{error}");
     }
 
@@ -973,10 +975,7 @@ fn compile_accepts_updated_at_with_a_now_default() {
 fn compile_rejects_invalid_updated_at_fields() {
     for (field, expected) in [
         ("updated_at DateTime @updated_at", "requires @default(now())"),
-        (
-            "updated_at DateTime @updated_at @default(\"2020-01-01T00:00:00Z\")",
-            "requires @default(now())",
-        ),
+        ("updated_at DateTime @updated_at @default(\"2020-01-01T00:00:00Z\")", "requires @default(now())"),
         ("updated_at String @updated_at @default(\"x\")", "requires a DateTime or Date field, found `String`"),
         ("updated_at Integer @updated_at @default(autoincrement())", "requires a DateTime or Date field"),
         ("updated_at DateTime @updated_at(now()) @default(now())", "does not take arguments"),
@@ -988,7 +987,8 @@ fn compile_rejects_invalid_updated_at_fields() {
         assert_eq!(error.line, 3, "{field}: {error}");
     }
 
-    let error = compile("model Event {\n    at DateTime @id @updated_at @default(now())\n}\n").expect_err("primary key");
+    let error =
+        compile("model Event {\n    at DateTime @id @updated_at @default(now())\n}\n").expect_err("primary key");
     assert!(error.message.contains("cannot be used on primary key field `Event.at`"), "{error}");
 
     let error = compile(

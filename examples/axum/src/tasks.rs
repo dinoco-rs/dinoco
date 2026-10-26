@@ -29,12 +29,7 @@ pub async fn list(
         query = query.where_(move |task| task.done.eq(done));
     }
 
-    let tasks = query
-        .order_by(|task| task.title.asc())
-        .take(100)
-        .execute(&client)
-        .await
-        .map_err(ApiError::internal)?;
+    let tasks = query.order_by(|task| task.title.asc()).take(100).execute(&client).await.map_err(ApiError::internal)?;
 
     Ok(Json(tasks.into_iter().map(TaskResponse::from).collect()))
 }
@@ -75,12 +70,8 @@ pub async fn create(
 
     let mut task = Task::new(title);
     task.project_id = Some(project_id);
-    let task = insert_into::<Task>()
-        .value(&task)
-        .returning::<Task>()
-        .execute(&client)
-        .await
-        .map_err(ApiError::create)?;
+    let task =
+        insert_into::<Task>().value(&task).returning::<Task>().execute(&client).await.map_err(ApiError::create)?;
 
     Ok((StatusCode::CREATED, Json(task.into())))
 }

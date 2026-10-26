@@ -10,7 +10,9 @@ use hyper::StatusCode;
 use serde_json::{Value, json};
 
 use crate::database::{Project, Task};
-use crate::dto::{CreateProject, CreateTask, ProjectDetail, ProjectResponse, TaskFilter, TaskResponse, UpdateProject, UpdateTask};
+use crate::dto::{
+    CreateProject, CreateTask, ProjectDetail, ProjectResponse, TaskFilter, TaskResponse, UpdateProject, UpdateTask,
+};
 use crate::error::AppError;
 
 fn ok_json<T: serde::Serialize>(status: StatusCode, value: T) -> Result<(StatusCode, Value), AppError> {
@@ -64,8 +66,7 @@ pub async fn create_project(client: &DinocoClient, payload: CreateProject) -> Re
 
     let task_titles = payload.tasks;
     let (project, tasks) = transaction(client, |tx| async move {
-        let project =
-            insert_into::<Project>().value(&Project::new(name)).returning::<Project>().execute(tx).await?;
+        let project = insert_into::<Project>().value(&Project::new(name)).returning::<Project>().execute(tx).await?;
 
         let mut tasks = Vec::with_capacity(task_titles.len());
         for title in task_titles {
@@ -154,12 +155,7 @@ pub async fn list_tasks(client: &DinocoClient, filter: TaskFilter) -> Result<(St
         query = query.where_(move |task| task.done.eq(done));
     }
 
-    let tasks = query
-        .order_by(|task| task.title.asc())
-        .take(100)
-        .execute(client)
-        .await
-        .map_err(AppError::internal)?;
+    let tasks = query.order_by(|task| task.title.asc()).take(100).execute(client).await.map_err(AppError::internal)?;
 
     ok_json(StatusCode::OK, tasks.into_iter().map(TaskResponse::from).collect::<Vec<_>>())
 }
@@ -199,12 +195,8 @@ pub async fn create_task(
 
     let mut task = Task::new(title);
     task.project_id = Some(project_id);
-    let task = insert_into::<Task>()
-        .value(&task)
-        .returning::<Task>()
-        .execute(client)
-        .await
-        .map_err(AppError::create)?;
+    let task =
+        insert_into::<Task>().value(&task).returning::<Task>().execute(client).await.map_err(AppError::create)?;
 
     ok_json(StatusCode::CREATED, TaskResponse::from(task))
 }

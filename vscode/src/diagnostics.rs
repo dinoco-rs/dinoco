@@ -113,11 +113,8 @@ fn validate_config(schema: &Schema, index: &DocumentIndex, diagnostics: &mut Vec
     };
 
     let config_index = index.config();
-    let database_entries = config
-        .entries
-        .iter()
-        .filter(|entry| !matches!(entry.key.as_str(), "imports"))
-        .collect::<Vec<_>>();
+    let database_entries =
+        config.entries.iter().filter(|entry| !matches!(entry.key.as_str(), "imports")).collect::<Vec<_>>();
     if !database_entries.is_empty() && !config.workspaces.is_empty() {
         for entry in database_entries {
             diagnostics.push(diagnostic(

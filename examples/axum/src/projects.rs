@@ -2,9 +2,7 @@
 //! `find_first` + `includes`, `count`, `update` and `delete`.
 
 use axum::{Json, extract::Path, extract::State, http::StatusCode};
-use dinoco::{
-    count, delete as delete_query, find_first, find_many, insert_into, transaction, update as update_query,
-};
+use dinoco::{count, delete as delete_query, find_first, find_many, insert_into, transaction, update as update_query};
 
 use crate::{
     database::{Project, Task},
@@ -62,11 +60,7 @@ pub async fn create(
 
     let task_titles = payload.tasks;
     let (project, tasks) = transaction(&client, |tx| async move {
-        let project = insert_into::<Project>()
-            .value(&Project::new(name))
-            .returning::<Project>()
-            .execute(tx)
-            .await?;
+        let project = insert_into::<Project>().value(&Project::new(name)).returning::<Project>().execute(tx).await?;
 
         let mut tasks = Vec::with_capacity(task_titles.len());
         for title in task_titles {

@@ -28,7 +28,9 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
                 .into());
         }
     };
-    let declared = std::fs::read_to_string("dinoco/mod.rs").is_ok_and(|module| module.contains("pub mod seed;"));
+    // Modules generated before 2.2.2 declare the seed without the test it runs in.
+    let declared = std::fs::read_to_string("dinoco/mod.rs")
+        .is_ok_and(|module| module.contains("pub mod seed;") && module.contains(dinoco_codegen::SEED_TEST));
     if !declared {
         return Err(CliError::usage("dinoco/mod.rs does not declare the seed yet.")
             .reason(format!("The seed in {seed} runs through dinoco/mod.rs, which declares it once regenerated."))
@@ -49,7 +51,7 @@ pub async fn run(workspace: Option<String>) -> anyhow::Result<()> {
     ui::fields(&fields);
     ui::blank();
 
-    ui::progress(format!("Running {seed} (building the Dinoco runner)..."));
+    ui::progress(format!("Running {seed} (building the application's tests)..."));
     crate::runner::seed(&config)?;
     ui::success("Seed applied");
     Ok(())

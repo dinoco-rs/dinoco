@@ -85,10 +85,20 @@ pub fn format_field_type(field_type: &FieldType) -> String {
 }
 
 fn format_attributes(attributes: &[Attribute], config: &FormatterConfig, indent: &str, column: usize) -> String {
-    attributes.iter().map(|attribute| format_attribute(attribute, "@", config, indent, column)).collect::<Vec<_>>().join(" ")
+    attributes
+        .iter()
+        .map(|attribute| format_attribute(attribute, "@", config, indent, column))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
-fn format_attribute(attribute: &Attribute, prefix: &str, config: &FormatterConfig, indent: &str, column: usize) -> String {
+fn format_attribute(
+    attribute: &Attribute,
+    prefix: &str,
+    config: &FormatterConfig,
+    indent: &str,
+    column: usize,
+) -> String {
     let name = match &attribute.condition {
         Some(condition) => format!("{prefix}{}<{condition}>", attribute.name),
         None => format!("{prefix}{}", attribute.name),

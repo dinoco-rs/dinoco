@@ -963,13 +963,12 @@ fn seed_requires_one_seed_declared_in_dinoco_mod() {
     assert!(!module.contains("mod seed"), "a removed seed is no longer declared: {module}");
 }
 
-/// The whole flow on a real Cargo project depending on this checkout: the
-/// runner builds into the project's own target directory, so after the
-/// application's build it only compiles the runner itself, and running the
-/// seed again changes nothing.
+/// The whole flow on a real Cargo project depending on this checkout: the seed
+/// runs inside the application's own crate, so it reaches the crate's items
+/// under `crate::`, and running it again changes nothing.
 #[test]
-#[ignore = "builds a Cargo project and the Dinoco runner (about a minute); run with --ignored"]
-fn seed_runs_through_the_runner_on_the_project_build() {
+#[ignore = "builds a Cargo project and its tests (about a minute); run with --ignored"]
+fn seed_runs_inside_the_application_crate() {
     let checkout = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("checkout").to_path_buf();
     let project = temp_project("seed-runner");
     fs::create_dir_all(project.join("src")).expect("src");
@@ -983,16 +982,19 @@ fn seed_runs_through_the_runner_on_the_project_build() {
     )
     .expect("manifest");
     fs::copy(checkout.join("Cargo.lock"), project.join("Cargo.lock")).expect("lockfile");
-    fs::write(project.join("src/main.rs"), "#[path = \"../dinoco/mod.rs\"]\nmod dinoco;\n\nfn main() {}\n")
-        .expect("main");
+    fs::write(
+        project.join("src/main.rs"),
+        "#[path = \"../dinoco/mod.rs\"]\nmod dinoco;\n\nmod helpers {\n    pub struct Emails;\n\n    impl Emails {\n        pub fn ana() -> String {\n            \"ana@dinoco.rs\".to_string()\n        }\n    }\n}\n\nuse helpers::*;\n\nfn main() {}\n",
+    )
+    .expect("main");
     fs::write(project.join("dinoco/schema.dinoco"), SQLITE_SCHEMA).expect("schema");
     fs::write(
         project.join("dinoco/seed.rs"),
-        r#"use super::models::*;
+        r#"use crate::{Emails, dinoco::models::User};
 
 pub async fn seed(client: &dinoco::DinocoClient) -> dinoco::anyhow::Result<()> {
     dinoco::insert_many::<User>()
-        .values([User { id: "u1".to_string(), email: "ana@dinoco.rs".to_string() }])
+        .values([User { id: "u1".to_string(), email: Emails::ana() }])
         .on_conflict_do_nothing(|user| user.id)
         .execute(client)
         .await?;
@@ -1028,12 +1030,7 @@ pub async fn seed(client: &dinoco::DinocoClient) -> dinoco::anyhow::Result<()> {
     let stdout = cli(&["seed"]);
     assert!(stdout.contains("Seed applied"), "{stdout}");
     assert!(stdout.contains("dinoco/seed.rs"), "{stdout}");
-    let runner_binary = fs::read_dir(project.join("target/debug"))
-        .expect("the project's target directory")
-        .filter_map(|entry| entry.ok())
-        .any(|entry| entry.file_name().to_string_lossy().starts_with("dinoco-seed-"));
-    assert!(runner_binary, "the runner builds into the project's target directory");
-    assert!(!project.join("dinoco/.runner/target").exists(), "the runner has no target directory of its own");
+    assert!(!project.join("dinoco/.runner/target").exists(), "the seed builds in the project's target directory");
 
     cli(&["seed"]);
     let connection = Connection::open(&database).expect("database");

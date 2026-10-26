@@ -18,7 +18,10 @@ use crate::handlers;
 
 const MAX_BODY_BYTES: u64 = 64 * 1024;
 
-pub async fn handle(client: Arc<DinocoClient>, request: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
+pub async fn handle(
+    client: Arc<DinocoClient>,
+    request: Request<Incoming>,
+) -> Result<Response<Full<Bytes>>, Infallible> {
     let (parts, body) = request.into_parts();
     let path = parts.uri.path().to_string();
     let query = parts.uri.query().unwrap_or_default().to_string();

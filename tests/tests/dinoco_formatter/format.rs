@@ -311,9 +311,9 @@ fn formatter_keeps_relation_attribute_inline_within_max_width() {
 
     let formatted = dinoco_formatter::format_from_raw_with_config(raw, &config).expect("format");
 
-    assert!(formatted.contains(
-        "@relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)"
-    ));
+    assert!(
+        formatted.contains("@relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: Cascade)")
+    );
     assert!(!formatted.contains("@relation(\n"));
 }
 

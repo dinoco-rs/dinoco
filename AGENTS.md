@@ -31,7 +31,7 @@ Dinoco is a schema-driven Rust ORM for SQLite, PostgreSQL and MySQL. A `.dinoco`
 │   ├── dinoco_formatter/   Canonical formatter for `.dinoco` files
 │   └── dinoco_cli/         `dinoco` CLI: commands/ (init, migrate, models, seed, review), db.rs (migration
 │                           state), ui.rs, prompt.rs, error.rs, runner.rs (builds dinoco/.runner/ to run
-│                           the project's transform.rs and seed, in the project's target directory)
+│                           the project's transform.rs; runs the seed through the app crate's tests)
 ├── vscode/                 Language server in Rust (server, completion, diagnostics, document,
 │                           workspace) + TypeScript client (src/extension.ts); prebuilt binaries in bin/
 ├── tests/                  `dinoco_tests` crate: integration suites for every crate (see Tests)

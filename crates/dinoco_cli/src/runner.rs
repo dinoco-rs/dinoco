@@ -1,9 +1,9 @@
 //! Runs project-owned Rust: `dinoco/transform.rs` while generating models,
-//! and the project's seed for `dinoco seed`.
+//! and the project's seed for `dinoco seed`, through the application's tests.
 //!
 //! The CLI is a prebuilt binary and cannot load user code, so it generates a
-//! tiny cargo project in `dinoco/.runner/`, with one binary per task, that
-//! `#[path]`-includes those files and runs them. It builds into the project's
+//! tiny cargo project in `dinoco/.runner/` that `#[path]`-includes the
+//! transform and runs it. It builds into the project's
 //! own target directory with a copy of the project's `Cargo.lock`, so it reuses
 //! the dependencies the application already compiled instead of building them
 //! again. Set `DINOCO_RUNNER_CRATES_PATH` to a Dinoco checkout to build the
@@ -68,6 +68,12 @@ pub fn generate_models(schema: &Schema, workspace: Option<&str>, source: &Schema
 }
 
 /// Runs the project's seed against the database `config` describes.
+///
+/// The seed is part of the application's crate, and uses its items and
+/// dependencies under `crate::`, so it cannot be included in the runner like
+/// the transform. Instead, Cargo compiles the crate's library and binaries for
+/// their tests and runs only the test the generated `dinoco/mod.rs` declares,
+/// which calls the seed. The report file tells whether one of them ran it.
 pub fn seed(config: &RuntimeConfig) -> anyhow::Result<()> {
     let database = match config.database {
         Database::Postgresql => "postgresql",
@@ -78,27 +84,82 @@ pub fn seed(config: &RuntimeConfig) -> anyhow::Result<()> {
         PostgresConnection::Direct => "direct",
         PostgresConnection::PgBouncer => "pgbouncer",
     };
-    run(
-        Task::Seed,
-        &[
-            ("DINOCO_SEED_DATABASE", database.to_string()),
-            ("DINOCO_SEED_CONNECTION", connection.to_string()),
-            ("DINOCO_SEED_DATABASE_URL", config.database_url.clone()),
-        ],
-    )
+    let runner = Path::new(RUNNER_DIR);
+    fs::create_dir_all(runner)?;
+    fs::write(runner.join(".gitignore"), "*\n")?;
+    let report = std::path::absolute(runner.join("seed-report"))?;
+    if report.exists() {
+        fs::remove_file(&report)?;
+    }
+
+    let status = Command::new(cargo())
+        .args(["test", "--quiet"])
+        .args(test_targets()?)
+        .args(["--", dinoco_codegen::SEED_TEST, "--ignored", "--nocapture", "--test-threads=1"])
+        .env("DINOCO_SEED_REPORT", &report)
+        .env("DINOCO_SEED_DATABASE", database)
+        .env("DINOCO_SEED_CONNECTION", connection)
+        .env("DINOCO_SEED_DATABASE_URL", &config.database_url)
+        .status()
+        .context("failed to launch `cargo`; `dinoco seed` needs a Rust toolchain")?;
+    if !status.success() {
+        bail!("the seed failed (see the output above)");
+    }
+    if !report.exists() {
+        bail!(
+            "no target of this crate includes dinoco/mod.rs, so the seed never ran; declare it in src/main.rs or src/lib.rs, e.g. `#[path = \"../dinoco/mod.rs\"] mod dinoco;`"
+        );
+    }
+    fs::remove_file(report)?;
+
+    Ok(())
+}
+
+/// `--lib` and `--bins`, for the targets the package in the current directory
+/// has: Cargo rejects `--lib` in a package without a library.
+fn test_targets() -> anyhow::Result<Vec<&'static str>> {
+    let output = Command::new(cargo())
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .output()
+        .context("failed to launch `cargo`; `dinoco seed` needs a Rust toolchain")?;
+    if !output.status.success() {
+        bail!("`cargo metadata` failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+    }
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let manifest = std::path::absolute("Cargo.toml")?;
+    let package = metadata["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|package| package["manifest_path"].as_str().is_some_and(|path| Path::new(path) == manifest))
+        .context("`dinoco seed` runs from the root of the Cargo package that includes dinoco/mod.rs")?;
+    let has_kind = |kind: &str| {
+        package["targets"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|target| target["kind"].as_array().into_iter().flatten().any(|value| value.as_str() == Some(kind)))
+    };
+
+    let mut targets = Vec::new();
+    if has_kind("lib") {
+        targets.push("--lib");
+    }
+    if has_kind("bin") {
+        targets.push("--bins");
+    }
+    Ok(targets)
 }
 
 #[derive(Clone, Copy)]
 enum Task {
     Models,
-    Seed,
 }
 
 impl Task {
     fn name(self) -> &'static str {
         match self {
             Task::Models => "models",
-            Task::Seed => "seed",
         }
     }
 }
@@ -121,10 +182,7 @@ fn run(task: Task, envs: &[(&str, String)]) -> anyhow::Result<()> {
     }
     let status = command.status().context("failed to launch `cargo`; the Dinoco runner needs a Rust toolchain")?;
     if !status.success() {
-        match task {
-            Task::Models => bail!("the Dinoco runner failed (see the output above)"),
-            Task::Seed => bail!("the seed failed (see the output above)"),
-        }
+        bail!("the Dinoco runner failed (see the output above)");
     }
 
     Ok(())
@@ -170,11 +228,12 @@ fn write_project(id: &str, project: Option<&CargoProject>) -> anyhow::Result<()>
     fs::write(runner.join(".gitignore"), "*\n")?;
     fs::write(runner.join("Cargo.toml"), render_manifest(id))?;
     fs::write(src.join("models.rs"), MODELS_MAIN)?;
-    fs::write(src.join("seed.rs"), SEED_MAIN)?;
-    // Left by runners of earlier releases, which had a single binary.
-    let legacy_main = src.join("main.rs");
-    if legacy_main.exists() {
-        fs::remove_file(legacy_main)?;
+    // Left by runners of earlier releases: a single binary, and the seed's.
+    for legacy in ["main.rs", "seed.rs"] {
+        let legacy = src.join(legacy);
+        if legacy.exists() {
+            fs::remove_file(legacy)?;
+        }
     }
 
     // The lockfile decides the dependency versions. The project's own makes
@@ -219,14 +278,12 @@ fn render_manifest(id: &str) -> String {
          [package]\nname = \"dinoco-runner-{id}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\nautobins = false\n\n\
          [workspace]\n\n\
          [[bin]]\nname = \"dinoco-models-{id}\"\npath = \"src/models.rs\"\n\n\
-         [[bin]]\nname = \"dinoco-seed-{id}\"\npath = \"src/seed.rs\"\n\n\
          [dependencies]\n"
     );
     for name in ["dinoco", "dinoco_codegen", "dinoco_compiler"] {
         manifest.push_str(&dependency(name));
     }
     manifest.push_str("anyhow = \"1.0\"\n");
-    manifest.push_str("tokio = { version = \"1\", features = [\"rt-multi-thread\"] }\n");
     manifest
 }
 
@@ -262,39 +319,5 @@ fn main() -> ::anyhow::Result<()> {
     // The CLI reports the result.
     ::dinoco_codegen::generate_models_with(&schema, workspace.as_deref(), &transform::transformer())?;
     Ok(())
-}
-"#;
-
-/// Runs `seed` from the project's seed, which the generated `dinoco/mod.rs`
-/// declares, against the database the CLI resolved for the workspace.
-const SEED_MAIN: &str = r#"// Generated by the Dinoco CLI.
-#![allow(unused)]
-
-#[path = "../../mod.rs"]
-mod dinoco;
-
-fn main() -> ::anyhow::Result<()> {
-    let runtime = ::tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-    runtime.block_on(async {
-        let client = connect().await?;
-        dinoco::seed::seed(&client).await?;
-        Ok(())
-    })
-}
-
-async fn connect() -> ::anyhow::Result<::dinoco::DinocoClient> {
-    let var = |name: &str| {
-        std::env::var(name).map_err(|_| ::anyhow::anyhow!("{name} is not set: run the seed with `dinoco seed`"))
-    };
-    let url = var("DINOCO_SEED_DATABASE_URL")?;
-    let backend = match (var("DINOCO_SEED_DATABASE")?.as_str(), var("DINOCO_SEED_CONNECTION")?.as_str()) {
-        ("postgresql", "pgbouncer") => ::dinoco::Backend::PgBouncer(::dinoco::PgBouncerAdapter::new(url).await?),
-        ("postgresql", _) => ::dinoco::Backend::Postgres(::dinoco::PostgresAdapter::direct(url).await?),
-        ("mysql", _) => ::dinoco::Backend::Mysql(::dinoco::MySqlAdapter::new(url)),
-        _ => ::dinoco::Backend::Sqlite(
-            <::dinoco::SqliteAdapter as ::dinoco::DinocoAdapter>::new(url).await.map_err(::anyhow::Error::msg)?,
-        ),
-    };
-    Ok(::dinoco::DinocoClient::new(backend))
 }
 "#;

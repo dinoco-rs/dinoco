@@ -16,5 +16,4 @@ pub struct Project {
 
     #[dinoco(one_to_many, foreign_key = "project_id", references = "id")]
     pub tasks: Vec<Task>,
-
 }

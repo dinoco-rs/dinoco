@@ -24,6 +24,9 @@ pub const TRANSFORM_PATH: &str = "dinoco/transform.rs";
 /// file, or a directory whose `mod.rs` runs the others.
 pub const SEED_PATHS: [&str; 2] = ["dinoco/seed.rs", "dinoco/seed/mod.rs"];
 
+/// The test of the generated `dinoco/mod.rs` that `dinoco seed` runs.
+pub const SEED_TEST: &str = "__dinoco_seed";
+
 /// The project's own modules that `dinoco/mod.rs` declares next to the models.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ProjectModules {
@@ -342,6 +345,14 @@ pub fn render_dinoco_mod_for(schema: &Schema, workspace: Option<&str>, modules: 
     if modules.seed {
         out.push_str("\n/// `dinoco/seed.rs` (or `dinoco/seed/mod.rs`), run by `dinoco seed`.\n");
         out.push_str("pub mod seed;\n");
+        out.push_str(
+            "\n/// Where `dinoco seed` runs the seed: it compiles this crate for its tests, so\n\
+             /// the seed sees every item of the crate under `crate::`, and runs only this\n\
+             /// test. Under a plain `cargo test -- --ignored` it does nothing.\n",
+        );
+        out.push_str("#[cfg(test)]\n#[test]\n#[ignore = \"run by `dinoco seed`\"]\n");
+        out.push_str(&format!("fn {SEED_TEST}() -> ::dinoco::anyhow::Result<()> {{\n"));
+        out.push_str("    ::dinoco::__run_seed(|client| async move { seed::seed(&client).await })\n}\n");
     }
     out.push_str("\npub use models::*;\n\n");
     out.push_str(

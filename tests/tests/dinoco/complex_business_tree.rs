@@ -469,7 +469,12 @@ async fn deep_business_tree_keeps_every_sibling_relation_independent() -> anyhow
         .includes(|item| item.partners())
         .includes(|item| item.fees().includes(|fee| fee.fees().includes(|child| child.parts())))
         .includes(|item| item.offices().includes(|office| office.permissions()))
-        .includes(|item| item.access().includes(|access| access.sent_by()).includes(|access| access.office()).includes(|access| access.account()))
+        .includes(|item| {
+            item.access()
+                .includes(|access| access.sent_by())
+                .includes(|access| access.office())
+                .includes(|access| access.account())
+        })
         .execute(&client)
         .await?
         .expect("business");

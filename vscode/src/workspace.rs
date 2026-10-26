@@ -87,7 +87,11 @@ impl ImportGraph {
         None
     }
 
-    pub fn definition(&self, file: &Path, symbol: &ResolvedSymbol) -> Option<(PathBuf, tower_lsp_server::ls_types::Range)> {
+    pub fn definition(
+        &self,
+        file: &Path,
+        symbol: &ResolvedSymbol,
+    ) -> Option<(PathBuf, tower_lsp_server::ls_types::Range)> {
         match symbol {
             ResolvedSymbol::Type(name) => {
                 let (path, block) = self.declaration(file, name)?;

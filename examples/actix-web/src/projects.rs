@@ -2,9 +2,7 @@
 //! `find_first` + `includes`, `count`, `update` and `delete`.
 
 use actix_web::{HttpResponse, web};
-use dinoco::{
-    count, delete as delete_query, find_first, find_many, insert_into, transaction, update as update_query,
-};
+use dinoco::{count, delete as delete_query, find_first, find_many, insert_into, transaction, update as update_query};
 
 use crate::{
     database::{Project, Task},
@@ -49,10 +47,7 @@ pub async fn get(client: web::Data<AppState>, id: web::Path<String>) -> Result<w
 
 /// `POST /projects` — create the project and its initial tasks atomically.
 /// Any failure rolls the whole thing back.
-pub async fn create(
-    client: web::Data<AppState>,
-    payload: web::Json<CreateProject>,
-) -> Result<HttpResponse, ApiError> {
+pub async fn create(client: web::Data<AppState>, payload: web::Json<CreateProject>) -> Result<HttpResponse, ApiError> {
     let payload = payload.into_inner();
     let name = payload.name.trim().to_string();
     if name.is_empty() {
@@ -64,11 +59,7 @@ pub async fn create(
 
     let task_titles = payload.tasks;
     let (project, tasks) = transaction(client.get_ref(), |tx| async move {
-        let project = insert_into::<Project>()
-            .value(&Project::new(name))
-            .returning::<Project>()
-            .execute(tx)
-            .await?;
+        let project = insert_into::<Project>().value(&Project::new(name)).returning::<Project>().execute(tx).await?;
 
         let mut tasks = Vec::with_capacity(task_titles.len());
         for title in task_titles {

@@ -29,14 +29,12 @@ async fn main() -> anyhow::Result<()> {
     // `ServiceBuilder` layers wrap it outermost-first.
     let service = {
         let client = client.clone();
-        ServiceBuilder::new()
-            .layer(LogLayer)
-            .concurrency_limit(128)
-            .timeout(Duration::from_secs(15))
-            .service_fn(move |request| {
+        ServiceBuilder::new().layer(LogLayer).concurrency_limit(128).timeout(Duration::from_secs(15)).service_fn(
+            move |request| {
                 let client = client.clone();
                 async move { app::handle(client, request).await }
-            })
+            },
+        )
     };
     let service = TowerToHyperService::new(service);
 

@@ -1016,8 +1016,7 @@ pub fn encode_semantic_tokens(mut spans: Vec<(Range, u32, u32)>) -> Vec<Semantic
         }
         let length = range.end.character - range.start.character;
         let delta_line = range.start.line - previous_line;
-        let delta_start =
-            if delta_line == 0 { range.start.character - previous_start } else { range.start.character };
+        let delta_start = if delta_line == 0 { range.start.character - previous_start } else { range.start.character };
 
         tokens.push(SemanticToken { delta_line, delta_start, length, token_type, token_modifiers_bitset: modifiers });
 

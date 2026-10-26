@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 // The documentation site lives outside this repository (it covers every crate of the
 // Dinoco ecosystem), so its versioned directories are checked by its own scripts.
-const CRATE_VERSION: &str = "2.2.1";
+const CRATE_VERSION: &str = "2.2.2";
 const PREVIOUS_CRATE_VERSION: &str = "2.2.0";
 
 fn workspace_root() -> &'static Path {
