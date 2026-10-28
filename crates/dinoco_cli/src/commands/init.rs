@@ -96,7 +96,7 @@ pub fn run(options: InitOptions) -> anyhow::Result<()> {
     ui::line("2. Define your models in dinoco/schema.dinoco");
     ui::line("3. Run `dinoco migrate generate` to create your first migration");
 
-    ui::docs("/getting-started");
+    ui::docs("/docs/orm/guide/introduction");
 
     Ok(())
 }

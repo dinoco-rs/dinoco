@@ -116,6 +116,11 @@ fn print_future_sizes(client: &DinocoClient) {
         "find_many::<User>().includes(posts).execute",
         find_many::<BenchUser>().includes(|user| user.posts()).execute(client),
     );
+    future_size("find_many::<User>().count().execute", find_many::<BenchUser>().count().execute(client));
+    future_size(
+        "find_many::<User>().count_custom(includes(posts)).execute",
+        find_many::<BenchUser>().count_custom(|count| count.includes(|user| user.posts())).execute(client),
+    );
     future_size("find_first::<User>().execute", find_first::<BenchUser>().execute(client));
     future_size(
         "insert_into::<Event>().values(&item).execute",
@@ -275,6 +280,29 @@ async fn print_operations(fixture: &Fixture) {
     .await;
     measure("count where", || async move {
         count::<BenchUser>().where_(|user| user.active.eq(true)).execute(client).await.unwrap()
+    })
+    .await;
+    measure("find_many where take(20) count", || async move {
+        find_many::<BenchUser>()
+            .where_(|user| user.active.eq(true))
+            .order_by(|user| user.id.asc())
+            .take(20)
+            .count()
+            .execute(client)
+            .await
+            .unwrap()
+    })
+    .await;
+    measure("find_many where take(20), then count where", || async move {
+        let rows = find_many::<BenchUser>()
+            .where_(|user| user.active.eq(true))
+            .order_by(|user| user.id.asc())
+            .take(20)
+            .execute(client)
+            .await
+            .unwrap();
+        let count = count::<BenchUser>().where_(|user| user.active.eq(true)).execute(client).await.unwrap();
+        (rows, count)
     })
     .await;
     measure("count where includes has_many", || async move {

@@ -84,6 +84,24 @@ async fn fulltext_is_available_in_every_find_builder() -> anyhow::Result<()> {
         .await?;
     assert_eq!(articles.len(), 1);
 
+    // A search counts like any filter, and `remove` drops it by any field of its group.
+    let (rows, count) =
+        find_many::<Article>().where_(|item| item.title.fulltext("Dinoco")).count().execute(&client).await?;
+    assert_eq!((rows.len(), count.total), (1, 1));
+    let (_, count) = find_many::<Article>()
+        .where_(|item| item.title.fulltext("Dinoco"))
+        .where_(|item| item.author_id.not_null())
+        .count_transform(|count| count.remove(|item| item.body))
+        .execute(&client)
+        .await?;
+    assert_eq!(count.total, 2, "the search on title and body goes, author_id stays");
+    let (_, count) = find_many::<Article>()
+        .where_(|item| item.title.fulltext("Dinoco"))
+        .count_transform(|count| count.remove(|item| item.author_id))
+        .execute(&client)
+        .await?;
+    assert_eq!(count.total, 1);
+
     let updated = find_and_update::<Article>()
         .where_(|item| item.body.fulltext("transactions"))
         .update(|item| item.body.set("Dinoco atomic updates".to_string()))

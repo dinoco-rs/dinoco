@@ -20,7 +20,7 @@ resolver = "3"
 # Inherited by every crate (`version.workspace = true`, ...). A release changes
 # the version here and in the internal dependencies below, nowhere else.
 [workspace.package]
-version = "2.2.3"
+version = "2.2.4"
 edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
@@ -30,16 +30,16 @@ readme = "crates.md"
 
 [workspace.dependencies]
 # The crates of this workspace, published together at the version above.
-dinoco = { path = "crates/dinoco", version = "2.2.3" }
-dinoco_cli = { path = "crates/dinoco_cli", version = "2.2.3" }
-dinoco_codegen = { path = "crates/dinoco_codegen", version = "2.2.3" }
-dinoco_compiler = { path = "crates/dinoco_compiler", version = "2.2.3" }
+dinoco = { path = "crates/dinoco", version = "2.2.4" }
+dinoco_cli = { path = "crates/dinoco_cli", version = "2.2.4" }
+dinoco_codegen = { path = "crates/dinoco_codegen", version = "2.2.4" }
+dinoco_compiler = { path = "crates/dinoco_compiler", version = "2.2.4" }
 # Exact: generated code calls into this exact version of the runtime.
-dinoco_derives = { path = "crates/dinoco_derives", version = "=2.2.3" }
+dinoco_derives = { path = "crates/dinoco_derives", version = "=2.2.4" }
 # Without its default features: each member picks the databases it needs.
-dinoco_engine = { path = "crates/dinoco_engine", version = "2.2.3", default-features = false }
-dinoco_formatter = { path = "crates/dinoco_formatter", version = "2.2.3" }
-dinoco_vscode = { path = "vscode", version = "2.2.3" }
+dinoco_engine = { path = "crates/dinoco_engine", version = "2.2.4", default-features = false }
+dinoco_formatter = { path = "crates/dinoco_formatter", version = "2.2.4" }
+dinoco_vscode = { path = "vscode", version = "2.2.4" }
 
 # Third-party crates more than one member uses, at one version.
 anyhow = "1.0.103"

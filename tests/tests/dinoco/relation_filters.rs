@@ -2,7 +2,7 @@
 //! by their related rows without loading them. Covers every relation shape
 //! (many-to-one, one-to-many, both sides of a one-to-one, many-to-many, self
 //! relations), the `where_`/`none`/`every`/`exists`/`not_exists` quantifiers
-//! and their `_complex` forms,
+//! and their `_complex` forms, `empty`/`not_empty` on list relations,
 //! nesting, `where_complex`, and every builder that accepts a `where_`.
 //!
 //! Every scenario runs on SQLite, PostgreSQL and MySQL (the same local servers
@@ -11,8 +11,8 @@
 use std::future::Future;
 
 use dinoco::{
-    DinocoEnum, Entity, FindWhere, WhereComplex, count, delete, delete_many, exists, find_and_update, find_first,
-    find_many, insert_many, transaction, update, update_many,
+    DinocoEnum, Entity, FindWhere, ListRelation, RelationField, WhereComplex, count, delete, delete_many, exists,
+    find_and_update, find_first, find_many, insert_many, transaction, update, update_many,
 };
 use dinoco_engine::{
     Backend, CreateEnumMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler, DinocoValue, DropEnumMigration,
@@ -78,6 +78,11 @@ on_every_backend!(
     exists_complex_reads,
     exists_complex_writes,
     exists_complex_transactions,
+    emptiness_shapes,
+    emptiness_edges,
+    emptiness_reads,
+    emptiness_writes,
+    emptiness_transactions,
 );
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, DinocoEnum)]
@@ -1283,6 +1288,283 @@ async fn exists_complex_transactions(client: DinocoClient) -> anyhow::Result<()>
     assert_eq!(ids(&untagged, |transaction| &transaction.id), ["t3", "t4"]);
     assert_eq!(amount_of(&client, "t1").await?, 1100);
     assert_eq!(amount_of(&client, "t5").await?, 1075);
+
+    Ok(())
+}
+
+#[test]
+fn emptiness_filters_match_their_existence_counterparts() {
+    let transaction = TransactionWhere::default;
+
+    assert_eq!(format!("{:?}", transaction().items.empty()), format!("{:?}", transaction().items.not_exists()));
+    assert_eq!(format!("{:?}", transaction().items.not_empty()), format!("{:?}", transaction().items.exists()));
+    assert_eq!(format!("{:?}", transaction().tags.empty()), format!("{:?}", transaction().tags.not_exists()));
+    assert_eq!(format!("{:?}", transaction().tags.not_empty()), format!("{:?}", transaction().tags.exists()));
+}
+
+/// `empty` and `not_empty` only exist on `RelationField<_, ListRelation>`, so
+/// a singular relation such as `payout` doesn't offer them.
+#[test]
+fn only_list_relations_take_emptiness_filters() {
+    let transaction = TransactionWhere::default();
+    let _: RelationField<Item, ListRelation> = transaction.items;
+    let _: RelationField<Tag, ListRelation> = transaction.tags;
+    let _: RelationField<Payout> = transaction.payout;
+    let _: RelationField<Receipt> = transaction.receipt;
+
+    let employee = EmployeeWhere::default();
+    let _: RelationField<Employee, ListRelation> = employee.reports;
+    let _: RelationField<Employee> = employee.manager;
+
+    let _: RelationField<Transaction, ListRelation> = PayoutWhere::default().transactions;
+    let _: RelationField<Transaction, ListRelation> = TagWhere::default().transactions;
+    let _: RelationField<Transaction> = ItemWhere::default().transaction;
+    let _: RelationField<Transaction> = ReceiptWhere::default().transaction;
+}
+
+async fn emptiness_shapes(client: DinocoClient) -> anyhow::Result<()> {
+    // One-to-many.
+    assert_eq!(transaction_ids(&client, |t| t.items.empty()).await?, ["t4"]);
+    assert_eq!(transaction_ids(&client, |t| t.items.not_empty()).await?, ["t1", "t2", "t3", "t5"]);
+    assert_eq!(payout_ids(&client, |payout| payout.transactions.empty()).await?, Vec::<String>::new());
+    assert_eq!(payout_ids(&client, |payout| payout.transactions.not_empty()).await?, ["p-boleto", "p-pix", "p-ted"]);
+
+    // Many-to-many, both sides: t1 has two tags and still comes back once.
+    assert_eq!(transaction_ids(&client, |t| t.tags.empty()).await?, ["t3", "t4"]);
+    assert_eq!(transaction_ids(&client, |t| t.tags.not_empty()).await?, ["t1", "t2", "t5"]);
+    let tags = find_many::<Tag>().where_(|tag| tag.transactions.empty()).execute(&client).await?;
+    assert!(tags.is_empty(), "every tag marks a transaction");
+    let tags = find_many::<Tag>()
+        .where_(|tag| tag.transactions.not_empty())
+        .order_by(|tag| tag.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&tags, |tag| &tag.id), ["promo", "vip"]);
+
+    // Self relation.
+    assert_eq!(employee_ids(&client, |e| e.reports.empty()).await?, ["caio", "duda", "eva"]);
+    assert_eq!(employee_ids(&client, |e| e.reports.not_empty()).await?, ["ana", "bia"]);
+
+    // Nested.
+    assert_eq!(employee_ids(&client, |e| e.reports.where_(|report| report.reports.empty())).await?, ["bia"]);
+    assert_eq!(employee_ids(&client, |e| e.reports.where_(|report| report.reports.not_empty())).await?, ["ana"]);
+    assert_eq!(payout_ids(&client, |payout| payout.transactions.where_(|t| t.tags.empty())).await?, ["p-ted"]);
+    let items = find_many::<Item>()
+        .where_(|item| item.transaction.where_(|t| t.tags.empty()))
+        .order_by(|item| item.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&items, |item| &item.id), ["i4"]);
+
+    // `every` holds vacuously on an empty list: `not_empty` rules that out,
+    // and `empty` keeps only that case.
+    let all_refunded = |t: TransactionWhere| t.items.every(|item| item.refunded.eq(true));
+    assert_eq!(transaction_ids(&client, all_refunded).await?, ["t2", "t4"]);
+    let transactions = find_many::<Transaction>()
+        .where_(all_refunded)
+        .where_(|t| t.items.not_empty())
+        .order_by(|t| t.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&transactions, |transaction| &transaction.id), ["t2"]);
+    let transactions = find_many::<Transaction>()
+        .where_(all_refunded)
+        .where_(|t| t.items.empty())
+        .order_by(|t| t.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&transactions, |transaction| &transaction.id), ["t4"]);
+    assert_eq!(
+        employee_ids(&client, |e| e.reports.every(|report| report.reports.empty())).await?,
+        ["bia", "caio", "duda", "eva"]
+    );
+
+    Ok(())
+}
+
+async fn emptiness_edges(client: DinocoClient) -> anyhow::Result<()> {
+    // Inside the builder's where_complex tree.
+    assert_eq!(transaction_ids_complex(&client, |t, m| m.not(t.items.empty())).await?, ["t1", "t2", "t3", "t5"]);
+    assert_eq!(transaction_ids_complex(&client, |t, m| m.not(t.items.not_empty())).await?, ["t4"]);
+    assert_eq!(transaction_ids_complex(&client, |t, m| m.or(t.items.empty(), t.tags.empty())).await?, ["t3", "t4"]);
+    assert_eq!(transaction_ids_complex(&client, |t, m| m.and([t.items.not_empty(), t.tags.empty()])).await?, ["t3"]);
+    assert_eq!(
+        transaction_ids_complex(&client, |t, m| {
+            m.and([t.amount.lt(300), t.tags.not_empty(), t.items.every(|item| item.refunded.eq(true))])
+        })
+        .await?,
+        ["t2"]
+    );
+
+    // Inside a relation's own where_complex tree.
+    assert_eq!(
+        payout_ids(&client, |payout| {
+            payout.transactions.where_complex(|t, m| m.and([t.tags.empty(), t.items.not_empty()]))
+        })
+        .await?,
+        ["p-ted"]
+    );
+
+    // Next to plain where_ calls.
+    let transactions = find_many::<Transaction>()
+        .where_(|t| t.tags.empty())
+        .where_(|t| t.amount.gt(60))
+        .order_by(|t| t.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(ids(&transactions, |transaction| &transaction.id), ["t3"]);
+
+    // Same rows as their existence counterparts.
+    assert_eq!(
+        transaction_ids(&client, |t| t.tags.empty()).await?,
+        transaction_ids(&client, |t| t.tags.not_exists()).await?
+    );
+    assert_eq!(
+        transaction_ids(&client, |t| t.tags.not_empty()).await?,
+        transaction_ids(&client, |t| t.tags.exists()).await?
+    );
+
+    // A list emptied by deleting its only row, then every list emptied.
+    delete_many::<Item>().where_(|item| item.transaction_id.eq("t2")).execute(&client).await?;
+    assert_eq!(transaction_ids(&client, |t| t.items.empty()).await?, ["t2", "t4"]);
+    delete_many::<Item>().where_(|item| item.id.not_null()).execute(&client).await?;
+    assert_eq!(transaction_ids(&client, |t| t.items.empty()).await?, ["t1", "t2", "t3", "t4", "t5"]);
+    assert_eq!(transaction_ids(&client, |t| t.items.not_empty()).await?, Vec::<String>::new());
+
+    Ok(())
+}
+
+async fn emptiness_reads(client: DinocoClient) -> anyhow::Result<()> {
+    assert_eq!(count::<Transaction>().where_(|t| t.items.empty()).execute(&client).await?.total, 1);
+    assert_eq!(count::<Transaction>().where_(|t| t.tags.not_empty()).execute(&client).await?.total, 3);
+
+    assert!(
+        exists::<Employee>().where_(|e| e.reports.empty()).where_(|e| e.manager.not_exists()).execute(&client).await?,
+        "eva has no manager and no reports"
+    );
+    assert!(!exists::<Tag>().where_(|tag| tag.transactions.empty()).execute(&client).await?);
+
+    let first = find_first::<Transaction>()
+        .where_(|t| t.tags.empty())
+        .order_by(|t| t.amount.desc())
+        .execute(&client)
+        .await?
+        .expect("an untagged transaction");
+    assert_eq!(first.id, "t3");
+
+    let amounts = find_many::<Transaction>()
+        .where_(|t| t.items.not_empty())
+        .order_by(|t| t.amount.asc())
+        .pluck(|t| t.amount)
+        .execute(&client)
+        .await?;
+    assert_eq!(amounts, [75, 100, 250, 400]);
+
+    let loaded = |payouts: &[Payout]| {
+        payouts
+            .iter()
+            .map(|payout| (payout.id.clone(), ids(&payout.transactions, |transaction| &transaction.id)))
+            .collect::<Vec<_>>()
+    };
+    let payouts = find_many::<Payout>()
+        .includes(|payout| payout.transactions().where_(|t| t.tags.empty()).order_by(|t| t.id.asc()))
+        .order_by(|payout| payout.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        loaded(&payouts),
+        [
+            ("p-boleto".to_string(), vec![]),
+            ("p-pix".to_string(), vec![]),
+            ("p-ted".to_string(), vec!["t3".to_string()])
+        ]
+    );
+
+    // `take` switches the include to its partitioned query.
+    let payouts = find_many::<Payout>()
+        .includes(|payout| payout.transactions().where_(|t| t.tags.not_empty()).order_by(|t| t.amount.desc()).take(1))
+        .order_by(|payout| payout.id.asc())
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        loaded(&payouts),
+        [
+            ("p-boleto".to_string(), vec!["t5".to_string()]),
+            ("p-pix".to_string(), vec!["t2".to_string()]),
+            ("p-ted".to_string(), vec![])
+        ]
+    );
+
+    let ana = find_first::<Employee>()
+        .where_(|e| e.id.eq("ana"))
+        .includes(|e| e.reports().where_(|report| report.reports.not_empty()))
+        .execute(&client)
+        .await?
+        .expect("ana");
+    assert_eq!(ids(&ana.reports, |employee| &employee.id), ["bia"]);
+
+    let counted =
+        count::<Tag>().includes(|tag| tag.transactions().where_(|t| t.items.not_empty())).execute(&client).await?;
+    assert_eq!(counted.transactions, Some(4), "vip marks t1 and t5, promo t1 and t2");
+    let counted =
+        count::<Payout>().includes(|payout| payout.transactions().where_(|t| t.tags.empty())).execute(&client).await?;
+    assert_eq!(counted.transactions, Some(1));
+
+    Ok(())
+}
+
+async fn emptiness_writes(client: DinocoClient) -> anyhow::Result<()> {
+    let updated = update_many::<Transaction>()
+        .where_(|t| t.items.empty())
+        .update(|t| t.amount.set(0))
+        .returning::<Transaction>()
+        .execute(&client)
+        .await?;
+    let updated = updated.iter().map(|transaction| (transaction.id.as_str(), transaction.amount)).collect::<Vec<_>>();
+    assert_eq!(updated, [("t4", 0)]);
+
+    update::<Transaction>()
+        .where_(|t| t.tags.empty())
+        .where_(|t| t.items.not_empty())
+        .update(|t| t.amount.increment(1))
+        .execute(&client)
+        .await?;
+    assert_eq!(amount_of(&client, "t3").await?, 401);
+
+    let bumped = find_and_update::<Transaction>()
+        .where_(|t| t.tags.not_empty())
+        .where_(|t| t.payout.where_(|payout| payout.method.eq(PayoutMethod::Boleto)))
+        .update(|t| t.amount.increment(1))
+        .execute(&client)
+        .await?;
+    assert_eq!((bumped.id.as_str(), bumped.amount), ("t5", 76));
+
+    // Writes whose filter reads the table being written.
+    update_many::<Employee>().where_(|e| e.reports.not_empty()).update(|e| e.name.set("Lead")).execute(&client).await?;
+    assert_eq!(employee_ids(&client, |e| e.name.eq("Lead")).await?, ["ana", "bia"]);
+    delete_many::<Employee>().where_(|e| e.reports.empty()).where_(|e| e.manager.not_exists()).execute(&client).await?;
+    assert_eq!(employee_ids(&client, |e| e.id.not_null()).await?, ["ana", "bia", "caio", "duda"]);
+
+    // t3's item goes with the untagged transactions' items, which leaves t3
+    // and t4 without items.
+    delete_many::<Item>().where_(|item| item.transaction.where_(|t| t.tags.empty())).execute(&client).await?;
+    delete::<Transaction>().where_(|t| t.items.empty()).execute(&client).await?;
+    assert_eq!(transaction_ids(&client, |t| t.id.not_null()).await?, ["t1", "t2", "t5"]);
+
+    Ok(())
+}
+
+async fn emptiness_transactions(client: DinocoClient) -> anyhow::Result<()> {
+    let emptied = transaction(&client, |tx| async move {
+        delete_many::<Item>().where_(|item| item.transaction_id.eq("t2")).execute(tx).await?;
+        update_many::<Transaction>().where_(|t| t.items.empty()).update(|t| t.amount.set(0)).execute(tx).await?;
+
+        find_many::<Transaction>().where_(|t| t.items.empty()).order_by(|t| t.id.asc()).execute(tx).await
+    })
+    .await?;
+    assert_eq!(ids(&emptied, |transaction| &transaction.id), ["t2", "t4"]);
+    assert_eq!(amount_of(&client, "t2").await?, 0);
+    assert_eq!(transaction_ids(&client, |t| t.items.not_empty()).await?, ["t1", "t3", "t5"]);
 
     Ok(())
 }

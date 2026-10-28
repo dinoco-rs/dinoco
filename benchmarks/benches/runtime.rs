@@ -321,6 +321,35 @@ fn bench_backend(c: &mut Criterion, rt: &Runtime, fixture: &Fixture) {
         })
     });
 
+    group.bench_function("find_many_count", |b| {
+        b.to_async(rt).iter(|| async move {
+            let (rows, count) = find_many::<BenchUser>()
+                .where_(|user| user.active.eq(true))
+                .order_by(|user| user.id.asc())
+                .take(20)
+                .count()
+                .execute(client)
+                .await
+                .expect("find many count");
+            assert_eq!(rows.len(), 20);
+            (rows, count)
+        })
+    });
+
+    group.bench_function("find_many_then_count", |b| {
+        b.to_async(rt).iter(|| async move {
+            let rows = find_many::<BenchUser>()
+                .where_(|user| user.active.eq(true))
+                .order_by(|user| user.id.asc())
+                .take(20)
+                .execute(client)
+                .await
+                .expect("find many");
+            let count = count::<BenchUser>().where_(|user| user.active.eq(true)).execute(client).await.expect("count");
+            (rows, count)
+        })
+    });
+
     group.bench_function("count_includes_has_many", |b| {
         b.to_async(rt).iter(|| async move {
             count::<BenchUser>()

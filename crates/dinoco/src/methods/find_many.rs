@@ -2,27 +2,95 @@ use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    AggregateColumn, AggregateGroup, AggregateQuery, DinocoEntity, DinocoProjection, DinocoRowModel, FindOrderBy,
-    FindQuery, FindWhere, GroupOrder, GroupedValue, PluckColumn, PluckValue, WhereComplex,
+    AggregateColumn, AggregateGroup, AggregateQuery, CountQuery, DinocoEntity, DinocoProjection, DinocoRowModel,
+    FindOrderBy, FindQuery, FindWhere, GroupOrder, GroupedValue, PluckColumn, PluckValue, WhereComplex,
 };
 use futures_util::TryFutureExt;
 use futures_util::future::Either;
 
 use crate::{
-    Aggregate, Field, IncludeLoader, IntoGroupKey, IntoIncludeLoader, ReadExecutor, load_includes, single_field,
+    Aggregate, Count, DinocoCountModel, Field, IncludeLoader, IntoGroupKey, IntoIncludeLoader, ReadExecutor,
+    load_includes, single_field,
 };
 
-pub struct FindMany<M, S = M> {
+/// `C` is [`NoCount`] until `.count()` or one of its variants turns it into a
+/// [`WithCount`], whose `execute` also returns an `M::Count`.
+pub struct FindMany<M, S = M, C = NoCount> {
     query: FindQuery,
     includes: Vec<Box<dyn IncludeLoader<S>>>,
     read_primary: bool,
     complex_where: bool,
+    count: C,
 
     select_marker: PhantomData<S>,
     marker: PhantomData<M>,
 }
 
-impl<M, S> FindMany<M, S>
+/// A `find_many` that returns its rows alone, the default.
+pub struct NoCount;
+
+/// A `find_many` that also counts, from `.count()`, `.count_transform(...)`,
+/// `.count_custom(...)` or `.count_custom_complex(...)`.
+pub struct WithCount<F>(F);
+
+/// What a counting `find_many` counts with: [`SameFilters`],
+/// [`TransformedFilters`] or [`CustomFilters`].
+pub trait CountFilters<M>
+where
+    M: DinocoEntity,
+{
+    /// Whether the count runs with the find's own filters, so that a total at
+    /// or below `skip` leaves the find no row to return.
+    #[doc(hidden)]
+    const FIND_FILTERS: bool = false;
+
+    /// The count, given the find's conditions.
+    #[doc(hidden)]
+    fn into_count(self, find_conditions: &[FindWhere]) -> Count<M>;
+}
+
+/// `.count()`: the find's own filters.
+pub struct SameFilters;
+
+/// `.count_transform(...)`: the find's filters, changed for the count.
+pub struct TransformedFilters<F>(F);
+
+/// `.count_custom(...)` and `.count_custom_complex(...)`: filters of the
+/// count's own.
+pub struct CustomFilters<F>(F);
+
+impl<M> CountFilters<M> for SameFilters
+where
+    M: DinocoEntity,
+{
+    const FIND_FILTERS: bool = true;
+
+    fn into_count(self, find_conditions: &[FindWhere]) -> Count<M> {
+        Count::with_conditions(find_conditions.to_vec())
+    }
+}
+
+impl<M, F> CountFilters<M> for TransformedFilters<F>
+where
+    M: DinocoEntity,
+    F: FnOnce(Count<M>) -> Count<M>,
+{
+    fn into_count(self, find_conditions: &[FindWhere]) -> Count<M> {
+        (self.0)(Count::with_conditions(find_conditions.to_vec()))
+    }
+}
+
+impl<M, F> CountFilters<M> for CustomFilters<F>
+where
+    M: DinocoEntity,
+    F: FnOnce(Count<M>) -> Count<M>,
+{
+    fn into_count(self, _find_conditions: &[FindWhere]) -> Count<M> {
+        (self.0)(Count::with_conditions(Vec::new()))
+    }
+}
+
+impl<M, S, C> FindMany<M, S, C>
 where
     M: DinocoEntity + DinocoRowModel,
     S: DinocoRowModel,
@@ -48,7 +116,7 @@ where
         self
     }
 
-    pub fn select<NS>(mut self) -> FindMany<M, NS>
+    pub fn select<NS>(mut self) -> FindMany<M, NS, C>
     where
         NS: DinocoProjection<M>,
     {
@@ -59,6 +127,7 @@ where
             includes: Vec::new(),
             read_primary: self.read_primary,
             complex_where: self.complex_where,
+            count: self.count,
             select_marker: PhantomData,
             marker: PhantomData,
         }
@@ -103,6 +172,84 @@ where
         self
     }
 
+    /// Also counts the rows the find's filters match, ignoring `order_by`,
+    /// `take` and `skip`: the total a paginated list shows. `execute` then
+    /// returns `(rows, M::Count)`.
+    ///
+    /// The filters are read when the query runs, so `where_` calls after this
+    /// one count too. Of `count` and its variants, the last one called is the
+    /// one that runs.
+    pub fn count(self) -> FindMany<M, S, WithCount<SameFilters>> {
+        self.counting(SameFilters)
+    }
+
+    /// [`count`](Self::count) with the find's filters changed for the count
+    /// only. `callback` receives a [`count`](crate::count) builder holding
+    /// them as `where_` calls, so it can [`remove`](Count::remove) some, add
+    /// `where_` and `where_complex` filters, and ask for relation counts with
+    /// `includes`. The find keeps its own filters.
+    pub fn count_transform<F>(self, callback: F) -> FindMany<M, S, WithCount<TransformedFilters<F>>>
+    where
+        F: FnOnce(Count<M>) -> Count<M>,
+    {
+        self.counting(TransformedFilters(callback))
+    }
+
+    /// [`count`](Self::count) with filters of its own instead of the find's:
+    /// `callback` receives an empty [`count`](crate::count) builder.
+    pub fn count_custom<F>(self, callback: F) -> FindMany<M, S, WithCount<CustomFilters<F>>>
+    where
+        F: FnOnce(Count<M>) -> Count<M>,
+    {
+        self.counting(CustomFilters(callback))
+    }
+
+    /// [`count_custom`](Self::count_custom) with a [`WhereComplex`] tree, as
+    /// [`where_complex`](Self::where_complex) takes it.
+    pub fn count_custom_complex<F>(
+        self,
+        callback: F,
+    ) -> FindMany<M, S, WithCount<CustomFilters<impl FnOnce(Count<M>) -> Count<M>>>>
+    where
+        F: FnOnce(M::Where, WhereComplex) -> FindWhere,
+        M::Count: 'static,
+    {
+        self.count_custom(move |count| count.where_complex(callback))
+    }
+
+    fn counting<F>(self, filters: F) -> FindMany<M, S, WithCount<F>> {
+        let Self { query, includes, read_primary, complex_where, .. } = self;
+
+        FindMany {
+            query,
+            includes,
+            read_primary,
+            complex_where,
+            count: WithCount(filters),
+            select_marker: PhantomData,
+            marker: PhantomData,
+        }
+    }
+
+    /// Applies a post-query mapping to every row.
+    ///
+    /// Runs after includes are loaded, on the Rust side — it is not a SQL
+    /// projection, so the full row (and any loaded relations) is available to
+    /// the callback. After `.count()`, the count comes back unchanged next to
+    /// the mapped rows.
+    pub fn transform<F, R>(self, callback: F) -> FindManyTransform<M, S, F, C>
+    where
+        F: FnMut(S) -> R,
+    {
+        FindManyTransform { inner: self, transform: callback }
+    }
+}
+
+impl<M, S> FindMany<M, S>
+where
+    M: DinocoEntity + DinocoRowModel,
+    S: DinocoRowModel,
+{
     /// Projects onto a single column instead of a full row, or onto an
     /// aggregate the database computes over the matching rows.
     ///
@@ -117,18 +264,6 @@ where
         P: IntoPluck<M>,
     {
         callback(M::Where::default()).into_pluck(self.query, self.read_primary)
-    }
-
-    /// Applies a post-query mapping to every row.
-    ///
-    /// Runs after includes are loaded, on the Rust side — it is not a SQL
-    /// projection, so the full row (and any loaded relations) is available to
-    /// the callback.
-    pub fn transform<F, R>(self, callback: F) -> FindManyTransform<M, S, F>
-    where
-        F: FnMut(S) -> R,
-    {
-        FindManyTransform { inner: self, transform: callback }
     }
 
     // Not an `async fn`: the builder is taken apart first, so the future
@@ -148,6 +283,80 @@ where
             Ok(rows)
         }
     }
+}
+
+impl<M, S, F> FindMany<M, S, WithCount<F>>
+where
+    M: DinocoEntity + DinocoRowModel,
+    M::Count: DinocoCountModel<M>,
+    S: DinocoRowModel,
+    F: CountFilters<M>,
+{
+    /// Runs the count, then the find, on the same connection. With the find's
+    /// own filters (`.count()`), a page that starts at or past the last row
+    /// is known to be empty from the total, and its find doesn't run.
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<(Vec<S>, M::Count)>>
+    where
+        C: ReadExecutor,
+    {
+        let Self { query, includes, read_primary, count: WithCount(filters), .. } = self;
+
+        async move {
+            let (total, count) = count_rows::<M, F>(filters, &query.conditions, &client, read_primary).await?;
+
+            if F::FIND_FILTERS && total <= i64::from(query.skip.max(0)) {
+                return Ok((Vec::new(), count));
+            }
+
+            let target = client.read_target(read_primary)?;
+            let mut rows = target.query::<S>(query).await?;
+
+            load_includes(includes, &target, &mut rows).await?;
+
+            Ok((rows, count))
+        }
+    }
+}
+
+/// The count of a counting `find_many`: the total, then each relation count,
+/// on the connection the find reads from. It runs to completion before the
+/// find starts, so its state shares space with the find's in the caller's
+/// future instead of adding to it.
+async fn count_rows<M, F>(
+    filters: F,
+    find_conditions: &[FindWhere],
+    client: &impl ReadExecutor,
+    read_primary: bool,
+) -> anyhow::Result<(i64, M::Count)>
+where
+    M: DinocoEntity,
+    M::Count: DinocoCountModel<M>,
+    F: CountFilters<M>,
+{
+    let (mut conditions, loaders) = filters.into_count(find_conditions).into_parts();
+    // Relation counts reuse the conditions; without any, they move into the
+    // query instead of being cloned.
+    let query_conditions = if loaders.is_empty() { std::mem::take(&mut conditions) } else { conditions.clone() };
+    let query = CountQuery { table: M::TABLE_NAME, conditions: query_conditions };
+
+    let total = client.read_source(read_primary)?.count(query).await?;
+    let mut count = M::Count::default();
+    count.dinoco_set_total(total);
+
+    // Relation counts are rare here; awaiting them boxed keeps their state
+    // out of every counting find's future.
+    if !loaders.is_empty() {
+        let source = client.read_source(read_primary)?;
+        Box::pin(async {
+            for loader in loaders {
+                loader.load_count(M::TABLE_NAME, "id", &conditions, &source, &mut count).await?;
+            }
+            anyhow::Ok(())
+        })
+        .await?;
+    }
+
+    Ok((total, count))
 }
 
 pub struct Pluck<M, T> {
@@ -354,8 +563,8 @@ where
     }
 }
 
-pub struct FindManyTransform<M, S, F> {
-    inner: FindMany<M, S>,
+pub struct FindManyTransform<M, S, F, C = NoCount> {
+    inner: FindMany<M, S, C>,
     transform: F,
 }
 
@@ -375,12 +584,31 @@ where
     }
 }
 
+impl<M, S, F, R, CF> FindManyTransform<M, S, F, WithCount<CF>>
+where
+    M: DinocoEntity + DinocoRowModel,
+    M::Count: DinocoCountModel<M>,
+    S: DinocoRowModel,
+    F: FnMut(S) -> R,
+    CF: CountFilters<M>,
+{
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<(Vec<R>, M::Count)>>
+    where
+        C: ReadExecutor,
+    {
+        let transform = self.transform;
+
+        self.inner.execute(client).map_ok(|(rows, count)| (rows.into_iter().map(transform).collect(), count))
+    }
+}
+
 pub fn find_many<M: DinocoEntity + DinocoRowModel>() -> FindMany<M> {
     FindMany::<M> {
         query: FindQuery::new(M::FIELDS, M::TABLE_NAME, -1, -1),
         includes: Vec::new(),
         read_primary: false,
         complex_where: false,
+        count: NoCount,
         select_marker: PhantomData,
         marker: PhantomData,
     }

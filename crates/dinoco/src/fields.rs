@@ -10,6 +10,11 @@ use dinoco_engine::{
 /// Regular string fields intentionally do not expose full-text search.
 pub struct FullTextField;
 
+/// Capability generated only for list relations (`Vec<T>`: one-to-many and
+/// many-to-many), which adds [`RelationField::empty`] and
+/// [`RelationField::not_empty`].
+pub struct ListRelation;
+
 pub struct Field<T, Capability = ()> {
     name: &'static str,
     fulltext_fields: &'static [&'static str],
@@ -357,7 +362,9 @@ impl_many_to_many_string_field!(String, Option<String>);
 /// For a singular relation "related rows" is the one row the foreign key
 /// points at (or that points back, for the non-owning side of a one-to-one),
 /// if any. Conditions inside one callback must hold on the same related row;
-/// separate relation filters may each be satisfied by a different one.
+/// separate relation filters may each be satisfied by a different one. List
+/// relations ([`ListRelation`]) also take [`empty`](Self::empty) and
+/// [`not_empty`](Self::not_empty).
 ///
 /// ```ignore
 /// // Transactions paid out through Pix; `payout` itself stays unloaded.
@@ -366,23 +373,23 @@ impl_many_to_many_string_field!(String, Option<String>);
 ///     .execute(&client)
 ///     .await?;
 /// ```
-pub struct RelationField<C> {
+pub struct RelationField<C, Capability = ()> {
     parent_table: &'static str,
     parent_field: &'static str,
     child_field: &'static str,
     join: Option<RelationJoinTable>,
-    marker: PhantomData<fn() -> C>,
+    marker: PhantomData<fn() -> (C, Capability)>,
 }
 
-impl<C> Clone for RelationField<C> {
+impl<C, Capability> Clone for RelationField<C, Capability> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<C> Copy for RelationField<C> {}
+impl<C, Capability> Copy for RelationField<C, Capability> {}
 
-impl<C> RelationField<C> {
+impl<C, Capability> RelationField<C, Capability> {
     /// A relation matched on `parent_table.parent_field = <related>.child_field`.
     /// Takes the same keys as the relation's include builder.
     pub const fn new(parent_table: &'static str, parent_field: &'static str, child_field: &'static str) -> Self {
@@ -412,7 +419,7 @@ impl<C> RelationField<C> {
     }
 }
 
-impl<C> RelationField<C>
+impl<C, Capability> RelationField<C, Capability>
 where
     C: DinocoEntity,
 {
@@ -509,6 +516,23 @@ where
     }
 }
 
+impl<C> RelationField<C, ListRelation>
+where
+    C: DinocoEntity,
+{
+    /// Keeps rows whose list relation has no related row. Same filter as
+    /// [`not_exists`](Self::not_exists).
+    pub fn empty(self) -> FindWhere {
+        self.not_exists()
+    }
+
+    /// Keeps rows whose list relation has at least one related row. Same
+    /// filter as [`exists`](Self::exists).
+    pub fn not_empty(self) -> FindWhere {
+        self.exists()
+    }
+}
+
 macro_rules! impl_many_to_many_between_field {
     ($($ty:ty),* $(,)?) => {
         $(
@@ -578,3 +602,66 @@ impl_between_field!(
     Option<dinoco_engine::chrono::DateTime<dinoco_engine::chrono::Utc>>,
     Option<dinoco_engine::chrono::NaiveDate>,
 );
+
+/// A field whose conditions [`Count::remove`](crate::Count::remove) drops: a
+/// scalar [`Field`], a [`RelationField`] (its relation filters) or a
+/// [`ManyToManyKeyField`].
+pub trait FilterTarget {
+    /// Whether `condition`, which is not an `and`, `or` or `not` group,
+    /// filters on this field.
+    #[doc(hidden)]
+    fn filters(&self, condition: &FindWhere) -> bool;
+}
+
+impl<T, Capability> FilterTarget for Field<T, Capability> {
+    fn filters(&self, condition: &FindWhere) -> bool {
+        match condition {
+            FindWhere::Eq(field, _)
+            | FindWhere::Neq(field, _)
+            | FindWhere::Gt(field, _)
+            | FindWhere::Gte(field, _)
+            | FindWhere::Lt(field, _)
+            | FindWhere::Lte(field, _)
+            | FindWhere::Like(field, _)
+            | FindWhere::Between(field, _, _)
+            | FindWhere::Batch(field, _)
+            | FindWhere::Null(field)
+            | FindWhere::NotNull(field) => *field == self.name,
+            // A full-text search covers its whole `@@fulltexts` group.
+            FindWhere::FullText(fields, _) => fields.contains(&self.name),
+            // The conditions inside are on another table.
+            FindWhere::ManyToMany(_) | FindWhere::Relation(_) => false,
+            FindWhere::And(_) | FindWhere::Or(_) | FindWhere::Not(_) => false,
+        }
+    }
+}
+
+impl<C, Capability> FilterTarget for RelationField<C, Capability>
+where
+    C: DinocoEntity,
+{
+    fn filters(&self, condition: &FindWhere) -> bool {
+        matches!(
+            condition,
+            FindWhere::Relation(relation)
+                if relation.parent_table == self.parent_table
+                    && relation.parent_field == self.parent_field
+                    && relation.child_table == C::TABLE_NAME
+                    && relation.child_field == self.child_field
+                    && relation.join == self.join
+        )
+    }
+}
+
+impl<T> FilterTarget for ManyToManyKeyField<T> {
+    fn filters(&self, condition: &FindWhere) -> bool {
+        matches!(
+            condition,
+            FindWhere::ManyToMany(key)
+                if key.local_key == self.local_key
+                    && key.join_table == self.join_table
+                    && key.join_local_field == self.join_local_field
+                    && key.join_target_field == self.join_target_field
+        )
+    }
+}

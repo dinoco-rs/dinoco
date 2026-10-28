@@ -82,6 +82,10 @@ name = "dinoco_count_exists"
 path = "tests/dinoco/count_exists.rs"
 
 [[test]]
+name = "dinoco_find_many_count"
+path = "tests/dinoco/find_many_count.rs"
+
+[[test]]
 name = "dinoco_insert_errors"
 path = "tests/dinoco/insert_errors.rs"
 

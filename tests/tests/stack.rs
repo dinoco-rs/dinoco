@@ -11,7 +11,7 @@ mod models;
 
 use std::future::Future;
 
-use dinoco::{DinocoClient, TestAmbient, find_first, insert_into, transaction, update};
+use dinoco::{DinocoClient, TestAmbient, find_first, find_many, insert_into, transaction, update};
 use models::*;
 
 const STACK_SIZE: usize = 256 * 1024;
@@ -75,6 +75,16 @@ fn nested_includes_and_a_transaction_fit_a_small_stack() -> anyhow::Result<()> {
 
         let paid = find_first::<Pix>().where_(|row| row.status.eq(ChargeStatus::PAID)).execute(&client).await?;
         assert!(paid.is_some(), "the transaction committed");
+
+        // A page of messages with nested includes, and how many there are.
+        let (messages, count) = find_many::<SupportMessage>()
+            .includes(|message| message.participant().includes(|participant| participant.account()))
+            .includes(|message| message.support().includes(|support| support.pix()))
+            .take(20)
+            .count()
+            .execute(&client)
+            .await?;
+        assert_eq!((messages.len(), count.total), (1, 1));
 
         Ok(())
     })

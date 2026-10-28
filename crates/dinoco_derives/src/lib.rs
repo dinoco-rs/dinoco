@@ -531,7 +531,12 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let relation_where_fields = relations.iter().map(|field| {
         let ident = &field.ident;
         let target = field.target_ty.as_ref().expect("relation target");
-        quote! { pub #ident: ::dinoco::RelationField<#target> }
+
+        if field.kind == FieldKind::HasMany {
+            quote! { pub #ident: ::dinoco::RelationField<#target, ::dinoco::ListRelation> }
+        } else {
+            quote! { pub #ident: ::dinoco::RelationField<#target> }
+        }
     });
 
     let relation_where_defaults = relations.iter().map(|field| {

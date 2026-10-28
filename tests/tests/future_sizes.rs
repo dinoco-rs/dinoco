@@ -53,6 +53,14 @@ const FIND_MANY_TX: usize = 408;
 const FIND_MANY_NESTED_INCLUDES: usize = 416;
 const FIND_MANY_NESTED_INCLUDES_TX: usize = 408;
 const FIND_MANY_TRANSFORM: usize = 424;
+// A counting find is a find plus its `M::Count`: the count runs to completion
+// before the find starts, and relation counts are awaited boxed.
+const FIND_MANY_COUNT: usize = 440;
+const FIND_MANY_COUNT_TX: usize = 432;
+const FIND_MANY_COUNT_NESTED_INCLUDES: usize = 440;
+const FIND_MANY_COUNT_RELATION_COUNTS: usize = 440;
+const FIND_MANY_COUNT_RELATION_COUNTS_TX: usize = 432;
+const FIND_MANY_COUNT_TRANSFORM: usize = 448;
 const COUNT: usize = 264;
 const COUNT_TX: usize = 256;
 const COUNT_RELATION_COUNTS: usize = 264;
@@ -185,6 +193,28 @@ async fn read_futures_stay_within_budget() {
         "find_many + transform",
         FIND_MANY_TRANSFORM,
         find_many::<Pix>().transform(|pix| pix.id).execute(client),
+    );
+    sizes.future("find_many + count", FIND_MANY_COUNT, find_many::<Pix>().count().execute(client));
+    sizes.future("find_many + count (tx)", FIND_MANY_COUNT_TX, find_many::<Pix>().count().execute(tx));
+    sizes.future(
+        "find_many + nested includes + count",
+        FIND_MANY_COUNT_NESTED_INCLUDES,
+        nested_find_many().count().execute(client),
+    );
+    sizes.future(
+        "find_many + count with relation counts",
+        FIND_MANY_COUNT_RELATION_COUNTS,
+        counted_pixes().execute(client),
+    );
+    sizes.future(
+        "find_many + count with relation counts (tx)",
+        FIND_MANY_COUNT_RELATION_COUNTS_TX,
+        counted_pixes().execute(tx),
+    );
+    sizes.future(
+        "find_many + count + transform",
+        FIND_MANY_COUNT_TRANSFORM,
+        find_many::<Pix>().count().transform(|pix| pix.id).execute(client),
     );
 
     sizes.future("count", COUNT, count::<Support>().execute(client));
@@ -383,6 +413,15 @@ fn nested_find_many() -> dinoco::FindMany<Pix> {
         .includes(|pix| pix.business().includes(|business| business.account()))
         .includes(|pix| pix.profit())
         .includes(|pix| pix.supports().includes(|support| support.messages()))
+}
+
+/// Pixes of one business with every pix of it counted, and its supports.
+fn counted_pixes() -> dinoco::FindMany<Pix, Pix, dinoco::WithCount<impl dinoco::CountFilters<Pix>>> {
+    find_many::<Pix>()
+        .where_(|pix| pix.business_id.eq("business"))
+        .where_(|pix| pix.status.eq(ChargeStatus::PAID))
+        .take(20)
+        .count_transform(|count| count.remove(|pix| pix.status).includes(|pix| pix.supports()))
 }
 
 fn counted_supports() -> dinoco::Count<Support> {
