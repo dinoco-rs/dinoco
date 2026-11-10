@@ -352,6 +352,216 @@ fn runtime_enum_impls(name: &syn::Ident, variants: &[(syn::Ident, String)]) -> p
     }
 }
 
+/// A struct stored in a column of another type: a newtype (`struct
+/// Amount(i64)`, read back through `TryFrom<i64>`), a serde type in a `Json`
+/// column (`#[dinoco(json)]`), or any struct with `#[dinoco(column = i64)]`
+/// (written through `From<&Self> for i64`, read through `TryFrom<i64>`).
+#[proc_macro_derive(DinocoRuntimeStruct, attributes(dinoco))]
+pub fn derive_dinoco_runtime_struct(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    match expand_dinoco_runtime_struct(input) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+/// How a runtime struct maps to its column.
+enum StructColumn {
+    /// The single field of a tuple struct.
+    Newtype(Type),
+    /// `#[dinoco(json)]`: `serde_json::Value`, through serde.
+    Json,
+    /// `#[dinoco(column = Type)]`: `From<&Self>` and `TryFrom<Type>`.
+    Explicit(Type),
+}
+
+fn expand_dinoco_runtime_struct(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    let name = input.ident;
+    if !input.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(input.generics, "DinocoRuntimeStruct does not support generic structs"));
+    }
+    let Data::Struct(data) = input.data else {
+        return Err(syn::Error::new_spanned(name, "DinocoRuntimeStruct can only be derived for structs"));
+    };
+
+    let mut column = None;
+    for attr in &input.attrs {
+        if !attr.path().is_ident("dinoco") {
+            continue;
+        }
+
+        attr.parse_nested_meta(|meta| {
+            if column.is_some() {
+                return Err(meta.error("DinocoRuntimeStruct takes one of #[dinoco(json)] or #[dinoco(column = ...)]"));
+            }
+            if meta.path.is_ident("json") {
+                column = Some(StructColumn::Json);
+                return Ok(());
+            }
+            if meta.path.is_ident("column") {
+                column = Some(StructColumn::Explicit(meta.value()?.parse::<Type>()?));
+                return Ok(());
+            }
+
+            Err(meta.error("unknown DinocoRuntimeStruct attribute; expected `json` or `column = <type>`"))
+        })?;
+    }
+
+    let column = match column {
+        Some(column) => column,
+        None => match &data.fields {
+            Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                StructColumn::Newtype(fields.unnamed.first().expect("one field").ty.clone())
+            }
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "DinocoRuntimeStruct needs a newtype (`struct Amount(i64)`), #[dinoco(json)] or \
+                     #[dinoco(column = <type>)]",
+                ));
+            }
+        },
+    };
+
+    let struct_name = name.to_string();
+    let (column_ty, to_column, from_column) = match &column {
+        StructColumn::Newtype(ty) => (
+            quote! { #ty },
+            quote! { ::core::clone::Clone::clone(&self.0) },
+            quote! {
+                <Self as ::core::convert::TryFrom<#ty>>::try_from(column)
+                    .map_err(|error| ::std::string::ToString::to_string(&error))
+            },
+        ),
+        StructColumn::Explicit(ty) => (
+            quote! { #ty },
+            quote! { <#ty as ::core::convert::From<&Self>>::from(self) },
+            quote! {
+                <Self as ::core::convert::TryFrom<#ty>>::try_from(column)
+                    .map_err(|error| ::std::string::ToString::to_string(&error))
+            },
+        ),
+        StructColumn::Json => (
+            quote! { ::dinoco::serde_json::Value },
+            quote! {
+                ::dinoco::serde_json::to_value(self).unwrap_or_else(|error| {
+                    ::core::panic!("`{}` could not be serialized to JSON: {}", #struct_name, error)
+                })
+            },
+            quote! {
+                ::dinoco::serde_json::from_value(column)
+                    .map_err(|error| ::std::format!("`{}` could not be read from JSON: {}", #struct_name, error))
+            },
+        ),
+    };
+
+    Ok(quote! {
+        impl ::dinoco::DinocoRuntimeStruct for #name {
+            type Column = #column_ty;
+
+            fn to_column(&self) -> #column_ty {
+                #to_column
+            }
+
+            fn from_column(column: #column_ty) -> ::core::result::Result<Self, ::std::string::String> {
+                #from_column
+            }
+        }
+
+        impl ::core::convert::From<&#name> for ::dinoco::DinocoValue {
+            fn from(value: &#name) -> Self {
+                ::dinoco::DinocoValue::from(<#name as ::dinoco::DinocoRuntimeStruct>::to_column(value))
+            }
+        }
+
+        impl ::core::convert::From<#name> for ::dinoco::DinocoValue {
+            fn from(value: #name) -> Self {
+                ::dinoco::DinocoValue::from(&value)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<#name> for #name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(&self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<#name> for &#name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<::core::option::Option<#name>> for #name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(&self)
+            }
+        }
+
+        impl ::dinoco::IntoUpdateValue<::core::option::Option<#name>> for &#name {
+            fn into_update_value(self) -> ::dinoco::DinocoValue {
+                ::dinoco::DinocoValue::from(self)
+            }
+        }
+
+        ::dinoco::__dinoco_sqlite! {
+            impl ::dinoco::rusqlite::types::FromSql for #name {
+                fn column_result(
+                    value: ::dinoco::rusqlite::types::ValueRef<'_>,
+                ) -> ::dinoco::rusqlite::types::FromSqlResult<Self> {
+                    let column = <#column_ty as ::dinoco::rusqlite::types::FromSql>::column_result(value)?;
+                    <Self as ::dinoco::DinocoRuntimeStruct>::from_column(column)
+                        .map_err(|error| ::dinoco::rusqlite::types::FromSqlError::Other(error.into()))
+                }
+            }
+        }
+
+        ::dinoco::__dinoco_postgres! {
+            impl<'a> ::dinoco::tokio_postgres::types::FromSql<'a> for #name {
+                fn from_sql(
+                    ty: &::dinoco::tokio_postgres::types::Type,
+                    raw: &'a [u8],
+                ) -> ::core::result::Result<
+                    Self,
+                    ::std::boxed::Box<dyn ::std::error::Error + Sync + Send>,
+                > {
+                    let column = <#column_ty as ::dinoco::tokio_postgres::types::FromSql<'a>>::from_sql(ty, raw)?;
+                    <Self as ::dinoco::DinocoRuntimeStruct>::from_column(column).map_err(::core::convert::Into::into)
+                }
+
+                fn accepts(ty: &::dinoco::tokio_postgres::types::Type) -> bool {
+                    <#column_ty as ::dinoco::tokio_postgres::types::FromSql<'a>>::accepts(ty)
+                }
+            }
+        }
+
+        ::dinoco::__dinoco_mysql! {
+            impl ::dinoco::mysql_common::prelude::FromValue for #name {
+                type Intermediate = Self;
+            }
+
+            impl ::core::convert::TryFrom<::dinoco::mysql_async::Value> for #name {
+                type Error = ::dinoco::mysql_common::value::convert::FromValueError;
+
+                fn try_from(
+                    value: ::dinoco::mysql_async::Value,
+                ) -> ::core::result::Result<
+                    Self,
+                    ::dinoco::mysql_common::value::convert::FromValueError,
+                > {
+                    let column = <#column_ty as ::dinoco::mysql_common::prelude::FromValue>::from_value_opt(value)?;
+                    <Self as ::dinoco::DinocoRuntimeStruct>::from_column(column).map_err(|_| {
+                        ::dinoco::mysql_common::value::convert::FromValueError(::dinoco::mysql_async::Value::NULL)
+                    })
+                }
+            }
+        }
+
+        ::dinoco::__dinoco_pluck_column!(#name);
+    })
+}
+
 #[proc_macro_derive(EntityExtend, attributes(extend))]
 pub fn derive_entity_extend(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -667,6 +877,12 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             quote! { #ident: ::core::option::Option::None }
         })
         .collect::<Vec<_>>();
+
+    let field_slot_arms = scalar_fields.iter().map(|field| {
+        let ident = &field.ident;
+        let name = &field.name;
+        quote! { #name => ::core::option::Option::Some(&mut self.#ident as &mut dyn ::core::any::Any), }
+    });
 
     let relation_value_arms = scalar_fields.iter().map(|field| {
         let ident = &field.ident;
@@ -1187,6 +1403,10 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             const FIELDS: &'static [&'static str] = <#name as ::dinoco::DinocoEntity>::FIELDS;
         }
 
+        impl ::dinoco::DinocoRowOf for #name {
+            type Model = #name;
+        }
+
         ::dinoco::__dinoco_sqlite! {
             impl ::dinoco::DinocoSqlite for #name {
                 fn from_sqlite_row(row: &::dinoco::SqliteRow<'_>) -> ::core::option::Option<Self> {
@@ -1239,6 +1459,15 @@ fn expand_entity(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             fn dinoco_relation_value(&self, field: &'static str) -> ::core::option::Option<::dinoco::DinocoValue> {
                 match field {
                     #(#relation_value_arms)*
+                    _ => ::core::option::Option::None,
+                }
+            }
+        }
+
+        impl ::dinoco::DinocoFieldSlot for #name {
+            fn dinoco_field_slot(&mut self, field: &str) -> ::core::option::Option<&mut dyn ::core::any::Any> {
+                match field {
+                    #(#field_slot_arms)*
                     _ => ::core::option::Option::None,
                 }
             }
@@ -1408,6 +1637,12 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
         })
         .collect::<Vec<_>>();
 
+    let field_slot_arms = scalar_fields.iter().map(|field| {
+        let ident = &field.ident;
+        let name = &field.name;
+        quote! { #name => ::core::option::Option::Some(&mut self.#ident as &mut dyn ::core::any::Any), }
+    });
+
     let relation_value_arms = scalar_fields.iter().map(|field| {
         let ident = &field.ident;
         let name = &field.name;
@@ -1475,18 +1710,31 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
         let ident = &field.ident;
         let ty = &field.ty;
 
+        // A related row may be a model or a projection of one: either way it
+        // is inserted as the model it reads.
         if let Some(inner) = vec_inner(ty) {
             Some(quote! {
                 let mut nested_items = ::std::vec::Vec::new();
 
                 for value in &self.#ident {
-                    let mut item = <#inner as ::dinoco::InsertPayload<#inner>>::dinoco_insert_model(value);
-                    <#inner as ::dinoco::DinocoBelongsTo<#model>>::dinoco_bind_parent(&mut item, parent);
+                    let mut item = <#inner as ::dinoco::InsertPayload<
+                        <#inner as ::dinoco::DinocoRowOf>::Model,
+                    >>::dinoco_insert_model(value);
+                    <<#inner as ::dinoco::DinocoRowOf>::Model as ::dinoco::DinocoBelongsTo<#model>>::dinoco_bind_parent(
+                        &mut item,
+                        parent,
+                    );
                     nested_items.push(item);
                 }
 
                 if !nested_items.is_empty() {
-                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner, C>(&nested_items, client).await?;
+                    ::dinoco::execute_insert_payloads::<
+                        <#inner as ::dinoco::DinocoRowOf>::Model,
+                        <#inner as ::dinoco::DinocoRowOf>::Model,
+                        <#inner as ::dinoco::DinocoRowOf>::Model,
+                        C,
+                    >(&nested_items, client)
+                    .await?;
                 }
             })
         } else {
@@ -1494,9 +1742,20 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
 
             Some(quote! {
                 if let ::core::option::Option::Some(value) = &self.#ident {
-                    let mut item = <#inner as ::dinoco::InsertPayload<#inner>>::dinoco_insert_model(value);
-                    <#inner as ::dinoco::DinocoBelongsTo<#model>>::dinoco_bind_parent(&mut item, parent);
-                    ::dinoco::execute_insert_payloads::<#inner, #inner, #inner, C>(&[item], client).await?;
+                    let mut item = <#inner as ::dinoco::InsertPayload<
+                        <#inner as ::dinoco::DinocoRowOf>::Model,
+                    >>::dinoco_insert_model(value);
+                    <<#inner as ::dinoco::DinocoRowOf>::Model as ::dinoco::DinocoBelongsTo<#model>>::dinoco_bind_parent(
+                        &mut item,
+                        parent,
+                    );
+                    ::dinoco::execute_insert_payloads::<
+                        <#inner as ::dinoco::DinocoRowOf>::Model,
+                        <#inner as ::dinoco::DinocoRowOf>::Model,
+                        <#inner as ::dinoco::DinocoRowOf>::Model,
+                        C,
+                    >(&[item], client)
+                    .await?;
                 }
             })
         }
@@ -1554,6 +1813,10 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             const FIELDS: &'static [&'static str] = &[#(#field_names),*];
         }
 
+        impl ::dinoco::DinocoRowOf for #name {
+            type Model = #model;
+        }
+
         ::dinoco::__dinoco_sqlite! {
             impl ::dinoco::DinocoSqlite for #name {
                 fn from_sqlite_row(row: &::dinoco::SqliteRow<'_>) -> ::core::option::Option<Self> {
@@ -1603,6 +1866,15 @@ fn expand_entity_extend(input: DeriveInput) -> syn::Result<proc_macro2::TokenStr
             fn dinoco_relation_value(&self, field: &'static str) -> ::core::option::Option<::dinoco::DinocoValue> {
                 match field {
                     #(#relation_value_arms)*
+                    _ => ::core::option::Option::None,
+                }
+            }
+        }
+
+        impl ::dinoco::DinocoFieldSlot for #name {
+            fn dinoco_field_slot(&mut self, field: &str) -> ::core::option::Option<&mut dyn ::core::any::Any> {
+                match field {
+                    #(#field_slot_arms)*
                     _ => ::core::option::Option::None,
                 }
             }
@@ -1720,7 +1992,9 @@ impl ParsedField {
                     return Ok(());
                 }
 
-                if meta.path.is_ident("enum") {
+                // `scalar` (written by `set_runtime_struct`) and `enum` both mark
+                // a column whose type the derive can't tell from a relation.
+                if meta.path.is_ident("enum") || meta.path.is_ident("scalar") {
                     enum_field = true;
                     return Ok(());
                 }

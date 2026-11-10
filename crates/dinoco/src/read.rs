@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use dinoco_engine::{
     AggregateQuery, CountQuery, DinocoClient, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery,
-    ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationCountQuery, RelationOccurrenceQuery,
-    TransactionCommand, TransactionExecutor,
+    ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationAggregateQuery, RelationCountQuery,
+    RelationOccurrenceQuery, TransactionCommand, TransactionExecutor,
 };
 use futures_util::future::Either;
 
@@ -155,6 +155,39 @@ impl ReadTarget<'_> {
             },
             Vec::len,
         )
+    }
+
+    /// A grouped include's rows. `keys` are the parent keys, bound before the
+    /// query's own values. Reported to `on_find` like any other read.
+    pub(crate) async fn query_relation_aggregate<M>(
+        &self,
+        query: RelationAggregateQuery,
+        keys: Vec<DinocoValue>,
+    ) -> anyhow::Result<Vec<M>>
+    where
+        M: DinocoRowModel,
+    {
+        if let Some(zone) = query.query.group.and_then(|group| group.key.time_zone()) {
+            self.require_time_zone(zone).await?;
+        }
+
+        observe_rows(
+            self.observer.as_ref(),
+            RowCountKind::Find,
+            query.query.source.from,
+            (query, keys),
+            |compiler, (query, keys)| compiler.compile_relation_aggregate_query_with_keys(query, keys),
+            |(query, keys)| match &self.source.0 {
+                ReadConnection::Client { client, read_primary } => Either::Left(
+                    client.read_backend(*read_primary).query_relation_aggregate_with_keys::<M>(query, keys),
+                ),
+                ReadConnection::Transaction(executor) => {
+                    Either::Right(Box::pin(executor.execute(TransactionCommand::relation_aggregate::<M>(query, keys))))
+                }
+            },
+            Vec::len,
+        )
+        .await
     }
 
     /// `keys` are the parent keys, bound before the query's own values.

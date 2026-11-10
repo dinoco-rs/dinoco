@@ -1,12 +1,12 @@
 use dinoco_engine::{
     DeleteQuery, DinocoClient, DinocoRowModel, FindQuery, InsertQuery, LookupQuery, OrderByList, TransactionCommand,
-    TransactionExecutor, UpdateQuery,
+    TransactionExecutor, UpdateQuery, UpsertQuery,
 };
 use futures_util::future::Either;
 use futures_util::{FutureExt, TryFutureExt};
 use std::sync::Arc;
 
-use crate::{Observer, RowCountKind, TransactionError, observe_insert, observe_rows};
+use crate::{Observer, RowCountKind, TransactionError, observe_insert, observe_rows, observe_upsert};
 
 tokio::task_local! {
     static ACTIVE_TRANSACTION: ActiveTransaction;
@@ -39,6 +39,11 @@ pub trait MutationExecutor: Sync {
     async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel;
+    /// An insert that updates the rows it collides with, from
+    /// `on_conflict_do_update(...)`.
+    async fn upsert(&self, _query: UpsertQuery) -> anyhow::Result<usize> {
+        anyhow::bail!("this executor does not support on_conflict_do_update(...)")
+    }
     async fn update(&self, query: UpdateQuery) -> anyhow::Result<usize>;
     async fn update_returning<M>(&self, query: UpdateQuery) -> anyhow::Result<Vec<M>>
     where
@@ -91,6 +96,11 @@ impl MutationExecutor for DinocoClient {
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
         let observer = Observer::for_client(self);
         observe_insert(observer.as_ref(), query, |query| self.backend.insert(query)).await
+    }
+
+    async fn upsert(&self, query: UpsertQuery) -> anyhow::Result<usize> {
+        let observer = Observer::for_client(self);
+        observe_upsert(observer.as_ref(), query, |query| self.backend.upsert(query)).await
     }
 
     async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>
@@ -204,6 +214,10 @@ where
         (**self).insert(query).await
     }
 
+    async fn upsert(&self, query: UpsertQuery) -> anyhow::Result<usize> {
+        (**self).upsert(query).await
+    }
+
     async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
@@ -264,6 +278,10 @@ where
         (**self).insert(query).await
     }
 
+    async fn upsert(&self, query: UpsertQuery) -> anyhow::Result<usize> {
+        (**self).upsert(query).await
+    }
+
     async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>
     where
         M: DinocoRowModel,
@@ -319,6 +337,10 @@ impl MutationExecutor for TransactionExecutor {
 
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
         self.execute(TransactionCommand::insert(query)).await
+    }
+
+    async fn upsert(&self, query: UpsertQuery) -> anyhow::Result<usize> {
+        self.execute(TransactionCommand::upsert(query)).await
     }
 
     async fn insert_returning<M>(&self, mut query: InsertQuery) -> anyhow::Result<Vec<M>>
@@ -424,6 +446,11 @@ impl MutationExecutor for TransactionContext {
     async fn insert(&self, query: InsertQuery) -> anyhow::Result<usize> {
         let active = active_transaction()?;
         observe_insert(active.observer.as_ref(), query, |query| active.executor.insert(query)).await
+    }
+
+    async fn upsert(&self, query: UpsertQuery) -> anyhow::Result<usize> {
+        let active = active_transaction()?;
+        observe_upsert(active.observer.as_ref(), query, |query| active.executor.upsert(query)).await
     }
 
     async fn insert_returning<M>(&self, query: InsertQuery) -> anyhow::Result<Vec<M>>

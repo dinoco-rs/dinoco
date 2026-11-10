@@ -8,8 +8,8 @@ use dinoco_engine::{
 #[tokio::test]
 async fn relation_join_compilers_alias_both_sides_of_self_relations() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let query = || RelationJoinQuery {
         query: FindQuery {
             fields: &["id", "label", "parent_id"],
@@ -108,8 +108,8 @@ async fn sqlite_compiler_builds_crud_queries() -> anyhow::Result<()> {
 #[tokio::test]
 async fn every_order_by_column_is_written_in_priority_order() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let compilers: [&dyn DinocoSqlCompiler; 3] = [&sqlite, &postgres, &mysql];
     let order_by: OrderByList =
         [FindOrderBy::Asc("pages"), FindOrderBy::Desc("id"), FindOrderBy::Asc("title")].into_iter().collect();
@@ -140,8 +140,8 @@ async fn every_order_by_column_is_written_in_priority_order() -> anyhow::Result<
 #[tokio::test]
 async fn compilers_preserve_nested_boolean_where_groups_and_parameter_order() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
 
     let condition = || {
         FindWhere::Or(vec![
@@ -194,8 +194,8 @@ async fn compilers_preserve_nested_boolean_where_groups_and_parameter_order() ->
 #[tokio::test]
 async fn compilers_use_native_fulltext_and_sqlite_like_fallback() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let query = || FindQuery {
         fields: &["id"],
         from: "article",
@@ -250,8 +250,8 @@ async fn compilers_use_native_fulltext_and_sqlite_like_fallback() -> anyhow::Res
 #[tokio::test]
 async fn compilers_translate_many_to_many_virtual_key_filters_into_join_table_subqueries() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
 
     let query = |negated: bool, predicate: FindWhere| FindQuery {
         fields: &["id", "name"],
@@ -350,8 +350,8 @@ async fn compilers_translate_many_to_many_virtual_key_filters_into_join_table_su
 #[tokio::test]
 async fn compilers_assign_updated_at_from_the_database_clock_without_binding_it() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let query = || UpdateQuery {
         table: "article",
         sets: vec![
@@ -454,8 +454,8 @@ fn string(value: &str) -> DinocoValue {
 #[tokio::test]
 async fn compilers_translate_relation_filters_into_correlated_exists_subqueries() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let pix = || {
         relation(
             "rf_transaction",
@@ -582,8 +582,8 @@ async fn compilers_translate_relation_filters_into_correlated_exists_subqueries(
 #[tokio::test]
 async fn relation_filters_keep_self_relations_and_qualified_queries_apart() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let manager_of_manager = || {
         relation(
             "employee",
@@ -647,8 +647,8 @@ async fn relation_filters_keep_self_relations_and_qualified_queries_apart() -> a
 #[tokio::test]
 async fn mysql_writes_read_their_own_table_through_a_materialized_derived_table() -> anyhow::Result<()> {
     let sqlite = SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?;
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let managed_by_ana = || {
         relation(
             "employee",
@@ -726,7 +726,7 @@ fn mysql_update_reload_keeps_relation_filters_unless_their_key_changes() {
 // UPDATE, then, since MySQL has no RETURNING, a SELECT of the row by
 // `post_update_reload_conditions`.
 fn mysql_atomic_update(update: UpdateQuery) -> [(String, Vec<DinocoValue>); 2] {
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let reload = update.post_update_reload_conditions();
     let (table, returning) = (update.table, update.returning.expect("returning projection"));
 

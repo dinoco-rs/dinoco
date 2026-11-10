@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dinoco_engine::{
-    DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery, LookupQuery,
-    PluckValue,
+    ConflictSet, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
+    LookupQuery, PluckValue, UpdateSet, UpsertQuery,
 };
 
 use crate::{CreateError, Field, field_list, single_field};
@@ -81,6 +81,14 @@ where
     fn dinoco_has_nested_values(&self) -> bool {
         (*self).dinoco_has_nested_values()
     }
+}
+
+/// The model a row type reads: itself for a model, the extended model for an
+/// `#[derive(EntityExtend)]` projection. A nested insert of a related
+/// projection inserts it as that model.
+#[doc(hidden)]
+pub trait DinocoRowOf {
+    type Model: DinocoInsertable;
 }
 
 pub trait DinocoBelongsTo<P> {
@@ -257,12 +265,26 @@ where
     InsertQuery { table: M::TABLE_NAME, fields: M::INSERT_FIELDS.to_vec(), rows, returning, on_conflict_do_nothing }
 }
 
-/// Whether an insert builder skips conflicting rows: [`NoConflict`] (zero
-/// sized, every plain insert) or [`OnConflict`], set by
-/// `.on_conflict_do_nothing(...)`.
-pub trait ConflictMode: Copy + Send + Sync {
+/// What an insert builder does with a row that collides with an existing one:
+/// [`NoConflict`] (zero sized, every plain insert) fails, [`OnConflict`], set
+/// by `.on_conflict_do_nothing(...)`, skips it, and [`OnConflictUpdate`], set
+/// by `.on_conflict_do_update(...)`, updates the existing row.
+pub trait ConflictMode: Send + Sync {
+    /// Whether a conflict fails the insert, so the builder runs a plain insert.
     #[doc(hidden)]
-    fn target(self) -> Option<&'static [&'static str]>;
+    const FAILS: bool = false;
+
+    #[doc(hidden)]
+    fn into_conflict(self) -> Conflict;
+}
+
+/// How an insert handles conflicts, taken from its [`ConflictMode`].
+#[doc(hidden)]
+#[derive(Debug)]
+pub enum Conflict {
+    Fail,
+    DoNothing(&'static [&'static str]),
+    DoUpdate(&'static [&'static str], Vec<ConflictSet>),
 }
 
 /// The conflict mode of a plain insert: a conflict fails it.
@@ -282,18 +304,126 @@ impl OnConflict {
     }
 }
 
+/// The conflict mode after `.on_conflict_do_update(...)`: a row that collides
+/// on these columns updates the existing row with these assignments.
+#[derive(Debug)]
+pub struct OnConflictUpdate {
+    target: &'static [&'static str],
+    sets: Vec<ConflictSet>,
+}
+
+impl OnConflictUpdate {
+    pub(crate) fn new(target: &'static [&'static str], sets: Vec<ConflictSet>) -> Self {
+        Self { target, sets }
+    }
+}
+
 impl ConflictMode for NoConflict {
+    const FAILS: bool = true;
+
     #[inline]
-    fn target(self) -> Option<&'static [&'static str]> {
-        None
+    fn into_conflict(self) -> Conflict {
+        Conflict::Fail
     }
 }
 
 impl ConflictMode for OnConflict {
     #[inline]
-    fn target(self) -> Option<&'static [&'static str]> {
-        Some(self.target)
+    fn into_conflict(self) -> Conflict {
+        Conflict::DoNothing(self.target)
     }
+}
+
+impl ConflictMode for OnConflictUpdate {
+    #[inline]
+    fn into_conflict(self) -> Conflict {
+        Conflict::DoUpdate(self.target, self.sets)
+    }
+}
+
+/// The assignments `.on_conflict_do_update(...)` applies to the existing row:
+/// an [`UpdateSet`] (`.set(...)`, `.increment(...)`, ...) or a
+/// [`ConflictSet`] (`.excluded()`, the value the insert proposed), a `Vec` or
+/// array of either, or a tuple mixing them.
+///
+/// ```ignore
+/// .on_conflict_do_update(|x| x.path, |x| (x.title.excluded(), x.hits.increment(1)))
+/// ```
+pub trait IntoConflictSets {
+    #[doc(hidden)]
+    fn push_conflict_sets(self, sets: &mut Vec<ConflictSet>);
+}
+
+impl IntoConflictSets for UpdateSet {
+    fn push_conflict_sets(self, sets: &mut Vec<ConflictSet>) {
+        sets.push(ConflictSet::Update(self));
+    }
+}
+
+impl IntoConflictSets for ConflictSet {
+    fn push_conflict_sets(self, sets: &mut Vec<ConflictSet>) {
+        sets.push(self);
+    }
+}
+
+impl<T> IntoConflictSets for Vec<T>
+where
+    T: IntoConflictSets,
+{
+    fn push_conflict_sets(self, sets: &mut Vec<ConflictSet>) {
+        for set in self {
+            set.push_conflict_sets(sets);
+        }
+    }
+}
+
+impl<T, const N: usize> IntoConflictSets for [T; N]
+where
+    T: IntoConflictSets,
+{
+    fn push_conflict_sets(self, sets: &mut Vec<ConflictSet>) {
+        for set in self {
+            set.push_conflict_sets(sets);
+        }
+    }
+}
+
+macro_rules! conflict_set_tuples {
+    ($(($($set:ident: $ty:ident),+)),* $(,)?) => {
+        $(
+            impl<$($ty),+> IntoConflictSets for ($($ty,)+)
+            where
+                $($ty: IntoConflictSets,)+
+            {
+                fn push_conflict_sets(self, sets: &mut Vec<ConflictSet>) {
+                    let ($($set,)+) = self;
+                    $($set.push_conflict_sets(sets);)+
+                }
+            }
+        )*
+    };
+}
+
+conflict_set_tuples!(
+    (a: A),
+    (a: A, b: B),
+    (a: A, b: B, c: C),
+    (a: A, b: B, c: C, d: D),
+    (a: A, b: B, c: C, d: D, e: E),
+    (a: A, b: B, c: C, d: D, e: E, f: F),
+    (a: A, b: B, c: C, d: D, e: E, f: F, g: G),
+    (a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H),
+);
+
+/// The assignments of `.on_conflict_do_update(...)`, collected from
+/// `callback`.
+pub(crate) fn conflict_sets<S>(update: S) -> Vec<ConflictSet>
+where
+    S: IntoConflictSets,
+{
+    let mut sets = Vec::new();
+    update.push_conflict_sets(&mut sets);
+    sets
 }
 
 /// The columns `.on_conflict_do_nothing(...)` names: one [`Field`], or a
@@ -328,17 +458,34 @@ conflict_target_tuples!(
     (a: A, CA, b: B, CB, c: C, CC, d: D, CD),
 );
 
-/// `on_conflict_do_nothing(...)` inserts top-level rows only: a skipped
-/// payload has no inserted row for its nested relations to hang from.
-pub(crate) fn reject_nested_on_conflict<M, V>(values: &[V]) -> Result<(), CreateError>
+impl Conflict {
+    /// The builder method that set this mode, for error messages.
+    fn method(&self) -> &'static str {
+        match self {
+            Conflict::DoUpdate(..) => "on_conflict_do_update(...)",
+            Conflict::Fail | Conflict::DoNothing(_) => "on_conflict_do_nothing(...)",
+        }
+    }
+
+    fn target(&self) -> &'static [&'static str] {
+        match self {
+            Conflict::Fail => &[],
+            Conflict::DoNothing(target) | Conflict::DoUpdate(target, _) => target,
+        }
+    }
+}
+
+/// `on_conflict_do_nothing(...)` and `on_conflict_do_update(...)` insert
+/// top-level rows only: a skipped payload has no inserted row for its nested
+/// relations to hang from.
+pub(crate) fn reject_nested_on_conflict<M, V>(values: &[V], method: &str) -> Result<(), CreateError>
 where
     M: DinocoInsertable,
     V: InsertPayload<M>,
 {
     if V::HAS_NESTED && values.iter().any(InsertPayload::dinoco_has_nested_values) {
         return Err(CreateError::InvalidOperation(format!(
-            "on_conflict_do_nothing(...) on `{}` does not insert nested relations or many-to-many links; insert them \
-             separately",
+            "{method} on `{}` does not insert nested relations or many-to-many links; insert them separately",
             M::TABLE_NAME
         )));
     }
@@ -346,11 +493,84 @@ where
     Ok(())
 }
 
-/// Inserts `values`, skipping each one that collides with an existing row on
-/// `target`.
-pub(crate) async fn execute_insert_skipping_conflicts<M, V, C>(
+/// The insert of `values` with `conflict` applied: an [`InsertQuery`] that
+/// skips conflicts, or an [`UpsertQuery`] that updates the existing rows.
+enum ConflictInsert {
+    Insert(InsertQuery),
+    Upsert(UpsertQuery),
+}
+
+impl ConflictInsert {
+    fn insert(&self) -> &InsertQuery {
+        match self {
+            ConflictInsert::Insert(query) => query,
+            ConflictInsert::Upsert(query) => &query.insert,
+        }
+    }
+
+    async fn run<C>(self, client: &C) -> Result<(), CreateError>
+    where
+        C: crate::MutationExecutor,
+    {
+        match self {
+            ConflictInsert::Insert(query) => client.insert(query).await,
+            ConflictInsert::Upsert(query) => client.upsert(query).await,
+        }
+        .map_err(CreateError::from_database)?;
+
+        Ok(())
+    }
+}
+
+fn conflict_insert<M, V>(values: Vec<V>, conflict: Conflict) -> Result<ConflictInsert, CreateError>
+where
+    M: DinocoInsertable,
+    V: InsertPayload<M>,
+{
+    match conflict {
+        Conflict::Fail => Ok(ConflictInsert::Insert(owned_insert_query::<M, V>(values, None, None))),
+        Conflict::DoNothing(target) => {
+            Ok(ConflictInsert::Insert(owned_insert_query::<M, V>(values, None, Some(target))))
+        }
+        Conflict::DoUpdate(target, mut sets) => {
+            for set in &sets {
+                let field = set.field();
+                if target.contains(&field) {
+                    return Err(CreateError::InvalidOperation(format!(
+                        "on_conflict_do_update(...) on `{}` can't assign `{field}`: it is a conflict column, which \
+                         finds the row to update",
+                        M::TABLE_NAME
+                    )));
+                }
+                if matches!(set, ConflictSet::Excluded(_)) && !M::INSERT_FIELDS.contains(&field) {
+                    return Err(CreateError::InvalidOperation(format!(
+                        "on_conflict_do_update(...) on `{}` can't take `{field}` from the inserted row: the insert \
+                         does not write it",
+                        M::TABLE_NAME
+                    )));
+                }
+            }
+            // `@updated_at` columns are refreshed by the update, as by
+            // `update(...)`, unless it assigns them itself.
+            if !sets.is_empty() {
+                for updated_at in M::UPDATED_AT_FIELDS {
+                    if !sets.iter().any(|set| set.field() == updated_at.name) {
+                        sets.push(ConflictSet::Update(updated_at.update_set()));
+                    }
+                }
+            }
+
+            let insert = owned_insert_query::<M, V>(values, None, None);
+            Ok(ConflictInsert::Upsert(UpsertQuery { insert, target, sets }))
+        }
+    }
+}
+
+/// Inserts `values` with `conflict` applied: each one that collides with an
+/// existing row on its target is skipped, or updates that row.
+pub(crate) async fn execute_insert_on_conflict<M, V, C>(
     values: Vec<V>,
-    target: &'static [&'static str],
+    conflict: Conflict,
     client: &C,
 ) -> Result<(), CreateError>
 where
@@ -358,21 +578,19 @@ where
     V: InsertPayload<M>,
     C: crate::MutationExecutor,
 {
-    reject_nested_on_conflict::<M, V>(&values)?;
+    reject_nested_on_conflict::<M, V>(&values, conflict.method())?;
     if values.is_empty() {
         return Ok(());
     }
 
-    client.insert(owned_insert_query::<M, V>(values, None, Some(target))).await.map_err(CreateError::from_database)?;
-
-    Ok(())
+    conflict_insert::<M, V>(values, conflict)?.run(client).await
 }
 
-/// [`execute_insert_skipping_conflicts`], then reads back the row every payload landed on (the new row or
-/// the one already there) projected onto `fields`, in payload order.
+/// [`execute_insert_on_conflict`], then reads back the row every payload landed on (the new row, or the
+/// one already there, skipped or updated) projected onto `fields`, in payload order.
 pub(crate) async fn execute_insert_or_existing<M, V, R, C>(
     values: Vec<V>,
-    target: &'static [&'static str],
+    conflict: Conflict,
     fields: &'static [&'static str],
     client: &C,
 ) -> Result<Vec<R>, CreateError>
@@ -382,15 +600,17 @@ where
     R: DinocoRowModel,
     C: crate::MutationExecutor,
 {
-    reject_nested_on_conflict::<M, V>(&values)?;
+    let method = conflict.method();
+    reject_nested_on_conflict::<M, V>(&values, method)?;
     if values.is_empty() {
         return Ok(Vec::new());
     }
 
-    let query = owned_insert_query::<M, V>(values, None, Some(target));
-    let mut keys = conflict_keys(&query, target)?;
+    let target = conflict.target();
+    let query = conflict_insert::<M, V>(values, conflict)?;
+    let mut keys = conflict_keys(query.insert(), target, method)?;
     let expected = keys.len();
-    client.insert(query).await.map_err(CreateError::from_database)?;
+    query.run(client).await?;
 
     let rows = if expected == 1 {
         let mut lookup = FindQuery::new(fields, M::TABLE_NAME, 1, -1);
@@ -414,14 +634,17 @@ where
 
 /// The `target` values of every row of `query`, which find the row again
 /// after the insert. A `NULL` never collides with anything, nor finds it.
-fn conflict_keys(query: &InsertQuery, target: &[&'static str]) -> Result<Vec<Vec<DinocoValue>>, CreateError> {
+fn conflict_keys(
+    query: &InsertQuery,
+    target: &[&'static str],
+    method: &str,
+) -> Result<Vec<Vec<DinocoValue>>, CreateError> {
     let positions = target
         .iter()
         .map(|column| {
             query.fields.iter().position(|field| field == column).ok_or_else(|| {
                 CreateError::InvalidOperation(format!(
-                    "on_conflict_do_nothing(...) column `{column}` is not inserted into `{}`, so the row can't be read \
-                     back",
+                    "{method} column `{column}` is not inserted into `{}`, so the row can't be read back",
                     query.table
                 ))
             })
@@ -436,8 +659,7 @@ fn conflict_keys(query: &InsertQuery, target: &[&'static str]) -> Result<Vec<Vec
                 .iter()
                 .map(|&position| match &row[position] {
                     DinocoValue::Null => Err(CreateError::InvalidOperation(format!(
-                        "on_conflict_do_nothing(...) column `{}` of `{}` is NULL, which never conflicts, so the row \
-                         can't be read back",
+                        "{method} column `{}` of `{}` is NULL, which never conflicts, so the row can't be read back",
                         query.fields[position], query.table
                     ))),
                     value => Ok(value.clone()),

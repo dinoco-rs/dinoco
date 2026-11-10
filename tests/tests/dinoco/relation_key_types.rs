@@ -17,8 +17,8 @@ use dinoco_engine::{
 };
 use dinoco_tests::{column, create_table, drop_table, nullable, primary};
 
-const POSTGRES_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
-const MYSQL_URL: &str = "mysql://root:root@localhost:3306/mysql";
+const POSTGRES_URL: &str = "postgres://dinoco:dinoco@localhost:5432/dinoco";
+const MYSQL_URL: &str = "mysql://dinoco:dinoco@localhost:3306/dinoco";
 static POSTGRES_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static MYSQL_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 

@@ -122,6 +122,30 @@ name = "dinoco_runtime_regressions"
 path = "tests/dinoco/runtime_regressions.rs"
 
 [[test]]
+name = "dinoco_keyset_pagination"
+path = "tests/dinoco/keyset_pagination.rs"
+
+[[test]]
+name = "dinoco_not_in_batch"
+path = "tests/dinoco/not_in_batch.rs"
+
+[[test]]
+name = "dinoco_insert_upserts"
+path = "tests/dinoco/insert_upserts.rs"
+
+[[test]]
+name = "dinoco_runtime_structs"
+path = "tests/dinoco/runtime_structs.rs"
+
+[[test]]
+name = "dinoco_grouped_includes"
+path = "tests/dinoco/grouped_includes.rs"
+
+[[test]]
+name = "dinoco_in_query"
+path = "tests/dinoco/in_query.rs"
+
+[[test]]
 name = "dinoco_cli_commands"
 path = "tests/dinoco_cli/cli.rs"
 

@@ -62,7 +62,7 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     assert!(many_to_many_sql.contains("_business_to_system.business_id = ?"));
     assert_eq!(many_to_many_params.len(), 2);
 
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let (mysql_occurrence_sql, mysql_occurrence_params) = mysql.compile_relation_occurrence_query(occurrence_query());
     assert!(mysql_occurrence_sql.contains(
         "WITH __dinoco_parent_keys AS (SELECT 0 AS __dinoco_relation_ordinal, ? AS __dinoco_relation_key UNION ALL SELECT 1, ?)"
@@ -76,7 +76,7 @@ async fn relation_limits_use_window_partitions() -> anyhow::Result<()> {
     assert_eq!(mysql_sql.matches("_business_to_system.business_id = ?").count(), 2);
     assert_eq!(mysql_params.len(), 2);
 
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
     let (postgres_occurrence_sql, postgres_occurrence_params) =
         postgres.compile_relation_occurrence_query(occurrence_query());
     assert!(postgres_occurrence_sql.contains(
@@ -105,7 +105,7 @@ async fn postgres_parent_keys_are_cast_to_the_type_of_their_value() -> anyhow::R
         child_field: "group_id",
         key_count,
     };
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?;
 
     let keys = vec![DinocoValue::Integer(7_300_000_000_000_000_001), DinocoValue::Integer(2)];
     let (sql, params) = postgres.compile_relation_occurrence_query_with_keys(query(2), keys);
@@ -147,7 +147,7 @@ async fn postgres_parent_keys_are_cast_to_the_type_of_their_value() -> anyhow::R
     let (sql, _) = sqlite
         .compile_relation_occurrence_query_with_keys(query(2), vec![DinocoValue::Integer(1), DinocoValue::Integer(2)]);
     assert!(sql.contains("AS (VALUES (0, ?), (1, ?))"), "{sql}");
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost/mysql");
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco");
     let (sql, _) = mysql
         .compile_relation_occurrence_query_with_keys(query(2), vec![DinocoValue::Integer(1), DinocoValue::Integer(2)]);
     assert!(sql.contains("SELECT 0 AS __dinoco_relation_ordinal, ? AS __dinoco_relation_key UNION ALL SELECT 1, ?)"));

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dinoco_engine::{
     Backend, DatabaseError, DinocoClient, DinocoSqlCompiler, DinocoValue, ExecutedQuery, InsertHook, InsertQuery,
-    QueryHooks, RowCountHook,
+    QueryHooks, RowCountHook, UpsertQuery,
 };
 use futures_util::FutureExt;
 use futures_util::future::Either;
@@ -70,6 +70,38 @@ where
 
     let executed = observer.executed(query.table, observer.backend.sql_compiler().compile_insert_query(query.clone()));
     let rows = inserted_rows(&query);
+
+    match run(query).await {
+        Ok(value) => {
+            hook(Some(&rows), &executed, None);
+            Ok(value)
+        }
+        Err(error) => {
+            let error = DatabaseError::new(error);
+            hook(None, &executed, Some(&error));
+            Err(error.into_original())
+        }
+    }
+}
+
+/// [`observe_insert`] for an upsert: reported to the table's `on_insert` hook
+/// with every row it proposed, inserted or updated.
+pub(crate) async fn observe_upsert<F, Fut>(
+    observer: Option<&Observer>,
+    query: UpsertQuery,
+    run: F,
+) -> anyhow::Result<usize>
+where
+    F: FnOnce(UpsertQuery) -> Fut,
+    Fut: Future<Output = anyhow::Result<usize>>,
+{
+    let table = query.insert.table;
+    let Some((observer, hook)) = observer.and_then(|observer| Some((observer, observer.insert_hook(table)?))) else {
+        return run(query).await;
+    };
+
+    let executed = observer.executed(table, observer.backend.sql_compiler().compile_upsert_query(query.clone()));
+    let rows = inserted_rows(&query.insert);
 
     match run(query).await {
         Ok(value) => {

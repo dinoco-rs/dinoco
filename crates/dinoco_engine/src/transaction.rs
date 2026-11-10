@@ -7,8 +7,8 @@ use crate::RowDecodeError;
 use crate::backends::sql::{self, Dialect};
 use crate::{
     AggregateQuery, CountQuery, DeleteQuery, DinocoRowModel, DinocoValue, ExistsQuery, FindQuery, InsertQuery,
-    LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, OrderByList, PluckValue, RelationCountQuery,
-    RelationOccurrenceQuery, UpdateQuery,
+    LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, OrderByList, PluckValue,
+    RelationAggregateQuery, RelationCountQuery, RelationOccurrenceQuery, UpdateQuery, UpsertQuery,
 };
 #[cfg(feature = "mysql")]
 use crate::{DinocoMysql, MysqlRow};
@@ -116,7 +116,10 @@ enum TransactionStatement {
     Lookup(LookupQuery),
     RelationOccurrences(RelationOccurrenceQuery, Vec<DinocoValue>),
     ManyToManyRelation(ManyToManyRelationQuery, Vec<DinocoValue>),
+    // Rare and large: boxed, so every other command stays as small as before.
+    RelationAggregate(Box<(RelationAggregateQuery, Vec<DinocoValue>)>),
     Insert(InsertQuery),
+    Upsert(Box<UpsertQuery>),
     Update(UpdateQuery),
     Delete(DeleteQuery),
     Count(CountQuery),
@@ -254,8 +257,22 @@ impl TransactionCommand {
         Self::rows::<M>(TransactionStatement::ManyToManyRelation(query, params))
     }
 
+    /// A grouped include's rows; `params` are the parent keys.
+    #[doc(hidden)]
+    pub fn relation_aggregate<M>(query: RelationAggregateQuery, params: Vec<DinocoValue>) -> Self
+    where
+        M: DinocoRowModel,
+    {
+        Self::rows::<M>(TransactionStatement::RelationAggregate(Box::new((query, params))))
+    }
+
     pub fn insert(query: InsertQuery) -> Self {
         Self::unit(TransactionStatement::Insert(query))
+    }
+
+    /// An insert that updates the rows it collides with; see [`UpsertQuery`].
+    pub fn upsert(query: UpsertQuery) -> Self {
+        Self::unit(TransactionStatement::Upsert(Box::new(query)))
     }
 
     pub fn insert_returning_many<M>(query: InsertQuery) -> Self
@@ -341,7 +358,12 @@ impl TransactionCommand {
             TransactionStatement::ManyToManyRelation(query, keys) => {
                 sql::many_to_many_relation_with_keys(dialect, query, keys)
             }
+            TransactionStatement::RelationAggregate(query) => {
+                let (query, keys) = *query;
+                sql::relation_aggregate_with_keys(dialect, query, keys)
+            }
             TransactionStatement::Insert(query) => sql::insert(dialect, query),
+            TransactionStatement::Upsert(query) => sql::upsert(dialect, *query),
             TransactionStatement::Update(query) => sql::update(dialect, query),
             TransactionStatement::Delete(query) => sql::delete(dialect, query),
             TransactionStatement::Count(query) => sql::count(dialect, query),

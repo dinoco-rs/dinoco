@@ -21,7 +21,8 @@ use sql::Dialect;
 use crate::{
     AggregateQuery, CountQuery, DeleteQuery, DinocoRowModel, DinocoSqlCompiler, DinocoValue, ExistsQuery, FindQuery,
     FindWhere, InsertQuery, LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, OrderByList,
-    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, UpdateQuery,
+    RelationAggregateQuery, RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery,
+    UpdateQuery, UpsertQuery,
 };
 
 /// Cloning a backend is cheap: adapters share their connection pool.
@@ -257,6 +258,19 @@ impl Backend {
         Ok(true)
     }
 
+    /// A grouped include's rows; `keys` are the parent keys, bound before the
+    /// query's own values.
+    pub fn query_relation_aggregate_with_keys<M>(
+        &self,
+        query: RelationAggregateQuery,
+        keys: Vec<DinocoValue>,
+    ) -> impl Future<Output = anyhow::Result<Vec<M>>> + Send
+    where
+        M: DinocoRowModel,
+    {
+        self.fetch(sql::relation_aggregate_with_keys(self.dialect(), query, keys), Decode::Strict)
+    }
+
     /// One row of `M` for the whole aggregate, or one per group.
     pub fn aggregate<M>(&self, query: AggregateQuery) -> impl Future<Output = anyhow::Result<Vec<M>>> + Send
     where
@@ -275,6 +289,11 @@ impl Backend {
 
     pub fn insert(&self, query: InsertQuery) -> impl Future<Output = anyhow::Result<usize>> + Send {
         self.run(sql::insert(self.dialect(), query))
+    }
+
+    /// An insert that updates the rows it collides with; see [`UpsertQuery`].
+    pub fn upsert(&self, query: UpsertQuery) -> impl Future<Output = anyhow::Result<usize>> + Send {
+        self.run(sql::upsert(self.dialect(), query))
     }
 
     pub async fn insert_returning<M>(&self, mut query: InsertQuery) -> anyhow::Result<Vec<M>>

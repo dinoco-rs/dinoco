@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere, InsertQuery,
-    ManyToManyUpdate, UpdateOperation, UpdateSet,
+    ConflictSet, DeleteQuery, DinocoEntity, DinocoProjection, DinocoRowModel, DinocoValue, FindQuery, FindWhere,
+    InsertQuery, ManyToManyUpdate, UpdateOperation, UpdateSet,
 };
 
 use crate::{DinocoRelationValue, MutationExecutor};
@@ -23,6 +23,12 @@ impl<T> UpdateField<T> {
         V: IntoUpdateValue<T>,
     {
         UpdateSet { field: self.name, value: value.into_update_value(), operation: UpdateOperation::Set }
+    }
+
+    /// In `on_conflict_do_update(...)`: the column takes the value the
+    /// colliding insert proposed for it (`excluded.<column>`).
+    pub fn excluded(self) -> ConflictSet {
+        ConflictSet::Excluded(self.name)
     }
 
     pub fn connect<V>(self, value: V) -> UpdateSet

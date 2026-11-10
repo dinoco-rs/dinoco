@@ -6,8 +6,8 @@ Dinoco is a schema-driven Rust ORM for SQLite, PostgreSQL and MySQL. A `.dinoco`
 
 ```
 .
-├── Cargo.toml              Workspace (resolver 3): every crate below, tests, examples, benchmarks; the shared
-│                           package fields (version, edition, MSRV, license) and dependencies live here
+├── Cargo.toml              Workspace (resolver 3): every crate below, tests and examples; the shared package
+│                           fields (version, edition, MSRV, license) and dependencies live here
 ├── crates/
 │   ├── dinoco/             Public ORM crate
 │   │   └── src/
@@ -35,7 +35,6 @@ Dinoco is a schema-driven Rust ORM for SQLite, PostgreSQL and MySQL. A `.dinoco`
 ├── vscode/                 Language server in Rust (server, completion, diagnostics, document,
 │                           workspace) + TypeScript client (src/extension.ts); prebuilt binaries in bin/
 ├── tests/                  `dinoco_tests` crate: integration suites for every crate (see Tests)
-├── benchmarks/             `dinoco_benchmarks` crate (see Benchmarks)
 ├── examples/               axum, actix-web and tower services exposing the same API on SQLite
 ├── scripts/publish-crates.js  Publishes the crates in dependency order (`--plan`, `--dry-run`)
 ├── readme.md, crates.md    Repository README and crates.io README; keep them in sync
@@ -51,15 +50,8 @@ Ignore these when reading the tree: `target/`, the empty `file:` directories (le
 - Suites under `tests/tests/<crate>/<topic>.rs` must be registered as a `[[test]]` in `tests/Cargo.toml`, named `<crate>_<topic>` (for example `dinoco_relation_filters`). Files directly under `tests/tests/` are discovered automatically and named after the file.
 - Shared helpers (`column`, `primary`, `nullable`, `create_table`, ...) live in `tests/src/lib.rs`. Schema fixtures live in `tests/fixtures/`.
 - `tests/fixtures/payments/` is an application-shaped schema with the models codegen writes for it, used by `future_sizes` and `stack`. `dinoco_codegen_generate_models` fails when the models drift from codegen; regenerate them with `DINOCO_UPDATE_FIXTURES=1 cargo test -p dinoco_tests --test dinoco_codegen_generate_models payments`.
-- Database suites run every scenario on all three backends through an `on_every_backend!` macro (see `tests/tests/dinoco/relation_filters.rs`). PostgreSQL and MySQL come from local servers: `postgres://postgres:postgres@localhost:5432/postgres` and `mysql://root:root@localhost:3306/mysql` (Podman containers `postgres` and `mysql`).
+- Database suites run every scenario on all three backends through an `on_every_backend!` macro (see `tests/tests/dinoco/relation_filters.rs`). PostgreSQL and MySQL come from local servers: `postgres://dinoco:dinoco@localhost:5432/dinoco` and `mysql://dinoco:dinoco@localhost:3306/dinoco` (Podman containers `postgres` and `mysql`). Both run as a test-only `dinoco` user that can create the databases some suites need (all named `dinoco*`): on PostgreSQL `CREATE ROLE dinoco LOGIN CREATEDB PASSWORD 'dinoco'; CREATE DATABASE dinoco OWNER dinoco;`, on MySQL `` CREATE USER 'dinoco'@'%' IDENTIFIED BY 'dinoco'; CREATE DATABASE dinoco; GRANT ALL PRIVILEGES ON `dinoco%`.* TO 'dinoco'@'%'; ``. Never point a test at MySQL's `mysql` schema: a suite that creates a table named `user` replaces the server's `mysql.user` and MySQL no longer starts.
 - `version_consistency` checks that every manifest, lockfile entry and README agrees on the release version.
-
-### Benchmarks
-
-- `benches/runtime.rs` (Criterion): `compile/*` measures SQL compilation alone, `<dialect>/*` measures end-to-end operations through the public API, and `<dialect>/raw_driver_*` is the bare-driver floor that Dinoco's overhead is compared against.
-- `src/bin/report.rs`: type layouts, **future sizes**, heap allocations and bytes per operation, and peak live heap, counted by a global allocator.
-- `src/bin/sql_corpus.rs`: prints the SQL and parameters for a broad corpus of queries and migrations in every dialect. Diff two revisions to prove a compiler change is byte-for-byte neutral.
-- Environment: `DINOCO_BENCH_DIALECTS=sqlite,postgres,mysql`, `DINOCO_BENCH_POSTGRES_URL`, `DINOCO_BENCH_MYSQL_URL` (they default to the test servers). Unreachable servers are skipped and reported.
 
 ### Documentation
 
@@ -81,12 +73,7 @@ Every new feature or behavior change goes through all of these steps. None is op
    - an entry in `release-notes.md` under the current version's section;
    - `inPage` in the navigation JSONs if headings were added or renamed.
 3. **Test everything that can be tested.** Cover every backend for database behavior, and every relation shape when relations are involved. Cover edge cases: empty input, `NULL`, no related rows, nesting, combining with `where_complex`, use inside transactions, and every builder that accepts the new API. Also cover error paths and the generated types. Register new test files in `tests/Cargo.toml`.
-4. **Run the benchmarks** before and after the change (see Commands), and report the numbers:
-   - `sql_corpus` diff for anything that touches SQL compilation; output must be identical unless the change is meant to alter SQL;
-   - `report` for allocations and future sizes of the affected operations;
-   - Criterion `runtime` for timings;
-   - add a benchmark case when the feature introduces a new hot path.
-5. **Validate**:
+4. **Validate**:
    - docs with the existing scripts;
    - **only the tests you added or affected**, not the whole suite;
    - `rustfmt --check` on the files you touched;
@@ -113,7 +100,7 @@ Performance and low memory use are requirements, for async code (futures) and sy
   }
   ```
 - Type-erased and recursive loaders return `Pin<Box<dyn Future<Output = ...> + Send + 'a>>` (`IncludeLoaderFuture` in `relation.rs`, `CountLoaderFuture` in `count.rs`, `InsertNestedFuture` in `insert.rs`).
-- Check `report`'s future-size section. A change must not grow an existing future without a measured reason.
+- Check the future sizes in `tests/tests/future_sizes.rs` (see below). A change must not grow an existing future without a measured reason.
 
 **Box only when it pays off**
 - Box rare paths, large or rarely used enum variants, and recursive futures.
@@ -121,7 +108,7 @@ Performance and low memory use are requirements, for async code (futures) and sy
 
 **Sync code**
 - Same rules: no needless clones, iterators over collected intermediates, no allocation inside loops.
-- Keep core types small (`FindWhere`, `DinocoValue`, query structs). `report` prints their layouts, so watch for size regressions.
+- Keep core types small (`FindWhere`, `DinocoValue`, query structs), and watch for size regressions.
 - Keep builders cheap: `&'static str` names, `PhantomData` markers, and generic `FnOnce` callbacks instead of boxed closures.
 
 ## Performance: future and stack size
@@ -148,13 +135,6 @@ rustfmt --edition 2024 --check <files>
 # Run one test target, optionally filtered by scenario
 cargo test -p dinoco_tests --test dinoco_relation_filters one_to_many
 cargo test -p dinoco_tests --test sqlite_methods
-
-# Benchmarks: run each on the baseline revision (e.g. a git worktree of HEAD) and on your change, then compare
-cargo run -p dinoco_benchmarks --release --bin sql_corpus > after.sql   # diff against the baseline output
-cargo run -p dinoco_benchmarks --release --bin report
-cargo bench -p dinoco_benchmarks --bench runtime -- --save-baseline before   # on the baseline
-cargo bench -p dinoco_benchmarks --bench runtime -- --baseline before        # on the change
-cargo bench -p dinoco_benchmarks --bench runtime -- compile/                 # compilation only
 
 # Docs (in the docs site; paths resolve from its root)
 cd ../docs && yarn validate && yarn anchors

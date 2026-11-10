@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    DinocoEntity, DinocoValue, FindWhere, ManyToManyMatch, RelationJoinTable, RelationMatch, RelationQuantifier,
-    WhereComplex,
+    DinocoEntity, DinocoValue, FindQuery, FindWhere, ManyToManyMatch, RelationJoinTable, RelationMatch,
+    RelationQuantifier, SubQuery, WhereComplex,
 };
 
 /// Capability generated only for fields declared with `@fulltext`.
@@ -95,6 +95,53 @@ impl<T, Capability> Field<T, Capability> {
         FindWhere::Batch(self.name, values.into_iter().map(Into::into).collect())
     }
 
+    /// Keeps the rows whose column holds none of `values` (`NOT IN`). An
+    /// empty list keeps every row. A `NULL` column matches neither `batch`
+    /// nor `not_in_batch`; combine with [`null`](Self::null) to keep it.
+    pub fn not_in_batch<I, V>(self, values: I) -> FindWhere
+    where
+        I: IntoIterator<Item = V>,
+        V: Into<DinocoValue>,
+    {
+        FindWhere::NotBatch(self.name, values.into_iter().map(Into::into).collect())
+    }
+
+    /// Keeps the rows whose column holds one of the values another query
+    /// plucks: `<field> IN (SELECT <column> FROM ...)`, in the same statement.
+    ///
+    /// The subquery is a `find_many` or `find_first` ending in
+    /// `.pluck(|x| x.column)`, of a column of the same type (optional or not).
+    /// Its `where_`, `where_complex`, relation filters and nested
+    /// `in_query`s pick the values; with `take`/`skip` (and `find_first`),
+    /// `order_by` picks the window.
+    ///
+    /// ```ignore
+    /// // Orders of VIP customers.
+    /// find_many::<Order>()
+    ///     .where_(|order| {
+    ///         order.customer_id.in_query(find_many::<Customer>().where_(|c| c.vip.eq(true)).pluck(|c| c.id))
+    ///     })
+    /// ```
+    pub fn in_query<Q>(self, query: Q) -> FindWhere
+    where
+        Q: IntoSubquery,
+        T: ColumnOf<Q::Value>,
+    {
+        FindWhere::InQuery(self.name, Box::new(SubQuery { query: query.into_subquery(), negated: false }))
+    }
+
+    /// Keeps the rows whose column holds none of the values another query
+    /// plucks: `<field> NOT IN (SELECT ...)`. Takes the same subqueries as
+    /// [`in_query`](Self::in_query). As SQL's `NOT IN`, it keeps no row when
+    /// the subquery selects a `NULL`; filter those out in the subquery.
+    pub fn not_in_query<Q>(self, query: Q) -> FindWhere
+    where
+        Q: IntoSubquery,
+        T: ColumnOf<Q::Value>,
+    {
+        FindWhere::InQuery(self.name, Box::new(SubQuery { query: query.into_subquery(), negated: true }))
+    }
+
     pub fn null(self) -> FindWhere {
         FindWhere::Null(self.name)
     }
@@ -103,6 +150,25 @@ impl<T, Capability> Field<T, Capability> {
         FindWhere::NotNull(self.name)
     }
 }
+
+/// A query that selects one column, usable in [`Field::in_query`]:
+/// `find_many(...).pluck(|x| x.column)` or `find_first(...).pluck(...)`.
+pub trait IntoSubquery {
+    /// The type of the column it selects.
+    type Value;
+
+    #[doc(hidden)]
+    fn into_subquery(self) -> FindQuery;
+}
+
+/// Field types that can be compared with a subquery's column of type `V`:
+/// the same type, or either one optional.
+#[doc(hidden)]
+pub trait ColumnOf<V> {}
+
+impl<T> ColumnOf<T> for T {}
+impl<T> ColumnOf<T> for Option<T> {}
+impl<T> ColumnOf<Option<T>> for T {}
 
 macro_rules! impl_string_field {
     ($($ty:ty),* $(,)?) => {
@@ -175,10 +241,11 @@ impl Field<Option<String>, FullTextField> {
 ///
 /// The full [`Field`] filter surface is available and is evaluated against the
 /// join table's target column: `eq`/`neq`, `gt`/`gte`/`lt`/`lte`, `batch`,
-/// `null`/`not_null`, `like`/`starts_with`/`ends_with` (string keys), and
-/// `between` (numeric/date keys). `neq` and `not_in` negate membership
-/// (`NOT IN`), so they also keep rows with no link at all; every other method
-/// keeps rows linked to *some* row matching the predicate.
+/// `not_in`/`not_in_batch`, `null`/`not_null`, `like`/`starts_with`/
+/// `ends_with` (string keys), and `between` (numeric/date keys). `neq`,
+/// `not_in` and `not_in_batch` negate membership (`NOT IN`), so they also
+/// keep rows with no link at all; every other method keeps rows linked to
+/// *some* row matching the predicate.
 ///
 /// ```ignore
 /// // Only the accounts linked to `business_id` through the join table.
@@ -304,6 +371,15 @@ impl<T> ManyToManyKeyField<T> {
         V: Into<DinocoValue>,
     {
         self.wrap(self.target().batch(values), true)
+    }
+
+    /// The same as [`not_in`](Self::not_in), named like [`Field::not_in_batch`].
+    pub fn not_in_batch<I, V>(self, values: I) -> FindWhere
+    where
+        I: IntoIterator<Item = V>,
+        V: Into<DinocoValue>,
+    {
+        self.not_in(values)
     }
 
     /// Keeps rows linked through a join row whose target column is `NULL`.
@@ -625,6 +701,8 @@ impl<T, Capability> FilterTarget for Field<T, Capability> {
             | FindWhere::Like(field, _)
             | FindWhere::Between(field, _, _)
             | FindWhere::Batch(field, _)
+            | FindWhere::NotBatch(field, _)
+            | FindWhere::InQuery(field, _)
             | FindWhere::Null(field)
             | FindWhere::NotNull(field) => *field == self.name,
             // A full-text search covers its whole `@@fulltexts` group.

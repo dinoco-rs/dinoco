@@ -1,5 +1,6 @@
 mod aggregate;
 mod count;
+mod cursor;
 mod error;
 mod fields;
 mod hooks;
@@ -9,6 +10,7 @@ mod order_by;
 mod projection;
 mod read;
 mod relation;
+mod runtime_struct;
 mod seed;
 mod testing;
 mod transaction;
@@ -30,7 +32,7 @@ pub mod codegen {
 
 pub use anyhow;
 pub use async_trait::async_trait;
-pub use dinoco_derives::{DinocoEnum, DinocoRuntimeEnum, Entity, EntityExtend, Extend};
+pub use dinoco_derives::{DinocoEnum, DinocoRuntimeEnum, DinocoRuntimeStruct, Entity, EntityExtend, Extend};
 pub use dinoco_engine::*;
 #[doc(hidden)]
 pub use dinoco_engine::{__dinoco_mysql, __dinoco_pluck_column, __dinoco_postgres, __dinoco_sqlite};
@@ -38,6 +40,7 @@ pub use serde;
 
 pub use aggregate::*;
 pub use count::*;
+pub use cursor::*;
 pub use error::*;
 pub use fields::*;
 pub(crate) use hooks::*;
@@ -47,6 +50,7 @@ pub use order_by::*;
 pub(crate) use projection::*;
 pub use read::*;
 pub use relation::*;
+pub use runtime_struct::*;
 pub use seed::__run_seed;
 pub use testing::*;
 pub use transaction::*;

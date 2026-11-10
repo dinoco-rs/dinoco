@@ -386,3 +386,99 @@ fn set_runtime_enum_is_idempotent() {
     assert_eq!(twice.matches("from_column(").count(), 1, "{twice}");
     assert!(twice.contains("pub permission: crate::Permission,"), "{twice}");
 }
+
+const RUNTIME_STRUCT_SCHEMA: &str = r#"
+model Order {
+    id        String    @id
+    amount    Integer   @default(0)
+    discount  Integer?  @default(5)
+    placed_at DateTime  @default(now())
+    metadata  Json
+    extra     Json?
+    note      String
+}
+"#;
+
+fn render_runtime_struct_model(transformer: &dyn DinocoTransformer) -> String {
+    let schema = dinoco_compiler::compile(RUNTIME_STRUCT_SCHEMA).expect("schema");
+    let mut generated = build_schema(&schema);
+    apply_transformer(&mut generated, transformer);
+    let model = generated.model("Order").expect("model");
+    render_model_source(model, &generated.imports_for(&model.imports))
+}
+
+struct RuntimeStructs;
+
+impl DinocoTransformer for RuntimeStructs {
+    fn transform_field(&self, model: &Model, field: &mut Field) {
+        if model.name != "Order" {
+            return;
+        }
+        match field.name.as_str() {
+            "amount" | "discount" => field.set_runtime_struct("crate::Amount"),
+            "placed_at" => field.set_runtime_struct("crate::Instant"),
+            "metadata" | "extra" => field.set_runtime_struct(RustType::new("crate::Metadata")),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn set_runtime_struct_replaces_the_type_and_reads_defaults_through_the_struct() {
+    let order = render_runtime_struct_model(&RuntimeStructs);
+
+    assert!(
+        order.contains(concat!(
+            "    #[dinoco(default = <crate::Amount as ::dinoco::DinocoRuntimeStruct>::from_column(",
+            "::core::convert::Into::into(0)).expect(\"the @default of a runtime struct field must be a value of ",
+            "`crate::Amount`\"))]\n",
+            "    #[dinoco(scalar)]\n",
+            "    pub amount: crate::Amount,"
+        )),
+        "{order}"
+    );
+    // A nullable field wraps the struct in `Some`.
+    assert!(
+        order.contains(concat!(
+            "    #[dinoco(default = ::core::option::Option::Some(<crate::Amount as ::dinoco::DinocoRuntimeStruct>",
+            "::from_column(::core::convert::Into::into(5)).expect(\"the @default of a runtime struct field must be ",
+            "a value of `crate::Amount`\")))]\n",
+            "    #[dinoco(scalar)]\n",
+            "    pub discount: Option<crate::Amount>,"
+        )),
+        "{order}"
+    );
+    // A call default is read through the struct too.
+    assert!(
+        order.contains(concat!(
+            "    #[dinoco(default = <crate::Instant as ::dinoco::DinocoRuntimeStruct>::from_column(",
+            "::core::convert::Into::into(::dinoco::chrono::Utc::now())).expect(\"the @default of a runtime struct ",
+            "field must be a value of `crate::Instant`\"))]\n",
+            "    #[dinoco(scalar)]\n",
+            "    pub placed_at: crate::Instant,"
+        )),
+        "{order}"
+    );
+    assert!(order.contains("    #[dinoco(scalar)]\n    pub metadata: crate::Metadata,"), "{order}");
+    assert!(order.contains("    #[dinoco(scalar)]\n    pub extra: Option<crate::Metadata>,"), "{order}");
+    assert!(order.contains("    pub note: String,"), "{order}");
+}
+
+#[test]
+fn set_runtime_struct_is_idempotent() {
+    struct Twice;
+    impl DinocoTransformer for Twice {
+        fn transform_field(&self, _model: &Model, field: &mut Field) {
+            if matches!(field.name.as_str(), "amount" | "discount") {
+                field.set_runtime_struct("crate::Amount");
+                field.set_runtime_struct(RustType::new("crate::Amount"));
+            }
+        }
+    }
+
+    let twice = render_runtime_struct_model(&Twice);
+    assert_eq!(twice.matches("#[dinoco(scalar)]").count(), 2, "{twice}");
+    assert_eq!(twice.matches("from_column(").count(), 2, "{twice}");
+    assert!(twice.contains("pub amount: crate::Amount,"), "{twice}");
+    assert!(twice.contains("pub discount: Option<crate::Amount>,"), "{twice}");
+}

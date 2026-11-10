@@ -7,12 +7,16 @@
 //! MySQL's restrictions on writes) are decided by [`Dialect`].
 
 use crate::{
-    AggregateColumn, AggregateFunction, AggregateGroup, AggregateQuery, CountQuery, CurrentTimeSql, DateBucket,
-    DeleteQuery, DinocoValue, ExistsQuery, FindOrderBy, FindQuery, FindWhere, GroupBy, GroupOrder, InsertQuery,
-    LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery, RelationCountQuery,
-    RelationJoinQuery, RelationMatch, RelationOccurrenceQuery, RelationQuantifier, UpdateOperation, UpdateQuery,
-    UpdateSet,
+    AggregateColumn, AggregateFunction, AggregateGroup, AggregateQuery, ConflictSet, CountQuery, CurrentTimeSql,
+    DateBucket, DeleteQuery, DinocoValue, ExistsQuery, FindOrderBy, FindQuery, FindWhere, GroupBy, GroupOrder,
+    InsertQuery, LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationAggregateQuery,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationMatch, RelationOccurrenceQuery,
+    RelationQuantifier, SubQuery, UpdateOperation, UpdateQuery, UpdateSet, UpsertQuery,
 };
+
+/// MySQL's alias of the rows an upsert proposes (`VALUES (...) AS <alias>`),
+/// its `excluded`.
+const MYSQL_PROPOSED_ALIAS: &str = "__dinoco_new";
 
 /// Alias of the related table in a relation filter subquery, suffixed with the
 /// nesting depth. A nested relation filter is compiled with its parent's alias
@@ -568,22 +572,9 @@ impl SqlWriter {
                 self.push(" AND ");
                 self.comparison(field, " <= ", end, qualifier);
             }
-            FindWhere::Batch(field, values) => {
-                if values.is_empty() {
-                    self.push("1 = 0");
-                    return;
-                }
-
-                self.field(field, qualifier);
-                self.push(" IN (");
-                for (index, value) in values.into_iter().enumerate() {
-                    if index > 0 {
-                        self.push(", ");
-                    }
-                    self.bind(value);
-                }
-                self.sql.push(')');
-            }
+            FindWhere::Batch(field, values) => self.membership(field, " IN (", values, "1 = 0", qualifier),
+            FindWhere::NotBatch(field, values) => self.membership(field, " NOT IN (", values, "1 = 1", qualifier),
+            FindWhere::InQuery(field, subquery) => self.in_query(field, *subquery, qualifier, false),
             FindWhere::Null(field) => {
                 self.field(field, qualifier);
                 self.push(" IS NULL");
@@ -611,6 +602,59 @@ impl SqlWriter {
                 self.sql.push(')');
             }
         }
+    }
+
+    /// `<field> IN (...)` or `<field> NOT IN (...)`; `empty` when there are no
+    /// values, which no database accepts as a list.
+    fn membership(
+        &mut self,
+        field: &str,
+        operator: &str,
+        values: Vec<DinocoValue>,
+        empty: &str,
+        qualifier: Qualifier<'_>,
+    ) {
+        if values.is_empty() {
+            self.push(empty);
+            return;
+        }
+
+        self.field(field, qualifier);
+        self.push(operator);
+        for (index, value) in values.into_iter().enumerate() {
+            if index > 0 {
+                self.push(", ");
+            }
+            self.bind(value);
+        }
+        self.sql.push(')');
+    }
+
+    /// `<field> [NOT] IN (SELECT <column> FROM ...)`. The subquery is not
+    /// correlated, so its own conditions are unqualified. MySQL rejects a
+    /// `LIMIT` in an `IN` subquery, and a write whose subquery reads the table
+    /// being written (error 1093): there, and with `materialized`, the rows
+    /// are read from a derived table instead.
+    fn in_query(&mut self, field: &str, subquery: SubQuery, qualifier: Qualifier<'_>, materialized: bool) {
+        let SubQuery { query: FindQuery { fields, from, conditions, limit, skip, order_by }, negated } = subquery;
+        let windowed = limit >= 0 || skip >= 0;
+        let derived = materialized || (self.dialect == Dialect::Mysql && windowed);
+
+        self.field(field, qualifier);
+        self.push(if negated { " NOT IN (SELECT " } else { " IN (SELECT " });
+        if derived {
+            self.identifiers(fields);
+            self.push(" FROM (SELECT ");
+        }
+        self.identifiers(fields);
+        self.push(" FROM ");
+        self.identifier(from);
+        let order_by = if windowed { order_by.as_slice() } else { &[] };
+        self.find_tail(conditions, order_by, limit, skip, Qualifier::None);
+        if derived {
+            self.push(") AS __dinoco_subquery");
+        }
+        self.sql.push(')');
     }
 
     fn comparison(&mut self, field: &str, operator: &str, value: DinocoValue, qualifier: Qualifier<'_>) {
@@ -803,6 +847,9 @@ impl SqlWriter {
             FindWhere::Relation(relation) if relation_reads_table(&relation, table) => {
                 self.relation(relation, Qualifier::None, true);
             }
+            FindWhere::InQuery(field, subquery) if subquery_reads_table(&subquery, table) => {
+                self.in_query(field, *subquery, Qualifier::None, true);
+            }
             FindWhere::And(conditions) => self.write_group(conditions, table, " AND ", "1 = 1"),
             FindWhere::Or(conditions) => self.write_group(conditions, table, " OR ", "1 = 0"),
             FindWhere::Not(condition) => {
@@ -848,6 +895,164 @@ impl SqlWriter {
         self.push(" = ");
         if let Some(operator) = operator {
             self.identifier(set.field);
+            self.push(operator);
+        }
+        self.bind(set.value);
+    }
+
+    /// Every aggregate, in order; `aliased` names each one after its
+    /// position (see [`aggregate_alias`](Self::aggregate_alias)).
+    fn aggregates(&mut self, aggregates: &[AggregateColumn], aliased: bool) {
+        for (index, aggregate) in aggregates.iter().enumerate() {
+            if index > 0 {
+                self.push(", ");
+            }
+            self.aggregate(*aggregate);
+            if aliased {
+                self.push(" AS ");
+                self.aggregate_alias(index);
+            }
+        }
+    }
+
+    /// `__dinoco_aggregate` for the first aggregate, `__dinoco_aggregate_<n>`
+    /// for the others.
+    fn aggregate_alias(&mut self, index: usize) {
+        self.push("__dinoco_aggregate");
+        if index > 0 {
+            self.sql.push('_');
+            self.number(index);
+        }
+    }
+
+    /// The order of a grouped aggregate's groups, by the `__dinoco_group_key`
+    /// and aggregate columns, each written after `prefix`.
+    fn group_order(&mut self, group: AggregateGroup, prefix: &str) {
+        let ascending = match group.order_by.unwrap_or(GroupOrder::KeyAsc) {
+            GroupOrder::KeyAsc => None,
+            GroupOrder::KeyDesc => {
+                self.push(prefix);
+                self.push("__dinoco_group_key DESC");
+                return;
+            }
+            GroupOrder::AggregateAsc => Some(true),
+            GroupOrder::AggregateDesc => Some(false),
+        };
+
+        // Keys are unique, so only an order on an aggregate has ties to break.
+        if let Some(ascending) = ascending {
+            self.push(prefix);
+            self.aggregate_alias(usize::from(group.ordered_aggregate));
+            self.push(if ascending { " ASC, " } else { " DESC, " });
+        }
+        self.push(prefix);
+        self.push(if ascending.is_some() && group.then_by == Some(GroupOrder::KeyDesc) {
+            "__dinoco_group_key DESC"
+        } else {
+            "__dinoco_group_key ASC"
+        });
+    }
+
+    /// Keeps a page of each parent's groups numbered by `__dinoco_row_num`.
+    fn close_group_window(&mut self, skip: i32, limit: i32) {
+        let skip = skip.max(0);
+        if skip > 0 {
+            self.push(" WHERE __dinoco_row_num > ");
+            self.bind(DinocoValue::Integer(i64::from(skip)));
+        }
+        if limit >= 0 {
+            self.push(if skip > 0 { " AND " } else { " WHERE " });
+            self.push("__dinoco_row_num <= ");
+            self.bind(DinocoValue::Integer(i64::from(skip) + i64::from(limit)));
+        }
+
+        self.push(" ORDER BY __dinoco_relation_ordinal, __dinoco_row_num");
+    }
+
+    /// `INSERT INTO <table> (<fields>) VALUES (...), ...`, binding every row.
+    fn insert_rows(&mut self, table: &str, fields: &[&str], rows: Vec<Vec<DinocoValue>>) {
+        self.push("INSERT INTO ");
+        self.identifier(table);
+        self.push(" (");
+        self.identifiers(fields);
+        self.push(") VALUES ");
+        for (index, row) in rows.into_iter().enumerate() {
+            if index > 0 {
+                self.push(", ");
+            }
+            self.sql.push('(');
+            self.placeholders(fields.len());
+            self.sql.push(')');
+            self.params.extend(row);
+        }
+    }
+
+    fn do_nothing_on_conflict(&mut self, target: &[&str], fields: &[&str]) {
+        if self.dialect == Dialect::Mysql {
+            // MySQL takes no conflict target and has no `DO NOTHING`: assigning
+            // a column to itself leaves the existing row as it is.
+            let column = target.first().or(fields.first()).copied().unwrap_or("id");
+            self.push(" ON DUPLICATE KEY UPDATE ");
+            self.identifier(column);
+            self.push(" = ");
+            self.identifier(column);
+        } else {
+            self.push(" ON CONFLICT (");
+            self.identifiers(target);
+            self.push(") DO NOTHING");
+        }
+    }
+
+    /// One assignment of an upsert's update. The existing row's columns are
+    /// qualified by `table`, and the proposed row is `excluded` (MySQL: the
+    /// `VALUES` alias).
+    fn conflict_assignment(&mut self, table: &str, set: ConflictSet) {
+        let set = match set {
+            ConflictSet::Excluded(field) => {
+                self.identifier(field);
+                self.push(" = ");
+                if self.dialect == Dialect::Mysql {
+                    self.push(MYSQL_PROPOSED_ALIAS);
+                    self.sql.push('.');
+                } else {
+                    self.push("excluded.");
+                }
+                self.identifier(field);
+                return;
+            }
+            ConflictSet::Update(set) => set,
+        };
+
+        let operator = match set.operation {
+            UpdateOperation::Set => None,
+            UpdateOperation::Increment => Some(" + "),
+            UpdateOperation::Decrement => Some(" - "),
+            UpdateOperation::Multiply => Some(" * "),
+            UpdateOperation::Divide => Some(" / "),
+            UpdateOperation::CurrentTimestamp | UpdateOperation::CurrentDate => {
+                let now = self.dialect.current_time();
+                self.identifier(set.field);
+                self.push(" = ");
+                self.push(if set.operation == UpdateOperation::CurrentDate { now.date } else { now.timestamp });
+                return;
+            }
+            // Relation writes never reach an upsert; a column assigned to
+            // itself keeps the statement valid.
+            UpdateOperation::Connect
+            | UpdateOperation::Disconnect
+            | UpdateOperation::ConnectManyToMany(_)
+            | UpdateOperation::DisconnectManyToMany(_) => {
+                self.identifier(set.field);
+                self.push(" = ");
+                self.raw_field(table, set.field);
+                return;
+            }
+        };
+
+        self.identifier(set.field);
+        self.push(" = ");
+        if let Some(operator) = operator {
+            self.raw_field(table, set.field);
             self.push(operator);
         }
         self.bind(set.value);
@@ -997,7 +1202,8 @@ fn condition_bound_values(condition: &FindWhere) -> usize {
         | FindWhere::Like(..) => 1,
         FindWhere::FullText(fields, _) => fields.len().max(1),
         FindWhere::Between(..) => 2,
-        FindWhere::Batch(_, values) => values.len(),
+        FindWhere::Batch(_, values) | FindWhere::NotBatch(_, values) => values.len(),
+        FindWhere::InQuery(_, subquery) => bound_values(&subquery.query.conditions) + 2,
         FindWhere::Null(_) | FindWhere::NotNull(_) => 0,
         FindWhere::ManyToMany(membership) => condition_bound_values(&membership.predicate),
         FindWhere::Relation(relation) => bound_values(&relation.conditions),
@@ -1024,9 +1230,16 @@ pub(crate) fn relation_reads_table(relation: &RelationMatch, table: &str) -> boo
         || relation.conditions.iter().any(|condition| condition_reads_table(condition, table))
 }
 
+/// Whether compiling `subquery` reads `table`, at any nesting depth.
+fn subquery_reads_table(subquery: &SubQuery, table: &str) -> bool {
+    subquery.query.from == table
+        || subquery.query.conditions.iter().any(|condition| condition_reads_table(condition, table))
+}
+
 fn condition_reads_table(condition: &FindWhere, table: &str) -> bool {
     match condition {
         FindWhere::Relation(relation) => relation_reads_table(relation, table),
+        FindWhere::InQuery(_, subquery) => subquery_reads_table(subquery, table),
         FindWhere::ManyToMany(membership) => membership.join_table == table,
         FindWhere::And(conditions) | FindWhere::Or(conditions) => {
             conditions.iter().any(|condition| condition_reads_table(condition, table))
@@ -1051,44 +1264,82 @@ pub(crate) fn find(dialect: Dialect, query: FindQuery) -> (String, Vec<DinocoVal
 
 pub(crate) fn insert(dialect: Dialect, query: InsertQuery) -> (String, Vec<DinocoValue>) {
     let InsertQuery { table, fields, rows, returning, on_conflict_do_nothing } = query;
-    let values = rows.iter().map(Vec::len).sum::<usize>();
+    let mut sql = insert_writer(
+        dialect,
+        table,
+        &fields,
+        &rows,
+        returning,
+        on_conflict_do_nothing.map_or(0, |target| 32 + target.len() * 16),
+        0,
+    );
+
+    sql.insert_rows(table, &fields, rows);
+    if let Some(target) = on_conflict_do_nothing {
+        sql.do_nothing_on_conflict(target, &fields);
+    }
+    sql.returning(returning);
+
+    sql.finish()
+}
+
+/// A writer sized for an insert of `rows` into `fields`, plus `extra_sql`
+/// bytes and `extra_values` values for its conflict clause.
+fn insert_writer(
+    dialect: Dialect,
+    table: &str,
+    fields: &[&str],
+    rows: &[Vec<DinocoValue>],
+    returning: Option<&[&str]>,
+    extra_sql: usize,
+    extra_values: usize,
+) -> SqlWriter {
+    let values = rows.iter().map(Vec::len).sum::<usize>() + extra_values;
     let placeholder_width = if dialect == Dialect::Postgres { 7 } else { 3 };
     let capacity = 64
         + table.len()
         + fields.len() * 16
         + rows.len() * (fields.len() * placeholder_width + 4)
         + returning.map_or(0, |returning| 12 + returning.len() * 16)
-        + on_conflict_do_nothing.map_or(0, |target| 32 + target.len() * 16);
-    let mut sql = SqlWriter::new(dialect, capacity, Vec::with_capacity(values));
+        + extra_sql;
+    SqlWriter::new(dialect, capacity, Vec::with_capacity(values))
+}
 
-    sql.push("INSERT INTO ");
-    sql.identifier(table);
-    sql.push(" (");
-    sql.identifiers(&fields);
-    sql.push(") VALUES ");
-    for (index, row) in rows.into_iter().enumerate() {
+/// An insert whose colliding rows update the existing row, see [`UpsertQuery`].
+pub(crate) fn upsert(dialect: Dialect, query: UpsertQuery) -> (String, Vec<DinocoValue>) {
+    let UpsertQuery { insert: InsertQuery { table, fields, rows, returning, .. }, target, sets } = query;
+    if sets.is_empty() {
+        let insert = InsertQuery { table, fields, rows, returning, on_conflict_do_nothing: Some(target) };
+        return self::insert(dialect, insert);
+    }
+
+    let extra_values =
+        sets.iter().filter(|set| matches!(set, ConflictSet::Update(set) if set.operation.binds_value())).count();
+    let mut sql = insert_writer(
+        dialect,
+        table,
+        &fields,
+        &rows,
+        returning,
+        48 + target.len() * 16 + sets.len() * (32 + table.len()),
+        extra_values,
+    );
+
+    sql.insert_rows(table, &fields, rows);
+    if dialect == Dialect::Mysql {
+        sql.push(" AS ");
+        sql.push(MYSQL_PROPOSED_ALIAS);
+        sql.push(" ON DUPLICATE KEY UPDATE ");
+    } else {
+        sql.push(" ON CONFLICT (");
+        sql.identifiers(target);
+        sql.push(") DO UPDATE SET ");
+    }
+    for (index, set) in sets.into_iter().enumerate() {
         if index > 0 {
             sql.push(", ");
         }
-        sql.sql.push('(');
-        sql.placeholders(fields.len());
-        sql.sql.push(')');
-        sql.params.extend(row);
-    }
-    if let Some(target) = on_conflict_do_nothing {
-        if dialect == Dialect::Mysql {
-            // MySQL takes no conflict target and has no `DO NOTHING`: assigning
-            // a column to itself leaves the existing row as it is.
-            let column = target.first().or(fields.first()).copied().unwrap_or("id");
-            sql.push(" ON DUPLICATE KEY UPDATE ");
-            sql.identifier(column);
-            sql.push(" = ");
-            sql.identifier(column);
-        } else {
-            sql.push(" ON CONFLICT (");
-            sql.identifiers(target);
-            sql.push(") DO NOTHING");
-        }
+        sql.conflict_assignment(table, set);
     }
     sql.returning(returning);
 
@@ -1178,28 +1429,34 @@ pub(crate) fn mysql_time_zone_check(zone: chrono_tz::Tz) -> (String, Vec<DinocoV
 }
 
 pub(crate) fn aggregate(dialect: Dialect, query: AggregateQuery) -> (String, Vec<DinocoValue>) {
-    let AggregateQuery { source: FindQuery { from, conditions, limit, skip, order_by, .. }, aggregate, group } = query;
+    let AggregateQuery { source: FindQuery { from, conditions, limit, skip, order_by, .. }, aggregates, group } = query;
+    let aggregates = aggregates.as_slice();
     let windowed = limit >= 0 || skip >= 0;
-    let mut sql = writer(dialect, 6, &conditions, 4);
+    let mut sql = writer(dialect, 5 + aggregates.len(), &conditions, 4);
 
     sql.push("SELECT ");
     if let Some(group) = group {
         sql.group_key(group.key);
         sql.push(" AS __dinoco_group_key, ");
     }
-    sql.aggregate(aggregate);
-    if group.is_some() {
-        sql.push(" AS __dinoco_aggregate");
-    }
+    sql.aggregates(aggregates, group.is_some());
 
     sql.push(" FROM ");
     if windowed {
         // The window of rows aggregated, with only the columns read outside.
         sql.push("(SELECT ");
-        sql.identifier(aggregate.field);
-        if let Some(key) = group.map(|group| group.key.field()).filter(|key| *key != aggregate.field) {
-            sql.push(", ");
-            sql.identifier(key);
+        let key = group.map(|group| group.key.field());
+        let mut written = 0;
+        for (index, field) in aggregates.iter().map(|aggregate| aggregate.field).chain(key).enumerate() {
+            let earlier = aggregates.iter().take(index.min(aggregates.len())).map(|aggregate| aggregate.field);
+            if earlier.clone().any(|earlier| earlier == field) {
+                continue;
+            }
+            if written > 0 {
+                sql.push(", ");
+            }
+            sql.identifier(field);
+            written += 1;
         }
         sql.push(" FROM ");
         sql.identifier(from);
@@ -1210,22 +1467,10 @@ pub(crate) fn aggregate(dialect: Dialect, query: AggregateQuery) -> (String, Vec
         sql.where_clause(conditions, Qualifier::None);
     }
 
-    if let Some(AggregateGroup { order_by, then_by, limit, skip, .. }) = group {
+    if let Some(group) = group {
         sql.push(" GROUP BY __dinoco_group_key ORDER BY ");
-        sql.push(match order_by.unwrap_or(GroupOrder::KeyAsc) {
-            GroupOrder::KeyAsc => "__dinoco_group_key ASC",
-            GroupOrder::KeyDesc => "__dinoco_group_key DESC",
-            // Keys are unique, so only an order on the aggregate has ties to break.
-            GroupOrder::AggregateAsc if then_by == Some(GroupOrder::KeyDesc) => {
-                "__dinoco_aggregate ASC, __dinoco_group_key DESC"
-            }
-            GroupOrder::AggregateDesc if then_by == Some(GroupOrder::KeyDesc) => {
-                "__dinoco_aggregate DESC, __dinoco_group_key DESC"
-            }
-            GroupOrder::AggregateAsc => "__dinoco_aggregate ASC, __dinoco_group_key ASC",
-            GroupOrder::AggregateDesc => "__dinoco_aggregate DESC, __dinoco_group_key ASC",
-        });
-        sql.page(limit, skip);
+        sql.group_order(group, "");
+        sql.page(group.limit, group.skip);
     }
 
     sql.finish()
@@ -1468,6 +1713,101 @@ pub(crate) fn relation_occurrence_with_keys(
     sql.finish()
 }
 
+/// A grouped include: one aggregate per parent, or per group of its related
+/// rows, with the parent `keys` bound in front of the query's own values. See
+/// [`RelationAggregateQuery`].
+pub(crate) fn relation_aggregate_with_keys(
+    dialect: Dialect,
+    query: RelationAggregateQuery,
+    keys: Vec<DinocoValue>,
+) -> (String, Vec<DinocoValue>) {
+    let RelationAggregateQuery {
+        query: AggregateQuery { source: FindQuery { from, conditions, .. }, aggregates, group },
+        child_field,
+        join,
+        key_count,
+    } = query;
+    let paged = group.is_some_and(|group| group.limit >= 0 || group.skip >= 0);
+    let values = keys.len() + bound_values(&conditions) + 2;
+    let mut params = keys;
+    params.reserve(values - params.len());
+    let per_key = if dialect == Dialect::Postgres && !params.is_empty() { 20 } else { 12 };
+    let join_width = join.map_or(0, |join| key_count * (64 + join.table.len() + join.parent_field.len()));
+    let mut sql = SqlWriter::new(dialect, sql_capacity(12, values) + key_count * per_key + join_width, params);
+
+    if paged {
+        sql.push("SELECT * FROM (SELECT __dinoco_groups.*, ROW_NUMBER() OVER (PARTITION BY ");
+        sql.push("__dinoco_groups.__dinoco_relation_ordinal ORDER BY ");
+        sql.group_order(group.expect("paged groups"), "__dinoco_groups.");
+        sql.push(") AS __dinoco_row_num FROM (");
+    }
+
+    sql.parent_keys(key_count, join.is_none());
+    sql.push(" SELECT ");
+    if let Some(group) = group {
+        sql.group_key(group.key);
+        sql.push(" AS __dinoco_group_key, ");
+    }
+    sql.aggregates(aggregates.as_slice(), true);
+    sql.push(", ");
+    sql.push(PARENT_KEYS_ORDINAL);
+    sql.push(" FROM __dinoco_parent_keys INNER JOIN ");
+    match join {
+        Some(join) => {
+            sql.identifier(join.table);
+            sql.push(" ON ");
+            for ordinal in 0..key_count {
+                if ordinal > 0 {
+                    sql.push(" OR ");
+                }
+                sql.push("(__dinoco_parent_keys.__dinoco_relation_ordinal = ");
+                sql.number(ordinal);
+                sql.push(" AND ");
+                sql.raw_field(join.table, join.parent_field);
+                sql.push(" = ");
+                sql.placeholder();
+                sql.sql.push(')');
+            }
+            sql.push(" INNER JOIN ");
+            sql.identifier(from);
+            sql.push(" ON ");
+            sql.raw_field(join.table, join.child_field);
+            sql.push(" = ");
+            sql.raw_field(from, child_field);
+        }
+        None => {
+            sql.identifier(from);
+            sql.push(" ON __dinoco_parent_keys.__dinoco_relation_key = ");
+            sql.raw_field(from, child_field);
+        }
+    }
+    sql.and_clause(conditions, Qualifier::Table(from));
+    sql.push(" GROUP BY ");
+    sql.push(PARENT_KEYS_ORDINAL);
+    if group.is_some() {
+        sql.push(", __dinoco_group_key");
+    }
+
+    match group {
+        Some(group) if paged => {
+            sql.push(") AS __dinoco_groups) AS __dinoco_partitioned");
+            sql.close_group_window(group.skip, group.limit);
+        }
+        Some(group) => {
+            sql.push(" ORDER BY ");
+            sql.push(PARENT_KEYS_ORDINAL);
+            sql.push(", ");
+            sql.group_order(group, "");
+        }
+        None => {
+            sql.push(" ORDER BY ");
+            sql.push(PARENT_KEYS_ORDINAL);
+        }
+    }
+
+    sql.finish()
+}
+
 pub(crate) fn many_to_many_relation(dialect: Dialect, query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>) {
     many_to_many_relation_with_keys(dialect, query, Vec::new())
 }
@@ -1612,6 +1952,10 @@ macro_rules! query_compiler_methods {
             $crate::backends::sql::insert($dialect, query)
         }
 
+        fn compile_upsert_query(&self, query: $crate::UpsertQuery) -> (String, Vec<$crate::DinocoValue>) {
+            $crate::backends::sql::upsert($dialect, query)
+        }
+
         fn compile_update_query(&self, query: $crate::UpdateQuery) -> (String, Vec<$crate::DinocoValue>) {
             $crate::backends::sql::update($dialect, query)
         }
@@ -1674,6 +2018,14 @@ macro_rules! query_compiler_methods {
             query: $crate::ManyToManyRelationQuery,
         ) -> (String, Vec<$crate::DinocoValue>) {
             $crate::backends::sql::many_to_many_relation($dialect, query)
+        }
+
+        fn compile_relation_aggregate_query_with_keys(
+            &self,
+            query: $crate::RelationAggregateQuery,
+            keys: Vec<$crate::DinocoValue>,
+        ) -> (String, Vec<$crate::DinocoValue>) {
+            $crate::backends::sql::relation_aggregate_with_keys($dialect, query, keys)
         }
 
         fn compile_many_to_many_relation_count_query(

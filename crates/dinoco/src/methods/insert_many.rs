@@ -5,13 +5,15 @@ use dinoco_engine::{DinocoEntity, DinocoProjection, DinocoRowModel, PluckValue};
 use futures_util::TryFutureExt;
 
 use crate::{
-    ConflictMode, ConflictTarget, CreateError, DinocoInsertable, Field, InsertPayload, MutationExecutor, NoConflict,
-    OnConflict, execute_insert_or_existing, execute_insert_owned, execute_insert_owned_returning,
-    execute_insert_owned_returning_field, execute_insert_payloads, execute_insert_payloads_returning,
-    execute_insert_skipping_conflicts, reload_inserted, reload_inserted_field, single_field,
+    ConflictMode, ConflictTarget, CreateError, DinocoInsertable, Field, InsertPayload, IntoConflictSets,
+    MutationExecutor, NoConflict, OnConflict, OnConflictUpdate, conflict_sets, execute_insert_on_conflict,
+    execute_insert_or_existing, execute_insert_owned, execute_insert_owned_returning,
+    execute_insert_owned_returning_field, execute_insert_payloads, execute_insert_payloads_returning, reload_inserted,
+    reload_inserted_field, single_field,
 };
 
-/// `K` is [`OnConflict`] after `.on_conflict_do_nothing(...)`; a plain insert
+/// `K` is [`OnConflict`] after `.on_conflict_do_nothing(...)` and
+/// [`OnConflictUpdate`] after `.on_conflict_do_update(...)`; a plain insert
 /// carries the zero-sized [`NoConflict`].
 pub struct InsertMany<M, V = M, K = NoConflict> {
     items: Vec<V>,
@@ -62,6 +64,30 @@ where
 
         InsertMany { items: self.items, conflict: OnConflict::new(target), marker: PhantomData }
     }
+
+    /// Updates the existing row of every payload that collides with one on
+    /// the unique index over `target` (one field, or a tuple of fields),
+    /// instead of failing the whole batch with
+    /// [`CreateError::UniqueViolation`]; the other rows are inserted. Takes
+    /// the same assignments as `insert_into(...).on_conflict_do_update(...)`.
+    ///
+    /// `.returning::<S>()` and `.pluck(...)` then read back one row per
+    /// payload, in payload order, as it is after the statement. Two payloads
+    /// colliding on the same row fail on PostgreSQL, which updates a row once
+    /// per statement; SQLite and MySQL apply them in order. MySQL has no
+    /// conflict target: there a duplicate on any unique index updates the row.
+    pub fn on_conflict_do_update<F, Target, U, S>(self, target: F, update: U) -> InsertMany<M, V, OnConflictUpdate>
+    where
+        F: FnOnce(M::Where) -> Target,
+        Target: ConflictTarget,
+        U: FnOnce(M::Update) -> S,
+        S: IntoConflictSets,
+    {
+        let target = target(M::Where::default()).conflict_fields(<M as DinocoEntity>::FIELDS);
+        let sets = conflict_sets(update(M::Update::default()));
+
+        InsertMany { items: self.items, conflict: OnConflictUpdate::new(target, sets), marker: PhantomData }
+    }
 }
 
 impl<M, V, K> InsertMany<M, V, K>
@@ -106,9 +132,9 @@ where
         let Self { items, conflict, .. } = self;
 
         async move {
-            if let Some(target) = conflict.target() {
-                // Boxed: skipping conflicts keeps its state out of every plain insert.
-                return Box::pin(execute_insert_skipping_conflicts::<M, V, C>(items, target, &client)).await;
+            if !K::FAILS {
+                // Boxed: handling conflicts keeps its state out of every plain insert.
+                return Box::pin(execute_insert_on_conflict::<M, V, C>(items, conflict.into_conflict(), &client)).await;
             }
 
             if V::HAS_NESTED {
@@ -147,9 +173,15 @@ where
         let Self { items, conflict, .. } = self;
 
         async move {
-            if let Some(target) = conflict.target() {
+            if !K::FAILS {
                 // Boxed: the read back keeps its state out of every plain insert.
-                return Box::pin(execute_insert_or_existing::<M, V, S, C>(items, target, S::FIELDS, &client)).await;
+                return Box::pin(execute_insert_or_existing::<M, V, S, C>(
+                    items,
+                    conflict.into_conflict(),
+                    S::FIELDS,
+                    &client,
+                ))
+                .await;
             }
 
             if !V::HAS_NESTED {
@@ -180,11 +212,15 @@ where
         let Self { items, field, conflict, .. } = self;
 
         async move {
-            if let Some(target) = conflict.target() {
+            if !K::FAILS {
                 let fields = single_field(field, <M as DinocoEntity>::FIELDS);
-                let rows =
-                    Box::pin(execute_insert_or_existing::<M, V, PluckValue<T>, C>(items, target, fields, &client))
-                        .await?;
+                let rows = Box::pin(execute_insert_or_existing::<M, V, PluckValue<T>, C>(
+                    items,
+                    conflict.into_conflict(),
+                    fields,
+                    &client,
+                ))
+                .await?;
 
                 return Ok(rows.into_iter().map(|value| value.0).collect());
             }

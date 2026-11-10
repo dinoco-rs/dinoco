@@ -37,7 +37,7 @@ async fn adapters_compile_migration_sql_with_their_dialect() -> anyhow::Result<(
     assert!(sqlite_sql.contains("id TEXT PRIMARY KEY NOT NULL"));
     assert!(sqlite_sql.contains("DEFAULT CURRENT_TIMESTAMP"));
 
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost:3306/mysql");
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost:3306/dinoco");
     let mysql_sql = mysql.compile_create_table_migration(migration());
     assert!(mysql_sql.contains("CREATE TABLE IF NOT EXISTS account"));
     assert!(mysql_sql.contains("id VARCHAR(255) PRIMARY KEY NOT NULL"));
@@ -137,7 +137,7 @@ async fn adapters_compile_schema_types_with_expected_database_types() -> anyhow:
     assert!(sqlite_sql.contains("json_value BLOB"));
     assert!(sqlite_sql.contains("enum_value TEXT CHECK (enum_value IN ('admin', 'member'))"));
 
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost:5432/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost:5432/dinoco").await?;
     let postgres_sql = postgres.compile_create_table_migration(migration.clone());
     assert!(postgres_sql.contains("string_value TEXT"));
     assert!(postgres_sql.contains("boolean_value BOOLEAN"));
@@ -155,7 +155,7 @@ async fn adapters_compile_schema_types_with_expected_database_types() -> anyhow:
         ["CREATE TYPE \"OfficeType\" AS ENUM ('admin', 'member');"]
     );
 
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost:3306/mysql");
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost:3306/dinoco");
     let mysql_sql = mysql.compile_create_table_migration(migration);
     assert!(mysql_sql.contains("string_value VARCHAR(255)"));
     assert!(mysql_sql.contains("boolean_value TINYINT(1)"));
@@ -188,14 +188,14 @@ async fn adapters_compile_index_migrations_with_their_dialect() -> anyhow::Resul
     );
     assert_eq!(sqlite.compile_drop_index_migration(drop.clone()), "DROP INDEX idx_post_tenant_author;");
 
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost:5432/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost:5432/dinoco").await?;
     assert_eq!(
         postgres.compile_create_index_migration(create.clone()),
         "CREATE INDEX idx_post_tenant_author ON post (tenant_id, author_id);"
     );
     assert_eq!(postgres.compile_drop_index_migration(drop.clone()), "DROP INDEX idx_post_tenant_author;");
 
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost:3306/mysql");
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost:3306/dinoco");
     assert_eq!(
         mysql.compile_create_index_migration(create),
         "CREATE INDEX idx_post_tenant_author ON post (tenant_id, author_id);"
@@ -306,7 +306,7 @@ async fn adapters_compile_partial_indexes_and_keep_the_condition_in_a_comment() 
         )
     );
 
-    let postgres = PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost:5432/postgres").await?;
+    let postgres = PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost:5432/dinoco").await?;
     assert_eq!(
         postgres.compile_create_index_migration(standard.clone()),
         format!(
@@ -318,7 +318,7 @@ async fn adapters_compile_partial_indexes_and_keep_the_condition_in_a_comment() 
 
     // MySQL has no partial indexes: a unique one keys every column by the
     // condition, a standard one covers every row.
-    let mysql = MySqlAdapter::new("mysql://root:root@localhost:3306/mysql");
+    let mysql = MySqlAdapter::new("mysql://dinoco:dinoco@localhost:3306/dinoco");
     let mysql_condition = "deleted_at IS NULL AND slug <> 'it''s \\\\'";
     let mysql_comment = comment.replace('\\', "\\\\").replace('\'', "''");
     assert_eq!(

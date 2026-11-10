@@ -139,6 +139,16 @@ pub struct PluckFirst<M, T> {
     marker: PhantomData<fn() -> (M, T)>,
 }
 
+/// A field pluck of `find_first` is a subquery of at most one value for
+/// [`Field::in_query`](crate::Field::in_query).
+impl<M, T> crate::IntoSubquery for PluckFirst<M, T> {
+    type Value = T;
+
+    fn into_subquery(self) -> FindQuery {
+        self.query
+    }
+}
+
 impl<M, T> PluckFirst<M, T>
 where
     M: DinocoEntity,

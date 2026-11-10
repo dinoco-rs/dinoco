@@ -3,7 +3,7 @@ use dinoco_engine::serde_json::json;
 use dinoco_engine::{Backend, DinocoAdapter, DinocoClient, MigrationColumnType, PostgresAdapter, SqliteAdapter};
 use dinoco_tests::{column, create_table, drop_table, primary};
 
-const POSTGRES_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
+const POSTGRES_URL: &str = "postgres://dinoco:dinoco@localhost:5432/dinoco";
 
 #[derive(Debug, Entity)]
 #[dinoco(table_name = "qx_user")]

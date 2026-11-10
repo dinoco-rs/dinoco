@@ -15,7 +15,7 @@
 
 use dinoco_engine::{PgBouncerAdapter, PostgresAdapter};
 
-const POSTGRES_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
+const POSTGRES_URL: &str = "postgres://dinoco:dinoco@localhost:5432/dinoco";
 const SSL_IN_USE: &str = "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()";
 
 fn with_sslmode(url: &str, mode: &str) -> String {

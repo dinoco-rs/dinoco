@@ -109,6 +109,47 @@ pub struct InsertQuery {
     pub on_conflict_do_nothing: Option<&'static [&'static str]>,
 }
 
+/// An insert whose rows that collide with an existing row on the unique
+/// index over `target` update that row instead (`ON CONFLICT (...) DO UPDATE
+/// SET ...`; `ON DUPLICATE KEY UPDATE` on MySQL, which takes no target and
+/// updates on a collision with any unique index). The insert's own
+/// `on_conflict_do_nothing` is not read.
+#[derive(Debug, Clone)]
+pub struct UpsertQuery {
+    pub insert: InsertQuery,
+    pub target: &'static [&'static str],
+    /// The assignments applied to the existing row, in order. Without any,
+    /// a colliding row is left as it is.
+    pub sets: Vec<ConflictSet>,
+}
+
+/// One assignment of an [`UpsertQuery`]: an update of the existing row, or a
+/// column taking the value the insert proposed for it.
+#[derive(Debug, Clone)]
+pub enum ConflictSet {
+    /// A scalar update, as an `UPDATE` writes it; arithmetic reads the
+    /// existing row.
+    Update(UpdateSet),
+    /// The column takes the value the colliding row proposed (`excluded.<column>`).
+    Excluded(&'static str),
+}
+
+impl ConflictSet {
+    /// The column assigned.
+    pub fn field(&self) -> &'static str {
+        match self {
+            ConflictSet::Update(set) => set.field,
+            ConflictSet::Excluded(field) => field,
+        }
+    }
+}
+
+impl From<UpdateSet> for ConflictSet {
+    fn from(set: UpdateSet) -> Self {
+        ConflictSet::Update(set)
+    }
+}
+
 /// The rows of `table` whose `key_fields` hold each tuple of `keys`, one row
 /// per tuple and in the order of `keys`, projected onto `fields`. Reads back
 /// the rows an insert with [`InsertQuery::on_conflict_do_nothing`] landed on,
@@ -122,15 +163,16 @@ pub struct LookupQuery {
     pub keys: Vec<Vec<DinocoValue>>,
 }
 
-/// An aggregate over the rows of `source`, computed by the database, either
-/// as one value or as one value per group.
+/// Aggregates over the rows of `source`, computed by the database, either
+/// once or once per group.
 #[derive(Debug, Clone)]
 pub struct AggregateQuery {
     /// The rows aggregated: `from` and `conditions`, plus `order_by`, `limit`
     /// and `skip` when they pick a window of rows to aggregate (`order_by`
     /// alone changes nothing and is left out). `fields` is not read.
     pub source: FindQuery,
-    pub aggregate: AggregateColumn,
+    /// Read back in order, one column each, after the group key.
+    pub aggregates: AggregateList,
     /// Splits the rows into groups, one result row each; `None` reads back a
     /// single row.
     pub group: Option<AggregateGroup>,
@@ -141,6 +183,47 @@ pub struct AggregateQuery {
 pub struct AggregateColumn {
     pub function: AggregateFunction,
     pub field: &'static str,
+}
+
+/// The aggregates of an [`AggregateQuery`], in the order they are read back.
+/// A single aggregate, the usual case, is stored inline and allocates
+/// nothing, so the list is as small as one [`AggregateColumn`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AggregateList {
+    One(AggregateColumn),
+    Many(Box<[AggregateColumn]>),
+}
+
+impl AggregateList {
+    /// Adds `aggregate` after the ones already in the list.
+    pub fn push(&mut self, aggregate: AggregateColumn) {
+        *self = match std::mem::replace(self, AggregateList::Many(Box::new([]))) {
+            AggregateList::One(first) => AggregateList::Many(Box::new([first, aggregate])),
+            AggregateList::Many(aggregates) => {
+                let mut aggregates = aggregates.into_vec();
+                aggregates.push(aggregate);
+                AggregateList::Many(aggregates.into_boxed_slice())
+            }
+        };
+    }
+
+    pub fn as_slice(&self) -> &[AggregateColumn] {
+        match self {
+            AggregateList::One(aggregate) => std::slice::from_ref(aggregate),
+            AggregateList::Many(aggregates) => aggregates,
+        }
+    }
+
+    /// The position of the first aggregate over `field`.
+    pub fn position(&self, field: &str) -> Option<usize> {
+        self.as_slice().iter().position(|aggregate| aggregate.field == field)
+    }
+}
+
+impl From<AggregateColumn> for AggregateList {
+    fn from(aggregate: AggregateColumn) -> Self {
+        AggregateList::One(aggregate)
+    }
 }
 
 /// The aggregate functions, each read back as one type in every database.
@@ -170,6 +253,9 @@ pub struct AggregateGroup {
     /// Breaks ties of `order_by` on the aggregate; `None` breaks them by the
     /// key, ascending.
     pub then_by: Option<GroupOrder>,
+    /// The position, in the query's `aggregates`, of the aggregate
+    /// [`GroupOrder::AggregateAsc`] and [`GroupOrder::AggregateDesc`] order by.
+    pub ordered_aggregate: u8,
     pub limit: i32,
     pub skip: i32,
 }
@@ -283,6 +369,8 @@ fn condition_references_updated_field(condition: &FindWhere, sets: &[UpdateSet])
         | FindWhere::Like(field, _)
         | FindWhere::Between(field, _, _)
         | FindWhere::Batch(field, _)
+        | FindWhere::NotBatch(field, _)
+        | FindWhere::InQuery(field, _)
         | FindWhere::Null(field)
         | FindWhere::NotNull(field) => updated(field),
         FindWhere::FullText(fields, _) => fields.iter().any(|field| updated(field)),
@@ -436,6 +524,25 @@ pub struct RelationJoinQuery {
     pub child_table: &'static str,
     pub parent_field: &'static str,
     pub child_field: &'static str,
+    pub key_count: usize,
+}
+
+/// Aggregates per parent over its related rows, or per group of them,
+/// from an include such as `.includes(|x| x.items().pluck(|i| i.amount.sum())
+/// .group_by(|i| i.kind))`.
+///
+/// `query.source` holds the related table and its conditions (its own
+/// `order_by`, `limit` and `skip` are not read); `query.group` splits each
+/// parent's rows into groups, ordered and paged per parent. Every result row
+/// is the group key (when grouped), each aggregate, then the parent ordinal.
+#[derive(Debug, Clone)]
+pub struct RelationAggregateQuery {
+    pub query: AggregateQuery,
+    /// Column on the related table matched against the parent keys (against
+    /// the join table's `child_field` for a many-to-many relation).
+    pub child_field: &'static str,
+    /// Join table of a many-to-many relation.
+    pub join: Option<RelationJoinTable>,
     pub key_count: usize,
 }
 
@@ -653,6 +760,9 @@ pub enum FindWhere {
     Between(&'static str, DinocoValue, DinocoValue),
 
     Batch(&'static str, Vec<DinocoValue>),
+    /// The column holds none of the values (`NOT IN`); an empty list keeps
+    /// every row.
+    NotBatch(&'static str, Vec<DinocoValue>),
 
     Null(&'static str),
     NotNull(&'static str),
@@ -662,6 +772,11 @@ pub enum FindWhere {
     /// side of a many-to-many relation by the id of a row on the other side.
     ManyToMany(ManyToManyMatch),
 
+    /// The column holds (or, negated, holds none of) the values another query
+    /// selects: `<field> [NOT] IN (SELECT ...)`. Produced by `in_query` and
+    /// `not_in_query` on a field.
+    InQuery(&'static str, Box<SubQuery>),
+
     /// Filter on a related model, compiled to a correlated `[NOT] EXISTS`
     /// subquery. Produced by the generated relation fields of `Where` types,
     /// so a query can be narrowed by its related rows without loading them.
@@ -670,6 +785,16 @@ pub enum FindWhere {
     And(Vec<FindWhere>),
     Or(Vec<FindWhere>),
     Not(Box<FindWhere>),
+}
+
+/// Payload for [`FindWhere::InQuery`]: an uncorrelated query selecting one
+/// column. `order_by`, `limit` and `skip` pick a window of its rows, and
+/// `order_by` alone is left out of the SQL.
+#[derive(Debug, Clone)]
+pub struct SubQuery {
+    pub query: FindQuery,
+    /// `NOT IN` instead of `IN`.
+    pub negated: bool,
 }
 
 /// Payload for [`FindWhere::ManyToMany`].

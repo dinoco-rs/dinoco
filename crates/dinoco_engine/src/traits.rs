@@ -8,9 +8,9 @@ use crate::{
     AddColumnMigration, AddForeignKeyMigration, AggregateQuery, AlterColumnMigration, AlterEnumMigration, CountQuery,
     CreateEnumMigration, CreateIndexMigration, CreateTableMigration, DeleteQuery, DinocoValue, DropColumnMigration,
     DropEnumMigration, DropForeignKeyMigration, DropIndexMigration, DropTableMigration, ExistsQuery, FindQuery,
-    InsertQuery, LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationBatchQuery,
-    RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration, RenameTableMigration,
-    UpdateQuery, UpdatedAtField,
+    InsertQuery, LookupQuery, ManyToManyRelationCountQuery, ManyToManyRelationQuery, RelationAggregateQuery,
+    RelationBatchQuery, RelationCountQuery, RelationJoinQuery, RelationOccurrenceQuery, RenameColumnMigration,
+    RenameTableMigration, UpdateQuery, UpdatedAtField, UpsertQuery,
 };
 #[cfg(feature = "postgres")]
 use crate::{DeadpoolPostgresRow, PostgresRow};
@@ -48,6 +48,10 @@ pub trait DinocoAdapter: Sized {
 pub trait DinocoSqlCompiler {
     fn compile_find_query(&self, query: FindQuery) -> (String, Vec<DinocoValue>);
     fn compile_insert_query(&self, query: InsertQuery) -> (String, Vec<DinocoValue>);
+    /// An insert that updates the rows it collides with; see [`UpsertQuery`].
+    fn compile_upsert_query(&self, _query: UpsertQuery) -> (String, Vec<DinocoValue>) {
+        panic!("upsert queries are not supported by this SQL compiler")
+    }
     fn compile_update_query(&self, query: UpdateQuery) -> (String, Vec<DinocoValue>);
     fn compile_delete_query(&self, query: DeleteQuery) -> (String, Vec<DinocoValue>);
     fn compile_count_query(&self, query: CountQuery) -> (String, Vec<DinocoValue>);
@@ -73,6 +77,16 @@ pub trait DinocoSqlCompiler {
         let (sql, params) = self.compile_relation_occurrence_query(query);
         keys.extend(params);
         (sql, keys)
+    }
+    /// A grouped include, with the parent `keys` bound in front of the query's
+    /// own values; see [`RelationAggregateQuery`].
+    #[doc(hidden)]
+    fn compile_relation_aggregate_query_with_keys(
+        &self,
+        _query: RelationAggregateQuery,
+        _keys: Vec<DinocoValue>,
+    ) -> (String, Vec<DinocoValue>) {
+        panic!("relation aggregate queries are not supported by this SQL compiler")
     }
     fn compile_many_to_many_relation_query(&self, query: ManyToManyRelationQuery) -> (String, Vec<DinocoValue>);
     fn compile_many_to_many_relation_count_query(

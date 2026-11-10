@@ -16,8 +16,8 @@ use dinoco::chrono_tz::America::New_York;
 use dinoco::chrono_tz::Asia::Tokyo;
 use dinoco::chrono_tz::Pacific::Kiritimati;
 use dinoco::{
-    Aggregate, DinocoEnum, Entity, GroupKey, PluckAggregate, PluckGroup, find_first, find_many, insert_into,
-    insert_many, remove_test_methods, setup_test_methods, transaction,
+    Aggregate, DinocoEnum, Entity, GroupKey, PluckAggregate, PluckAggregates, PluckGroup, PluckGroups, find_first,
+    find_many, insert_into, insert_many, remove_test_methods, setup_test_methods, transaction,
 };
 use dinoco_engine::{
     Backend, CreateEnumMigration, DinocoAdapter, DinocoClient, DinocoSqlCompiler, DropEnumMigration,
@@ -25,8 +25,8 @@ use dinoco_engine::{
 };
 use dinoco_tests::{column, create_table, drop_table, nullable, primary};
 
-const POSTGRES_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
-const MYSQL_URL: &str = "mysql://root:root@localhost:3306/mysql";
+const POSTGRES_URL: &str = "postgres://dinoco:dinoco@localhost:5432/dinoco";
+const MYSQL_URL: &str = "mysql://dinoco:dinoco@localhost:3306/dinoco";
 static POSTGRES_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static MYSQL_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -69,6 +69,7 @@ on_every_backend!(
     groups_by_optional_keys,
     group_order_and_pages,
     group_order_errors,
+    several_aggregates,
     empty_tables,
     transactions,
     hooks,
@@ -813,6 +814,139 @@ async fn group_order_errors(client: DinocoClient) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn several_aggregates(client: DinocoClient) -> anyhow::Result<()> {
+    use AgOrderStatus::{Paid, Pending, Refunded};
+
+    // Chained plucks are one query, read back as a tuple in pluck order.
+    let (amount, discount, orders) = find_many::<Order>()
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.discount.sum())
+        .pluck(|x| x.id.count())
+        .execute(&client)
+        .await?;
+    assert_eq!((amount, discount, orders), (1000, 55, 6));
+
+    // Every function, of any field, including the same field twice.
+    let (sum, average, smallest, latest, ratios) = find_many::<Order>()
+        .where_(|x| x.status.eq(Paid))
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.amount.avg())
+        .pluck(|x| x.amount.min())
+        .pluck(|x| x.created_at.max())
+        .pluck(|x| x.ratio.sum())
+        .execute(&client)
+        .await?;
+    assert_eq!(
+        (sum, average, smallest, latest),
+        (525, Some(131.25), Some(50), Some(at_second(2026, 1, 11, 23, 59, 42)))
+    );
+    assert!(close(ratios, 3.0), "{ratios}");
+
+    // `take` and `skip` pick the window every aggregate reads.
+    let (amount, ratio) = find_many::<Order>()
+        .order_by(|x| x.amount.desc())
+        .take(2)
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.ratio.sum())
+        .execute(&client)
+        .await?;
+    assert_eq!(amount, 650);
+    assert!(close(ratio, 3.5), "{ratio}");
+
+    // Eight is the most.
+    let eight = find_many::<Order>()
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.amount.count())
+        .pluck(|x| x.discount.sum())
+        .pluck(|x| x.discount.count())
+        .pluck(|x| x.ratio.sum())
+        .pluck(|x| x.tip.max())
+        .pluck(|x| x.note.min())
+        .pluck(|x| x.due_on.max())
+        .execute(&client)
+        .await?;
+    assert_eq!((eight.0, eight.1, eight.2, eight.3), (1000, 6, 55, 3));
+    assert_eq!((eight.5, eight.6.as_deref(), eight.7), (Some(2.5), Some("a"), Some(date(2027, 3, 1))));
+
+    // Grouped: one `(key, (values...))` per group.
+    let by_status = find_many::<Order>()
+        .order_by(|x| x.amount.desc())
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.discount.sum())
+        .pluck(|x| x.id.count())
+        .group_by(|x| x.status)
+        .execute(&client)
+        .await?;
+    assert_eq!(by_status, [(Paid, (525, 10, 4)), (Refunded, (400, 40, 1)), (Pending, (75, 5, 1))]);
+
+    // `order_by` on another aggregated field orders by that aggregate.
+    let by_discount = find_many::<Order>()
+        .order_by(|x| x.discount.desc())
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.discount.sum())
+        .group_by(|x| x.status)
+        .execute(&client)
+        .await?;
+    assert_eq!(by_discount, [(Refunded, (400, 40)), (Paid, (525, 10)), (Pending, (75, 5))]);
+
+    let top_customers = find_many::<Order>()
+        .where_(|x| x.customer_id.not_null())
+        .order_by(|x| x.amount.desc())
+        .take(2)
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.discount.sum())
+        .group_by(|x| x.customer_id)
+        .execute(&client)
+        .await?;
+    assert_eq!(top_customers, [(Some("bia".to_string()), (450, 40)), (Some("ana".to_string()), (350, 10))]);
+
+    let error = find_many::<Order>()
+        .order_by(|x| x.tip.desc())
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.discount.sum())
+        .group_by(|x| x.status)
+        .execute(&client)
+        .await
+        .expect_err("groups have no tip column to order by");
+    assert_eq!(
+        error.to_string(),
+        "a grouped pluck on `ag_order` can only be ordered by the grouped or an aggregated field, not by `tip`"
+    );
+
+    // A cursor picks the rows, in a transaction too.
+    let (amount, orders) = transaction(&client, |tx| async move {
+        Ok(find_many::<Order>()
+            .order_by(|x| x.id.asc())
+            .after(("o3",))
+            .pluck(|x| x.amount.sum())
+            .pluck(|x| x.id.count())
+            .read_in_primary()
+            .execute(tx)
+            .await?)
+    })
+    .await?;
+    assert_eq!((amount, orders), (250, 3));
+
+    // Over no rows: sums are zero and the rest empty, and there are no groups.
+    let none = find_many::<Order>()
+        .where_(|x| x.amount.gt(10_000))
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.amount.avg())
+        .pluck(|x| x.id.count())
+        .execute(&client)
+        .await?;
+    assert_eq!(none, (0, None, 0));
+    let groups = find_many::<Order>()
+        .where_(|x| x.amount.gt(10_000))
+        .pluck(|x| x.amount.sum())
+        .pluck(|x| x.id.count())
+        .group_by(|x| x.status)
+        .execute(&client)
+        .await?;
+    assert!(groups.is_empty());
+    Ok(())
+}
+
 async fn empty_tables(client: DinocoClient) -> anyhow::Result<()> {
     dinoco::delete_many::<Order>().execute(&client).await?;
 
@@ -933,6 +1067,12 @@ fn aggregate_types() {
         find_many::<Order>().pluck(|x| x.ratio.avg()).group_by(|x| x.status);
     let _: PluckGroup<Order, Option<NaiveDate>, i64> =
         find_many::<Order>().pluck(|x| x.id.count()).group_by(|x| x.shipped_at.day());
+
+    // Chained plucks read back a tuple, grouped or not.
+    let _: PluckAggregates<Order, (i64, Option<f64>, i64)> =
+        find_many::<Order>().pluck(|x| x.amount.sum()).pluck(|x| x.tip.max()).pluck(|x| x.id.count());
+    let _: PluckGroups<Order, AgOrderStatus, (i64, f64)> =
+        find_many::<Order>().pluck(|x| x.amount.sum()).pluck(|x| x.ratio.sum()).group_by(|x| x.status);
 
     // A plain field still plucks the column itself.
     let _: dinoco::Pluck<Order, Option<i64>> = find_many::<Order>().pluck(|x| x.discount);

@@ -251,9 +251,92 @@ impl Field {
         self.ty = ty;
     }
 
+    /// Makes the field hold `ty`, a struct deriving
+    /// `dinoco::DinocoRuntimeStruct`, while the column keeps its schema type:
+    /// a newtype such as `crate::Amount` over an `Integer` column, or a serde
+    /// struct over a `Json` column.
+    ///
+    /// Besides replacing [`Field::ty`], it marks the field `#[dinoco(scalar)]`
+    /// (so `Option<ty>` is not read as a relation) and turns a schema
+    /// `@default(...)` into the struct read from that value.
+    pub fn set_runtime_struct(&mut self, ty: impl Into<RustType>) {
+        let ty = ty.into();
+        for attribute in &mut self.attributes {
+            if attribute.starts_with("#[dinoco(") {
+                runtime_struct_default(attribute, &ty, self.nullable);
+            }
+        }
+        self.add_attribute("#[dinoco(scalar)]");
+        self.ty = ty;
+    }
+
     fn rendered_type(&self) -> String {
         if self.nullable { format!("Option<{}>", self.ty) } else { self.ty.to_string() }
     }
+}
+
+/// Rewrites the `default = <value>` codegen writes for a schema `@default`
+/// into the `ty` struct read from that value. Already rewritten defaults are
+/// left alone, so the call is idempotent.
+fn runtime_struct_default(attribute: &mut String, ty: &RustType, nullable: bool) {
+    const DEFAULT: &str = "default = ";
+    const SOME: &str = "::core::option::Option::Some(";
+    const READ: &str = "::dinoco::DinocoRuntimeStruct>::from_column(";
+
+    let Some(start) = attribute.find(DEFAULT) else {
+        return;
+    };
+    let value_start = start + DEFAULT.len();
+    let value_end = value_start + expression_len(&attribute[value_start..]);
+    let value = attribute[value_start..value_end].trim();
+    if value.contains(READ) {
+        return;
+    }
+
+    // A nullable default is `Some(<value>)`, except for plain literals.
+    let inner = value
+        .strip_prefix(SOME)
+        .and_then(|rest| rest.strip_suffix(')'))
+        .filter(|inner| expression_len(inner) == inner.len())
+        .unwrap_or(value);
+    let read = format!(
+        "<{ty} as ::dinoco::DinocoRuntimeStruct>::from_column(::core::convert::Into::into({inner})).expect(\"the \
+         @default of a runtime struct field must be a value of `{}`\")",
+        ty.as_str().replace('"', "\\\"")
+    );
+    let read = if nullable { format!("{SOME}{read})") } else { read };
+    attribute.replace_range(value_start..value_end, &read);
+}
+
+/// The length of the Rust expression at the start of `source`: up to the first
+/// `,` or `)` outside brackets and string literals, or the whole string.
+fn expression_len(source: &str) -> usize {
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, ch) in source.char_indices() {
+        if in_string {
+            match ch {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' if depth == 0 => return index,
+            ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => return index,
+            _ => {}
+        }
+    }
+
+    source.len()
 }
 
 /// Rewrites the `default = ::std::string::String::from("...")` codegen writes

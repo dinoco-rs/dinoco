@@ -2,15 +2,16 @@ use std::future::Future;
 use std::marker::PhantomData;
 
 use dinoco_engine::{
-    AggregateColumn, AggregateGroup, AggregateQuery, CountQuery, DinocoEntity, DinocoProjection, DinocoRowModel,
-    FindOrderBy, FindQuery, FindWhere, GroupOrder, GroupedValue, PluckColumn, PluckValue, WhereComplex,
+    AggregateColumn, AggregateGroup, AggregateList, AggregateQuery, CountQuery, DinocoEntity, DinocoProjection,
+    DinocoRowModel, FindOrderBy, FindQuery, FindWhere, GroupBy, GroupOrder, GroupedValue, GroupedValues, PluckColumn,
+    PluckColumns, PluckValue, PluckValues, WhereComplex,
 };
 use futures_util::TryFutureExt;
 use futures_util::future::Either;
 
 use crate::{
-    Aggregate, Count, DinocoCountModel, Field, IncludeLoader, IntoGroupKey, IntoIncludeLoader, ReadExecutor,
-    load_includes, single_field,
+    Aggregate, Count, DinocoCountModel, Field, IncludeLoader, IntoCursor, IntoGroupKey, IntoIncludeLoader,
+    IntoSubquery, KeysetCursor, ReadExecutor, apply_cursor_to_find, load_includes, single_field,
 };
 
 /// `C` is [`NoCount`] until `.count()` or one of its variants turns it into a
@@ -21,6 +22,8 @@ pub struct FindMany<M, S = M, C = NoCount> {
     read_primary: bool,
     complex_where: bool,
     count: C,
+    /// `.after(...)`/`.before(...)`, applied when the query runs.
+    cursor: Option<Box<KeysetCursor>>,
 
     select_marker: PhantomData<S>,
     marker: PhantomData<M>,
@@ -128,6 +131,7 @@ where
             read_primary: self.read_primary,
             complex_where: self.complex_where,
             count: self.count,
+            cursor: self.cursor,
             select_marker: PhantomData,
             marker: PhantomData,
         }
@@ -162,6 +166,44 @@ where
 
     pub fn skip(mut self, value: i32) -> Self {
         self.query.skip = value;
+
+        self
+    }
+
+    /// Keyset pagination: keeps only the rows that come after `cursor` in the
+    /// `order_by` order. `cursor` is the last row of the previous page (any
+    /// model or `select` projection holding the `order_by` columns), a
+    /// [`Cursor`](crate::Cursor), or a tuple with one value per `order_by`
+    /// column, in order.
+    ///
+    /// Unlike `skip`, the page does not shift when rows are inserted or
+    /// deleted before it, and the database seeks to it through an index on the
+    /// `order_by` columns instead of reading and discarding the rows before
+    /// it. End the `order_by` with a unique column (such as `id`) so no two
+    /// rows share a position. A row cursor reads the `order_by` columns known
+    /// when `after` is called, so call `order_by` first.
+    ///
+    /// `take` caps the page and `skip` still skips rows after the cursor.
+    /// The cursor is not counted by `.count()`, which keeps reporting the
+    /// total of the whole list. Cursor values can't be `NULL`.
+    pub fn after<K>(mut self, cursor: K) -> Self
+    where
+        K: IntoCursor,
+    {
+        self.cursor = Some(KeysetCursor::new(cursor, &self.query.order_by, false));
+
+        self
+    }
+
+    /// Keyset pagination backwards: keeps only the rows that come before
+    /// `cursor` in the `order_by` order, the previous page. With `take(n)` it
+    /// returns the `n` rows right before the cursor, still in `order_by`
+    /// order. Takes the same cursors as [`after`](Self::after).
+    pub fn before<K>(mut self, cursor: K) -> Self
+    where
+        K: IntoCursor,
+    {
+        self.cursor = Some(KeysetCursor::new(cursor, &self.query.order_by, true));
 
         self
     }
@@ -218,7 +260,7 @@ where
     }
 
     fn counting<F>(self, filters: F) -> FindMany<M, S, WithCount<F>> {
-        let Self { query, includes, read_primary, complex_where, .. } = self;
+        let Self { query, includes, read_primary, complex_where, cursor, .. } = self;
 
         FindMany {
             query,
@@ -226,6 +268,7 @@ where
             read_primary,
             complex_where,
             count: WithCount(filters),
+            cursor,
             select_marker: PhantomData,
             marker: PhantomData,
         }
@@ -263,7 +306,7 @@ where
         F: FnOnce(M::Where) -> P,
         P: IntoPluck<M>,
     {
-        callback(M::Where::default()).into_pluck(self.query, self.read_primary)
+        callback(M::Where::default()).into_pluck(self.query, self.read_primary, self.cursor)
     }
 
     // Not an `async fn`: the builder is taken apart first, so the future
@@ -272,7 +315,8 @@ where
     where
         C: ReadExecutor,
     {
-        let Self { query, includes, read_primary, .. } = self;
+        let Self { mut query, mut includes, read_primary, cursor, .. } = self;
+        apply_cursor_to_find(cursor, &mut query, &mut includes);
 
         async move {
             let target = client.read_target(read_primary)?;
@@ -282,6 +326,15 @@ where
 
             Ok(rows)
         }
+    }
+}
+
+/// Adds the cursor of `.after(...)`/`.before(...)` to `query`. Returns
+/// whether the rows read back must be reversed, for a `before` cursor.
+fn apply_cursor(cursor: Option<Box<KeysetCursor>>, query: &mut FindQuery) -> anyhow::Result<bool> {
+    match cursor {
+        None => Ok(false),
+        Some(cursor) => cursor.apply(query, true),
     }
 }
 
@@ -299,12 +352,19 @@ where
     where
         C: ReadExecutor,
     {
-        let Self { query, includes, read_primary, count: WithCount(filters), .. } = self;
+        let Self { mut query, mut includes, read_primary, count: WithCount(filters), cursor, .. } = self;
+        let has_cursor = cursor.is_some();
+        apply_cursor_to_find(cursor, &mut query, &mut includes);
 
         async move {
-            let (total, count) = count_rows::<M, F>(filters, &query.conditions, &client, read_primary).await?;
+            // The total counts the whole list, not what is left after the
+            // cursor, whose condition is the last one.
+            let find_conditions = &query.conditions[..query.conditions.len() - usize::from(has_cursor)];
+            let (total, count) = count_rows::<M, F>(filters, find_conditions, &client, read_primary).await?;
 
-            if F::FIND_FILTERS && total <= i64::from(query.skip.max(0)) {
+            // With a cursor the find always runs: its steps (or its error)
+            // come after the rows.
+            if F::FIND_FILTERS && !has_cursor && total <= i64::from(query.skip.max(0)) {
                 return Ok((Vec::new(), count));
             }
 
@@ -362,6 +422,7 @@ where
 pub struct Pluck<M, T> {
     query: FindQuery,
     read_primary: bool,
+    cursor: Option<Box<KeysetCursor>>,
     marker: PhantomData<fn() -> (M, T)>,
 }
 
@@ -380,14 +441,39 @@ where
     where
         C: ReadExecutor,
     {
-        let Self { query, read_primary, .. } = self;
+        let Self { mut query, read_primary, cursor, .. } = self;
+        let reverse = match apply_cursor(cursor, &mut query) {
+            Ok(reverse) => reverse,
+            Err(error) => return Either::Left(std::future::ready(Err(error))),
+        };
 
-        async move {
+        Either::Right(async move {
             let target = client.read_target(read_primary)?;
             let rows = target.query::<PluckValue<T>>(query).await?;
+            let mut values = rows.into_iter().map(|value| value.0).collect::<Vec<_>>();
+            if reverse {
+                values.reverse();
+            }
 
-            Ok(rows.into_iter().map(|value| value.0).collect())
+            Ok(values)
+        })
+    }
+}
+
+/// A field pluck is a subquery for [`Field::in_query`](crate::Field::in_query).
+/// Its cursor, if any, picks the rows too; an invalid one selects nothing.
+impl<M, T> IntoSubquery for Pluck<M, T> {
+    type Value = T;
+
+    fn into_subquery(self) -> FindQuery {
+        let Self { mut query, cursor, .. } = self;
+        if let Some(cursor) = cursor
+            && cursor.apply(&mut query, true).is_err()
+        {
+            query.conditions.push(FindWhere::Or(Vec::new()));
         }
+
+        query
     }
 }
 
@@ -397,7 +483,7 @@ pub trait IntoPluck<M> {
     type Pluck;
 
     #[doc(hidden)]
-    fn into_pluck(self, query: FindQuery, read_primary: bool) -> Self::Pluck;
+    fn into_pluck(self, query: FindQuery, read_primary: bool, cursor: Option<Box<KeysetCursor>>) -> Self::Pluck;
 }
 
 impl<M, T, C> IntoPluck<M> for Field<T, C>
@@ -407,10 +493,10 @@ where
 {
     type Pluck = Pluck<M, T>;
 
-    fn into_pluck(self, mut query: FindQuery, read_primary: bool) -> Self::Pluck {
+    fn into_pluck(self, mut query: FindQuery, read_primary: bool, cursor: Option<Box<KeysetCursor>>) -> Self::Pluck {
         query.fields = single_field(self.field_name(), M::FIELDS);
 
-        Pluck { query, read_primary, marker: PhantomData }
+        Pluck { query, read_primary, cursor, marker: PhantomData }
     }
 }
 
@@ -421,10 +507,10 @@ where
 {
     type Pluck = PluckAggregate<M, T>;
 
-    fn into_pluck(self, mut query: FindQuery, read_primary: bool) -> Self::Pluck {
+    fn into_pluck(self, mut query: FindQuery, read_primary: bool, cursor: Option<Box<KeysetCursor>>) -> Self::Pluck {
         query.fields = &[];
 
-        PluckAggregate { query, aggregate: self.column(), read_primary, marker: PhantomData }
+        PluckAggregate { query, aggregate: self.column(), read_primary, cursor, marker: PhantomData }
     }
 }
 
@@ -434,10 +520,16 @@ where
 /// `skip` (with `order_by` deciding which rows they keep): the aggregate reads
 /// only the rows `find_many` would return. After `.group_by(...)`, `order_by`,
 /// `take` and `skip` apply to the groups instead.
+///
+/// A cursor (`.after(...)`/`.before(...)`) keeps only the rows past it. With
+/// `take`, `before` aggregates the rows right before the cursor. After
+/// `.group_by(...)` the cursor still picks the rows, read in `order_by` order
+/// before it is applied to the groups.
 pub struct PluckAggregate<M, T> {
     query: FindQuery,
     aggregate: AggregateColumn,
     read_primary: bool,
+    cursor: Option<Box<KeysetCursor>>,
     marker: PhantomData<fn() -> (M, T)>,
 }
 
@@ -446,6 +538,26 @@ where
     M: DinocoEntity,
     T: PluckColumn,
 {
+    /// Computes another aggregate in the same query, read back after this
+    /// one: `.pluck(|x| x.amount.sum()).pluck(|x| x.fee.sum())` returns
+    /// `(i64, i64)`. Up to eight aggregates, each of any field and function.
+    pub fn pluck<F, U>(self, callback: F) -> PluckAggregates<M, (T, U)>
+    where
+        F: FnOnce(M::Where) -> Aggregate<U>,
+        U: PluckColumn,
+    {
+        let mut aggregates = AggregateList::from(self.aggregate);
+        aggregates.push(callback(M::Where::default()).column());
+
+        PluckAggregates {
+            query: self.query,
+            aggregates,
+            read_primary: self.read_primary,
+            cursor: self.cursor,
+            marker: PhantomData,
+        }
+    }
+
     /// Computes the aggregate once per group of rows sharing a key, read back
     /// as `Vec<(key, value)>`.
     ///
@@ -460,37 +572,10 @@ where
         G: IntoGroupKey,
     {
         let key = callback(M::Where::default()).into_group_by();
-        let FindQuery { from, conditions, limit, skip, order_by, .. } = self.query;
-        // Each order names the key or the aggregate; any other field has no
-        // column in the groups to be ordered by.
-        let group_order = |order: &FindOrderBy| {
-            let field = order.field();
-            if field == key.field() {
-                Some(if order.is_descending() { GroupOrder::KeyDesc } else { GroupOrder::KeyAsc })
-            } else if field == self.aggregate.field {
-                Some(if order.is_descending() { GroupOrder::AggregateDesc } else { GroupOrder::AggregateAsc })
-            } else {
-                None
-            }
-        };
-        let orders = order_by.as_slice();
-        let unordered_field = orders.iter().find(|order| group_order(order).is_none()).map(|order| order.field());
-        let mut group_orders = orders.iter().filter_map(group_order);
-        let order_by = group_orders.next();
-        let then_by = group_orders.next();
-        let mut source = FindQuery::new(&[], from, -1, -1);
-        source.conditions = conditions;
+        let (query, unordered_field, cursor_error) =
+            grouped_query(self.query, self.cursor, AggregateList::from(self.aggregate), key);
 
-        PluckGroup {
-            query: AggregateQuery {
-                source,
-                aggregate: self.aggregate,
-                group: Some(AggregateGroup { key, order_by, then_by, limit, skip }),
-            },
-            unordered_field,
-            read_primary: self.read_primary,
-            marker: PhantomData,
-        }
+        PluckGroup { query, unordered_field, cursor_error, read_primary: self.read_primary, marker: PhantomData }
     }
 
     pub fn read_in_primary(mut self) -> Self {
@@ -503,10 +588,13 @@ where
     where
         C: ReadExecutor,
     {
-        let query = AggregateQuery { source: self.query, aggregate: self.aggregate, group: None };
-        let read_primary = self.read_primary;
+        let Self { mut query, aggregate, read_primary, cursor, .. } = self;
+        if let Err(error) = apply_cursor(cursor, &mut query) {
+            return Either::Left(std::future::ready(Err(error)));
+        }
+        let query = AggregateQuery { source: query, aggregates: AggregateList::from(aggregate), group: None };
 
-        async move {
+        Either::Right(async move {
             let target = client.read_target(read_primary)?;
             let mut rows = target.aggregate::<PluckValue<T>>(query).await?;
 
@@ -514,7 +602,7 @@ where
                 Some(PluckValue(value)) => Ok(value),
                 None => anyhow::bail!("the aggregate over `{}` returned no row", M::TABLE_NAME),
             }
-        }
+        })
     }
 }
 
@@ -525,6 +613,8 @@ pub struct PluckGroup<M, K, T> {
     /// A field `order_by` named that is neither the key nor the aggregated
     /// one: the groups have no such column to be ordered by.
     unordered_field: Option<&'static str>,
+    /// Why the cursor of `.after(...)`/`.before(...)` could not be applied.
+    cursor_error: Option<anyhow::Error>,
     read_primary: bool,
     marker: PhantomData<fn() -> (M, K, T)>,
 }
@@ -545,8 +635,11 @@ where
     where
         C: ReadExecutor,
     {
-        let Self { query, unordered_field, read_primary, .. } = self;
+        let Self { query, unordered_field, cursor_error, read_primary, .. } = self;
 
+        if let Some(error) = cursor_error {
+            return Either::Left(std::future::ready(Err(error)));
+        }
         if let Some(field) = unordered_field {
             return Either::Left(std::future::ready(Err(anyhow::anyhow!(
                 "a grouped pluck on `{}` can only be ordered by the grouped or the aggregated field, not by `{field}`",
@@ -561,6 +654,208 @@ where
             Ok(rows.into_iter().map(|GroupedValue(key, value)| (key, value)).collect())
         })
     }
+}
+
+/// Several aggregates over the rows of a `find_many`, from chained
+/// `.pluck(...)` calls: `T` is the tuple of their values, in order. Rows are
+/// picked as for [`PluckAggregate`].
+pub struct PluckAggregates<M, T> {
+    query: FindQuery,
+    aggregates: AggregateList,
+    read_primary: bool,
+    cursor: Option<Box<KeysetCursor>>,
+    marker: PhantomData<fn() -> (M, T)>,
+}
+
+/// A tuple of aggregate values that takes one more: `(A, B)` becomes
+/// `(A, B, U)`, up to eight values.
+#[doc(hidden)]
+pub trait AppendValue<U> {
+    type Output: PluckColumns;
+}
+
+macro_rules! append_value_tuples {
+    ($(($($ty:ident),+)),* $(,)?) => {
+        $(
+            impl<$($ty: PluckColumn,)+ U: PluckColumn> AppendValue<U> for ($($ty,)+) {
+                type Output = ($($ty,)+ U);
+            }
+        )*
+    };
+}
+
+append_value_tuples!((A, B), (A, B, C), (A, B, C, D), (A, B, C, D, E), (A, B, C, D, E, F), (A, B, C, D, E, F, G));
+
+impl<M, T> PluckAggregates<M, T>
+where
+    M: DinocoEntity,
+    T: PluckColumns,
+{
+    /// Computes one more aggregate, read back after the others.
+    pub fn pluck<F, U>(self, callback: F) -> PluckAggregates<M, T::Output>
+    where
+        F: FnOnce(M::Where) -> Aggregate<U>,
+        U: PluckColumn,
+        T: AppendValue<U>,
+    {
+        let mut aggregates = self.aggregates;
+        aggregates.push(callback(M::Where::default()).column());
+
+        PluckAggregates {
+            query: self.query,
+            aggregates,
+            read_primary: self.read_primary,
+            cursor: self.cursor,
+            marker: PhantomData,
+        }
+    }
+
+    /// Computes every aggregate once per group of rows sharing a key, read
+    /// back as `Vec<(key, (values...))>`. Ordered and paged as
+    /// [`PluckAggregate::group_by`], where `order_by` on an aggregated field
+    /// orders by that field's first aggregate.
+    pub fn group_by<F, G>(self, callback: F) -> PluckGroups<M, G::Key, T>
+    where
+        F: FnOnce(M::Where) -> G,
+        G: IntoGroupKey,
+    {
+        let key = callback(M::Where::default()).into_group_by();
+        let (query, unordered_field, cursor_error) = grouped_query(self.query, self.cursor, self.aggregates, key);
+
+        PluckGroups { query, unordered_field, cursor_error, read_primary: self.read_primary, marker: PhantomData }
+    }
+
+    pub fn read_in_primary(mut self) -> Self {
+        self.read_primary = true;
+
+        self
+    }
+
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<T>>
+    where
+        C: ReadExecutor,
+    {
+        let Self { mut query, aggregates, read_primary, cursor, .. } = self;
+        if let Err(error) = apply_cursor(cursor, &mut query) {
+            return Either::Left(std::future::ready(Err(error)));
+        }
+        let query = AggregateQuery { source: query, aggregates, group: None };
+
+        Either::Right(async move {
+            let target = client.read_target(read_primary)?;
+            let mut rows = target.aggregate::<PluckValues<T>>(query).await?;
+
+            match rows.pop() {
+                Some(PluckValues(values)) => Ok(values),
+                None => anyhow::bail!("the aggregates over `{}` returned no row", M::TABLE_NAME),
+            }
+        })
+    }
+}
+
+/// Several aggregates per group, from `.pluck(...).pluck(...).group_by(...)`:
+/// one `(K, T)` per group of rows sharing a key, `T` the tuple of values.
+pub struct PluckGroups<M, K, T> {
+    query: AggregateQuery,
+    unordered_field: Option<&'static str>,
+    cursor_error: Option<anyhow::Error>,
+    read_primary: bool,
+    marker: PhantomData<fn() -> (M, K, T)>,
+}
+
+impl<M, K, T> PluckGroups<M, K, T>
+where
+    M: DinocoEntity,
+    K: PluckColumn,
+    T: PluckColumns,
+{
+    pub fn read_in_primary(mut self) -> Self {
+        self.read_primary = true;
+
+        self
+    }
+
+    pub fn execute<C>(self, client: C) -> impl Future<Output = anyhow::Result<Vec<(K, T)>>>
+    where
+        C: ReadExecutor,
+    {
+        let Self { query, unordered_field, cursor_error, read_primary, .. } = self;
+
+        if let Some(error) = cursor_error {
+            return Either::Left(std::future::ready(Err(error)));
+        }
+        if let Some(field) = unordered_field {
+            return Either::Left(std::future::ready(Err(anyhow::anyhow!(
+                "a grouped pluck on `{}` can only be ordered by the grouped or an aggregated field, not by `{field}`",
+                M::TABLE_NAME
+            ))));
+        }
+
+        Either::Right(async move {
+            let target = client.read_target(read_primary)?;
+            let rows = target.aggregate::<GroupedValues<K, T>>(query).await?;
+
+            Ok(rows.into_iter().map(|GroupedValues(key, values)| (key, values)).collect())
+        })
+    }
+}
+
+/// The query of a grouped pluck: the find's rows (past its cursor, if any),
+/// grouped by `key`, with the find's `order_by`, `take` and `skip` read as
+/// the groups' (see [`aggregate_group`]). Also returns the field ordered by
+/// that names no column of the groups, and why the cursor failed.
+fn grouped_query(
+    mut query: FindQuery,
+    cursor: Option<Box<KeysetCursor>>,
+    aggregates: AggregateList,
+    key: GroupBy,
+) -> (AggregateQuery, Option<&'static str>, Option<anyhow::Error>) {
+    // The cursor picks rows in the find's order, before that order is read
+    // as the groups' order below.
+    let cursor_error = cursor.and_then(|cursor| cursor.apply(&mut query, false).err());
+    let FindQuery { from, conditions, limit, skip, order_by, .. } = query;
+    let (group, unordered_field) = aggregate_group(key, &aggregates, order_by.as_slice(), limit, skip);
+    let mut source = FindQuery::new(&[], from, -1, -1);
+    source.conditions = conditions;
+
+    (AggregateQuery { source, aggregates, group: Some(group) }, unordered_field, cursor_error)
+}
+
+/// The groups of a grouped aggregate keyed by `key`: `orders` (the builder's
+/// `order_by`) name the key or an aggregated field (its first aggregate), and
+/// `limit`/`skip` page the groups. Also returns the first field ordered by
+/// that is neither, which the groups have no column for.
+pub(crate) fn aggregate_group(
+    key: GroupBy,
+    aggregates: &AggregateList,
+    orders: &[FindOrderBy],
+    limit: i32,
+    skip: i32,
+) -> (AggregateGroup, Option<&'static str>) {
+    let group_order = |order: &FindOrderBy| {
+        let field = order.field();
+        if field == key.field() {
+            Some((if order.is_descending() { GroupOrder::KeyDesc } else { GroupOrder::KeyAsc }, 0))
+        } else {
+            let position = aggregates.position(field)?;
+            Some((if order.is_descending() { GroupOrder::AggregateDesc } else { GroupOrder::AggregateAsc }, position))
+        }
+    };
+    let unordered_field = orders.iter().find(|order| group_order(order).is_none()).map(|order| order.field());
+    let mut group_orders = orders.iter().filter_map(group_order);
+    let first = group_orders.next();
+    let then_by = group_orders.next().map(|(order, _)| order);
+
+    let group = AggregateGroup {
+        key,
+        order_by: first.map(|(order, _)| order),
+        then_by,
+        // At most eight aggregates: `AppendValue` stops there.
+        ordered_aggregate: first.map_or(0, |(_, position)| u8::try_from(position).unwrap_or(u8::MAX)),
+        limit,
+        skip,
+    };
+    (group, unordered_field)
 }
 
 pub struct FindManyTransform<M, S, F, C = NoCount> {
@@ -609,6 +904,7 @@ pub fn find_many<M: DinocoEntity + DinocoRowModel>() -> FindMany<M> {
         read_primary: false,
         complex_where: false,
         count: NoCount,
+        cursor: None,
         select_marker: PhantomData,
         marker: PhantomData,
     }

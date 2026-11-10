@@ -19,8 +19,8 @@ impl Compilers {
     async fn new() -> anyhow::Result<Self> {
         Ok(Self {
             sqlite: SqliteAdapter::new(":memory:".to_string()).await.map_err(anyhow::Error::msg)?,
-            postgres: PostgresAdapter::pgbouncer("postgres://postgres:postgres@localhost/postgres").await?,
-            mysql: MySqlAdapter::new("mysql://root:root@localhost/mysql"),
+            postgres: PostgresAdapter::pgbouncer("postgres://dinoco:dinoco@localhost/dinoco").await?,
+            mysql: MySqlAdapter::new("mysql://dinoco:dinoco@localhost/dinoco"),
         })
     }
 
@@ -81,7 +81,7 @@ async fn single_aggregates_cast_to_one_type_in_every_dialect() -> anyhow::Result
             rows.order_by = FindOrderBy::Desc("amount").into();
             let (sql, params) = compiler.compile_aggregate_query(AggregateQuery {
                 source: rows,
-                aggregate: aggregate(function, "amount"),
+                aggregates: aggregate(function, "amount").into(),
                 group: None,
             });
 
@@ -112,7 +112,7 @@ async fn take_and_skip_aggregate_a_window_of_the_rows() -> anyhow::Result<()> {
         rows.skip = 1;
         let (sql, params) = compiler.compile_aggregate_query(AggregateQuery {
             source: rows,
-            aggregate: aggregate(AggregateFunction::Count, "id"),
+            aggregates: aggregate(AggregateFunction::Count, "id").into(),
             group: None,
         });
 
@@ -127,10 +127,11 @@ async fn take_and_skip_aggregate_a_window_of_the_rows() -> anyhow::Result<()> {
 #[tokio::test]
 async fn groups_select_the_key_and_the_aggregate_ordered_and_paged() -> anyhow::Result<()> {
     let compilers = Compilers::new().await?;
-    let group = |key, order_by| AggregateGroup { key, order_by, then_by: None, limit: 2, skip: 1 };
+    let group =
+        |key, order_by| AggregateGroup { key, order_by, then_by: None, ordered_aggregate: 0, limit: 2, skip: 1 };
     let (sql, params) = compilers.postgres.compile_aggregate_query(AggregateQuery {
         source: source(vec![FindWhere::Gt("amount", DinocoValue::Integer(10))]),
-        aggregate: aggregate(AggregateFunction::SumInteger, "amount"),
+        aggregates: aggregate(AggregateFunction::SumInteger, "amount").into(),
         group: Some(group(GroupBy::Date("created_at", DateBucket::Day), None)),
     });
     assert_eq!(
@@ -152,7 +153,7 @@ async fn groups_select_the_key_and_the_aggregate_ordered_and_paged() -> anyhow::
         for (order_by, order_sql) in orders {
             let (sql, _) = compiler.compile_aggregate_query(AggregateQuery {
                 source: source(Vec::new()),
-                aggregate: aggregate(AggregateFunction::Count, "id"),
+                aggregates: aggregate(AggregateFunction::Count, "id").into(),
                 group: Some(group(GroupBy::Field("status"), order_by)),
             });
 
@@ -221,11 +222,12 @@ async fn date_buckets_truncate_to_the_first_day_of_the_period() -> anyhow::Resul
         for (compiler, expression) in compilers.each().into_iter().zip(expressions) {
             let (sql, params) = compiler.compile_aggregate_query(AggregateQuery {
                 source: source(Vec::new()),
-                aggregate: aggregate(AggregateFunction::Count, "id"),
+                aggregates: aggregate(AggregateFunction::Count, "id").into(),
                 group: Some(AggregateGroup {
                     key: GroupBy::Date("created_at", bucket),
                     order_by: None,
                     then_by: None,
+                    ordered_aggregate: 0,
                     limit: -1,
                     skip: -1,
                 }),
@@ -280,11 +282,12 @@ async fn zoned_date_buckets_read_the_column_as_local_time_first() -> anyhow::Res
         for ((compiler, expression), local) in compilers.each().into_iter().zip(expressions).zip(local) {
             let (sql, params) = compiler.compile_aggregate_query(AggregateQuery {
                 source: source(Vec::new()),
-                aggregate: aggregate(AggregateFunction::Count, "id"),
+                aggregates: aggregate(AggregateFunction::Count, "id").into(),
                 group: Some(AggregateGroup {
                     key: GroupBy::DateIn("created_at", bucket, Sao_Paulo),
                     order_by: None,
                     then_by: None,
+                    ordered_aggregate: 0,
                     limit: -1,
                     skip: -1,
                 }),
@@ -311,8 +314,15 @@ async fn a_second_group_order_breaks_aggregate_ties_by_the_key() -> anyhow::Resu
     let order_sql = |order_by, then_by| {
         let (sql, _) = compilers.sqlite.compile_aggregate_query(AggregateQuery {
             source: source(Vec::new()),
-            aggregate: aggregate(AggregateFunction::Count, "id"),
-            group: Some(AggregateGroup { key: GroupBy::Field("status"), order_by, then_by, limit: -1, skip: -1 }),
+            aggregates: aggregate(AggregateFunction::Count, "id").into(),
+            group: Some(AggregateGroup {
+                key: GroupBy::Field("status"),
+                order_by,
+                then_by,
+                ordered_aggregate: 0,
+                limit: -1,
+                skip: -1,
+            }),
         });
         sql.split_once(" ORDER BY ").map(|(_, order)| order.to_string()).unwrap_or_default()
     };
@@ -344,8 +354,15 @@ async fn windowed_groups_read_the_key_column_once() -> anyhow::Result<()> {
         rows.limit = 10;
         AggregateQuery {
             source: rows,
-            aggregate: aggregate(AggregateFunction::Max, "amount"),
-            group: Some(AggregateGroup { key, order_by: None, then_by: None, limit: -1, skip: -1 }),
+            aggregates: aggregate(AggregateFunction::Max, "amount").into(),
+            group: Some(AggregateGroup {
+                key,
+                order_by: None,
+                then_by: None,
+                ordered_aggregate: 0,
+                limit: -1,
+                skip: -1,
+            }),
         }
     };
 
@@ -369,11 +386,12 @@ async fn aggregates_quote_reserved_identifiers() -> anyhow::Result<()> {
     rows.conditions = vec![FindWhere::Eq("user", string("ana"))];
     let query = AggregateQuery {
         source: rows,
-        aggregate: aggregate(AggregateFunction::Max, "key"),
+        aggregates: aggregate(AggregateFunction::Max, "key").into(),
         group: Some(AggregateGroup {
             key: GroupBy::Date("range", DateBucket::Day),
             order_by: None,
             then_by: None,
+            ordered_aggregate: 0,
             limit: -1,
             skip: -1,
         }),
@@ -513,11 +531,12 @@ async fn skip_without_take_gets_a_limit_where_offset_needs_one() -> anyhow::Resu
         // Groups page the same way.
         let (sql, _) = compiler.compile_aggregate_query(AggregateQuery {
             source: source(Vec::new()),
-            aggregate: aggregate(AggregateFunction::Count, "id"),
+            aggregates: aggregate(AggregateFunction::Count, "id").into(),
             group: Some(AggregateGroup {
                 key: GroupBy::Field("status"),
                 order_by: None,
                 then_by: None,
+                ordered_aggregate: 0,
                 limit: -1,
                 skip: 1,
             }),

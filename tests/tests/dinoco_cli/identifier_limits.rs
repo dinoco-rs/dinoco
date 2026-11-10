@@ -16,8 +16,8 @@ use dinoco_cli::sql::{
 use dinoco_compiler::IdentifierLimit;
 use dinoco_engine::{DinocoAdapter, MySqlAdapter, PostgresAdapter, SqliteAdapter};
 
-const POSTGRES_ADMIN_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
-const MYSQL_ADMIN_URL: &str = "mysql://root:root@localhost:3306/mysql";
+const POSTGRES_ADMIN_URL: &str = "postgres://dinoco:dinoco@localhost:5432/dinoco";
+const MYSQL_ADMIN_URL: &str = "mysql://dinoco:dinoco@localhost:3306/dinoco";
 static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
 
 const LONG_INDEX: &str = "idx_business_receivable_transaction_business_id_executed_at_unlock_at";
@@ -446,12 +446,12 @@ async fn temporary_database(backend: Backend, label: &str) -> anyhow::Result<(St
         Backend::Postgres => {
             let admin = PostgresAdapter::direct(POSTGRES_ADMIN_URL).await?;
             admin.execute(&format!("CREATE DATABASE {database_name}"), &[]).await?;
-            format!("postgres://postgres:postgres@localhost:5432/{database_name}")
+            format!("postgres://dinoco:dinoco@localhost:5432/{database_name}")
         }
         Backend::Mysql => {
             let admin = MySqlAdapter::new(MYSQL_ADMIN_URL);
             admin.execute(&format!("CREATE DATABASE {database_name}"), &[]).await?;
-            format!("mysql://root:root@localhost:3306/{database_name}")
+            format!("mysql://dinoco:dinoco@localhost:3306/{database_name}")
         }
     };
     Ok((database_name, url, project))

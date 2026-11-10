@@ -3,7 +3,7 @@ use dinoco_engine::{
     ConstraintDetails, DatabaseConstraintError, DatabaseError, DinocoAdapter, PostgresAdapter, mysql_async,
 };
 
-const POSTGRES_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
+const POSTGRES_URL: &str = "postgres://dinoco:dinoco@localhost:5432/dinoco";
 
 fn sqlite_details(extended_code: i32, message: &str) -> ConstraintDetails {
     let error = rusqlite::Error::SqliteFailure(ffi::Error::new(extended_code), Some(message.to_string()));

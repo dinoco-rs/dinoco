@@ -7,8 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use dinoco_cli::db::CliDatabase;
 use dinoco_engine::{DinocoAdapter, DinocoSqlCompiler, FindQuery, MySqlAdapter, PostgresAdapter};
 
-const POSTGRES_ADMIN_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
-const MYSQL_ADMIN_URL: &str = "mysql://root:root@localhost:3306/mysql";
+const POSTGRES_ADMIN_URL: &str = "postgres://dinoco:dinoco@localhost:5432/dinoco";
+const MYSQL_ADMIN_URL: &str = "mysql://dinoco:dinoco@localhost:3306/dinoco";
 static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy)]
@@ -52,7 +52,7 @@ async fn postgres_generate_upgrades_legacy_pascal_case_tables_without_losing_row
     let suffix = format!("{}_{}_{}", std::process::id(), monotonic(), NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed));
     let database_name = format!("dinoco_pg_legacy_{suffix}");
     create_database(ServerDatabase::Postgres, &database_name).await?;
-    let database_url = format!("postgres://postgres:postgres@localhost:5432/{database_name}");
+    let database_url = format!("postgres://dinoco:dinoco@localhost:5432/{database_name}");
     let project = temporary_project("pg-legacy", &suffix);
 
     let outcome = async {
@@ -203,7 +203,7 @@ async fn postgres_run_recovers_a_failed_legacy_normalization_with_orphan_rows() 
     let suffix = format!("{}_{}_{}", std::process::id(), monotonic(), NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed));
     let database_name = format!("dinoco_pg_legacy_recovery_{suffix}");
     create_database(ServerDatabase::Postgres, &database_name).await?;
-    let database_url = format!("postgres://postgres:postgres@localhost:5432/{database_name}");
+    let database_url = format!("postgres://dinoco:dinoco@localhost:5432/{database_name}");
     let project = temporary_project("pg-legacy-recovery", &suffix);
 
     let outcome = async {
@@ -303,8 +303,8 @@ async fn exercise_server_migrations(database: ServerDatabase) -> anyhow::Result<
     let database_name = format!("dinoco_{adapter}_{suffix}");
     create_database(database, &database_name).await?;
     let database_url = match database {
-        ServerDatabase::Postgres => format!("postgres://postgres:postgres@localhost:5432/{database_name}"),
-        ServerDatabase::Mysql => format!("mysql://root:root@localhost:3306/{database_name}"),
+        ServerDatabase::Postgres => format!("postgres://dinoco:dinoco@localhost:5432/{database_name}"),
+        ServerDatabase::Mysql => format!("mysql://dinoco:dinoco@localhost:3306/{database_name}"),
     };
     let project = temporary_project(adapter, &suffix);
     write_schema(&project, database);
@@ -380,8 +380,8 @@ async fn temporary_database(database: ServerDatabase, label: &str) -> anyhow::Re
     let database_name = format!("dinoco_{adapter}_{suffix}");
     create_database(database, &database_name).await?;
     let database_url = match database {
-        ServerDatabase::Postgres => format!("postgres://postgres:postgres@localhost:5432/{database_name}"),
-        ServerDatabase::Mysql => format!("mysql://root:root@localhost:3306/{database_name}"),
+        ServerDatabase::Postgres => format!("postgres://dinoco:dinoco@localhost:5432/{database_name}"),
+        ServerDatabase::Mysql => format!("mysql://dinoco:dinoco@localhost:3306/{database_name}"),
     };
     Ok((database_name, database_url, temporary_project(adapter, &suffix)))
 }
